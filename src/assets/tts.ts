@@ -36,6 +36,7 @@ export interface SynthesizeSpeechOptions {
   outPath: string;
   style?: string;
   language?: string;
+  device?: string;
   executable?: string;
   manifestPath?: string;
   force: boolean;
@@ -50,6 +51,7 @@ export interface SpeechResult {
   channels: number;
   speaker: string;
   language?: string;
+  device?: string;
   manifest: string;
   elapsedMs: number;
 }
@@ -121,6 +123,9 @@ export async function synthesizeSpeech(options: SynthesizeSpeechOptions): Promis
     }
     if (options.style !== undefined) {
       args.push("--instruct", options.style);
+    }
+    if (options.device !== undefined) {
+      args.push("--device", options.device);
     }
 
     await runChild(executable.path, args, {
@@ -196,6 +201,7 @@ export async function synthesizeSpeech(options: SynthesizeSpeechOptions): Promis
         speaker: options.speaker,
         language: options.language ?? null,
         style: options.style ?? null,
+        device: options.device ?? null,
         format: "wav16",
         sampleRate: 24_000,
         channels: 1,
@@ -233,6 +239,9 @@ export async function synthesizeSpeech(options: SynthesizeSpeechOptions): Promis
     };
     if (options.language !== undefined) {
       result.language = options.language;
+    }
+    if (options.device !== undefined) {
+      result.device = options.device;
     }
     return result;
   } finally {

@@ -323,6 +323,8 @@ describe("local asset production", () => {
         "calm",
         "--language",
         "English",
+        "--device",
+        "CPU",
         "--out",
         "generated/voice.wav",
         "--json",
@@ -355,6 +357,8 @@ describe("local asset production", () => {
         "English",
         "--instruct",
         "calm",
+        "--device",
+        "CPU",
       ]),
     );
     expect(invocation.text).toBe("Hello from Frameyard.");
@@ -392,6 +396,7 @@ describe("local asset production", () => {
         speaker: "vivian",
         style: "calm",
         language: "English",
+        device: "CPU",
         format: "wav16",
         sampleRate: 24_000,
         channels: 1,

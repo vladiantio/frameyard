@@ -40,6 +40,7 @@ frameyard tts \
 - Text comes from `--text-file` or stdin.
 - `--style` maps to the upstream style instruction.
 - `--language` maps to `--lang`.
+- `--device CPU` forces qwentts.cpp onto the CPU when the GPU does not have enough VRAM.
 - Output is one frozen 24 kHz mono WAV.
 - Talker and codec GGUF paths are required.
 - `--force` is required to replace an existing asset. Do not pass it without user approval.

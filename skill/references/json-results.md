@@ -176,7 +176,7 @@ Doctor reports findings rather than throwing for environment problems. `ok: true
       "status": "ok",
       "requested": false,
       "executable": "/path/to/qwen-tts",
-      "capabilities": ["--model", "--codec", "--speaker", "--lang", "-o"],
+      "capabilities": ["--model", "--codec", "--speaker", "--lang", "--device", "-o"],
       "version": "5916bf7c79dbb4e66fc059cdc507a79a23a28bb4 (2026-10-28)",
       "referenceRevision": "..."
     },

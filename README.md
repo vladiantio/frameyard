@@ -28,6 +28,8 @@ FRAMEYARD_REAL_TALKER=/path/to/talker.gguf \
 FRAMEYARD_REAL_CODEC=/path/to/codec.gguf \
 FRAMEYARD_REAL_WHISPER_MODEL=/path/to/ggml-model.bin \
 FRAMEYARD_REAL_WHISPER_SOURCE=/path/to/source.wav \
+# optional, for GPUs with too little VRAM:
+FRAMEYARD_REAL_TTS_DEVICE=CPU \
 pnpm vitest run test/real-integrations.test.ts
 ```
 
@@ -220,6 +222,7 @@ node dist/cli.js transcribe assets/voice.wav \
 
 - Executable resolution: `--executable`, then `FRAMEYARD_QWEN_TTS` or `FRAMEYARD_WHISPER_CLI`, then `PATH`.
 - `tts` supports CustomVoice only: a named speaker is required. Reference-audio cloning and VoiceDesign are deferred.
+- `--device CPU` forces qwentts.cpp onto the CPU when a GPU does not have enough VRAM.
 - `transcribe` normalizes the source with FFmpeg to 16 kHz mono PCM WAV before `whisper-cli`.
 - Outputs are atomic. Existing assets are replaced only with `--force`.
 - A partial operation leaves no apparently valid artifact and no manifest entry.

@@ -24,6 +24,7 @@ const VALUE_FLAGS = new Set([
   "codec-model",
   "style",
   "language",
+  "device",
   "executable",
   "model",
   "export",
@@ -136,6 +137,7 @@ function allowedFlags(command: string): Set<string> {
         "out",
         "style",
         "language",
+        "device",
         "executable",
         "manifest",
         "force",
@@ -244,7 +246,7 @@ Usage:
   frameyard check <composition-id> [--props <file>] [--project <dir>] [--json]
   frameyard still <composition-id> --frame <n> [--out <file.png>] [--props <file>] [--project <dir>] [--json]
   frameyard render <composition-id> --out <video.mp4> [--props <file>] [--project <dir>] [--overwrite] [--json]
-  frameyard tts --speaker <name> --talker-model <gguf> --codec-model <gguf> --out <file.wav> [--text-file <file>] [--style <text>] [--language <lang>] [--executable <path>] [--manifest <file>] [--force] [--json]
+  frameyard tts --speaker <name> --talker-model <gguf> --codec-model <gguf> --out <file.wav> [--text-file <file>] [--style <text>] [--language <lang>] [--device <name>] [--executable <path>] [--manifest <file>] [--force] [--json]
   frameyard transcribe <source> --model <gguf> --out <file.json> [--words] [--export srt,vtt] [--language <lang>] [--executable <path>] [--manifest <file>] [--force] [--json]
   frameyard doctor [--qwen-tts <path>] [--whisper-cli <path>] [--talker-model <gguf>] [--codec-model <gguf>] [--model <gguf>] [--manifest <file>] [--project <dir>] [--json]
 
@@ -261,6 +263,7 @@ Options:
   --codec-model <gguf>   Codec GGUF model path.
   --style <text>         Optional style instruction for speech synthesis.
   --language <lang>      Spoken language, when known.
+  --device <name>        Compute device for qwen-tts, such as CPU or CUDA0.
   --model <gguf>         Whisper GGML model path.
   --words                Request measured word timings during transcription.
   --export srt,vtt       Derived subtitle exports next to the transcript.
@@ -299,7 +302,7 @@ function printCommandHelp(command: string): void {
       return;
     case "tts":
       process.stdout.write(
-        "Usage: frameyard tts --speaker <name> --talker-model <gguf> --codec-model <gguf> --out <file.wav> [--text-file <file>] [--style <text>] [--language <lang>] [--executable <path>] [--manifest <file>] [--force] [--json]\nProduce one frozen 24 kHz mono WAV with local qwentts.cpp CustomVoice synthesis.\n",
+        "Usage: frameyard tts --speaker <name> --talker-model <gguf> --codec-model <gguf> --out <file.wav> [--text-file <file>] [--style <text>] [--language <lang>] [--device <name>] [--executable <path>] [--manifest <file>] [--force] [--json]\nProduce one frozen 24 kHz mono WAV with local qwentts.cpp CustomVoice synthesis.\n",
       );
       return;
     case "transcribe":
@@ -746,6 +749,9 @@ async function runTts(parsed: ParsedArgs, signal: AbortSignal): Promise<number> 
       : {}),
     ...(flagString(parsed.flags, "language") !== undefined
       ? { language: flagString(parsed.flags, "language") as string }
+      : {}),
+    ...(flagString(parsed.flags, "device") !== undefined
+      ? { device: flagString(parsed.flags, "device") as string }
       : {}),
     ...(flagString(parsed.flags, "executable") !== undefined
       ? { executable: flagString(parsed.flags, "executable") as string }

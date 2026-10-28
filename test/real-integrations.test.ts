@@ -45,6 +45,7 @@ describe.skipIf(!enabled)("real-model integrations", () => {
     async () => {
       const talker = requiredEnv("FRAMEYARD_REAL_TALKER");
       const codec = requiredEnv("FRAMEYARD_REAL_CODEC");
+      const device = process.env.FRAMEYARD_REAL_TTS_DEVICE;
       const root = await mkdtemp(path.join(tmpdir(), "frameyard-real-tts-"));
       roots.push(root);
       await writeFile(path.join(root, "script.txt"), "Frameyard real-model integration test.\n");
@@ -62,6 +63,7 @@ describe.skipIf(!enabled)("real-model integrations", () => {
           "script.txt",
           "--out",
           "voice.wav",
+          ...(device ? ["--device", device] : []),
           "--json",
         ],
         root,

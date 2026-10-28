@@ -313,7 +313,7 @@ async function inspectTts(
   }
 
   const text = `${help.stdout}\n${help.stderr}`;
-  const capabilities = integrationFlags(text, ["--model", "--codec", "--speaker", "--lang", "--instruct", "--format", "-o"]);
+  const capabilities = integrationFlags(text, ["--model", "--codec", "--speaker", "--lang", "--instruct", "--format", "--device", "-o"]);
   const missing = ["--model", "--codec", "--speaker", "--lang", "--format", "-o"].filter(
     (flag) => !capabilities.includes(flag),
   );

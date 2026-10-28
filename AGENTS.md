@@ -32,7 +32,7 @@ node dist/cli.js render demo --project examples/demo --props examples/demo/props
 node dist/cli.js doctor
 ```
 
-A full 30-second demo render is sequential and takes roughly 100 seconds on the reference machine. The test fixtures render tiny compositions. TTS and transcription tests use fake `qwen-tts` and `whisper-cli` executables; real-model tests are opt-in.
+A full 30-second demo render is sequential and takes roughly 50 seconds on the reference machine. The test fixtures render tiny compositions. TTS and transcription tests use fake `qwen-tts` and `whisper-cli` executables; real-model tests are opt-in.
 
 ## Architecture
 

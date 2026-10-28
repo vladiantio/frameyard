@@ -196,6 +196,9 @@ export async function openCompositionSession(options: {
             format: "png",
             fromSurface: true,
             captureBeyondViewport: false,
+            // Lossless PNG with fast compression. The default zlib level is the
+            // dominant cost of a 1080p frame; decoded pixels are identical.
+            optimizeForSpeed: true,
           })) as CaptureScreenshotResult;
         } catch (error) {
           if (isFrameyardError(error)) {

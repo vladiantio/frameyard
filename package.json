@@ -1,6 +1,46 @@
 {
   "name": "frameyard",
-  "scripts": {},
+  "version": "0.1.0",
+  "description": "Local-first, deterministic video composition framework for HTML, CSS, and JavaScript.",
+  "type": "module",
+  "license": "MIT",
+  "bin": {
+    "frameyard": "./dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./runtime": {
+      "types": "./dist/runtime/index.d.ts",
+      "default": "./dist/runtime/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "examples",
+    "docs",
+    "README.md",
+    "GLOSSARY.md"
+  ],
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "pnpm build && vitest run",
+    "test:unit": "vitest run test/contracts.test.ts test/random.test.ts"
+  },
+  "dependencies": {
+    "playwright": "1.64.1"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.5",
+    "typescript": "5.9.3",
+    "vitest": "5.0.5"
+  },
   "devEngines": {
     "packageManager": {
       "name": "pnpm",
@@ -8,6 +48,5 @@
       "onFail": "download"
     }
   },
-  "packageManager": "pnpm@12.15.0",
-  "type": "module"
+  "packageManager": "pnpm@12.15.0"
 }

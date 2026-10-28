@@ -1,4 +1,4 @@
-import type { CompositionMetadata, Props, ResolvedAudioClip } from "../index.js";
+import type { CompositionMetadata, Props, ResolvedAudioClip, ResolvedTranscriptClip } from "../index.js";
 import {
   createCompositionRuntime,
   frameToMilliseconds,
@@ -11,6 +11,7 @@ interface PreviewLoadResult {
   metadata: CompositionMetadata;
   props: Props;
   audioClips: ResolvedAudioClip[];
+  transcriptClips: ResolvedTranscriptClip[];
 }
 
 interface PreviewApi {
@@ -389,6 +390,7 @@ async function loadNow(entry: string, propOverrides?: unknown): Promise<PreviewL
     metadata: loadedMetadata,
     props: active.props as Props,
     audioClips: [...audioClips],
+    transcriptClips: [...active.transcriptClips],
   };
 }
 

@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Frameyard is a local-first framework for deterministic, parameterized videos authored with HTML, CSS, and native JavaScript. The v0.1 core slice is implemented: composition contracts, browser runtime and preview, `init`/`dev`/`check`/`still`/`render`, Chromium capture, and FFmpeg output.
+Frameyard is a local-first framework for deterministic, parameterized videos authored with HTML, CSS, and native JavaScript. The v0.1 design is implemented: composition contracts, browser runtime and preview, `init`/`dev`/`check`/`still`/`render`, `tts`/`transcribe`/`doctor`, Chromium capture, FFmpeg output, provenance manifests, transcript validation, and the official agent skill.
 
 ## Read first
 
@@ -29,25 +29,30 @@ node dist/cli.js check demo --project examples/demo
 node dist/cli.js dev --project examples/demo
 node dist/cli.js still demo --frame 240 --project examples/demo --out still.png
 node dist/cli.js render demo --project examples/demo --props examples/demo/props/demo.json --out demo.mp4
+node dist/cli.js doctor
 ```
 
-A full 30-second demo render is sequential and takes roughly 100 seconds on the reference machine. The test fixtures render tiny compositions.
+A full 30-second demo render is sequential and takes roughly 100 seconds on the reference machine. The test fixtures render tiny compositions. TTS and transcription tests use fake `qwen-tts` and `whisper-cli` executables; real-model tests are opt-in.
 
 ## Architecture
 
 | Path | Responsibility |
 | --- | --- |
-| `src/contracts.ts` | Shared composition, metadata, props, and audio contract |
+| `src/contracts.ts` | Shared composition, metadata, props, audio, and transcript requirement contract |
+| `src/transcript.ts` | Canonical transcript validation and SRT/VTT formatting (browser-safe) |
 | `src/runtime/` | Browser-only lifecycle, frame clock, deterministic randomness, diagnostics |
 | `src/preview/` | Browser preview client: loading, scrubbing, playback, audio sync |
 | `src/server/` | Node preview/static server and injected import map |
-| `src/renderer/` | Node Chromium session, audio inspection/mixing, FFmpeg pipeline |
+| `src/renderer/` | Node Chromium session, audio/transcript inspection, FFmpeg pipeline |
+| `src/assets/` | TTS/transcription wrappers, executable resolution, atomic publishing, provenance |
+| `src/doctor.ts` | Environment, integration, and manifest inspection |
 | `src/project.ts` | `video.config.js` loading and explicit composition discovery |
 | `src/cli.ts` | Argument parsing, command execution, human/JSON results |
+| `skill/` | Official host-neutral agent skill and references |
 | `examples/demo/` | 30-second reference composition |
 | `test/` | Public-seam tests |
 
-`src/contracts.ts` and `src/runtime/` ship to the browser. Keep them free of `node:` imports. Node-only code belongs in `src/project.ts`, `src/server/`, `src/renderer/`, or `src/cli.ts`.
+`src/contracts.ts`, `src/transcript.ts`, and `src/runtime/` ship to the browser. Keep them free of `node:` imports. Node-only code belongs in `src/project.ts`, `src/server/`, `src/renderer/`, `src/assets/`, `src/doctor.ts`, or `src/cli.ts`.
 
 ## Non-negotiable invariants
 
@@ -70,43 +75,62 @@ A full 30-second demo render is sequential and takes roughly 100 seconds on the 
 - Composition props are plain JSON, deep-frozen, and merged shallowly over `defaultProps`.
 - Composition functions are invoked on a frozen definition. Keep mutable state in module-scope variables, not on `this`.
 - Audio clips use composition frames for placement and seconds for source trimming. Audio is mixed offline with FFmpeg; no time-stretching or automatic duration changes.
+- Transcript requirements are project-relative canonical JSON. `words: true` requires measured word timings; never interpolate segment timings.
 - Compositions are trusted local developer code. Do not claim sandboxing or untrusted execution.
+
+### Generated assets
+
+- Speech synthesis and transcription are explicit operations outside rendering. Never invoke them from `mount()`, `update()`, or frame production.
+- Use the `tts` and `transcribe` wrappers; never call `qwen-tts` or `whisper-cli` directly from framework code or the agent skill.
+- Outputs are written atomically. Failed or cancelled operations leave no apparently valid artifact and no manifest entry.
+- Existing generated assets are replaced only with `--force`.
+- The provenance manifest records artifact hashes, generator details, model identities, parameters, and source identity for transcription.
+- Executable resolution order is explicit option, environment variable, then `PATH`.
 
 ### CLI and outputs
 
 - Non-interactive commands support `--json`. With `--json`, stdout contains only the structured result/error envelope; progress and human diagnostics go to stderr.
 - Keep error envelopes stable: `{ ok: false, command, error: { code, message } }`. Usage failures emitted before a command is known still produce an envelope with `command: null`.
 - Failures exit nonzero. A render never publishes a partial file; it writes a temporary output and publishes atomically.
-- Existing outputs are replaced only with `--overwrite`.
+- Existing outputs are replaced only with `--overwrite` (stills/renders) or `--force` (generated assets).
 - Preserve exact frame counts in FFmpeg (`-frames:v`) and bounded audio (`-t`).
-- `check` must inspect every frame and report audio clip durations/warnings without capturing or encoding.
+- `check` must inspect every frame and report audio/transcript durations and warnings without capturing or encoding.
 - `still` uses the production capture path, not a separate renderer path.
+- `doctor` exits nonzero when required checks fail but does not throw away the structured findings.
 
 ### Scope
 
-The current implementation intentionally excludes `tts`, `transcribe`, `doctor`, provenance manifests, transcript/karaoke support, the official agent skill, parallel rendering, frame caches, general image sequences, and plugin APIs. Implement those only when the task explicitly asks and the design baseline is revised.
+The current implementation still excludes built-in subtitle rendering, automatic caption burn-in, qwentts.cpp voice cloning/VoiceDesign, long-text chunking/streaming, automatic model downloads or environment repair, parallel rendering, frame caches, general image sequences, plugin APIs, and hosted/agent-only runtimes.
 
 ## Change map
 
-- **Contracts, props, metadata, audio validation** → `src/contracts.ts`, `src/index.ts`; extend `test/contracts.test.ts`.
-- **Runtime seeking, randomness, diagnostics** → `src/runtime/`; extend `test/preview-runtime.test.ts` through real Chromium.
+- **Contracts, props, metadata, audio, transcripts** → `src/contracts.ts`, `src/transcript.ts`, `src/index.ts`; extend `test/contracts.test.ts` and `test/transcript.test.ts`.
+- **Runtime seeking, randomness, diagnostics, transcript requirements** → `src/runtime/`; extend `test/preview-runtime.test.ts` through real Chromium.
 - **Preview behavior/UI** → `src/preview/main.ts`, `src/server/preview-html.ts`; extend the preview browser test.
 - **Server routes, static serving, import map** → `src/server/server.ts`; extend `test/project-server.test.ts`.
-- **Chromium capture, audio inspection, FFmpeg encoding** → `src/renderer/`; extend `test/cli-e2e.test.ts` and verify artifacts with FFprobe.
+- **Chromium capture, audio/transcript inspection, FFmpeg encoding** → `src/renderer/`; extend `test/cli-e2e.test.ts` and verify artifacts with FFprobe.
+- **TTS, transcription, provenance, executable resolution** → `src/assets/`; extend `test/assets-e2e.test.ts` with fake executables.
+- **Doctor checks** → `src/doctor.ts`, `src/cli.ts`; extend `test/assets-e2e.test.ts`.
 - **CLI flags, result schemas, exit behavior** → `src/cli.ts`; extend `test/cli-e2e.test.ts`.
+- **Agent skill contract** → `skill/`, `package.json`; extend `test/skill.test.ts`.
 - **Reference behavior** → `examples/demo/`; keep its README commands working.
 
 ## Testing
 
 Test at public seams, not private helpers:
 
-- `test/contracts.test.ts`: composition metadata, props, JSON serialization, audio clips.
+- `test/contracts.test.ts`: composition metadata, props, JSON serialization, audio clips, transcript requirements.
+- `test/transcript.test.ts`: canonical transcript validation, word requirements, SRT/VTT formatting.
 - `test/random.test.ts`: frame time and deterministic randomness.
 - `test/project-server.test.ts`: config loading, static routes, import map, ranges, traversal rejection.
-- `test/preview-runtime.test.ts`: real Chromium loading, props, seeking, CSS animation, Canvas, determinism, diagnostics, preview UI.
+- `test/preview-runtime.test.ts`: real Chromium loading, props, seeking, CSS animation, Canvas, determinism, diagnostics, preview UI, transcript declarations.
 - `test/cli-e2e.test.ts`: real CLI with Chromium and FFmpeg, JSON envelopes, missing assets, deterministic stills, MP4/audio output, overwrite behavior, `dev`, `init`.
+- `test/assets-e2e.test.ts`: `tts`/`transcribe`/`doctor` with fake upstream executables, normalization, word timings, exports, manifests, cancellation, transcript validation.
+- `test/agent-workflow.test.ts`: source preservation, check/still/render reporting, and failure reporting through the CLI.
+- `test/real-integrations.test.ts`: opt-in real-model checks enabled by `FRAMEYARD_REAL_INTEGRATIONS=1` and explicit model paths.
+- `test/skill.test.ts`: skill contents, API version, package inclusion, thin wrapper.
 
-Prefer one failing public-behavior test, then the minimal implementation. Use real Chromium and FFmpeg for production-path behavior; mock only external model executables when those integrations are added. Run `pnpm test` before finishing. Browser/CLI tests are intentionally sequential (`fileParallelism: false`).
+Prefer one failing public-behavior test, then the minimal implementation. Use real Chromium and FFmpeg for production-path behavior; mock only external model executables. Run `pnpm test` before finishing. Browser/CLI tests are intentionally sequential (`fileParallelism: false`).
 
 ## Before finishing
 

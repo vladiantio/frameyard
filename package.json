@@ -21,6 +21,7 @@
     "dist",
     "examples",
     "docs",
+    "skill",
     "README.md",
     "GLOSSARY.md"
   ],
@@ -31,7 +32,7 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "pnpm build && vitest run",
-    "test:unit": "vitest run test/contracts.test.ts test/random.test.ts"
+    "test:unit": "vitest run test/contracts.test.ts test/random.test.ts test/transcript.test.ts"
   },
   "dependencies": {
     "playwright": "1.64.1"

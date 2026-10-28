@@ -1,15 +1,38 @@
 #!/usr/bin/env node
-import { access, mkdir, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { FrameyardError, isFrameyardError } from "./errors.js";
 import { loadProject, resolveProjectRoot, type Project } from "./project.js";
 import { checkComposition, captureStill, renderComposition, type ProgressEvent } from "./renderer/index.js";
 import { startPreviewServer } from "./server/server.js";
 import { VERSION } from "./version.js";
+import { transcribeAudio, type SubtitleFormat } from "./assets/transcribe.js";
+import { synthesizeSpeech } from "./assets/tts.js";
+import { resolveManifestPath } from "./assets/provenance.js";
+import { runDoctor } from "./doctor.js";
 
-const COMMANDS = new Set(["init", "dev", "check", "still", "render", "help"]);
-const VALUE_FLAGS = new Set(["project", "props", "out", "frame", "port"]);
-const BOOLEAN_FLAGS = new Set(["json", "overwrite", "help", "version"]);
+const COMMANDS = new Set(["init", "dev", "check", "still", "render", "tts", "transcribe", "doctor", "help"]);
+const VALUE_FLAGS = new Set([
+  "project",
+  "props",
+  "out",
+  "frame",
+  "port",
+  "text-file",
+  "speaker",
+  "talker-model",
+  "codec-model",
+  "style",
+  "language",
+  "executable",
+  "model",
+  "export",
+  "manifest",
+  "qwen-tts",
+  "whisper-cli",
+]);
+const BOOLEAN_FLAGS = new Set(["json", "overwrite", "force", "words", "help", "version"]);
+
 
 interface ParsedArgs {
   command: string;
@@ -103,6 +126,34 @@ function allowedFlags(command: string): Set<string> {
       return new Set([...common, "props", "out", "frame", "overwrite"]);
     case "render":
       return new Set([...common, "props", "out", "overwrite"]);
+    case "tts":
+      return new Set([
+        ...common,
+        "text-file",
+        "speaker",
+        "talker-model",
+        "codec-model",
+        "out",
+        "style",
+        "language",
+        "executable",
+        "manifest",
+        "force",
+      ]);
+    case "transcribe":
+      return new Set([
+        ...common,
+        "out",
+        "model",
+        "words",
+        "export",
+        "language",
+        "executable",
+        "manifest",
+        "force",
+      ]);
+    case "doctor":
+      return new Set([...common, "manifest", "qwen-tts", "whisper-cli", "talker-model", "codec-model", "model"]);
     case "help":
       return new Set(["help"]);
     default:
@@ -127,22 +178,37 @@ function validateArgs(parsed: ParsedArgs): void {
     }
   }
 
-  if (parsed.command === "dev" || parsed.command === "help") {
+  if (["dev", "help", "doctor", "tts"].includes(parsed.command)) {
     if (parsed.positionals.length > 0) {
       usage(`"${parsed.command}" does not take a positional argument.`);
     }
-  } else if (parsed.positionals.length > 1) {
-    usage(`"${parsed.command}" accepts at most 1 positional argument.`);
+  } else if (parsed.command === "init") {
+    if (parsed.positionals.length > 1) {
+      usage(`"${parsed.command}" accepts at most 1 positional argument.`);
+    }
+  } else if (parsed.positionals.length !== 1) {
+    usage(`"${parsed.command}" requires a ${parsed.command === "transcribe" ? "source path" : "composition id"}.`);
   }
 
-  if (["check", "still", "render"].includes(parsed.command) && parsed.positionals.length !== 1) {
-    usage(`"${parsed.command}" requires a composition id.`);
-  }
   if (parsed.command === "still" && !parsed.flags.has("frame")) {
     usage('"still" requires --frame <n>.');
   }
   if (parsed.command === "render" && !parsed.flags.has("out")) {
     usage('"render" requires --out <video.mp4>.');
+  }
+  if (parsed.command === "tts") {
+    for (const required of ["speaker", "talker-model", "codec-model", "out"]) {
+      if (!parsed.flags.has(required)) {
+        usage(`"tts" requires --${required}.`);
+      }
+    }
+  }
+  if (parsed.command === "transcribe") {
+    for (const required of ["out", "model"]) {
+      if (!parsed.flags.has(required)) {
+        usage(`"transcribe" requires --${required}.`);
+      }
+    }
   }
 }
 
@@ -178,16 +244,33 @@ Usage:
   frameyard check <composition-id> [--props <file>] [--project <dir>] [--json]
   frameyard still <composition-id> --frame <n> [--out <file.png>] [--props <file>] [--project <dir>] [--json]
   frameyard render <composition-id> --out <video.mp4> [--props <file>] [--project <dir>] [--overwrite] [--json]
+  frameyard tts --speaker <name> --talker-model <gguf> --codec-model <gguf> --out <file.wav> [--text-file <file>] [--style <text>] [--language <lang>] [--executable <path>] [--manifest <file>] [--force] [--json]
+  frameyard transcribe <source> --model <gguf> --out <file.json> [--words] [--export srt,vtt] [--language <lang>] [--executable <path>] [--manifest <file>] [--force] [--json]
+  frameyard doctor [--qwen-tts <path>] [--whisper-cli <path>] [--talker-model <gguf>] [--codec-model <gguf>] [--model <gguf>] [--manifest <file>] [--project <dir>] [--json]
 
 Options:
-  --project <dir>   Use a project other than the current directory.
-  --props <file>    JSON props merged over composition defaults.
-  --out <file>      Output path for still or render.
-  --frame <n>       Frame to capture for still.
-  --overwrite       Replace an existing output file.
-  --json            Print a structured result to stdout.
-  --help, -h        Show this help.
-  --version, -v     Print the version.
+  --project <dir>        Use a project other than the current directory.
+  --props <file>         JSON props merged over composition defaults.
+  --out <file>           Output path for still, render, tts, or transcribe.
+  --frame <n>            Frame to capture for still.
+  --overwrite            Replace an existing still or render output.
+  --force                Replace existing generated assets and manifest entries.
+  --text-file <file>     Text to synthesize. Reads stdin when omitted.
+  --speaker <name>       Named speaker for CustomVoice speech synthesis.
+  --talker-model <gguf>  Talker GGUF model path.
+  --codec-model <gguf>   Codec GGUF model path.
+  --style <text>         Optional style instruction for speech synthesis.
+  --language <lang>      Spoken language, when known.
+  --model <gguf>         Whisper GGML model path.
+  --words                Request measured word timings during transcription.
+  --export srt,vtt       Derived subtitle exports next to the transcript.
+  --executable <path>    Explicit qwen-tts or whisper-cli executable.
+  --manifest <file>      Provenance manifest path (default: frameyard.assets.json).
+  --qwen-tts <path>      qwen-tts executable to inspect with doctor.
+  --whisper-cli <path>   whisper-cli executable to inspect with doctor.
+  --json                 Print a structured result to stdout.
+  --help, -h             Show this help.
+  --version, -v          Print the version.
 `);
 }
 
@@ -214,6 +297,21 @@ function printCommandHelp(command: string): void {
         "Usage: frameyard render <composition-id> --out <video.mp4> [--props <file>] [--project <dir>] [--overwrite] [--json]\nRender a complete MP4 with H.264 video and AAC audio.\n",
       );
       return;
+    case "tts":
+      process.stdout.write(
+        "Usage: frameyard tts --speaker <name> --talker-model <gguf> --codec-model <gguf> --out <file.wav> [--text-file <file>] [--style <text>] [--language <lang>] [--executable <path>] [--manifest <file>] [--force] [--json]\nProduce one frozen 24 kHz mono WAV with local qwentts.cpp CustomVoice synthesis.\n",
+      );
+      return;
+    case "transcribe":
+      process.stdout.write(
+        "Usage: frameyard transcribe <source> --model <gguf> --out <file.json> [--words] [--export srt,vtt] [--language <lang>] [--executable <path>] [--manifest <file>] [--force] [--json]\nProduce a canonical Frameyard transcript, optionally with word timings and subtitle exports.\n",
+      );
+      return;
+    case "doctor":
+      process.stdout.write(
+        "Usage: frameyard doctor [--qwen-tts <path>] [--whisper-cli <path>] [--talker-model <gguf>] [--codec-model <gguf>] [--model <gguf>] [--manifest <file>] [--project <dir>] [--json]\nInspect core requirements, optional integrations, model readability, and provenance integrity without changing the environment.\n",
+      );
+      return;
     default:
       printHelp();
   }
@@ -224,6 +322,73 @@ async function projectFromFlag(flags: Map<string, string | true>): Promise<Proje
   const root =
     typeof requested === "string" ? path.resolve(process.cwd(), requested) : await resolveProjectRoot(process.cwd());
   return loadProject(root);
+}
+
+/** Resolves the directory that anchors the project-local provenance manifest. */
+async function assetRootFromFlag(flags: Map<string, string | true>): Promise<string> {
+  const requested = flags.get("project");
+  if (typeof requested === "string") {
+    const root = path.resolve(process.cwd(), requested);
+    let info;
+    try {
+      info = await stat(root);
+    } catch {
+      throw new FrameyardError("CONFIG_NOT_FOUND", `Project directory does not exist: ${root}`);
+    }
+    if (!info.isDirectory()) {
+      throw new FrameyardError("CONFIG_NOT_FOUND", `Project directory is not a directory: ${root}`);
+    }
+    return root;
+  }
+
+  try {
+    return await resolveProjectRoot(process.cwd());
+  } catch (error) {
+    if (isFrameyardError(error) && error.code === "CONFIG_NOT_FOUND") {
+      return process.cwd();
+    }
+    throw error;
+  }
+}
+
+async function readStdin(): Promise<string> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of process.stdin) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as string));
+  }
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+function flagString(flags: Map<string, string | true>, name: string): string | undefined {
+  const value = flags.get(name);
+  return typeof value === "string" ? value : undefined;
+}
+
+function parseSubtitleFormats(value: string | true | undefined): SubtitleFormat[] {
+  if (value === undefined) {
+    return [];
+  }
+  if (typeof value !== "string") {
+    usage("--export requires a comma-separated list of srt and vtt.");
+  }
+
+  const formats: SubtitleFormat[] = [];
+  for (const raw of value.split(",")) {
+    const format = raw.trim().toLowerCase();
+    if (format.length === 0) {
+      continue;
+    }
+    if (format !== "srt" && format !== "vtt") {
+      usage(`Unsupported subtitle export "${raw}". Use srt or vtt.`);
+    }
+    if (!formats.includes(format)) {
+      formats.push(format);
+    }
+  }
+  if (formats.length === 0) {
+    usage("--export requires at least one of srt or vtt.");
+  }
+  return formats;
 }
 
 async function readPropsFile(flags: Map<string, string | true>): Promise<unknown> {
@@ -299,6 +464,7 @@ frameyard dev
 Validate and render:
 
 \`\`\`sh
+frameyard doctor
 frameyard check hello
 frameyard render hello --props props/hello.json --out hello.mp4
 \`\`\`
@@ -383,7 +549,7 @@ export default defineComposition({
     command: "init",
     project: target,
     files: Object.keys(files),
-    next: ["frameyard dev", "frameyard check hello", "frameyard render hello --out hello.mp4"],
+    next: ["frameyard doctor", "frameyard dev", "frameyard check hello", "frameyard render hello --out hello.mp4"],
   };
 
   if (json) {
@@ -393,7 +559,7 @@ export default defineComposition({
     for (const file of Object.keys(files)) {
       process.stdout.write(`  ${file}\n`);
     }
-    process.stdout.write("Next: frameyard dev\n");
+    process.stdout.write("Next: frameyard doctor && frameyard dev\n");
   }
   return 0;
 }
@@ -456,8 +622,19 @@ async function runCheck(parsed: ParsedArgs, signal: AbortSignal): Promise<number
         `    ${clip.src}: ${clip.startSeconds.toFixed(2)}s–${clip.endSeconds.toFixed(2)}s (source ${clip.sourceDurationSeconds.toFixed(2)}s, volume ${clip.volume})\n`,
       );
     }
+    if (result.transcripts.clips > 0) {
+      process.stdout.write(
+        `  transcripts: ${result.transcripts.clips} asset${result.transcripts.clips === 1 ? "" : "s"}, ${result.transcripts.warnings.length} warning${result.transcripts.warnings.length === 1 ? "" : "s"}\n`,
+      );
+      for (const transcript of result.transcripts.details) {
+        process.stdout.write(
+          `    ${transcript.src}: ${transcript.segments} segment${transcript.segments === 1 ? "" : "s"}${transcript.words === undefined ? "" : `, ${transcript.words} word${transcript.words === 1 ? "" : "s"}`}${transcript.language === undefined ? "" : `, ${transcript.language}`}, ${formatDuration(transcript.durationMs / 1000)}\n`,
+        );
+      }
+    }
   }
   printWarnings(result.audio.warnings);
+  printWarnings(result.transcripts.warnings);
   return 0;
 }
 
@@ -519,6 +696,7 @@ async function runRender(parsed: ParsedArgs, signal: AbortSignal): Promise<numbe
   });
 
   printWarnings(result.audio.warnings);
+  printWarnings(result.transcripts.warnings);
   if (json) {
     printJson({ ok: true, command: "render", ...result });
   } else {
@@ -527,6 +705,162 @@ async function runRender(parsed: ParsedArgs, signal: AbortSignal): Promise<numbe
     );
   }
   return 0;
+}
+
+async function runTts(parsed: ParsedArgs, signal: AbortSignal): Promise<number> {
+  const projectRoot = await assetRootFromFlag(parsed.flags);
+  const json = parsed.flags.has("json") === true;
+  const speaker = flagString(parsed.flags, "speaker");
+  const talkerModel = flagString(parsed.flags, "talker-model");
+  const codecModel = flagString(parsed.flags, "codec-model");
+  const outValue = flagString(parsed.flags, "out");
+  if (!speaker || !talkerModel || !codecModel || !outValue) {
+    usage('"tts" requires --speaker, --talker-model, --codec-model, and --out.');
+  }
+
+  const textFile = flagString(parsed.flags, "text-file");
+  let text: string;
+  if (textFile !== undefined) {
+    const textPath = path.resolve(process.cwd(), textFile);
+    try {
+      text = await readFile(textPath, "utf8");
+    } catch (error) {
+      throw new FrameyardError("ASSET_NOT_FOUND", `Could not read text file ${textPath}.`, { cause: error });
+    }
+  } else {
+    if (process.stdin.isTTY) {
+      usage("Provide --text-file or pipe text to stdin.");
+    }
+    text = await readStdin();
+  }
+
+  const result = await synthesizeSpeech({
+    projectRoot,
+    text,
+    speaker,
+    talkerModelPath: path.resolve(process.cwd(), talkerModel),
+    codecModelPath: path.resolve(process.cwd(), codecModel),
+    outPath: path.resolve(process.cwd(), outValue),
+    ...(flagString(parsed.flags, "style") !== undefined
+      ? { style: flagString(parsed.flags, "style") as string }
+      : {}),
+    ...(flagString(parsed.flags, "language") !== undefined
+      ? { language: flagString(parsed.flags, "language") as string }
+      : {}),
+    ...(flagString(parsed.flags, "executable") !== undefined
+      ? { executable: flagString(parsed.flags, "executable") as string }
+      : {}),
+    ...(flagString(parsed.flags, "manifest") !== undefined
+      ? { manifestPath: flagString(parsed.flags, "manifest") as string }
+      : {}),
+    force: parsed.flags.has("force") === true,
+    signal,
+  });
+
+  if (json) {
+    printJson({ ok: true, command: "tts", ...result });
+  } else {
+    process.stdout.write(
+      `Wrote 24 kHz mono WAV to ${result.path} (${(result.bytes / (1024 * 1024)).toFixed(2)} MB)\n`,
+    );
+    process.stdout.write(`Updated provenance manifest ${result.manifest}\n`);
+  }
+  return 0;
+}
+
+async function runTranscribe(parsed: ParsedArgs, signal: AbortSignal): Promise<number> {
+  const projectRoot = await assetRootFromFlag(parsed.flags);
+  const json = parsed.flags.has("json") === true;
+  const outValue = flagString(parsed.flags, "out");
+  const modelValue = flagString(parsed.flags, "model");
+  if (!outValue || !modelValue) {
+    usage('"transcribe" requires --out and --model.');
+  }
+
+  const result = await transcribeAudio({
+    projectRoot,
+    sourcePath: path.resolve(process.cwd(), parsed.positionals[0] as string),
+    outPath: path.resolve(process.cwd(), outValue),
+    modelPath: path.resolve(process.cwd(), modelValue),
+    words: parsed.flags.has("words") === true,
+    exports: parseSubtitleFormats(parsed.flags.get("export")),
+    ...(flagString(parsed.flags, "language") !== undefined
+      ? { language: flagString(parsed.flags, "language") as string }
+      : {}),
+    ...(flagString(parsed.flags, "executable") !== undefined
+      ? { executable: flagString(parsed.flags, "executable") as string }
+      : {}),
+    ...(flagString(parsed.flags, "manifest") !== undefined
+      ? { manifestPath: flagString(parsed.flags, "manifest") as string }
+      : {}),
+    force: parsed.flags.has("force") === true,
+    signal,
+  });
+
+  if (json) {
+    printJson({ ok: true, command: "transcribe", ...result });
+  } else {
+    process.stdout.write(
+      `Transcribed ${result.source.path} -> ${result.path} (${result.segments} segment${result.segments === 1 ? "" : "s"}, ${result.words} word${result.words === 1 ? "" : "s"}${result.language === undefined ? "" : `, ${result.language}`})\n`,
+    );
+    for (const exported of result.exports) {
+      process.stdout.write(`  ${exported.format}: ${exported.path}\n`);
+    }
+    process.stdout.write(`Updated provenance manifest ${result.manifest}\n`);
+  }
+  return 0;
+}
+
+async function runDoctorCommand(parsed: ParsedArgs, signal: AbortSignal): Promise<number> {
+  const projectRoot = await assetRootFromFlag(parsed.flags);
+  const manifestPath = resolveManifestPath(projectRoot, flagString(parsed.flags, "manifest"));
+  const json = parsed.flags.has("json") === true;
+  const result = await runDoctor({
+    projectRoot,
+    manifestPath,
+    ...(flagString(parsed.flags, "qwen-tts") !== undefined
+      ? { qwenTts: flagString(parsed.flags, "qwen-tts") as string }
+      : {}),
+    ...(flagString(parsed.flags, "whisper-cli") !== undefined
+      ? { whisperCli: flagString(parsed.flags, "whisper-cli") as string }
+      : {}),
+    ...(flagString(parsed.flags, "talker-model") !== undefined
+      ? { talkerModel: flagString(parsed.flags, "talker-model") as string }
+      : {}),
+    ...(flagString(parsed.flags, "codec-model") !== undefined
+      ? { codecModel: flagString(parsed.flags, "codec-model") as string }
+      : {}),
+    ...(flagString(parsed.flags, "model") !== undefined
+      ? { whisperModel: flagString(parsed.flags, "model") as string }
+      : {}),
+    signal,
+  });
+
+  if (json) {
+    printJson({ ok: true, command: "doctor", ...result });
+  } else {
+    for (const check of result.checks) {
+      const mark = check.status === "ok" ? "✓" : "✗";
+      const suffix = check.required ? "" : " (optional)";
+      process.stdout.write(`${mark} ${check.name}${suffix}: ${check.detail}\n`);
+    }
+    for (const integration of [result.integrations.tts, result.integrations.transcribe]) {
+      const mark =
+        integration.status === "ok" ? "✓" : integration.status === "missing" && !integration.requested ? "○" : "✗";
+      const detail = integration.detail ? ` — ${integration.detail}` : "";
+      const version = integration.version ? ` ${integration.version}` : "";
+      process.stdout.write(
+        `${mark} ${integration.name}: ${integration.status}${integration.executable ? ` (${integration.executable})` : ""}${version}${detail}\n`,
+      );
+    }
+    for (const model of result.models) {
+      const mark = model.status === "ok" ? "✓" : "✗";
+      const detail = model.detail ? ` — ${model.detail}` : "";
+      process.stdout.write(`${mark} model ${model.role}: ${model.path}${detail}\n`);
+    }
+    process.stdout.write(`\ndoctor: ${result.healthy ? "healthy" : "problems found"}\n`);
+  }
+  return result.healthy ? 0 : 1;
 }
 
 function reportFailure(error: unknown, command: string, jsonRequested: boolean, signal?: AbortSignal): number {
@@ -621,6 +955,12 @@ async function main(argv: string[]): Promise<number> {
         return await runStill(parsed, controller.signal);
       case "render":
         return await runRender(parsed, controller.signal);
+      case "tts":
+        return await runTts(parsed, controller.signal);
+      case "transcribe":
+        return await runTranscribe(parsed, controller.signal);
+      case "doctor":
+        return await runDoctorCommand(parsed, controller.signal);
       default:
         usage(`Unknown command "${parsed.command}".`);
     }

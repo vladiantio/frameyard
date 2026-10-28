@@ -115,12 +115,13 @@ export interface ProbeStream {
   width?: number;
   height?: number;
   channels?: number;
+  sample_rate?: string;
   duration?: string;
 }
 
 export interface ProbeResult {
   streams: ProbeStream[];
-  format?: { duration?: string };
+  format?: { duration?: string; format_name?: string };
 }
 
 export async function probeMedia(filePath: string, options: ProcessOptions = {}): Promise<ProbeResult> {
@@ -142,6 +143,37 @@ export interface MixClip {
   trimStart: number;
   trimDuration?: number;
   volume: number;
+}
+
+/** Normalizes any decodable source to the 16 kHz mono PCM WAV that whisper.cpp expects. */
+export async function normalizeAudioForTranscription(options: {
+  inputPath: string;
+  outputPath: string;
+  signal?: AbortSignal;
+}): Promise<void> {
+  await runCaptured(
+    "ffmpeg",
+    [
+      "-hide_banner",
+      "-loglevel",
+      "error",
+      "-nostdin",
+      "-y",
+      "-i",
+      options.inputPath,
+      "-map",
+      "0:a:0",
+      "-vn",
+      "-ac",
+      "1",
+      "-ar",
+      "16000",
+      "-c:a",
+      "pcm_s16le",
+      options.outputPath,
+    ],
+    { signal: options.signal },
+  );
 }
 
 export async function mixAudioTimeline(options: {

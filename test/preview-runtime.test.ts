@@ -27,6 +27,7 @@ export default defineComposition({
     { src: "assets/tone.wav", startFrame: 2, volume: 0.5 },
     { src: "assets/tone.wav", startFrame: 8, trimStart: 0.1, trimDuration: 0.2 },
   ],
+  transcripts: [{ src: "assets/voice.json", words: true }],
   mount({ container, props }) {
     container.innerHTML =
       '<style>' +
@@ -107,6 +108,16 @@ beforeAll(async () => {
 `,
   );
   await writeFile(path.join(root, "assets", "tone.wav"), toneWav());
+  await writeFile(
+    path.join(root, "assets", "voice.json"),
+    JSON.stringify({
+      schemaVersion: 1,
+      text: "Hello",
+      source: { path: "assets/tone.wav", sha256: "a".repeat(64), bytes: 1 },
+      segments: [{ startMs: 0, endMs: 1000, text: "Hello" }],
+      words: [{ startMs: 0, endMs: 1000, text: "Hello" }],
+    }),
+  );
 
   server = await startPreviewServer({ projectRoot: root, port: 0 });
   browser = await chromium.launch({ headless: true });
@@ -134,6 +145,7 @@ describe("browser preview runtime", () => {
           metadata: { width: number; height: number; fps: number; durationInFrames: number };
           props: Record<string, unknown>;
           audioClips: Array<Record<string, unknown>>;
+          transcriptClips: Array<Record<string, unknown>>;
         }>;
         seek(frame: number): void;
         dispose(): Promise<void>;
@@ -147,6 +159,7 @@ describe("browser preview runtime", () => {
       { src: "assets/tone.wav", startFrame: 2, trimStart: 0, volume: 0.5 },
       { src: "assets/tone.wav", startFrame: 8, trimStart: 0.1, trimDuration: 0.2, volume: 1 },
     ]);
+    expect(loaded.transcriptClips).toEqual([{ src: "assets/voice.json", words: true }]);
 
     const readFrame = (frame: number) =>
       page.evaluate(async (targetFrame) => {

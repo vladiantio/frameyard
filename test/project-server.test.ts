@@ -28,6 +28,8 @@ beforeAll(async () => {
   );
   await writeFile(path.join(root, "compositions", "alpha.js"), compositionSource);
   await writeFile(path.join(root, "assets", "hello.txt"), "0123456789");
+  await writeFile(path.join(root, "assets", "captions.srt"), "1\n00:00:00,000 --> 00:00:01,000\nHello\n");
+  await writeFile(path.join(root, "assets", "captions.vtt"), "WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nHello\n");
 });
 
 afterAll(async () => {
@@ -129,6 +131,16 @@ describe("preview server", () => {
     expect(await moduleResponse.text()).toContain("durationInFrames: 5");
     expect(assetResponse.status).toBe(200);
     expect(await assetResponse.text()).toBe("0123456789");
+  });
+
+  it("serves derived subtitle exports with subtitle media types", async () => {
+    const srt = await fetch(new URL("/assets/captions.srt", server.url));
+    const vtt = await fetch(new URL("/assets/captions.vtt", server.url));
+
+    expect(srt.status).toBe(200);
+    expect(srt.headers.get("content-type")).toContain("application/x-subrip");
+    expect(vtt.status).toBe(200);
+    expect(vtt.headers.get("content-type")).toContain("text/vtt");
   });
 
   it("serves the built framework runtime", async () => {

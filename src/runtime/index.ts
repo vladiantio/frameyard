@@ -2,9 +2,11 @@ import {
   normalizeComposition,
   resolveAudioClips,
   resolveProps,
+  resolveTranscriptClips,
   type Composition,
   type Props,
   type ResolvedAudioClip,
+  type ResolvedTranscriptClip,
 } from "../contracts.js";
 import { FrameyardError, isFrameyardError } from "../errors.js";
 import { frameToMilliseconds } from "./clock.js";
@@ -25,6 +27,7 @@ export interface CompositionRuntime<P extends Props = Props> {
   readonly composition: Composition<P>;
   readonly props: Readonly<P>;
   readonly audioClips: readonly ResolvedAudioClip[];
+  readonly transcriptClips: readonly ResolvedTranscriptClip[];
   readonly frame: number;
   seek(frame: number): void;
   dispose(): Promise<void>;
@@ -271,6 +274,7 @@ export async function createCompositionRuntime<P extends Props = Props>(
   const composition = normalizeComposition(options.composition) as Composition<P>;
   const props = resolveProps(composition, options.props);
   const audioClips = resolveAudioClips(composition, props);
+  const transcriptClips = resolveTranscriptClips(composition, props);
   const { container } = options;
   const diagnostics = options.diagnostics;
   let warnedTransition = false;
@@ -349,6 +353,7 @@ export async function createCompositionRuntime<P extends Props = Props>(
     composition,
     props,
     audioClips,
+    transcriptClips,
     get frame() {
       return frame;
     },

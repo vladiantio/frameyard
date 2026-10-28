@@ -5,6 +5,7 @@ import {
   normalizeComposition,
   resolveAudioClips,
   resolveProps,
+  resolveTranscriptClips,
 } from "../src/index.ts";
 
 const base = {
@@ -179,5 +180,40 @@ describe("audio timeline", () => {
     const composition = normalizeComposition({ ...base, audio: [clip] });
 
     expect(() => resolveAudioClips(composition, {})).toThrow(message);
+  });
+});
+
+describe("transcript requirements", () => {
+  it("normalizes declared transcript assets", () => {
+    const composition = normalizeComposition({
+      ...base,
+      transcripts: [{ src: "./assets/voice.json" }, { src: "assets/words.json", words: true }],
+    });
+
+    expect(resolveTranscriptClips(composition, {})).toEqual([
+      { src: "./assets/voice.json", words: false },
+      { src: "assets/words.json", words: true },
+    ]);
+  });
+
+  it("resolves transcripts from props", () => {
+    const composition = normalizeComposition({
+      ...base,
+      transcripts: ({ props }) => [{ src: props.transcript as string, words: props.words as boolean }],
+    });
+
+    expect(resolveTranscriptClips(composition, { transcript: "./voice.json", words: true })).toEqual([
+      { src: "./voice.json", words: true },
+    ]);
+  });
+
+  it.each([
+    [{ src: "https://example.com/a.json" }, /local/],
+    [{ src: "../voice.json" }, /local/],
+    [{ src: "./voice.json", words: "yes" }, /words/],
+  ])("rejects invalid transcript requirement %o", (clip, message) => {
+    const composition = normalizeComposition({ ...base, transcripts: [clip] });
+
+    expect(() => resolveTranscriptClips(composition, {})).toThrow(message);
   });
 });

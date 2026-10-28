@@ -36,6 +36,18 @@ export interface ResolvedAudioClip {
   volume: number;
 }
 
+export interface TranscriptClip {
+  /** Project-relative path to a canonical Frameyard transcript JSON document. */
+  src: string;
+  /** Require measured word timings for karaoke-style presentation. Defaults to false. */
+  words?: boolean;
+}
+
+export interface ResolvedTranscriptClip {
+  src: string;
+  words: boolean;
+}
+
 export interface MountContext<P extends Props = Props> {
   container: HTMLElement;
   props: Readonly<P>;
@@ -63,6 +75,8 @@ export interface CompositionDefinition<P extends Props = Props> extends Composit
   validateProps?(props: Readonly<P>): void | string[];
   /** Declarative audio timeline, or a function deriving one from props. */
   audio?: AudioClip[] | ((context: AudioContext<P>) => AudioClip[]);
+  /** Transcript assets required by the composition, or a function deriving them from props. */
+  transcripts?: TranscriptClip[] | ((context: AudioContext<P>) => TranscriptClip[]);
 }
 
 export interface Composition<P extends Props = Props> extends CompositionMetadata {
@@ -72,6 +86,7 @@ export interface Composition<P extends Props = Props> extends CompositionMetadat
   dispose?(): void | Promise<void>;
   validateProps?(props: Readonly<P>): void | string[];
   audio?: AudioClip[] | ((context: AudioContext<P>) => AudioClip[]);
+  transcripts?: TranscriptClip[] | ((context: AudioContext<P>) => TranscriptClip[]);
 }
 
 function invalid(message: string): never {
@@ -140,6 +155,13 @@ export function normalizeComposition(value: unknown): Composition {
   if (value.audio !== undefined && typeof value.audio !== "function" && !Array.isArray(value.audio)) {
     invalid("Composition audio must be an array or a function returning an array.");
   }
+  if (
+    value.transcripts !== undefined &&
+    typeof value.transcripts !== "function" &&
+    !Array.isArray(value.transcripts)
+  ) {
+    invalid("Composition transcripts must be an array or a function returning an array.");
+  }
 
   if (value.defaultProps !== undefined) {
     if (!isPlainObject(value.defaultProps)) {
@@ -174,6 +196,9 @@ export function normalizeComposition(value: unknown): Composition {
   }
   if (value.audio !== undefined) {
     composition.audio = value.audio as Composition["audio"];
+  }
+  if (value.transcripts !== undefined) {
+    composition.transcripts = value.transcripts as Composition["transcripts"];
   }
 
   return Object.freeze(composition);
@@ -373,6 +398,57 @@ export function resolveAudioClips<P extends Props>(
   }
 
   return Object.freeze(clips.map((clip, index) => normalizeAudioClip(clip, index)));
+}
+
+function normalizeTranscriptClip(value: unknown, index: number): ResolvedTranscriptClip {
+  if (!isPlainObject(value)) {
+    throw new FrameyardError("TRANSCRIPT_INVALID", `Transcript ${index} must be a plain object.`);
+  }
+
+  const { src, words } = value;
+  if (typeof src !== "string" || src.length === 0) {
+    throw new FrameyardError("TRANSCRIPT_INVALID", `Transcript ${index} src must be a non-empty string.`);
+  }
+  if (SCHEME.test(src) || src.startsWith("/") || src.startsWith("\\") || src.split(/[\\/]/).includes("..")) {
+    throw new FrameyardError(
+      "TRANSCRIPT_INVALID",
+      `Transcript ${index} src must be a local project-relative path, not "${src}".`,
+    );
+  }
+  if (words !== undefined && typeof words !== "boolean") {
+    throw new FrameyardError("TRANSCRIPT_INVALID", `Transcript ${index} words must be a boolean.`);
+  }
+
+  return Object.freeze({ src, words: words === true });
+}
+
+/** Resolves and validates a composition's declarative transcript requirements. */
+export function resolveTranscriptClips<P extends Props>(
+  composition: Composition<P>,
+  props: Readonly<P>,
+): readonly ResolvedTranscriptClip[] {
+  let clips: unknown = composition.transcripts;
+
+  if (typeof composition.transcripts === "function") {
+    try {
+      clips = composition.transcripts({ props });
+    } catch (error) {
+      throw new FrameyardError(
+        "TRANSCRIPT_INVALID",
+        `Could not resolve transcript requirements: ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error },
+      );
+    }
+  }
+
+  if (clips === undefined) {
+    return Object.freeze([]);
+  }
+  if (!Array.isArray(clips)) {
+    throw new FrameyardError("TRANSCRIPT_INVALID", "Composition transcripts must resolve to an array of assets.");
+  }
+
+  return Object.freeze(clips.map((clip, index) => normalizeTranscriptClip(clip, index)));
 }
 
 export { isPlainObject };

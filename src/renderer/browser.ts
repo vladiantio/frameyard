@@ -1,11 +1,12 @@
 import { chromium, type Browser, type BrowserContext, type CDPSession, type Page } from "playwright";
-import type { CompositionMetadata, Props, ResolvedAudioClip } from "../contracts.js";
+import type { CompositionMetadata, Props, ResolvedAudioClip, ResolvedTranscriptClip } from "../contracts.js";
 import { FrameyardError, isFrameyardError, type FrameyardErrorCode } from "../errors.js";
 
 export interface CompositionSession {
   readonly metadata: CompositionMetadata;
   readonly props: Props;
   readonly audioClips: ResolvedAudioClip[];
+  readonly transcriptClips: ResolvedTranscriptClip[];
   seek(frame: number): Promise<void>;
   capture(): Promise<Buffer>;
   assertHealthy(): void;
@@ -16,6 +17,7 @@ interface BrowserLoadResult {
   metadata: CompositionMetadata;
   props: Props;
   audioClips: ResolvedAudioClip[];
+  transcriptClips: ResolvedTranscriptClip[];
 }
 
 interface PreviewApi {
@@ -171,6 +173,7 @@ export async function openCompositionSession(options: {
       metadata: loaded.metadata,
       props: loaded.props,
       audioClips: loaded.audioClips,
+      transcriptClips: loaded.transcriptClips,
 
       async seek(frame: number): Promise<void> {
         assertHealthy();

@@ -9,6 +9,7 @@ import { startPreviewServer } from "../server/server.js";
 import { inspectTimelineAudio, type AudioInspection } from "./audio.js";
 import { openCompositionSession, type CompositionSession } from "./browser.js";
 import { assertFfmpegCapabilities, mixAudioTimeline, startVideoEncoder } from "./ffmpeg.js";
+import { inspectTranscriptClips, type TranscriptInspection } from "./transcripts.js";
 
 export interface ProgressEvent {
   frame: number;
@@ -33,6 +34,11 @@ export interface CheckResult {
     warnings: string[];
     details: AudioInspection["clips"];
   };
+  transcripts: {
+    clips: number;
+    warnings: string[];
+    details: TranscriptInspection["clips"];
+  };
   elapsedMs: number;
 }
 
@@ -56,6 +62,10 @@ export interface RenderResult {
   framesRendered: number;
   bytes: number;
   audio: {
+    clips: number;
+    warnings: string[];
+  };
+  transcripts: {
     clips: number;
     warnings: string[];
   };
@@ -181,6 +191,11 @@ export async function checkComposition(options: SessionOptions): Promise<CheckRe
       durationInFrames: total,
       signal: options.signal,
     });
+    const transcripts = await inspectTranscriptClips({
+      projectRoot: options.project.root,
+      clips: session.transcriptClips,
+      signal: options.signal,
+    });
 
     for (let frame = 0; frame < total; frame += 1) {
       throwIfAborted(options.signal);
@@ -193,6 +208,11 @@ export async function checkComposition(options: SessionOptions): Promise<CheckRe
       metadata: session.metadata,
       framesChecked: total,
       audio: { clips: audio.clips.length, warnings: audio.warnings, details: audio.clips },
+      transcripts: {
+        clips: transcripts.clips.length,
+        warnings: transcripts.warnings,
+        details: transcripts.clips,
+      },
       elapsedMs: performance.now() - startedAt,
     };
   });
@@ -224,6 +244,12 @@ export async function captureStill(
         `Frame ${options.frame} is outside the valid range 0..${total - 1}.`,
       );
     }
+
+    await inspectTranscriptClips({
+      projectRoot: options.project.root,
+      clips: session.transcriptClips,
+      signal: options.signal,
+    });
 
     throwIfAborted(options.signal);
     await session.seek(options.frame);
@@ -283,6 +309,11 @@ export async function renderComposition(
       clips: session.audioClips,
       fps,
       durationInFrames,
+      signal: options.signal,
+    });
+    const transcripts = await inspectTranscriptClips({
+      projectRoot: options.project.root,
+      clips: session.transcriptClips,
       signal: options.signal,
     });
 
@@ -354,6 +385,10 @@ export async function renderComposition(
         framesRendered: total,
         bytes: (await stat(options.outPath)).size,
         audio: { clips: audio.clips.length, warnings: audio.warnings },
+        transcripts: {
+          clips: transcripts.clips.length,
+          warnings: transcripts.warnings,
+        },
         elapsedMs: performance.now() - startedAt,
       };
     } catch (error) {

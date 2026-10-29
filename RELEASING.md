@@ -18,8 +18,8 @@ Frameyard stays on `0.x` until its public contracts stabilize. See
 
 - Never move or reuse a published version.
 - The annotated tag must be exactly `v` plus the `package.json` version.
-- Every release updates [`CHANGELOG.md`](./CHANGELOG.md). Move entries out of
-  `Unreleased` and record contract changes explicitly.
+- Every release updates [`CHANGELOG.md`](./CHANGELOG.md). Add a dated version
+  section and record contract changes explicitly.
 - The npm package, `src/version.ts`, and `skill/SKILL.md` must all report the
   same version. `pnpm set-version` and `pnpm set-version --check` enforce this.
 
@@ -80,8 +80,8 @@ OIDC token with `id-token: write` and publishes with provenance.
    pnpm set-version --check
    ```
 
-3. Update `CHANGELOG.md`: move entries from `Unreleased` into the new version
-   section with today's date, and add the comparison link.
+3. Update `CHANGELOG.md`: add the new version section with today's date, list
+   the changes, and add the comparison link.
 
 4. Run the release checks locally:
 

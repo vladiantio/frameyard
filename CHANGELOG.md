@@ -8,8 +8,6 @@ Frameyard uses `0.x` versions until the composition, configuration, CLI,
 JSON-result, transcript, and skill contracts stabilize. Before `1.0.0`, a
 contract change may ship in a minor release and is called out explicitly below.
 
-## [Unreleased]
-
 ## [0.1.0] - 2026-10-28
 
 ### Added
@@ -38,5 +36,4 @@ contract change may ship in a minor release and is called out explicitly below.
 - 30-second reference composition, deterministic render benchmark, public-seam
   test suite, design baseline, and architecture decision records.
 
-[Unreleased]: https://github.com/vladiantio/frameyard/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/vladiantio/frameyard/releases/tag/v0.1.0

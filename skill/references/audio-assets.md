@@ -26,7 +26,7 @@ audio: [
 Use Frameyard, not `qwen-tts` directly:
 
 ```sh
-frameyard tts \
+npx frameyard tts \
   --speaker vivian \
   --talker-model models/qwen-talker-1.7b-customvoice-Q8_0.gguf \
   --codec-model models/qwen-tokenizer-12hz-Q8_0.gguf \
@@ -50,7 +50,7 @@ frameyard tts \
 ## Local transcription
 
 ```sh
-frameyard transcribe assets/voice.wav \
+npx frameyard transcribe assets/voice.wav \
   --model models/ggml-base.en.bin \
   --out assets/voice.transcript.json \
   --words \
@@ -82,5 +82,5 @@ Commit the manifest with the project. It explains how generated inputs were prod
 - Do not regenerate or overwrite an existing generated asset without permission.
 - Do not silently switch models, speakers, language, or text.
 - Report the manifest path and the exact asset paths after success.
-- `frameyard doctor` verifies manifest integrity, including artifact, source, model, and derived-export hashes, and optional integration executables; it does not download or repair anything. Pass `--talker-model`, `--codec-model`, or `--model` to inspect model readability and identity before generation.
+- `npx frameyard doctor` verifies manifest integrity, including artifact, source, model, and derived-export hashes, and optional integration executables; it does not download or repair anything. Pass `--talker-model`, `--codec-model`, or `--model` to inspect model readability and identity before generation.
 - Once assets are frozen, checking and rendering do not need the model or inference executable.

@@ -130,7 +130,7 @@ async function checkChromium(): Promise<DoctorCheck> {
       name: "chromium",
       required: true,
       status: "error",
-      detail: `Playwright Chromium is unavailable. Run "pnpm exec playwright install chromium". ${error instanceof Error ? error.message : String(error)}`,
+      detail: `Playwright Chromium is unavailable. Run "npx playwright install chromium". ${error instanceof Error ? error.message : String(error)}`,
     };
   }
 }

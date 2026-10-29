@@ -12,7 +12,7 @@ Copy or symlink the whole `skill/` directory into the skill location your agent 
 
 The skill is host-neutral: it uses only the normal `frameyard` project format and CLI. There is no installer command and no agent-only runtime.
 
-When the skill is copied outside the npm package, `scripts/frameyard.mjs` uses the `frameyard` command on `PATH`. If that command is unavailable, set `FRAMEYARD_CLI` to the installed `dist/cli.js` path.
+Run the CLI with `npx frameyard`. It resolves the latest published version; pin it with `npx frameyard@<version>` or install the package locally when the CLI version must match the skill. When the skill is copied outside the npm package, `scripts/frameyard.mjs` falls back to the `frameyard` command on `PATH`; if that command is unavailable, set `FRAMEYARD_CLI` to an installed CLI path.
 
 ## Contents
 
@@ -26,4 +26,4 @@ When the skill is copied outside the npm package, `scripts/frameyard.mjs` uses t
 
 ## Version matching
 
-`SKILL.md` records `frameyard-api-version`. If it does not match the installed package's version, use the skill files shipped inside that package. Contract changes are documented in the repository README and design baseline.
+`SKILL.md` records `frameyard-api-version`. If `npx frameyard --version` reports a different version, pin the CLI (`npx frameyard@<version>`) to the skill version, or use the skill files shipped inside the installed package. Contract changes are documented in the repository README and design baseline.

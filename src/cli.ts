@@ -461,15 +461,15 @@ async function runInit(parsed: ParsedArgs): Promise<number> {
 Start the preview:
 
 \`\`\`sh
-frameyard dev
+npx frameyard dev
 \`\`\`
 
 Validate and render:
 
 \`\`\`sh
-frameyard doctor
-frameyard check hello
-frameyard render hello --props props/hello.json --out hello.mp4
+npx frameyard doctor
+npx frameyard check hello
+npx frameyard render hello --props props/hello.json --out hello.mp4
 \`\`\`
 `,
     "compositions/hello.js": `import { defineComposition } from "frameyard";
@@ -552,7 +552,12 @@ export default defineComposition({
     command: "init",
     project: target,
     files: Object.keys(files),
-    next: ["frameyard doctor", "frameyard dev", "frameyard check hello", "frameyard render hello --out hello.mp4"],
+    next: [
+      "npx frameyard doctor",
+      "npx frameyard dev",
+      "npx frameyard check hello",
+      "npx frameyard render hello --out hello.mp4",
+    ],
   };
 
   if (json) {
@@ -562,7 +567,7 @@ export default defineComposition({
     for (const file of Object.keys(files)) {
       process.stdout.write(`  ${file}\n`);
     }
-    process.stdout.write("Next: frameyard doctor && frameyard dev\n");
+    process.stdout.write("Next: npx frameyard doctor && npx frameyard dev\n");
   }
   return 0;
 }

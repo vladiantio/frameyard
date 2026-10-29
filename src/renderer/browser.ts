@@ -96,7 +96,7 @@ export async function openCompositionSession(options: {
   } catch (error) {
     throw new FrameyardError(
       "BROWSER_FAILED",
-      `Chromium could not start. Install the pinned browser with "pnpm exec playwright install chromium".\n${browserError(error)}`,
+      `Chromium could not start. Install the pinned browser with "npx playwright install chromium".\n${browserError(error)}`,
       { cause: error },
     );
   }

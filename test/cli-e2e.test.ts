@@ -336,8 +336,28 @@ describe("CLI end-to-end", () => {
     expect(init.code).toBe(0);
     const json = JSON.parse(init.stdout) as Record<string, unknown>;
     expect(json).toMatchObject({ ok: true, command: "init" });
+    expect(json.next).toEqual([
+      "npx frameyard doctor",
+      "npx frameyard dev",
+      "npx frameyard check hello",
+      "npx frameyard render hello --out hello.mp4",
+    ]);
     expect((await stat(path.join(target, "video.config.js"))).isFile()).toBe(true);
     expect((await stat(path.join(target, "compositions", "hello.js"))).isFile()).toBe(true);
+
+    const readme = await readFile(path.join(target, "README.md"), "utf8");
+    for (const command of [
+      "npx frameyard dev",
+      "npx frameyard doctor",
+      "npx frameyard check hello",
+      "npx frameyard render hello --props props/hello.json --out hello.mp4",
+    ]) {
+      expect(readme).toContain(command);
+    }
+
+    const human = await run(["init", path.join(root, "scaffold-human")], root);
+    expect(human.code).toBe(0);
+    expect(human.stdout).toContain("Next: npx frameyard doctor && npx frameyard dev");
 
     const check = await run(["check", "hello", "--project", target, "--json"], root);
     expect(check.code).toBe(0);

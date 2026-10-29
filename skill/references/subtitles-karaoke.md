@@ -79,8 +79,8 @@ Apply that value to text styling inside `update({ frame })`. Do not use timers, 
 ## Check and inspect
 
 ```sh
-frameyard check karaoke --json
-frameyard still karaoke --frame 120 --out karaoke-120.png --json
+npx frameyard check karaoke --json
+npx frameyard still karaoke --frame 120 --out karaoke-120.png --json
 ```
 
 Inspect several frames across a word boundary. A single still cannot prove that highlighting is synchronized.
@@ -88,7 +88,7 @@ Inspect several frames across a word boundary. A single still cannot prove that 
 ## Derived exports
 
 ```sh
-frameyard transcribe assets/voice.wav --model models/ggml-base.en.bin \
+npx frameyard transcribe assets/voice.wav --model models/ggml-base.en.bin \
   --out assets/voice.transcript.json --export srt,vtt --json
 ```
 

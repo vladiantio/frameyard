@@ -12,54 +12,34 @@ The v0.1 design is implemented: composition contracts, browser runtime and previ
 - Optional: `qwen-tts` from [`qwentts.cpp`](https://github.com/ServeurpersoCom/qwentts.cpp) for local speech synthesis
 - Optional: `whisper-cli` from [`whisper.cpp`](https://github.com/ggml-org/whisper.cpp) for local transcription
 
-```sh
-pnpm install
-pnpm exec playwright install chromium
-pnpm build
-```
+Install the Playwright Chromium build with `npx playwright install chromium`. Run the CLI with `npx frameyard`; no global install is required.
 
-Run `node dist/cli.js doctor` to inspect the environment without repairing or downloading anything. The wrappers target the CLI surfaces of qwentts.cpp commit `5916bf7c79dbb4e66fc059cdc507a79a23a28bb4` and whisper.cpp commit `284029c07012d2000941a08d38a31ffb71f4734e`.
-
-CI uses fake `qwen-tts` and `whisper-cli` executables. Real-model tests are opt-in:
-
-```sh
-FRAMEYARD_REAL_INTEGRATIONS=1 \
-FRAMEYARD_REAL_TALKER=/path/to/talker.gguf \
-FRAMEYARD_REAL_CODEC=/path/to/codec.gguf \
-FRAMEYARD_REAL_WHISPER_MODEL=/path/to/ggml-model.bin \
-FRAMEYARD_REAL_WHISPER_SOURCE=/path/to/source.wav \
-# optional, for GPUs with too little VRAM:
-FRAMEYARD_REAL_TTS_DEVICE=CPU \
-pnpm vitest run test/real-integrations.test.ts
-```
+The wrappers target the CLI surfaces of qwentts.cpp commit `5916bf7c79dbb4e66fc059cdc507a79a23a28bb4` and whisper.cpp commit `284029c07012d2000941a08d38a31ffb71f4734e`.
 
 ## Quick start
 
 Scaffold a project:
 
 ```sh
-node dist/cli.js init my-video
+npx frameyard init my-video
 cd my-video
-node ../dist/cli.js dev
+npx frameyard dev
 ```
 
 `dev` prints a local preview URL. Select a composition, edit its JSON props, scrub frames, and play the composition with its audio timeline.
 
+`npx frameyard` resolves the latest published version. Pin it with `npx frameyard@<version>`, or install the package locally, when a project needs a fixed CLI version.
+
 Validate and render:
 
 ```sh
-node ../dist/cli.js doctor
-node ../dist/cli.js check hello
-node ../dist/cli.js render hello --props props/hello.json --out hello.mp4
-node ../dist/cli.js still hello --frame 42 --out hello-frame.png
+npx frameyard doctor
+npx frameyard check hello
+npx frameyard render hello --props props/hello.json --out hello.mp4
+npx frameyard still hello --frame 42 --out hello-frame.png
 ```
 
-The 30-second reference composition lives in [`examples/demo`](./examples/demo):
-
-```sh
-node dist/cli.js check demo --project examples/demo
-node dist/cli.js render demo --project examples/demo --props examples/demo/props/demo.json --out demo.mp4
-```
+The 30-second reference composition lives in [`examples/demo`](./examples/demo). Its README has the commands for running the demo from a repository checkout.
 
 ## Project format
 
@@ -205,7 +185,7 @@ Errors use the same envelope:
 
 ```sh
 # One frozen 24 kHz mono WAV. Text comes from --text-file or stdin.
-node dist/cli.js tts \
+npx frameyard tts \
   --speaker vivian \
   --talker-model models/qwen-talker-1.7b-customvoice-Q8_0.gguf \
   --codec-model models/qwen-tokenizer-12hz-Q8_0.gguf \
@@ -214,7 +194,7 @@ node dist/cli.js tts \
   --out assets/voice.wav
 
 # Canonical transcript with measured word timings and derived SRT/VTT.
-node dist/cli.js transcribe assets/voice.wav \
+npx frameyard transcribe assets/voice.wav \
   --model models/ggml-base.en.bin \
   --out assets/voice.transcript.json \
   --words --export srt,vtt
@@ -235,9 +215,9 @@ Successful operations update `frameyard.assets.json` in the project root, or the
 ## Doctor
 
 ```sh
-node dist/cli.js doctor
-node dist/cli.js doctor --json
-node dist/cli.js doctor --talker-model models/talker.gguf --codec-model models/codec.gguf
+npx frameyard doctor
+npx frameyard doctor --json
+npx frameyard doctor --talker-model models/talker.gguf --codec-model models/codec.gguf
 ```
 
 `doctor` checks Node, FFmpeg and required encoders, FFprobe, Playwright Chromium, manifest integrity (artifact, source, model, and derived-export hashes), explicitly supplied model readability, and optional `qwen-tts`/`whisper-cli` capabilities. It does not repair, download, or modify anything. Missing optional integrations do not fail, but a found executable with incompatible capabilities does.
@@ -294,7 +274,31 @@ See the [v0.1 design baseline](./docs/v0.1-design.md) for the full product contr
 
 ## Development
 
-`pnpm install` installs the repository's git hooks. Pre-commit runs typecheck, test typecheck, and unit tests; pre-push runs the full suite. CI runs the same checks on Linux with Node 22 and 24, using fake model executables.
+From a repository checkout:
+
+```sh
+pnpm install
+pnpm exec playwright install chromium
+pnpm build
+node dist/cli.js doctor
+```
+
+These commands use the local build; `npx frameyard` runs the published package.
+
+`pnpm install` installs the repository's git hooks. Pre-commit runs typecheck, test typecheck, and unit tests; pre-push runs the full suite. CI runs the same checks on Linux with Node 22 and 24.
+
+CI uses fake `qwen-tts` and `whisper-cli` executables. Real-model tests are opt-in:
+
+```sh
+FRAMEYARD_REAL_INTEGRATIONS=1 \
+FRAMEYARD_REAL_TALKER=/path/to/talker.gguf \
+FRAMEYARD_REAL_CODEC=/path/to/codec.gguf \
+FRAMEYARD_REAL_WHISPER_MODEL=/path/to/ggml-model.bin \
+FRAMEYARD_REAL_WHISPER_SOURCE=/path/to/source.wav \
+# optional, for GPUs with too little VRAM:
+FRAMEYARD_REAL_TTS_DEVICE=CPU \
+pnpm vitest run test/real-integrations.test.ts
+```
 
 Releases are tag-driven. See [`RELEASING.md`](./RELEASING.md) for version policy, npm trusted publishing, and the release checklist, and [`CHANGELOG.md`](./CHANGELOG.md) for release notes.
 

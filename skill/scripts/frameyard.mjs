@@ -43,7 +43,7 @@ for (const signal of ["SIGINT", "SIGTERM"]) {
 child.once("error", (error) => {
   if (error.code === "ENOENT") {
     process.stderr.write(
-      "The frameyard CLI was not found. Add frameyard to PATH or set FRAMEYARD_CLI to dist/cli.js.\n",
+      "The frameyard CLI was not found. Run `npx frameyard`, add frameyard to PATH, or set FRAMEYARD_CLI to an installed CLI path.\n",
     );
   } else {
     process.stderr.write(`Could not start the Frameyard CLI: ${error.message}\n`);

@@ -6,7 +6,7 @@ Do not claim success after a nonzero exit. Fix the cause, rerun `check`, and onl
 
 | Code | Meaning | Action |
 | --- | --- | --- |
-| `USAGE` | Invalid flags or missing required arguments | Read `frameyard <command> --help`. |
+| `USAGE` | Invalid flags or missing required arguments | Read `npx frameyard <command> --help`. |
 | `CONFIG_NOT_FOUND` | No `video.config.js` found | Run from the project root or pass `--project`. |
 | `CONFIG_INVALID` | Invalid config or composition entry | Fix `video.config.js`; entries must be explicit, local, and exist. |
 | `COMPOSITION_NOT_FOUND` | ID is not listed | Add the entry to `video.config.js`. |
@@ -22,10 +22,10 @@ Do not claim success after a nonzero exit. Fix the cause, rerun `check`, and onl
 | `EXECUTABLE_NOT_FOUND` | `qwen-tts` or `whisper-cli` could not be resolved | Pass `--executable`, set the environment variable, or fix `PATH`. |
 | `TTS_FAILED` | Speech synthesis failed or produced an invalid WAV | Read stderr; verify the talker/codec models and CLI compatibility. |
 | `TRANSCRIBE_FAILED` | Normalization or `whisper-cli` failed | Verify FFmpeg, the source media, and the Whisper model. |
-| `TRANSCRIPT_INVALID` | Canonical transcript JSON is malformed | Regenerate it with `frameyard transcribe`; do not hand-edit timestamps. |
+| `TRANSCRIPT_INVALID` | Canonical transcript JSON is malformed | Regenerate it with `npx frameyard transcribe`; do not hand-edit timestamps. |
 | `TRANSCRIPT_WORDS_UNAVAILABLE` | Karaoke requested without measured word timings | Re-run transcription with `--words` or remove `words: true`. |
 | `MANIFEST_INVALID` | Provenance manifest is corrupt or unsupported | Restore or regenerate the manifest; do not invent hashes. |
-| `FFMPEG_FAILED` | FFmpeg is missing, lacks encoders, or failed | Run `frameyard doctor --json`; install FFmpeg with libx264 and AAC. |
+| `FFMPEG_FAILED` | FFmpeg is missing, lacks encoders, or failed | Run `npx frameyard doctor --json`; install FFmpeg with libx264 and AAC. |
 | `FFPROBE_FAILED` | FFprobe is missing or failed | Install FFmpeg/FFprobe together. |
 | `BROWSER_FAILED` | Chromium could not start | Install the Playwright Chromium build. |
 | `RENDER_FAILED` | Capture or encoding failed | Read stderr; rerun `check` and a representative `still`. |

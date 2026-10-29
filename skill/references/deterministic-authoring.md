@@ -96,8 +96,8 @@ Images inserted in `mount()` are awaited by the runtime. Static fonts should be 
 ## Validation and inspection
 
 ```sh
-frameyard check hello --json
-frameyard still hello --frame 42 --out hello-42.png --json
+npx frameyard check hello --json
+npx frameyard still hello --frame 42 --out hello-42.png --json
 ```
 
 `check` mounts the composition, evaluates every frame, and validates audio and declared transcripts without capturing or encoding. Do not replace it with a single still.

@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 const root = fileURLToPath(new URL("../", import.meta.url));
 const packageJsonPath = path.join(root, "package.json");
 const versionTsPath = path.join(root, "src/version.ts");
-const skillPath = path.join(root, "skill/SKILL.md");
+const skillPath = path.join(root, "skills/frameyard/SKILL.md");
 
 const SEMVER = /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
 const VERSION_TS = /^export const VERSION = "([^"]+)";$/m;
@@ -45,7 +45,7 @@ if (!versionTsMatch) {
   fail("src/version.ts does not contain a VERSION declaration");
 }
 if (!skillMatch) {
-  fail("skill/SKILL.md does not contain a frameyard-api-version line");
+  fail("skills/frameyard/SKILL.md does not contain a frameyard-api-version line");
 }
 
 if (process.argv[2] === "--check") {
@@ -56,7 +56,7 @@ if (process.argv[2] === "--check") {
     mismatches.push(`src/version.ts has ${versionTsMatch[1]}`);
   }
   if (skillMatch[1] !== expected) {
-    mismatches.push(`skill/SKILL.md has ${skillMatch[1]}`);
+    mismatches.push(`skills/frameyard/SKILL.md has ${skillMatch[1]}`);
   }
 
   if (mismatches.length > 0) {
@@ -67,7 +67,9 @@ if (process.argv[2] === "--check") {
     process.exit(1);
   }
 
-  console.log(`frameyard: version ${expected} is consistent across package.json, src/version.ts, and skill/SKILL.md`);
+  console.log(
+    `frameyard: version ${expected} is consistent across package.json, src/version.ts, and skills/frameyard/SKILL.md`,
+  );
   process.exit(0);
 }
 

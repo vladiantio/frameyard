@@ -362,7 +362,7 @@ describe("CLI end-to-end", () => {
     expect(agents).toContain("whisper-cli");
     expect(agents).toContain("frameyard.assets.json");
     expect(agents).toContain("npx frameyard@");
-    expect(agents).toContain("https://github.com/vladiantio/frameyard/tree/main/skill");
+    expect(agents).toContain("npx skills add vladiantio/frameyard");
     for (const command of [
       "npx frameyard doctor --json",
       "npx frameyard check hello --json",

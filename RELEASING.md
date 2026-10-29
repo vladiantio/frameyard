@@ -20,7 +20,7 @@ Frameyard stays on `0.x` until its public contracts stabilize. See
 - The annotated tag must be exactly `v` plus the `package.json` version.
 - Every release updates [`CHANGELOG.md`](./CHANGELOG.md). Add a dated version
   section and record contract changes explicitly.
-- The npm package, `src/version.ts`, and `skill/SKILL.md` must all report the
+- The npm package, `src/version.ts`, and `skills/frameyard/SKILL.md` must all report the
   same version. `pnpm set-version` and `pnpm set-version --check` enforce this.
 
 ## One-time setup
@@ -96,13 +96,13 @@ OIDC token with `id-token: write` and publishes with provenance.
    pnpm pack --dry-run
    ```
 
-   Confirm the tarball contains `dist/`, `docs/`, `examples/`, `skill/`,
+   Confirm the tarball contains `dist/`, `docs/`, `examples/`, `skills/`,
    `README.md`, `CHANGELOG.md`, `GLOSSARY.md`, and the license.
 
 5. Commit and tag:
 
    ```sh
-   git add package.json src/version.ts skill/SKILL.md CHANGELOG.md
+   git add package.json src/version.ts skills/frameyard/SKILL.md CHANGELOG.md
    git commit -m "chore(release): v0.2.0"
    git tag -a v0.2.0 -m "frameyard v0.2.0"
    git push origin main --follow-tags

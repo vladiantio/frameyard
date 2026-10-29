@@ -4,13 +4,19 @@ This directory is the optional, host-neutral Frameyard agent skill. Its API vers
 
 ## Install or reference
 
-Copy or symlink the whole `skill/` directory into the skill location your agent host uses. Examples:
+Install from the repository with the open agent-skills CLI:
+
+```sh
+npx skills add vladiantio/frameyard
+```
+
+The skill lives at `skills/frameyard` in the repository and npm package. Alternatively, copy or symlink the whole `skills/frameyard/` directory into the skill location your agent host uses. Examples:
 
 - Claude Code project skills: `.claude/skills/frameyard`
 - Agent hosts that read `.agents/skills`: `.agents/skills/frameyard`
 - Global installations: place it under your host's documented personal skills directory
 
-The skill is host-neutral: it uses only the normal `frameyard` project format and CLI. There is no installer command and no agent-only runtime.
+The skill is host-neutral: it uses only the normal `frameyard` project format and CLI. There is no agent-only runtime.
 
 Run the CLI with `npx frameyard`. It resolves the latest published version; pin it with `npx frameyard@<version>` or install the package locally when the CLI version must match the skill. When the skill is copied outside the npm package, `scripts/frameyard.mjs` falls back to the `frameyard` command on `PATH`; if that command is unavailable, set `FRAMEYARD_CLI` to an installed CLI path.
 

@@ -5,7 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
-const localCli = path.resolve(scriptDir, "../../dist/cli.js");
+const localCli = path.resolve(scriptDir, "../../../dist/cli.js");
 const configured = process.env.FRAMEYARD_CLI;
 
 let command;

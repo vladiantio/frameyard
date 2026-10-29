@@ -118,7 +118,7 @@ describe("documentation command examples", () => {
   it("uses the published CLI in user-facing examples", async () => {
     const offenders: string[] = [];
 
-    for (const file of ["README.md", ...(await markdownFiles("skill"))]) {
+    for (const file of ["README.md", ...(await markdownFiles("skills"))]) {
       const source = await readFile(file, "utf8");
       const markdown = file === "README.md" ? beforeDevelopment(source) : source;
       offenders.push(...fencedOffenders(markdown, file));
@@ -155,7 +155,7 @@ describe("documentation command examples", () => {
   });
 
   it("keeps a published example in the README and skill", async () => {
-    for (const file of ["README.md", "skill/SKILL.md"]) {
+    for (const file of ["README.md", "skills/frameyard/SKILL.md"]) {
       expect(await readFile(file, "utf8")).toContain("npx frameyard ");
     }
   });
@@ -165,6 +165,6 @@ describe("documentation command examples", () => {
     expect(files["README.md"]).toContain("AGENTS.md");
     const agents = files["AGENTS.md"] ?? "";
     expect(agents).toContain(`npx frameyard@${VERSION}`);
-    expect(agents).toContain("https://github.com/vladiantio/frameyard/tree/main/skill");
+    expect(agents).toContain("npx skills add vladiantio/frameyard");
   });
 });

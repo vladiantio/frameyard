@@ -56,7 +56,7 @@ npx frameyard render hello --props props/hello.json --out hello.mp4 --json
 - \`words: true\` requires measured word timings; never interpolate segment timings.
 - Commit \`frameyard.assets.json\` when present; do not edit hashes or manifest entries by hand.
 
-The official \`frameyard\` agent skill contains the full host-neutral contract; see the \`skill/\` directory in the \`frameyard\` npm package or https://github.com/vladiantio/frameyard/tree/main/skill. This file is the project-local summary.
+The official \`frameyard\` agent skill contains the full host-neutral contract. Install it with \`npx skills add vladiantio/frameyard\` or see the \`skills/frameyard/\` directory in the \`frameyard\` npm package. This file is the project-local summary.
 
 This project was scaffolded with frameyard ${VERSION}. \`npx frameyard\` resolves the latest published version; run \`npx frameyard@${VERSION}\` when you need the CLI version that scaffolded the project.
 `;

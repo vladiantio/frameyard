@@ -130,7 +130,7 @@ transcripts: [
 ],
 ```
 
-Transcript paths are project-relative. `words: true` requires actual measured word timings for karaoke-style presentation; Frameyard fails with `TRANSCRIPT_WORDS_UNAVAILABLE` rather than interpolating them. See [subtitles and karaoke](./skill/references/subtitles-karaoke.md) for the canonical JSON shape and the seek-safe frame conversion recipe.
+Transcript paths are project-relative. `words: true` requires actual measured word timings for karaoke-style presentation; Frameyard fails with `TRANSCRIPT_WORDS_UNAVAILABLE` rather than interpolating them. See [subtitles and karaoke](./skills/frameyard/references/subtitles-karaoke.md) for the canonical JSON shape and the seek-safe frame conversion recipe.
 
 ## Commands
 
@@ -179,7 +179,7 @@ Errors use the same envelope:
 }
 ```
 
-`doctor --json` reports findings rather than throwing for environment problems: `ok: true` means inspection completed, while `healthy` reports whether required checks, manifest integrity, explicitly supplied models, and integration compatibility passed. See the [JSON result reference](./skill/references/json-results.md) for all command shapes.
+`doctor --json` reports findings rather than throwing for environment problems: `ok: true` means inspection completed, while `healthy` reports whether required checks, manifest integrity, explicitly supplied models, and integration compatibility passed. See the [JSON result reference](./skills/frameyard/references/json-results.md) for all command shapes.
 
 ## Local asset production
 
@@ -226,7 +226,7 @@ npx frameyard doctor --talker-model models/talker.gguf --codec-model models/code
 
 ## Agent skill
 
-The optional host-neutral agent skill lives in [`skill/`](./skill). It uses the same project format and CLI as humans, documents deterministic authoring, audio assets, subtitle/karaoke recipes, JSON results, and failure recovery, and ships a thin CLI wrapper. The npm package includes the skill files matching its API version. See [`skill/README.md`](./skill/README.md) for host-specific installation or referencing.
+The optional host-neutral agent skill lives in [`skills/frameyard/`](./skills/frameyard). It uses the same project format and CLI as humans, documents deterministic authoring, audio assets, subtitle/karaoke recipes, JSON results, and failure recovery, and ships a thin CLI wrapper. The npm package includes the skill files matching its API version. Install it with `npx skills add vladiantio/frameyard`, or see [`skills/frameyard/README.md`](./skills/frameyard/README.md) for host-specific installation or referencing.
 
 ## Rendering and reproducibility
 
@@ -269,7 +269,7 @@ See the [v0.1 design baseline](./docs/v0.1-design.md) for the full product contr
 - `src/doctor.ts`: environment, integration, and manifest inspection
 - `src/scaffold.ts`: `init` scaffold templates, including the generated package manifest, project README, and agent guide
 - `src/cli.ts`: command-line entry point
-- `skill/`: official host-neutral agent skill
+- `skills/`: official host-neutral agent skill
 - `examples/demo/`: the 30-second reference composition
 - `bench/fixtures/`: controlled compositions for the render benchmark
 - `scripts/`: benchmark, versioning, and git-hook installation

@@ -257,7 +257,9 @@ Production rendering:
 5. Pipes PNG frames and the offline audio mix to FFmpeg.
 6. Encodes H.264 video with `yuv420p` and AAC audio into an MP4.
 
-Rendering is sequential in v0.1. For the same composition revision, props, assets, frame, and pinned runtime/browser environment, the visual state is identical. Encoded bytes may differ across operating systems, FFmpeg builds, and font environments.
+Rendering is sequential in v0.1. For the same composition revision, props, assets, frame, and pinned runtime/browser environment, the visual state is identical. Encoded bytes are not a reproducibility guarantee, even on the same machine; they depend on the FFmpeg build, encoder threading, and runtime environment.
+
+For a repeatable local measurement of seek, capture, encode, and full-render time, run `pnpm bench`. The demo and the controlled fixtures under `bench/fixtures/` are the reference workloads.
 
 ## Current limits
 
@@ -286,7 +288,13 @@ See the [v0.1 design baseline](./docs/v0.1-design.md) for the full product contr
 - `src/cli.ts`: command-line entry point
 - `skill/`: official host-neutral agent skill
 - `examples/demo/`: the 30-second reference composition
+- `bench/fixtures/`: controlled compositions for the render benchmark
+- `scripts/`: benchmark and git-hook installation
 - `docs/adr/`: architecture decision records
+
+## Development
+
+`pnpm install` installs the repository's git hooks. Pre-commit runs typecheck, test typecheck, and unit tests; pre-push runs the full suite. CI runs the same checks on Linux with Node 22 and 24, using fake model executables.
 
 ## License
 

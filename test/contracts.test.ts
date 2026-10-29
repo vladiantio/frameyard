@@ -7,6 +7,7 @@ import {
   resolveProps,
   resolveTranscriptClips,
 } from "../src/index.ts";
+import type { AudioContext, Props } from "../src/index.ts";
 
 const base = {
   width: 1920,
@@ -97,7 +98,7 @@ describe("props", () => {
   it("reports domain validation errors before frame production", () => {
     const composition = normalizeComposition({
       ...base,
-      validateProps(props) {
+      validateProps(props: Props) {
         return typeof props.title === "string" ? [] : ["title must be a string"];
       },
     });
@@ -147,7 +148,7 @@ describe("audio timeline", () => {
   it("resolves audio from props", () => {
     const composition = normalizeComposition({
       ...base,
-      audio: ({ props }) => [
+      audio: ({ props }: AudioContext) => [
         {
           src: props.voice as string,
           startFrame: 0,
@@ -199,7 +200,7 @@ describe("transcript requirements", () => {
   it("resolves transcripts from props", () => {
     const composition = normalizeComposition({
       ...base,
-      transcripts: ({ props }) => [{ src: props.transcript as string, words: props.words as boolean }],
+      transcripts: ({ props }: AudioContext) => [{ src: props.transcript as string, words: props.words as boolean }],
     });
 
     expect(resolveTranscriptClips(composition, { transcript: "./voice.json", words: true })).toEqual([

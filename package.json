@@ -31,8 +31,11 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck:test": "tsc -p tsconfig.test.json",
     "test": "pnpm build && vitest run",
-    "test:unit": "vitest run test/contracts.test.ts test/random.test.ts test/transcript.test.ts"
+    "test:unit": "vitest run test/contracts.test.ts test/random.test.ts test/transcript.test.ts",
+    "bench": "pnpm build && node scripts/bench-render.mjs",
+    "prepare": "node scripts/install-hooks.mjs"
   },
   "dependencies": {
     "playwright": "1.64.1"

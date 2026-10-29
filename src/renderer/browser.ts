@@ -29,6 +29,28 @@ interface CaptureScreenshotResult {
   data: string;
 }
 
+export const BROWSER_ARGS: string[] = [
+  "--force-color-profile=srgb",
+  "--disable-lcd-text",
+  "--hide-scrollbars",
+  "--mute-audio",
+  "--disable-background-timer-throttling",
+  "--disable-backgrounding-occluded-windows",
+  "--disable-renderer-backgrounding",
+  "--disable-dev-shm-usage",
+];
+
+type BrowserContextOptions = Parameters<Browser["newContext"]>[0];
+
+export const BROWSER_CONTEXT_OPTIONS: BrowserContextOptions = {
+  viewport: { width: 1280, height: 720 },
+  deviceScaleFactor: 1,
+  colorScheme: "light",
+  reducedMotion: "no-preference",
+  locale: "en-US",
+  timezoneId: "UTC",
+};
+
 function browserError(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
   return message
@@ -69,16 +91,7 @@ export async function openCompositionSession(options: {
   try {
     browser = await chromium.launch({
       headless: true,
-      args: [
-        "--force-color-profile=srgb",
-        "--disable-lcd-text",
-        "--hide-scrollbars",
-        "--mute-audio",
-        "--disable-background-timer-throttling",
-        "--disable-backgrounding-occluded-windows",
-        "--disable-renderer-backgrounding",
-        "--disable-dev-shm-usage",
-      ],
+      args: BROWSER_ARGS,
     });
   } catch (error) {
     throw new FrameyardError(
@@ -93,14 +106,7 @@ export async function openCompositionSession(options: {
   let cdp: CDPSession | undefined;
 
   try {
-    context = await browser.newContext({
-      viewport: { width: 1280, height: 720 },
-      deviceScaleFactor: 1,
-      colorScheme: "light",
-      reducedMotion: "no-preference",
-      locale: "en-US",
-      timezoneId: "UTC",
-    });
+    context = await browser.newContext(BROWSER_CONTEXT_OPTIONS);
     page = await context.newPage();
     page.setDefaultTimeout(60_000);
 

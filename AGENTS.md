@@ -5,7 +5,7 @@ Frameyard is a local-first framework for deterministic, parameterized videos aut
 ## Read first
 
 - **Before changing public composition, props, audio, CLI, or JSON contracts**: read `docs/v0.1-design.md`, then `GLOSSARY.md` for domain terms.
-- **Before changing determinism or rendering architecture**: read `docs/adr/0002-make-frame-and-props-the-only-animation-state.md` and `docs/adr/0003-render-browser-frames-offline.md`.
+- **Before changing determinism or rendering architecture**: read `docs/adr/0002-make-frame-and-props-the-only-animation-state.md`, `docs/adr/0003-render-browser-frames-offline.md`, and the reproducibility guarantee in `docs/v0.1-design.md` §3.
 - **Before adding authoring APIs or asset-production features**: read `docs/adr/0001-keep-composition-authoring-web-native.md` and `docs/adr/0004-produce-local-ai-assets-outside-rendering.md`.
 - **For usage and project layout**: read `README.md`.
 
@@ -18,9 +18,13 @@ pnpm install
 pnpm exec playwright install chromium   # once per environment
 pnpm build
 pnpm typecheck
+pnpm typecheck:test                    # typechecks test/*.ts
 pnpm test                              # builds first, then runs the full suite
 pnpm vitest run test/contracts.test.ts # one test file
+pnpm bench                             # seek/capture/encode/full-render timings
 ```
+
+`pnpm install` installs the local git hooks: pre-commit runs typecheck, test typecheck, and unit tests; pre-push runs the full suite.
 
 Reference project:
 
@@ -32,7 +36,7 @@ node dist/cli.js render demo --project examples/demo --props examples/demo/props
 node dist/cli.js doctor
 ```
 
-A full 30-second demo render is sequential and takes roughly 50 seconds on the reference machine. The test fixtures render tiny compositions. TTS and transcription tests use fake `qwen-tts` and `whisper-cli` executables; real-model tests are opt-in.
+A full 30-second demo render is sequential; run `pnpm bench` for current timings on the reference machine. The test fixtures render tiny compositions. TTS and transcription tests use fake `qwen-tts` and `whisper-cli` executables; real-model tests are opt-in.
 
 ## Architecture
 
@@ -52,6 +56,8 @@ A full 30-second demo render is sequential and takes roughly 50 seconds on the r
 | `examples/demo/` | 30-second reference composition |
 | `test/` | Public-seam tests |
 
+Per-frame path: `src/renderer/index.ts` loop (`seek` → `capture` → `writeFrame`) → `browser.ts` `seek()`/`capture()` (CDP `Page.captureScreenshot`) → `ffmpeg.ts` `writeFrame()` (stdin pipe) → `finish()`.
+
 `src/contracts.ts`, `src/transcript.ts`, and `src/runtime/` ship to the browser. Keep them free of `node:` imports. Node-only code belongs in `src/project.ts`, `src/server/`, `src/renderer/`, `src/assets/`, `src/doctor.ts`, or `src/cli.ts`.
 
 ## Non-negotiable invariants
@@ -64,6 +70,7 @@ A full 30-second demo render is sequential and takes roughly 50 seconds on the r
 - Animation drivers are `update()` plus runtime-seeked CSS/Web Animations. `Math.random()`, `Date.now()`, `performance.now()`, timers, and independent `requestAnimationFrame` loops are not animation inputs. Use `random("stable:key")` from `frameyard/runtime`.
 - The runtime seeks CSS animations and the Web Animations API inside the composition container. CSS transitions are diagnosed as non-deterministic in preview.
 - The preview and production renderer must use the same composition bundle, runtime, and server. Production differs only in driving the clock explicitly and capturing frames.
+- Verify determinism at the capture boundary: compare captured PNG pixels or `still` output, not MP4 hashes. Encoded bytes are not a reproducibility guarantee; see `docs/v0.1-design.md` §3.
 - Remote data, fonts, and images belong in the loading phase before the first frame. After loading, `browser.ts` blocks network requests; a fetch from `update()` is a bug.
 - Do not add a load hook or props-dependent metadata without revising the design baseline first. `width`, `height`, `fps`, and `durationInFrames` are fixed.
 
@@ -114,6 +121,7 @@ The current implementation still excludes built-in subtitle rendering, automatic
 - **CLI flags, result schemas, exit behavior** → `src/cli.ts`; extend `test/cli-e2e.test.ts`.
 - **Agent skill contract** → `skill/`, `package.json`; extend `test/skill.test.ts`.
 - **Reference behavior** → `examples/demo/`; keep its README commands working.
+- **Performance benchmarks** → `scripts/bench-render.mjs`, `bench/fixtures/`; keep `pnpm bench` representative of the production capture path.
 
 ## Testing
 
@@ -135,6 +143,7 @@ Prefer one failing public-behavior test, then the minimal implementation. Use re
 ## Before finishing
 
 - `pnpm typecheck` passes.
+- `pnpm typecheck:test` passes.
 - `pnpm test` passes after a build.
 - If capture, encoding, or audio changed, render a small fixture and verify the artifact with FFprobe; render `examples/demo` when its composition changed.
 - If public behavior changed, update `README.md` and, for contract changes, the design baseline or an ADR.

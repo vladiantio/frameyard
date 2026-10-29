@@ -97,7 +97,7 @@ A single frame captured as a PNG through the production rendering path for debug
 _Avoid_: Frame export, image sequence
 
 **Reproducibility**:
-The guarantee that, for the same composition revision, props, assets, and frame under a pinned runtime/browser environment, the visual state is identical. It does not imply identical encoded bytes across different environments.
+The guarantee that, for the same composition revision, props, assets, and frame under a pinned runtime/browser environment, the visual state is identical. It does not imply identical encoded bytes, even on the same machine; encoded output depends on the encoder and its runtime.
 _Avoid_: Bit-for-bit encoding equality
 
 ### Agent operation

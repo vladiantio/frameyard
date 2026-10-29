@@ -230,15 +230,10 @@ async function openSession(serverUrl, entry, props) {
       waitUntil: "domcontentloaded",
       timeout: 60_000,
     });
-    await page.waitForFunction(
-      () => Boolean(window.__frameyardPreview),
-      undefined,
-      { timeout: 30_000 },
-    );
+    await page.waitForFunction(() => Boolean(window.__frameyardPreview), undefined, { timeout: 30_000 });
 
     const loaded = await page.evaluate(
-      async ({ entry: targetEntry, props: targetProps }) =>
-        window.__frameyardPreview.load(targetEntry, targetProps),
+      async ({ entry: targetEntry, props: targetProps }) => window.__frameyardPreview.load(targetEntry, targetProps),
       { entry, props },
     );
 
@@ -400,16 +395,7 @@ function runCli(args) {
 }
 
 async function measureFullRender(project, compositionId, propsPath, outputPath) {
-  const args = [
-    "render",
-    compositionId,
-    "--project",
-    project.root,
-    "--out",
-    outputPath,
-    "--overwrite",
-    "--json",
-  ];
+  const args = ["render", compositionId, "--project", project.root, "--out", outputPath, "--overwrite", "--json"];
   if (propsPath) {
     args.push("--props", propsPath);
   }
@@ -449,10 +435,7 @@ async function compareDecodedPixels(left, right) {
   for (const index of indexes) {
     const entry = shared[index];
     const other = rightByFrame.get(entry.frame);
-    const [leftHash, rightHash] = await Promise.all([
-      decodePngMd5(entry.buffer),
-      decodePngMd5(other.buffer),
-    ]);
+    const [leftHash, rightHash] = await Promise.all([decodePngMd5(entry.buffer), decodePngMd5(other.buffer)]);
     frames.push({ frame: entry.frame, identical: leftHash === rightHash });
   }
 
@@ -518,9 +501,7 @@ async function benchComposition({ project, compositionId, options, tempDir }) {
       };
     }
 
-    encodeBuffers = buffersByMode["png-fast"]?.length
-      ? buffersByMode["png-fast"]
-      : buffersByMode.png ?? [];
+    encodeBuffers = buffersByMode["png-fast"]?.length ? buffersByMode["png-fast"] : (buffersByMode.png ?? []);
 
     result = {
       project: path.relative(repoRoot, project.root) || ".",
@@ -543,11 +524,7 @@ async function benchComposition({ project, compositionId, options, tempDir }) {
   result.pixelCheck = await compareDecodedPixels(pixelSamples.png, pixelSamples["png-fast"]);
 
   if (options.encode && encodeBuffers.length > 0) {
-    result.encode = await measureEncode(
-      encodeBuffers,
-      fps,
-      path.join(tempDir, `${compositionId}-encode.mp4`),
-    );
+    result.encode = await measureEncode(encodeBuffers, fps, path.join(tempDir, `${compositionId}-encode.mp4`));
   }
 
   if (options.full) {

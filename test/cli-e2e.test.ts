@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { VERSION } from "../src/version.ts";
 
 const exec = promisify(execFile);
 const cli = path.resolve("dist/cli.js");
@@ -161,10 +162,7 @@ describe("CLI end-to-end", () => {
   });
 
   it("fails check with invalid props and a structured error", async () => {
-    const result = await run(
-      ["check", "demo", "--props", "bad-props.json", "--project", root, "--json"],
-      root,
-    );
+    const result = await run(["check", "demo", "--props", "bad-props.json", "--project", root, "--json"], root);
 
     expect(result.code).not.toBe(0);
     const json = JSON.parse(result.stdout) as Record<string, unknown>;
@@ -270,10 +268,7 @@ describe("CLI end-to-end", () => {
   it("refuses to overwrite an existing render unless asked", async () => {
     const outputPath = path.join(root, "video.mp4");
     const before = await readFile(outputPath);
-    const result = await run(
-      ["render", "demo", "--out", "video.mp4", "--project", root, "--json"],
-      root,
-    );
+    const result = await run(["render", "demo", "--out", "video.mp4", "--project", root, "--json"], root);
 
     expect(result.code).not.toBe(0);
     const json = JSON.parse(result.stdout) as Record<string, unknown>;
@@ -337,6 +332,7 @@ describe("CLI end-to-end", () => {
     const json = JSON.parse(init.stdout) as Record<string, unknown>;
     expect(json).toMatchObject({ ok: true, command: "init" });
     expect(json.files).toContain("AGENTS.md");
+    expect(json.files).toContain("package.json");
     expect(json.next).toEqual([
       "npx frameyard doctor",
       "npx frameyard dev",
@@ -345,6 +341,19 @@ describe("CLI end-to-end", () => {
     ]);
     expect((await stat(path.join(target, "video.config.js"))).isFile()).toBe(true);
     expect((await stat(path.join(target, "compositions", "hello.js"))).isFile()).toBe(true);
+
+    const manifest = JSON.parse(await readFile(path.join(target, "package.json"), "utf8"));
+    expect(manifest).toEqual({
+      name: "scaffold",
+      private: true,
+      type: "module",
+      scripts: {
+        dev: `npx --yes frameyard@${VERSION} dev`,
+        check: `npx --yes frameyard@${VERSION} check`,
+        render: `npx --yes frameyard@${VERSION} render`,
+        still: `npx --yes frameyard@${VERSION} still`,
+      },
+    });
 
     const agents = await readFile(path.join(target, "AGENTS.md"), "utf8");
     expect(agents).toContain("update({ frame, props })");
@@ -381,5 +390,16 @@ describe("CLI end-to-end", () => {
     const check = await run(["check", "hello", "--project", target, "--json"], root);
     expect(check.code).toBe(0);
     expect(JSON.parse(check.stdout)).toMatchObject({ ok: true, command: "check", framesChecked: 150 });
+  });
+
+  it("scaffolds into the current directory using its name", async () => {
+    const target = path.join(root, "scaffold-dot");
+    await mkdir(target);
+
+    const init = await run(["init", ".", "--json"], target);
+    expect(init.code).toBe(0);
+
+    const manifest = JSON.parse(await readFile(path.join(target, "package.json"), "utf8"));
+    expect(manifest.name).toBe("scaffold-dot");
   });
 });

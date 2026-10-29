@@ -5,12 +5,7 @@ import { probeMedia } from "../renderer/ffmpeg.js";
 import { VERSION } from "../version.js";
 import { assertReadableFile, requireExtension } from "./files.js";
 import { resolveExecutable } from "./executable.js";
-import {
-  QWEN_TTS_COMMAND,
-  QWEN_TTS_ENV,
-  QWEN_TTS_INSTALL_HINT,
-  QWEN_TTS_REFERENCE_REVISION,
-} from "./integrations.js";
+import { QWEN_TTS_COMMAND, QWEN_TTS_ENV, QWEN_TTS_INSTALL_HINT, QWEN_TTS_REFERENCE_REVISION } from "./integrations.js";
 import { runChild } from "./process.js";
 import {
   assertOutputAvailable,
@@ -147,9 +142,7 @@ export async function synthesizeSpeech(options: SynthesizeSpeechOptions): Promis
       throw new FrameyardError("TTS_FAILED", `qwen-tts produced an empty WAV file: ${outPath}`);
     }
 
-    const probe = await probeMedia(tempOut, {
-      ...(options.signal !== undefined ? { signal: options.signal } : {}),
-    });
+    const probe = await probeMedia(tempOut, options.signal !== undefined ? { signal: options.signal } : {});
     const audio = probe.streams.find((stream) => stream.codec_type === "audio");
     const sampleRate = Number(audio?.sample_rate);
     const channels = Number(audio?.channels);

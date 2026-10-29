@@ -5,7 +5,7 @@ import { FrameyardError, isFrameyardError } from "./errors.js";
 import { loadProject, resolveProjectRoot, type Project } from "./project.js";
 import { checkComposition, captureStill, renderComposition, type ProgressEvent } from "./renderer/index.js";
 import { startPreviewServer } from "./server/server.js";
-import { SCAFFOLD_FILES, SCAFFOLD_NEXT } from "./scaffold.js";
+import { scaffoldFiles, SCAFFOLD_NEXT } from "./scaffold.js";
 import { VERSION } from "./version.js";
 import { transcribeAudio, type SubtitleFormat } from "./assets/transcribe.js";
 import { synthesizeSpeech } from "./assets/tts.js";
@@ -34,7 +34,6 @@ const VALUE_FLAGS = new Set([
   "whisper-cli",
 ]);
 const BOOLEAN_FLAGS = new Set(["json", "overwrite", "force", "words", "help", "version"]);
-
 
 interface ParsedArgs {
   command: string;
@@ -144,17 +143,7 @@ function allowedFlags(command: string): Set<string> {
         "force",
       ]);
     case "transcribe":
-      return new Set([
-        ...common,
-        "out",
-        "model",
-        "words",
-        "export",
-        "language",
-        "executable",
-        "manifest",
-        "force",
-      ]);
+      return new Set([...common, "out", "model", "words", "export", "language", "executable", "manifest", "force"]);
     case "doctor":
       return new Set([...common, "manifest", "qwen-tts", "whisper-cli", "talker-model", "codec-model", "model"]);
     case "help":
@@ -284,7 +273,9 @@ function printCommandHelp(command: string): void {
       process.stdout.write("Usage: frameyard init [directory]\nScaffold a minimal Frameyard project.\n");
       return;
     case "dev":
-      process.stdout.write("Usage: frameyard dev [--port <port>] [--project <dir>]\nStart the browser preview server.\n");
+      process.stdout.write(
+        "Usage: frameyard dev [--port <port>] [--project <dir>]\nStart the browser preview server.\n",
+      );
       return;
     case "check":
       process.stdout.write(
@@ -454,7 +445,7 @@ async function runInit(parsed: ParsedArgs): Promise<number> {
   const target = path.resolve(process.cwd(), parsed.positionals[0] ?? ".");
   const json = parsed.flags.has("json") === true;
 
-  const files = SCAFFOLD_FILES;
+  const files = scaffoldFiles(path.basename(target) || "frameyard-project");
 
   for (const relativePath of Object.keys(files)) {
     try {
@@ -677,9 +668,7 @@ async function runTts(parsed: ParsedArgs, signal: AbortSignal): Promise<number> 
     talkerModelPath: path.resolve(process.cwd(), talkerModel),
     codecModelPath: path.resolve(process.cwd(), codecModel),
     outPath: path.resolve(process.cwd(), outValue),
-    ...(flagString(parsed.flags, "style") !== undefined
-      ? { style: flagString(parsed.flags, "style") as string }
-      : {}),
+    ...(flagString(parsed.flags, "style") !== undefined ? { style: flagString(parsed.flags, "style") as string } : {}),
     ...(flagString(parsed.flags, "language") !== undefined
       ? { language: flagString(parsed.flags, "language") as string }
       : {}),
@@ -699,9 +688,7 @@ async function runTts(parsed: ParsedArgs, signal: AbortSignal): Promise<number> 
   if (json) {
     printJson({ ok: true, command: "tts", ...result });
   } else {
-    process.stdout.write(
-      `Wrote 24 kHz mono WAV to ${result.path} (${(result.bytes / (1024 * 1024)).toFixed(2)} MB)\n`,
-    );
+    process.stdout.write(`Wrote 24 kHz mono WAV to ${result.path} (${(result.bytes / (1024 * 1024)).toFixed(2)} MB)\n`);
     process.stdout.write(`Updated provenance manifest ${result.manifest}\n`);
   }
   return 0;
@@ -805,11 +792,7 @@ async function runDoctorCommand(parsed: ParsedArgs, signal: AbortSignal): Promis
 function reportFailure(error: unknown, command: string, jsonRequested: boolean, signal?: AbortSignal): number {
   const aborted = signal?.aborted === true;
   const code = aborted ? "CANCELLED" : isFrameyardError(error) ? error.code : "INTERNAL";
-  const message = aborted
-    ? "Operation cancelled."
-    : error instanceof Error
-      ? error.message
-      : String(error);
+  const message = aborted ? "Operation cancelled." : error instanceof Error ? error.message : String(error);
 
   if (jsonRequested) {
     printJson({ ok: false, command: command || null, error: { code, message } });

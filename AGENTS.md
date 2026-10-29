@@ -19,12 +19,15 @@ pnpm exec playwright install chromium   # once per environment
 pnpm build
 pnpm typecheck
 pnpm typecheck:test                    # typechecks test/*.ts
+pnpm lint                              # oxlint
+pnpm format:check                      # oxfmt --check
+pnpm format                            # rewrite formatting with oxfmt
 pnpm test                              # builds first, then runs the full suite
 pnpm vitest run test/contracts.test.ts # one test file
 pnpm bench                             # seek/capture/encode/full-render timings
 ```
 
-`pnpm install` installs the local git hooks: pre-commit runs typecheck, test typecheck, and unit tests; pre-push runs the full suite.
+`pnpm install` installs the local git hooks: pre-commit runs lint, formatting checks, typecheck, test typecheck, and unit tests; pre-push runs the full suite. Lint and formatting use `oxlint` and `oxfmt`; configuration lives in `.oxlintrc.json` and `.oxfmtrc.json`.
 
 Releases are tag-driven. Read `RELEASING.md` before publishing. `pnpm set-version <version>` updates the package, runtime, and skill versions together; `pnpm set-version --check` verifies they agree.
 
@@ -125,10 +128,11 @@ The current implementation still excludes built-in subtitle rendering, automatic
 - **Doctor checks** → `src/doctor.ts`, `src/cli.ts`; extend `test/assets-e2e.test.ts`.
 - **CLI flags, result schemas, exit behavior** → `src/cli.ts`; extend `test/cli-e2e.test.ts`.
 - **Documentation command examples** → `README.md`, `skill/`, and `src/scaffold.ts`; extend `test/docs.test.ts` and the `init` case in `test/cli-e2e.test.ts`.
-- **Init scaffold content** → `src/scaffold.ts` (project config, props, composition, README, agent guide, and `next`); keep the agent guide aligned with `skill/`; extend `test/docs.test.ts` and the `init` case.
+- **Init scaffold content** → `src/scaffold.ts` (package manifest and pinned scripts, project config, props, composition, README, agent guide, and `next`); keep the agent guide aligned with `skill/`; extend `test/scaffold.test.ts`, `test/docs.test.ts`, and the `init` case. When the scaffold file set changes, also update the `README.md` command table, `docs/v0.1-design.md` §6, and the scaffold README/agent guide.
 - **Agent skill contract** → `skill/`, `package.json`; extend `test/skill.test.ts`.
 - **Reference behavior** → `examples/demo/`; keep its README commands working.
 - **Performance benchmarks** → `scripts/bench-render.mjs`, `bench/fixtures/`; keep `pnpm bench` representative of the production capture path.
+- **Lint and formatting** → `.oxlintrc.json`, `.oxfmtrc.json`, `package.json`, `.githooks/pre-commit`, and the CI/release workflows; run `pnpm lint` and `pnpm format:check`.
 
 ## Testing
 
@@ -145,11 +149,14 @@ Test at public seams, not private helpers:
 - `test/real-integrations.test.ts`: opt-in real-model checks enabled by `FRAMEYARD_REAL_INTEGRATIONS=1` and explicit model paths.
 - `test/skill.test.ts`: skill contents, API version, package inclusion, thin wrapper.
 - `test/docs.test.ts`: user-facing command examples use `npx frameyard` in `README.md`, `skill/`, and the `init` scaffold; the scaffold's markdown is checked for fenced and inline commands, and README's `Development` section may use the local build.
+- `test/scaffold.test.ts`: scaffold file generation, package manifest, and project-name normalization.
 
 Prefer one failing public-behavior test, then the minimal implementation. Use real Chromium and FFmpeg for production-path behavior; mock only external model executables. Run `pnpm test` before finishing. Browser/CLI tests are intentionally sequential (`fileParallelism: false`).
 
 ## Before finishing
 
+- `pnpm lint` passes.
+- `pnpm format:check` passes.
 - `pnpm typecheck` passes.
 - `pnpm typecheck:test` passes.
 - `pnpm test` passes after a build.

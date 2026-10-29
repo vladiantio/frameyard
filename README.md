@@ -28,7 +28,7 @@ npx frameyard dev
 
 `dev` prints a local preview URL. Select a composition, edit its JSON props, scrub frames, and play the composition with its audio timeline.
 
-The scaffold includes an `AGENTS.md` guide for coding agents working in the project, covering the determinism rules and the `check`, `still`, and `render` workflow.
+The scaffold includes an `AGENTS.md` guide for coding agents working in the project, covering the determinism rules and the `check`, `still`, and `render` workflow. It also includes a `package.json` with `dev`, `check`, `render`, and `still` scripts pinned to the scaffolding CLI version, so `pnpm dev` or `npm run dev` works without a global install.
 
 `npx frameyard` resolves the latest published version. Pin it with `npx frameyard@<version>`, or install the package locally, when a project needs a fixed CLI version.
 
@@ -136,7 +136,7 @@ Transcript paths are project-relative. `words: true` requires actual measured wo
 
 | Command | Purpose |
 | --- | --- |
-| `frameyard init [directory]` | Scaffold a minimal project, including an `AGENTS.md` agent guide |
+| `frameyard init [directory]` | Scaffold a minimal project, including an `AGENTS.md` agent guide and pinned `package.json` scripts |
 | `frameyard dev [--port <port>]` | Start the preview server |
 | `frameyard check <id> [--props <file>]` | Validate props, assets, audio, transcripts, and every frame without capture |
 | `frameyard still <id> --frame <n>` | Capture one PNG through the production path |
@@ -267,7 +267,7 @@ See the [v0.1 design baseline](./docs/v0.1-design.md) for the full product contr
 - `src/renderer/`: Chromium capture, audio mixing, transcript inspection, FFmpeg encoding
 - `src/assets/`: local TTS/transcription wrappers, executable resolution, atomic publishing, provenance
 - `src/doctor.ts`: environment, integration, and manifest inspection
-- `src/scaffold.ts`: `init` scaffold templates, including the generated project README and agent guide
+- `src/scaffold.ts`: `init` scaffold templates, including the generated package manifest, project README, and agent guide
 - `src/cli.ts`: command-line entry point
 - `skill/`: official host-neutral agent skill
 - `examples/demo/`: the 30-second reference composition
@@ -283,12 +283,14 @@ From a repository checkout:
 pnpm install
 pnpm exec playwright install chromium
 pnpm build
+pnpm lint
+pnpm format:check
 node dist/cli.js doctor
 ```
 
 These commands use the local build; `npx frameyard` runs the published package.
 
-`pnpm install` installs the repository's git hooks. Pre-commit runs typecheck, test typecheck, and unit tests; pre-push runs the full suite. CI runs the same checks on Linux with Node 22 and 24.
+`pnpm install` installs the repository's git hooks. Pre-commit runs lint, formatting checks, typecheck, test typecheck, and unit tests; pre-push runs the full suite. CI runs the same checks on Linux with Node 22 and 24.
 
 CI uses fake `qwen-tts` and `whisper-cli` executables. Real-model tests are opt-in:
 

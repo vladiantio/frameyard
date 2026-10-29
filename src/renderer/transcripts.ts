@@ -58,10 +58,7 @@ export async function inspectTranscriptClips(options: {
 
     const absolutePath = path.resolve(options.projectRoot, clip.src);
     if (!contains(options.projectRoot, absolutePath)) {
-      throw new FrameyardError(
-        "TRANSCRIPT_INVALID",
-        `Transcript source escapes the project root: ${clip.src}`,
-      );
+      throw new FrameyardError("TRANSCRIPT_INVALID", `Transcript source escapes the project root: ${clip.src}`);
     }
 
     let fileStat;
@@ -109,10 +106,7 @@ export async function inspectTranscriptClips(options: {
       const clip: TranscriptInspection["clips"][number] = {
         src: asset.clip.src,
         segments: asset.transcript.segments.length,
-        durationMs:
-          asset.transcript.segments.at(-1)?.endMs ??
-          asset.transcript.words?.at(-1)?.endMs ??
-          0,
+        durationMs: asset.transcript.segments.at(-1)?.endMs ?? asset.transcript.words?.at(-1)?.endMs ?? 0,
         bytes: asset.bytes,
       };
       if (asset.transcript.language !== undefined) {

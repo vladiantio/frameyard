@@ -33,6 +33,8 @@ first publish is therefore manual:
 ```sh
 cd "$(git rev-parse --show-toplevel)"
 npm login
+pnpm lint
+pnpm format:check
 pnpm typecheck
 pnpm typecheck:test
 pnpm test
@@ -86,6 +88,8 @@ OIDC token with `id-token: write` and publishes with provenance.
 4. Run the release checks locally:
 
    ```sh
+   pnpm lint
+   pnpm format:check
    pnpm typecheck
    pnpm typecheck:test
    pnpm test
@@ -106,10 +110,10 @@ OIDC token with `id-token: write` and publishes with provenance.
 
 6. Watch the `Release` workflow. It verifies the tag against `package.json`,
    that the tag is reachable from `main`, and that `CHANGELOG.md` has a dated
-   section for the version. It then runs typechecks and the full suite,
-   inspects the package, publishes with provenance, and creates the GitHub
-   Release. The release job repeats the CI setup; when you change the checks
-   in `ci.yml`, update `release.yml` too.
+   section for the version. It then runs lint, formatting checks, typechecks,
+   and the full suite, inspects the package, publishes with provenance, and
+   creates the GitHub Release. The release job repeats the CI setup; when you
+   change the checks in `ci.yml`, update `release.yml` too.
 
 7. Verify the published result:
 

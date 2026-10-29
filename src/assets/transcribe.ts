@@ -252,7 +252,10 @@ function convertWhisperOutput(
     });
   }
 
-  const text = segments.map((segment) => segment.text).join(" ").trim();
+  const text = segments
+    .map((segment) => segment.text)
+    .join(" ")
+    .trim();
   const language = whisperLanguage(output);
   const transcript: Transcript = {
     schemaVersion: 1,
@@ -277,7 +280,10 @@ function convertWhisperOutput(
   return parseTranscript(transcript, { requireWords: options.words });
 }
 
-function exportPaths(outPath: string, formats: readonly SubtitleFormat[]): Array<{ format: SubtitleFormat; path: string }> {
+function exportPaths(
+  outPath: string,
+  formats: readonly SubtitleFormat[],
+): Array<{ format: SubtitleFormat; path: string }> {
   const stem = outPath.toLowerCase().endsWith(".json") ? outPath.slice(0, -5) : outPath;
   return formats.map((format) => ({ format, path: `${stem}.${format}` }));
 }
@@ -376,10 +382,7 @@ export async function transcribeAudio(options: TranscribeOptions): Promise<Trans
     try {
       raw = await readFile(whisperJsonPath, "utf8");
     } catch {
-      throw new FrameyardError(
-        "TRANSCRIBE_FAILED",
-        `whisper-cli did not write its JSON output at ${whisperJsonPath}.`,
-      );
+      throw new FrameyardError("TRANSCRIBE_FAILED", `whisper-cli did not write its JSON output at ${whisperJsonPath}.`);
     }
 
     let parsed: unknown;

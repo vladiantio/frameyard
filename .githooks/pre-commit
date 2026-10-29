@@ -5,6 +5,8 @@ node --check scripts/bench-render.mjs
 node --check scripts/install-hooks.mjs
 node --check scripts/set-version.mjs
 node --check scripts/check-package-manager.mjs
+pnpm lint
+pnpm format:check
 pnpm typecheck
 pnpm typecheck:test
 pnpm test:unit

@@ -4,7 +4,6 @@ import { link, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/prom
 import path from "node:path";
 import { isPlainObject, type JsonValue } from "../contracts.js";
 import { FrameyardError } from "../errors.js";
-import { VERSION } from "../version.js";
 
 export const MANIFEST_SCHEMA_VERSION = 1;
 export const MANIFEST_FILENAME = "frameyard.assets.json";
@@ -132,17 +131,16 @@ function parseManifest(value: unknown): Manifest {
     const generator: ManifestGenerator = {
       name: "frameyard",
       version: requireString(item.generator.version, `${label}.generator.version`),
-      command: item.generator.command === "tts" || item.generator.command === "transcribe"
-        ? item.generator.command
-        : manifestError(`${label}.generator.command must be "tts" or "transcribe".`),
+      command:
+        item.generator.command === "tts" || item.generator.command === "transcribe"
+          ? item.generator.command
+          : manifestError(`${label}.generator.command must be "tts" or "transcribe".`),
       executable: requireString(item.generator.executable, `${label}.generator.executable`),
-      integration: item.generator.integration === "qwentts.cpp" || item.generator.integration === "whisper.cpp"
-        ? item.generator.integration
-        : manifestError(`${label}.generator.integration must be "qwentts.cpp" or "whisper.cpp".`),
-      referenceRevision: requireString(
-        item.generator.referenceRevision,
-        `${label}.generator.referenceRevision`,
-      ),
+      integration:
+        item.generator.integration === "qwentts.cpp" || item.generator.integration === "whisper.cpp"
+          ? item.generator.integration
+          : manifestError(`${label}.generator.integration must be "qwentts.cpp" or "whisper.cpp".`),
+      referenceRevision: requireString(item.generator.referenceRevision, `${label}.generator.referenceRevision`),
     };
 
     if (!Array.isArray(item.models)) {
@@ -222,10 +220,7 @@ export function projectRelativePath(projectRoot: string, absolutePath: string): 
 export function temporaryPath(destination: string, label = "tmp"): string {
   const extension = path.extname(destination);
   const base = path.basename(destination, extension);
-  return path.join(
-    path.dirname(destination),
-    `.${base}.frameyard-${label}-${process.pid}-${randomUUID()}${extension}`,
-  );
+  return path.join(path.dirname(destination), `.${base}.frameyard-${label}-${process.pid}-${randomUUID()}${extension}`);
 }
 
 export async function hashFile(
@@ -322,10 +317,7 @@ export async function assertOutputAvailable(paths: readonly string[], force: boo
   for (const outputPath of paths) {
     const kind = await fileKind(outputPath);
     if (kind === "file" && !force) {
-      throw new FrameyardError(
-        "OUTPUT_EXISTS",
-        `Output already exists: ${outputPath}. Pass --force to replace it.`,
-      );
+      throw new FrameyardError("OUTPUT_EXISTS", `Output already exists: ${outputPath}. Pass --force to replace it.`);
     }
   }
 }
@@ -356,10 +348,7 @@ async function fileKind(filePath: string): Promise<"missing" | "file"> {
  * Publishes staged files atomically. Existing destinations are backed up and
  * restored if any part of the transaction fails.
  */
-export async function publishStagedFiles(
-  files: StagedFile[],
-  options: { force: boolean },
-): Promise<void> {
+export async function publishStagedFiles(files: StagedFile[], options: { force: boolean }): Promise<void> {
   const backups = new Map<string, string>();
   const published: string[] = [];
   const originallyMissing = new Set<string>();

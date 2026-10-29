@@ -102,15 +102,7 @@ describe("agent-style workflow", () => {
       Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
     );
 
-    const render = await run([
-      "render",
-      "agent",
-      "--props",
-      "props.json",
-      "--out",
-      "agent.mp4",
-      "--json",
-    ]);
+    const render = await run(["render", "agent", "--props", "props.json", "--out", "agent.mp4", "--json"]);
     expect(render.code, render.stderr).toBe(0);
     expect(JSON.parse(render.stdout)).toMatchObject({
       ok: true,

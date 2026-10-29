@@ -40,84 +40,76 @@ afterAll(async () => {
 });
 
 describe.skipIf(!enabled)("real-model integrations", () => {
-  it(
-    "produces a frozen WAV through qwentts.cpp",
-    async () => {
-      const talker = requiredEnv("FRAMEYARD_REAL_TALKER");
-      const codec = requiredEnv("FRAMEYARD_REAL_CODEC");
-      const device = process.env.FRAMEYARD_REAL_TTS_DEVICE;
-      const root = await mkdtemp(path.join(tmpdir(), "frameyard-real-tts-"));
-      roots.push(root);
-      await writeFile(path.join(root, "script.txt"), "Frameyard real-model integration test.\n");
+  it("produces a frozen WAV through qwentts.cpp", async () => {
+    const talker = requiredEnv("FRAMEYARD_REAL_TALKER");
+    const codec = requiredEnv("FRAMEYARD_REAL_CODEC");
+    const device = process.env.FRAMEYARD_REAL_TTS_DEVICE;
+    const root = await mkdtemp(path.join(tmpdir(), "frameyard-real-tts-"));
+    roots.push(root);
+    await writeFile(path.join(root, "script.txt"), "Frameyard real-model integration test.\n");
 
-      const result = await run(
-        [
-          "tts",
-          "--speaker",
-          process.env.FRAMEYARD_REAL_SPEAKER ?? "vivian",
-          "--talker-model",
-          path.resolve(talker),
-          "--codec-model",
-          path.resolve(codec),
-          "--text-file",
-          "script.txt",
-          "--out",
-          "voice.wav",
-          ...(device ? ["--device", device] : []),
-          "--json",
-        ],
-        root,
-      );
+    const result = await run(
+      [
+        "tts",
+        "--speaker",
+        process.env.FRAMEYARD_REAL_SPEAKER ?? "vivian",
+        "--talker-model",
+        path.resolve(talker),
+        "--codec-model",
+        path.resolve(codec),
+        "--text-file",
+        "script.txt",
+        "--out",
+        "voice.wav",
+        ...(device ? ["--device", device] : []),
+        "--json",
+      ],
+      root,
+    );
 
-      expect(result.code, result.stderr).toBe(0);
-      expect(JSON.parse(result.stdout)).toMatchObject({
-        ok: true,
-        command: "tts",
-        sampleRate: 24_000,
-        channels: 1,
-      });
-      expect((await readFile(path.join(root, "voice.wav"))).subarray(0, 4).toString()).toBe("RIFF");
-    },
-    600_000,
-  );
+    expect(result.code, result.stderr).toBe(0);
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      ok: true,
+      command: "tts",
+      sampleRate: 24_000,
+      channels: 1,
+    });
+    expect((await readFile(path.join(root, "voice.wav"))).subarray(0, 4).toString()).toBe("RIFF");
+  }, 600_000);
 
-  it(
-    "produces a canonical transcript through whisper.cpp",
-    async () => {
-      const model = requiredEnv("FRAMEYARD_REAL_WHISPER_MODEL");
-      const source = requiredEnv("FRAMEYARD_REAL_WHISPER_SOURCE");
-      const root = await mkdtemp(path.join(tmpdir(), "frameyard-real-whisper-"));
-      roots.push(root);
+  it("produces a canonical transcript through whisper.cpp", async () => {
+    const model = requiredEnv("FRAMEYARD_REAL_WHISPER_MODEL");
+    const source = requiredEnv("FRAMEYARD_REAL_WHISPER_SOURCE");
+    const root = await mkdtemp(path.join(tmpdir(), "frameyard-real-whisper-"));
+    roots.push(root);
 
-      const result = await run(
-        [
-          "transcribe",
-          path.resolve(source),
-          "--model",
-          path.resolve(model),
-          "--out",
-          "transcript.json",
-          "--words",
-          "--export",
-          "srt,vtt",
-          "--json",
-        ],
-        root,
-      );
+    const result = await run(
+      [
+        "transcribe",
+        path.resolve(source),
+        "--model",
+        path.resolve(model),
+        "--out",
+        "transcript.json",
+        "--words",
+        "--export",
+        "srt,vtt",
+        "--json",
+      ],
+      root,
+    );
 
-      expect(result.code, result.stderr).toBe(0);
-      expect(JSON.parse(result.stdout)).toMatchObject({
-        ok: true,
-        command: "transcribe",
-        segments: expect.any(Number),
-      });
-      const transcript = JSON.parse(await readFile(path.join(root, "transcript.json"), "utf8")) as Record<
-        string,
-        unknown
-      >;
-      expect(transcript).toMatchObject({ schemaVersion: 1 });
-      expect(Array.isArray(transcript.words)).toBe(true);
-    },
-    900_000,
-  );
+    expect(result.code, result.stderr).toBe(0);
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      ok: true,
+      command: "transcribe",
+      segments: expect.any(Number),
+    });
+    const transcript = JSON.parse(await readFile(path.join(root, "transcript.json"), "utf8")) as Record<
+      string,
+      unknown
+    >;
+    expect(transcript).toMatchObject({ schemaVersion: 1 });
+    expect(Array.isArray(transcript.words)).toBe(true);
+  }, 900_000);
 });

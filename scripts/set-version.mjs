@@ -8,8 +8,7 @@ const packageJsonPath = path.join(root, "package.json");
 const versionTsPath = path.join(root, "src/version.ts");
 const skillPath = path.join(root, "skill/SKILL.md");
 
-const SEMVER =
-  /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
+const SEMVER = /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
 const VERSION_TS = /^export const VERSION = "([^"]+)";$/m;
 const SKILL_VERSION = /^frameyard-api-version: (\S+)$/m;
 
@@ -68,9 +67,7 @@ if (process.argv[2] === "--check") {
     process.exit(1);
   }
 
-  console.log(
-    `frameyard: version ${expected} is consistent across package.json, src/version.ts, and skill/SKILL.md`,
-  );
+  console.log(`frameyard: version ${expected} is consistent across package.json, src/version.ts, and skill/SKILL.md`);
   process.exit(0);
 }
 

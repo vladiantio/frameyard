@@ -63,6 +63,12 @@ jobs:
       - name: Check JavaScript tooling
         run: node --check scripts/set-version.mjs
 
+      - name: Lint
+        run: pnpm lint
+
+      - name: Check formatting
+        run: pnpm format:check
+
       - name: Test
         run: pnpm test
 

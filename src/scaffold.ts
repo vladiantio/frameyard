@@ -7,6 +7,7 @@ This project produces deterministic, parameterized video with Frameyard. Follow 
 ## Project layout
 
 - \`video.config.js\` explicitly maps composition IDs to entry modules. There is no directory scanning; a new composition is invisible until it is listed.
+- \`package.json\` pins the CLI version in \`dev\`, \`check\`, \`render\`, and \`still\` scripts. Run \`dev\` with \`npm run dev\` or \`pnpm dev\`; for the others, pass the composition id: \`npm run check -- hello\` (npm) or \`pnpm check hello\` (pnpm).
 - \`compositions/\` contains native JavaScript ES modules. Import bare \`frameyard\` and \`frameyard/runtime\`; the preview server supplies the import map.
 - \`props/\` contains JSON props, merged shallowly over \`defaultProps\` and deep-frozen.
 - \`assets/\` (create it when needed) contains audio, images, fonts, and generated assets.
@@ -77,9 +78,18 @@ npx frameyard doctor
 npx frameyard check hello
 npx frameyard render hello --props props/hello.json --out hello.mp4
 \`\`\`
+
+Or run the pinned scripts from \`package.json\`:
+
+\`\`\`sh
+npm run dev
+npm run check -- hello
+npm run render -- hello --props props/hello.json --out hello.mp4
+npm run still -- hello --frame 42 --out hello-42.png
+\`\`\`
 `;
 
-export const SCAFFOLD_FILES: Record<string, string> = {
+const SCAFFOLD_TEMPLATES: Record<string, string> = {
   "video.config.js": `export default {\n  compositions: {\n    hello: "./compositions/hello.js",\n  },\n};\n`,
   "props/hello.json": `${JSON.stringify({ title: "Hello, Frameyard", accent: "#b8f36b" }, null, 2)}\n`,
   "AGENTS.md": AGENTS_GUIDE,
@@ -134,6 +144,38 @@ export default defineComposition({
 });
 `,
 };
+
+// Keep the generated package name valid for npm and pnpm.
+function packageName(projectName: string): string {
+  const normalized = projectName
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/^[._-]+|[._-]+$/g, "")
+    .slice(0, 214)
+    .replace(/[._-]+$/g, "");
+  return normalized === "" ? "frameyard-project" : normalized;
+}
+
+export function scaffoldFiles(projectName: string): Record<string, string> {
+  return {
+    "package.json": `${JSON.stringify(
+      {
+        name: packageName(projectName),
+        private: true,
+        type: "module",
+        scripts: {
+          dev: `npx --yes frameyard@${VERSION} dev`,
+          check: `npx --yes frameyard@${VERSION} check`,
+          render: `npx --yes frameyard@${VERSION} render`,
+          still: `npx --yes frameyard@${VERSION} still`,
+        },
+      },
+      null,
+      2,
+    )}\n`,
+    ...SCAFFOLD_TEMPLATES,
+  };
+}
 
 export const SCAFFOLD_NEXT = [
   "npx frameyard doctor",

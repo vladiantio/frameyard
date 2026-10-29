@@ -107,9 +107,7 @@ export function parseTranscript(value: unknown, options: ParseTranscriptOptions 
   }
 
   if (value.schemaVersion !== TRANSCRIPT_SCHEMA_VERSION) {
-    invalid(
-      `Transcript schemaVersion must be ${TRANSCRIPT_SCHEMA_VERSION}; received ${String(value.schemaVersion)}.`,
-    );
+    invalid(`Transcript schemaVersion must be ${TRANSCRIPT_SCHEMA_VERSION}; received ${String(value.schemaVersion)}.`);
   }
 
   if (typeof value.text !== "string") {
@@ -193,10 +191,7 @@ export function transcriptToSrt(transcript: Transcript): string {
 /** Renders the canonical transcript's segment timings as WebVTT. */
 export function transcriptToVtt(transcript: Transcript): string {
   const cues = transcript.segments
-    .map(
-      (segment) =>
-        `${timestamp(segment.startMs, ".")} --> ${timestamp(segment.endMs, ".")}\n${segment.text}`,
-    )
+    .map((segment) => `${timestamp(segment.startMs, ".")} --> ${timestamp(segment.endMs, ".")}\n${segment.text}`)
     .join("\n\n");
 
   return cues.length === 0 ? "WEBVTT\n" : `WEBVTT\n\n${cues}\n`;

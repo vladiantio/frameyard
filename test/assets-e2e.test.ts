@@ -295,10 +295,7 @@ beforeAll(async () => {
     ],
   };
   await writeFile(path.join(root, "transcripts", "checked.json"), JSON.stringify(source));
-  await writeFile(
-    path.join(root, "transcripts", "no-words.json"),
-    JSON.stringify({ ...source, words: undefined }),
-  );
+  await writeFile(path.join(root, "transcripts", "no-words.json"), JSON.stringify({ ...source, words: undefined }));
 });
 
 afterAll(async () => {
@@ -402,10 +399,8 @@ describe("local asset production", () => {
         channels: 1,
       },
     });
-    expect((artifact?.models as Array<Record<string, unknown>>).map((model) => model.role)).toEqual([
-      "talker",
-      "codec",
-    ]);
+    const models = artifact?.models as Array<Record<string, unknown>> | undefined;
+    expect(models?.map((model) => model.role)).toEqual(["talker", "codec"]);
   });
 
   it("reads text from stdin and honors --force", async () => {
@@ -706,10 +701,8 @@ describe("local transcription", () => {
       generator: { integration: "whisper.cpp", command: "transcribe" },
       parameters: { words: true, language: "auto" },
     });
-    expect((artifact?.derived as Array<Record<string, unknown>>).map((entry) => entry.format)).toEqual([
-      "srt",
-      "vtt",
-    ]);
+    const derived = artifact?.derived as Array<Record<string, unknown>> | undefined;
+    expect(derived?.map((entry) => entry.format)).toEqual(["srt", "vtt"]);
   });
 
   it("omits word timings unless requested", async () => {
@@ -833,10 +826,7 @@ describe("local transcription", () => {
       error: { code: "TRANSCRIPT_WORDS_UNAVAILABLE" },
     });
 
-    const still = await run(
-      ["still", "karaoke", "--frame", "0", "--out", "karaoke.png", "--json"],
-      { env },
-    );
+    const still = await run(["still", "karaoke", "--frame", "0", "--out", "karaoke.png", "--json"], { env });
     expect(still.code).not.toBe(0);
     expect(JSON.parse(still.stdout)).toMatchObject({
       ok: false,
@@ -915,35 +905,28 @@ describe("doctor", () => {
   });
 
   it("reports unreadable requested models", async () => {
-    const result = await run(
-      ["doctor", "--talker-model", "models/missing.gguf", "--json"],
-      { env: { PATH: `${bin}${path.delimiter}${process.env.PATH ?? ""}` } },
-    );
+    const result = await run(["doctor", "--talker-model", "models/missing.gguf", "--json"], {
+      env: { PATH: `${bin}${path.delimiter}${process.env.PATH ?? ""}` },
+    });
 
     expect(result.code).not.toBe(0);
     const json = JSON.parse(result.stdout) as Record<string, unknown>;
     expect(json).toMatchObject({ ok: true, command: "doctor", healthy: false });
-    expect(json.models).toEqual([
-      expect.objectContaining({ role: "talker", status: "error" }),
-    ]);
+    expect(json.models).toEqual([expect.objectContaining({ role: "talker", status: "error" })]);
   });
 
   it("cancels a running doctor probe", async () => {
     const ready = path.join(logDir, "tts-help-ready");
-    const child = spawn(
-      process.execPath,
-      [cli, "doctor", "--qwen-tts", path.join(bin, "qwen-tts"), "--json"],
-      {
-        cwd: root,
-        env: {
-          ...process.env,
-          PATH: `${bin}${path.delimiter}${process.env.PATH ?? ""}`,
-          FAKE_TTS_HELP_SLEEP: "10000",
-          FAKE_TTS_HELP_READY: ready,
-        },
-        stdio: ["ignore", "pipe", "pipe"],
+    const child = spawn(process.execPath, [cli, "doctor", "--qwen-tts", path.join(bin, "qwen-tts"), "--json"], {
+      cwd: root,
+      env: {
+        ...process.env,
+        PATH: `${bin}${path.delimiter}${process.env.PATH ?? ""}`,
+        FAKE_TTS_HELP_SLEEP: "10000",
+        FAKE_TTS_HELP_READY: ready,
       },
-    );
+      stdio: ["ignore", "pipe", "pipe"],
+    });
     let stdout = "";
     child.stdout.on("data", (chunk: Buffer) => {
       stdout += chunk.toString();

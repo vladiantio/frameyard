@@ -54,16 +54,12 @@ describe("official agent skill", () => {
     try {
       const copied = path.join(root, "frameyard");
       await cp(path.resolve("skill"), copied, { recursive: true });
-      const { stdout } = await exec(
-        process.execPath,
-        [path.join(copied, "scripts", "frameyard.mjs"), "--version"],
-        {
-          env: {
-            ...process.env,
-            FRAMEYARD_CLI: path.resolve("dist/cli.js"),
-          },
+      const { stdout } = await exec(process.execPath, [path.join(copied, "scripts", "frameyard.mjs"), "--version"], {
+        env: {
+          ...process.env,
+          FRAMEYARD_CLI: path.resolve("dist/cli.js"),
         },
-      );
+      });
 
       expect(stdout.trim()).toBe(packageJson.version);
     } finally {

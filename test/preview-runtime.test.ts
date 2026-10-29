@@ -139,19 +139,25 @@ describe("browser preview runtime", () => {
     await page.goto(new URL("/__frameyard/?render=1", server.url).href);
     await page.waitForFunction(() => Boolean((window as unknown as Record<string, unknown>).__frameyardPreview));
 
-    const loaded = await page.evaluate(async ({ entry }) => {
-      const api = (window as unknown as Record<string, unknown>).__frameyardPreview as {
-        load(entry: string, props?: unknown): Promise<{
-          metadata: { width: number; height: number; fps: number; durationInFrames: number };
-          props: Record<string, unknown>;
-          audioClips: Array<Record<string, unknown>>;
-          transcriptClips: Array<Record<string, unknown>>;
-        }>;
-        seek(frame: number): void;
-        dispose(): Promise<void>;
-      };
-      return api.load(entry, { label: "Custom" });
-    }, { entry: "compositions/demo.js" });
+    const loaded = await page.evaluate(
+      async ({ entry }) => {
+        const api = (window as unknown as Record<string, unknown>).__frameyardPreview as {
+          load(
+            entry: string,
+            props?: unknown,
+          ): Promise<{
+            metadata: { width: number; height: number; fps: number; durationInFrames: number };
+            props: Record<string, unknown>;
+            audioClips: Array<Record<string, unknown>>;
+            transcriptClips: Array<Record<string, unknown>>;
+          }>;
+          seek(frame: number): void;
+          dispose(): Promise<void>;
+        };
+        return api.load(entry, { label: "Custom" });
+      },
+      { entry: "compositions/demo.js" },
+    );
 
     expect(loaded.metadata).toEqual({ width: 200, height: 100, fps: 10, durationInFrames: 20 });
     expect(loaded.props).toEqual({ label: "Custom", color: "#ff0000" });
@@ -198,7 +204,9 @@ describe("browser preview runtime", () => {
       };
       await api.dispose();
     });
-    await expect(page.evaluate(() => (document.querySelector("#box") as HTMLElement | null)?.dataset.disposed)).resolves.toBeUndefined();
+    await expect(
+      page.evaluate(() => (document.querySelector("#box") as HTMLElement | null)?.dataset.disposed),
+    ).resolves.toBeUndefined();
 
     expect(pageErrors).toEqual([]);
     await context.close();
@@ -257,7 +265,7 @@ describe("browser preview runtime", () => {
 
     const message = await warning;
     expect(message.type()).toBe("warning");
-    expect(message.text()).toContain("use random(\"stable:key\")");
+    expect(message.text()).toContain('use random("stable:key")');
     await context.close();
   });
 

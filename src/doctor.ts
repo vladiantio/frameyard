@@ -86,7 +86,7 @@ async function probeCommand(
 ): Promise<{ ok: true; stdout: string; stderr: string; code: number } | { ok: false; detail: string }> {
   try {
     const result = await runChild(options.executable ?? command, args, {
-      ...(options.signal !== undefined ? { signal: options.signal } : {}),
+      signal: options.signal,
       forwardOutput: false,
       errorCode: "INTERNAL",
       label: path.basename(options.executable ?? command),
@@ -105,10 +105,12 @@ async function probeCommand(
 }
 
 function firstLine(text: string): string {
-  return text
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .find((line) => line.length > 0) ?? "";
+  return (
+    text
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .find((line) => line.length > 0) ?? ""
+  );
 }
 
 async function checkChromium(): Promise<DoctorCheck> {
@@ -203,9 +205,7 @@ async function inspectManifest(
     identity: { path: string; sha256: string; bytes: number },
     label: string,
   ): Promise<void> => {
-    const artifactPath = path.isAbsolute(identity.path)
-      ? identity.path
-      : path.resolve(projectRoot, identity.path);
+    const artifactPath = path.isAbsolute(identity.path) ? identity.path : path.resolve(projectRoot, identity.path);
     try {
       const artifactInfo = await stat(artifactPath);
       if (!artifactInfo.isFile()) {
@@ -221,7 +221,7 @@ async function inspectManifest(
       if (signal?.aborted) {
         throw new FrameyardError("CANCELLED", "Operation cancelled.");
       }
-      const actual = await hashFile(artifactPath, { ...(signal !== undefined ? { signal } : {}) });
+      const actual = await hashFile(artifactPath, { signal });
       if (actual.sha256 !== identity.sha256) {
         problems.push(`${label} (${identity.path}): content hash does not match the manifest`);
       }
@@ -270,13 +270,12 @@ async function inspectManifest(
 }
 
 function integrationFlags(help: string, flags: string[]): string[] {
-  return flags.filter((flag) => new RegExp(`(^|\\s)${flag.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(\\s|,|$)`, "m").test(help));
+  return flags.filter((flag) =>
+    new RegExp(`(^|\\s)${flag.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(\\s|,|$)`, "m").test(help),
+  );
 }
 
-async function inspectTts(
-  explicit: string | undefined,
-  signal?: AbortSignal,
-): Promise<DoctorIntegration> {
+async function inspectTts(explicit: string | undefined, signal?: AbortSignal): Promise<DoctorIntegration> {
   const requested = explicit !== undefined || process.env[QWEN_TTS_ENV] !== undefined;
   let executable: ResolvedExecutable;
   try {
@@ -297,7 +296,7 @@ async function inspectTts(
   }
 
   const help = await probeCommand(executable.path, ["--help"], {
-    ...(signal !== undefined ? { signal } : {}),
+    signal,
     allowFailure: true,
   });
   if (!help.ok) {
@@ -313,7 +312,16 @@ async function inspectTts(
   }
 
   const text = `${help.stdout}\n${help.stderr}`;
-  const capabilities = integrationFlags(text, ["--model", "--codec", "--speaker", "--lang", "--instruct", "--format", "--device", "-o"]);
+  const capabilities = integrationFlags(text, [
+    "--model",
+    "--codec",
+    "--speaker",
+    "--lang",
+    "--instruct",
+    "--format",
+    "--device",
+    "-o",
+  ]);
   const missing = ["--model", "--codec", "--speaker", "--lang", "--format", "-o"].filter(
     (flag) => !capabilities.includes(flag),
   );
@@ -343,10 +351,7 @@ async function inspectTts(
   return result;
 }
 
-async function inspectWhisper(
-  explicit: string | undefined,
-  signal?: AbortSignal,
-): Promise<DoctorIntegration> {
+async function inspectWhisper(explicit: string | undefined, signal?: AbortSignal): Promise<DoctorIntegration> {
   const requested = explicit !== undefined || process.env[WHISPER_CLI_ENV] !== undefined;
   let executable: ResolvedExecutable;
   try {
@@ -367,11 +372,11 @@ async function inspectWhisper(
   }
 
   const versionProbe = await probeCommand(executable.path, ["--version"], {
-    ...(signal !== undefined ? { signal } : {}),
+    signal,
     allowFailure: true,
   });
   const help = await probeCommand(executable.path, ["--help"], {
-    ...(signal !== undefined ? { signal } : {}),
+    signal,
     allowFailure: true,
   });
   if (!help.ok) {
@@ -387,15 +392,17 @@ async function inspectWhisper(
   }
 
   const text = `${help.stdout}\n${help.stderr}`;
-  const capabilities = integrationFlags(text, ["--model", "--file", "--output-json-full", "--output-file", "--language", "--no-prints"]);
-  const missing = [
+  const capabilities = integrationFlags(text, [
     "--model",
     "--file",
     "--output-json-full",
     "--output-file",
     "--language",
     "--no-prints",
-  ].filter((flag) => !capabilities.includes(flag));
+  ]);
+  const missing = ["--model", "--file", "--output-json-full", "--output-file", "--language", "--no-prints"].filter(
+    (flag) => !capabilities.includes(flag),
+  );
   const versionText = versionProbe.ok ? firstLine(`${versionProbe.stdout}\n${versionProbe.stderr}`) : "";
   const versionOk = /^whisper\.cpp version:\s*\S+/.test(versionText);
   const result: DoctorIntegration = {
@@ -436,7 +443,7 @@ async function inspectModel(
     }
     await access(absolutePath, constants.R_OK);
     const identity = await hashFile(absolutePath, {
-      ...(signal !== undefined ? { signal } : {}),
+      signal,
       label: `${role} GGUF model`,
     });
     return {
@@ -486,7 +493,7 @@ export async function runDoctor(options: {
   ];
 
   const ffmpegVersion = await probeCommand("ffmpeg", ["-hide_banner", "-version"], {
-    ...(options.signal !== undefined ? { signal: options.signal } : {}),
+    signal: options.signal,
   });
   if (!ffmpegVersion.ok) {
     checks.push({
@@ -505,7 +512,7 @@ export async function runDoctor(options: {
     const version = firstLine(ffmpegVersion.stdout || ffmpegVersion.stderr);
     checks.push({ name: "ffmpeg", required: true, status: "ok", detail: version });
     const encoders = await probeCommand("ffmpeg", ["-hide_banner", "-encoders"], {
-      ...(options.signal !== undefined ? { signal: options.signal } : {}),
+      signal: options.signal,
     });
     if (!encoders.ok) {
       checks.push({
@@ -516,23 +523,19 @@ export async function runDoctor(options: {
       });
     } else {
       const listing = `${encoders.stdout}\n${encoders.stderr}`;
-      const missing = ["libx264", "aac"].filter(
-        (name) => !new RegExp(`(^|\\s)${name}(\\s|$)`, "m").test(listing),
-      );
+      const missing = ["libx264", "aac"].filter((name) => !new RegExp(`(^|\\s)${name}(\\s|$)`, "m").test(listing));
       checks.push({
         name: "ffmpeg-encoders",
         required: true,
         status: missing.length === 0 ? "ok" : "error",
         detail:
-          missing.length === 0
-            ? "libx264 and aac are available."
-            : `Missing required encoders: ${missing.join(", ")}.`,
+          missing.length === 0 ? "libx264 and aac are available." : `Missing required encoders: ${missing.join(", ")}.`,
       });
     }
   }
 
   const ffprobe = await probeCommand("ffprobe", ["-hide_banner", "-version"], {
-    ...(options.signal !== undefined ? { signal: options.signal } : {}),
+    signal: options.signal,
   });
   checks.push(
     ffprobe.ok

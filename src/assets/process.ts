@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { FrameyardError, type FrameyardErrorCode } from "../errors.js";
 
 const TAIL_LIMIT = 64 * 1024;
@@ -36,11 +36,7 @@ function appendTail(current: string, chunk: Buffer): string {
  * Runs one external integration process, captures its output tail, and
  * terminates it when the operation is cancelled.
  */
-export function runChild(
-  command: string,
-  args: string[],
-  options: RunChildOptions = {},
-): Promise<RunChildResult> {
+export function runChild(command: string, args: string[], options: RunChildOptions = {}): Promise<RunChildResult> {
   const errorCode = options.errorCode ?? "INTERNAL";
   const label = options.label ?? command;
 
@@ -62,7 +58,7 @@ export function runChild(
       action();
     };
 
-    let child;
+    let child: ChildProcess;
     try {
       child = spawn(command, args, {
         cwd: options.cwd,
@@ -78,10 +74,10 @@ export function runChild(
       return;
     }
 
-    const onAbort = (): void => {
+    function onAbort(): void {
       child.kill("SIGKILL");
       finish(() => reject(new FrameyardError("CANCELLED", "Operation cancelled.")));
-    };
+    }
     options.signal?.addEventListener("abort", onAbort, { once: true });
     if (options.signal?.aborted) {
       onAbort();
@@ -108,11 +104,7 @@ export function runChild(
         const hint = options.executableHint ? ` ${options.executableHint}` : "";
         finish(() =>
           reject(
-            new FrameyardError(
-              "EXECUTABLE_NOT_FOUND",
-              `Executable not found: ${command}.${hint}`,
-              { cause: error },
-            ),
+            new FrameyardError("EXECUTABLE_NOT_FOUND", `Executable not found: ${command}.${hint}`, { cause: error }),
           ),
         );
         return;

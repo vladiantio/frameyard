@@ -221,9 +221,7 @@ export async function mixAudioTimeline(options: {
   });
 
   if (options.clips.length > 1) {
-    filters.push(
-      `${labels.join("")}amix=inputs=${options.clips.length}:duration=longest:normalize=0[audio]`,
-    );
+    filters.push(`${labels.join("")}amix=inputs=${options.clips.length}:duration=longest:normalize=0[audio]`);
   }
 
   args.push(
@@ -376,7 +374,11 @@ export async function startVideoEncoder(options: {
           if (options.signal?.aborted) {
             reject(abortError());
           } else {
-            reject(new FrameyardError("FFMPEG_FAILED", `FFmpeg stopped while accepting frames: ${error.message}`, { cause: error }));
+            reject(
+              new FrameyardError("FFMPEG_FAILED", `FFmpeg stopped while accepting frames: ${error.message}`, {
+                cause: error,
+              }),
+            );
           }
         };
         child.stdin.once("error", onError);

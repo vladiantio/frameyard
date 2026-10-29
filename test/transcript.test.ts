@@ -66,7 +66,15 @@ describe("canonical transcript", () => {
     [{ segments: [{ startMs: -1, endMs: 1, text: "a" }] }, /startMs/i],
     [{ segments: [{ startMs: 2, endMs: 1, text: "a" }] }, /endMs|startMs/i],
     [{ segments: [{ startMs: 0, endMs: 1, text: "" }] }, /text/i],
-    [{ segments: [{ startMs: 1, endMs: 2, text: "a" }, { startMs: 0, endMs: 1, text: "b" }] }, /ordered/i],
+    [
+      {
+        segments: [
+          { startMs: 1, endMs: 2, text: "a" },
+          { startMs: 0, endMs: 1, text: "b" },
+        ],
+      },
+      /ordered/i,
+    ],
     [{ words: [{ startMs: 0, endMs: 1, text: "" }] }, /word/i],
   ])("rejects invalid transcript values %o", (patch, message) => {
     expect(() => parseTranscript({ ...transcript, ...patch })).toThrow(message);

@@ -13,7 +13,5 @@ export const WHISPER_CPP_REFERENCE_REVISION = "284029c07012d2000941a08d38a31ffb7
 export const QWEN_TTS_COMMAND = "qwen-tts";
 export const WHISPER_CLI_COMMAND = "whisper-cli";
 
-export const QWEN_TTS_INSTALL_HINT =
-  "Build qwentts.cpp and make its qwen-tts executable available on PATH.";
-export const WHISPER_CLI_INSTALL_HINT =
-  "Build whisper.cpp and make its whisper-cli executable available on PATH.";
+export const QWEN_TTS_INSTALL_HINT = "Build qwentts.cpp and make its qwen-tts executable available on PATH.";
+export const WHISPER_CLI_INSTALL_HINT = "Build whisper.cpp and make its whisper-cli executable available on PATH.";

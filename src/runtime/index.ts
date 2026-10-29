@@ -233,11 +233,9 @@ async function waitForMountedAssets(container: HTMLElement): Promise<void> {
       try {
         await image.decode();
       } catch (error) {
-        throw new FrameyardError(
-          "ASSET_NOT_FOUND",
-          `Could not load image asset "${image.currentSrc || image.src}".`,
-          { cause: error },
-        );
+        throw new FrameyardError("ASSET_NOT_FOUND", `Could not load image asset "${image.currentSrc || image.src}".`, {
+          cause: error,
+        });
       }
     }),
   );

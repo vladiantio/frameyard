@@ -2,7 +2,7 @@ import { link, mkdir, mkdtemp, rename, rm, stat, writeFile } from "node:fs/promi
 import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import type { CompositionMetadata, Props } from "../contracts.js";
+import type { CompositionMetadata } from "../contracts.js";
 import { FrameyardError, isFrameyardError } from "../errors.js";
 import type { Project } from "../project.js";
 import { startPreviewServer } from "../server/server.js";
@@ -101,10 +101,7 @@ async function pathExists(filePath: string): Promise<boolean> {
 
 async function ensureOutputAvailable(outPath: string, overwrite: boolean): Promise<void> {
   if (!overwrite && (await pathExists(outPath))) {
-    throw new FrameyardError(
-      "OUTPUT_EXISTS",
-      `Output already exists: ${outPath}. Pass --overwrite to replace it.`,
-    );
+    throw new FrameyardError("OUTPUT_EXISTS", `Output already exists: ${outPath}. Pass --overwrite to replace it.`);
   }
   await mkdir(path.dirname(outPath), { recursive: true });
 }
@@ -120,10 +117,7 @@ async function publishFile(tempPath: string, outPath: string, overwrite: boolean
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
     if (code === "EEXIST") {
-      throw new FrameyardError(
-        "OUTPUT_EXISTS",
-        `Output already exists: ${outPath}. Pass --overwrite to replace it.`,
-      );
+      throw new FrameyardError("OUTPUT_EXISTS", `Output already exists: ${outPath}. Pass --overwrite to replace it.`);
     }
     throw new FrameyardError("RENDER_FAILED", `Could not publish output ${outPath}: ${(error as Error).message}`, {
       cause: error,
@@ -152,11 +146,9 @@ async function withSession<T>(
       return await callback(session);
     } catch (error) {
       if (isFrameyardError(error)) {
-        throw new FrameyardError(
-          error.code,
-          `Composition "${options.compositionId}": ${error.message}`,
-          { cause: error },
-        );
+        throw new FrameyardError(error.code, `Composition "${options.compositionId}": ${error.message}`, {
+          cause: error,
+        });
       }
       throw error;
     }
@@ -226,7 +218,10 @@ export async function captureStill(
   },
 ): Promise<StillResult> {
   if (!Number.isInteger(options.frame) || options.frame < 0) {
-    throw new FrameyardError("FRAME_OUT_OF_RANGE", `--frame must be a non-negative integer; received ${options.frame}.`);
+    throw new FrameyardError(
+      "FRAME_OUT_OF_RANGE",
+      `--frame must be a non-negative integer; received ${options.frame}.`,
+    );
   }
   if (path.extname(options.outPath).toLowerCase() !== ".png") {
     throw new FrameyardError("USAGE", `Still output must use a .png extension: ${options.outPath}`);

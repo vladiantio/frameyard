@@ -155,11 +155,7 @@ export function normalizeComposition(value: unknown): Composition {
   if (value.audio !== undefined && typeof value.audio !== "function" && !Array.isArray(value.audio)) {
     invalid("Composition audio must be an array or a function returning an array.");
   }
-  if (
-    value.transcripts !== undefined &&
-    typeof value.transcripts !== "function" &&
-    !Array.isArray(value.transcripts)
-  ) {
+  if (value.transcripts !== undefined && typeof value.transcripts !== "function" && !Array.isArray(value.transcripts)) {
     invalid("Composition transcripts must be an array or a function returning an array.");
   }
 
@@ -248,7 +244,10 @@ export function assertJsonSerializable<T>(value: T, label = "value"): T {
       if (Array.isArray(current)) {
         for (let index = 0; index < current.length; index += 1) {
           if (!(index in current)) {
-            throw new FrameyardError("PROPS_INVALID", `${path}[${index}] is not JSON-serializable: sparse arrays are not supported.`);
+            throw new FrameyardError(
+              "PROPS_INVALID",
+              `${path}[${index}] is not JSON-serializable: sparse arrays are not supported.`,
+            );
           }
           visit(current[index], `${path}[${index}]`);
         }
@@ -300,8 +299,8 @@ export function resolveProps<P extends Props>(composition: Composition<P>, overr
   }
 
   const merged = {
-    ...(composition.defaultProps ?? {}),
-    ...((overrides as Record<string, JsonValue> | undefined) ?? {}),
+    ...composition.defaultProps,
+    ...(overrides as Record<string, JsonValue> | undefined),
   };
 
   assertJsonSerializable(merged, "props");
@@ -311,9 +310,13 @@ export function resolveProps<P extends Props>(composition: Composition<P>, overr
     try {
       errors = composition.validateProps(merged as P);
     } catch (error) {
-      throw new FrameyardError("PROPS_INVALID", `Props validation failed: ${error instanceof Error ? error.message : String(error)}`, {
-        cause: error,
-      });
+      throw new FrameyardError(
+        "PROPS_INVALID",
+        `Props validation failed: ${error instanceof Error ? error.message : String(error)}`,
+        {
+          cause: error,
+        },
+      );
     }
     if (errors !== undefined) {
       if (!Array.isArray(errors) || errors.some((item) => typeof item !== "string")) {
@@ -350,9 +353,15 @@ function normalizeAudioClip(value: unknown, index: number): ResolvedAudioClip {
     throw new FrameyardError("AUDIO_INVALID", `Audio clip ${index} startFrame must be a non-negative integer.`);
   }
   if (trimStart !== undefined && (typeof trimStart !== "number" || !Number.isFinite(trimStart) || trimStart < 0)) {
-    throw new FrameyardError("AUDIO_INVALID", `Audio clip ${index} trimStart must be a non-negative number of seconds.`);
+    throw new FrameyardError(
+      "AUDIO_INVALID",
+      `Audio clip ${index} trimStart must be a non-negative number of seconds.`,
+    );
   }
-  if (trimDuration !== undefined && (typeof trimDuration !== "number" || !Number.isFinite(trimDuration) || trimDuration <= 0)) {
+  if (
+    trimDuration !== undefined &&
+    (typeof trimDuration !== "number" || !Number.isFinite(trimDuration) || trimDuration <= 0)
+  ) {
     throw new FrameyardError("AUDIO_INVALID", `Audio clip ${index} trimDuration must be a positive number of seconds.`);
   }
   if (volume !== undefined && (typeof volume !== "number" || !Number.isFinite(volume) || volume < 0 || volume > 1)) {

@@ -60,10 +60,7 @@ export async function inspectTimelineAudio(options: {
     try {
       fileStat = await stat(absolutePath);
     } catch {
-      throw new FrameyardError(
-        "ASSET_NOT_FOUND",
-        `Audio clip ${clipIndex + 1} source does not exist: ${clip.src}`,
-      );
+      throw new FrameyardError("ASSET_NOT_FOUND", `Audio clip ${clipIndex + 1} source does not exist: ${clip.src}`);
     }
     if (!fileStat.isFile()) {
       throw new FrameyardError("ASSET_NOT_FOUND", `Audio clip ${clipIndex + 1} source is not a file: ${clip.src}`);
@@ -96,10 +93,7 @@ export async function inspectTimelineAudio(options: {
         `Audio clip ${clipIndex + 1} (${clip.src}) trimStart ${clip.trimStart}s is at or beyond the source duration ${sourceDurationSeconds.toFixed(2)}s.`,
       );
     }
-    if (
-      clip.trimDuration !== undefined &&
-      clip.trimStart + clip.trimDuration > sourceDurationSeconds + 0.001
-    ) {
+    if (clip.trimDuration !== undefined && clip.trimStart + clip.trimDuration > sourceDurationSeconds + 0.001) {
       warnings.push(
         `Audio clip ${clipIndex + 1} (${clip.src}) trim range ends at ${(clip.trimStart + clip.trimDuration).toFixed(2)}s, beyond the source duration ${sourceDurationSeconds.toFixed(2)}s.`,
       );

@@ -182,8 +182,7 @@ async function serveFile(
 
 export async function startPreviewServer(options: PreviewServerOptions): Promise<PreviewServer> {
   const project = await loadProject(options.projectRoot);
-  const frameworkDir =
-    options.frameworkDir ?? path.join(fileURLToPath(new URL("../../", import.meta.url)), "dist");
+  const frameworkDir = options.frameworkDir ?? path.join(fileURLToPath(new URL("../../", import.meta.url)), "dist");
   const host = options.host ?? "127.0.0.1";
   const html = renderPreviewHtml();
   const projectJson = {

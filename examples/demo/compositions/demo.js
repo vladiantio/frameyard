@@ -64,10 +64,7 @@ function buildSignalPath() {
   const points = [];
   for (let index = 0; index <= 120; index += 1) {
     const x = 160 + (index / 120) * 1600;
-    const wave =
-      Math.sin(index / 7) * 38 +
-      Math.sin(index / 17 + 1.4) * 22 +
-      (random("signal:" + index) - 0.5) * 12;
+    const wave = Math.sin(index / 7) * 38 + Math.sin(index / 17 + 1.4) * 22 + (random("signal:" + index) - 0.5) * 12;
     points.push([x, 535 + wave]);
   }
   const d = points.map(([x, y], index) => (index === 0 ? "M" : "L") + x + " " + y).join(" ");
@@ -131,7 +128,7 @@ export default defineComposition({
       '<div id="copy"><h1 id="title"></h1><p id="subtitle"></p></div>' +
       '<svg id="signal" viewBox="0 0 1920 1080" fill="none" aria-hidden="true">' +
       '<path id="signal-path" stroke="var(--accent)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity=".82"/>' +
-      '</svg>' +
+      "</svg>" +
       '<div id="caption">FRAME <strong id="frame">000</strong> / 899 · SEEK-SAFE CANVAS + SVG + CSS</div>' +
       '<div id="progress-track"><div id="progress"></div></div>' +
       "</div>";

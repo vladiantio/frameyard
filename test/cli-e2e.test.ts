@@ -336,6 +336,7 @@ describe("CLI end-to-end", () => {
     expect(init.code).toBe(0);
     const json = JSON.parse(init.stdout) as Record<string, unknown>;
     expect(json).toMatchObject({ ok: true, command: "init" });
+    expect(json.files).toContain("AGENTS.md");
     expect(json.next).toEqual([
       "npx frameyard doctor",
       "npx frameyard dev",
@@ -345,7 +346,25 @@ describe("CLI end-to-end", () => {
     expect((await stat(path.join(target, "video.config.js"))).isFile()).toBe(true);
     expect((await stat(path.join(target, "compositions", "hello.js"))).isFile()).toBe(true);
 
+    const agents = await readFile(path.join(target, "AGENTS.md"), "utf8");
+    expect(agents).toContain("update({ frame, props })");
+    expect(agents).toContain('random("stable:key")');
+    expect(agents).toContain("qwen-tts");
+    expect(agents).toContain("whisper-cli");
+    expect(agents).toContain("frameyard.assets.json");
+    expect(agents).toContain("npx frameyard@");
+    expect(agents).toContain("https://github.com/vladiantio/frameyard/tree/main/skill");
+    for (const command of [
+      "npx frameyard doctor --json",
+      "npx frameyard check hello --json",
+      "npx frameyard still hello --frame 42 --out hello-42.png --json",
+      "npx frameyard render hello --props props/hello.json --out hello.mp4 --json",
+    ]) {
+      expect(agents).toContain(command);
+    }
+
     const readme = await readFile(path.join(target, "README.md"), "utf8");
+    expect(readme).toContain("AGENTS.md");
     for (const command of [
       "npx frameyard dev",
       "npx frameyard doctor",

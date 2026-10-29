@@ -5,6 +5,7 @@ import { FrameyardError, isFrameyardError } from "./errors.js";
 import { loadProject, resolveProjectRoot, type Project } from "./project.js";
 import { checkComposition, captureStill, renderComposition, type ProgressEvent } from "./renderer/index.js";
 import { startPreviewServer } from "./server/server.js";
+import { SCAFFOLD_FILES, SCAFFOLD_NEXT } from "./scaffold.js";
 import { VERSION } from "./version.js";
 import { transcribeAudio, type SubtitleFormat } from "./assets/transcribe.js";
 import { synthesizeSpeech } from "./assets/tts.js";
@@ -453,75 +454,7 @@ async function runInit(parsed: ParsedArgs): Promise<number> {
   const target = path.resolve(process.cwd(), parsed.positionals[0] ?? ".");
   const json = parsed.flags.has("json") === true;
 
-  const files: Record<string, string> = {
-    "video.config.js": `export default {\n  compositions: {\n    hello: "./compositions/hello.js",\n  },\n};\n`,
-    "props/hello.json": `${JSON.stringify({ title: "Hello, Frameyard", accent: "#b8f36b" }, null, 2)}\n`,
-    "README.md": `# My Frameyard project
-
-Start the preview:
-
-\`\`\`sh
-npx frameyard dev
-\`\`\`
-
-Validate and render:
-
-\`\`\`sh
-npx frameyard doctor
-npx frameyard check hello
-npx frameyard render hello --props props/hello.json --out hello.mp4
-\`\`\`
-`,
-    "compositions/hello.js": `import { defineComposition } from "frameyard";
-
-let title;
-let sweep;
-let glow;
-
-export default defineComposition({
-  width: 1280,
-  height: 720,
-  fps: 30,
-  durationInFrames: 150,
-  defaultProps: { title: "Hello, Frameyard", accent: "#b8f36b" },
-  validateProps(props) {
-    const errors = [];
-    if (typeof props.title !== "string") errors.push("title must be a string");
-    if (typeof props.accent !== "string") errors.push("accent must be a string");
-    return errors;
-  },
-  mount({ container, props }) {
-    container.style.setProperty("--accent", props.accent);
-    container.innerHTML =
-      '<style>' +
-      '#hello { position: relative; width: 100%; height: 100%; display: grid; place-items: center; overflow: hidden; background: #0b0d10; color: #e8edf3; font-family: Inter, system-ui, sans-serif; }' +
-      '#hello h1 { position: relative; margin: 0; font-size: 96px; letter-spacing: -0.04em; }' +
-      '#hello p { position: relative; margin: 18px 0 0; color: #8a97a6; font-size: 26px; }' +
-      '#glow { position: absolute; width: 520px; height: 520px; border-radius: 50%; background: var(--accent); filter: blur(120px); opacity: 0.16; }' +
-      '#sweep { position: absolute; left: 0; bottom: 0; width: 0%; height: 4px; background: var(--accent); }' +
-      '</style>' +
-      '<div id="hello"><div id="glow"></div><div style="position: relative; text-align: center"><h1 id="title"></h1><p>Deterministic video, authored on the web.</p></div><div id="sweep"></div></div>';
-    title = container.querySelector("#title");
-    sweep = container.querySelector("#sweep");
-    glow = container.querySelector("#glow");
-  },
-  update({ frame, props }) {
-    title.textContent = props.title;
-    const intro = Math.min(1, frame / 24);
-    title.style.opacity = String(intro);
-    title.style.transform = "translateY(" + (1 - intro) * 28 + "px)";
-    glow.style.transform =
-      "translate(" + Math.sin(frame / 26) * 120 + "px," + Math.cos(frame / 34) * 80 + "px)";
-    sweep.style.width = (frame / 149) * 100 + "%";
-  },
-  dispose() {
-    title = undefined;
-    sweep = undefined;
-    glow = undefined;
-  },
-});
-`,
-  };
+  const files = SCAFFOLD_FILES;
 
   for (const relativePath of Object.keys(files)) {
     try {
@@ -552,12 +485,7 @@ export default defineComposition({
     command: "init",
     project: target,
     files: Object.keys(files),
-    next: [
-      "npx frameyard doctor",
-      "npx frameyard dev",
-      "npx frameyard check hello",
-      "npx frameyard render hello --out hello.mp4",
-    ],
+    next: [...SCAFFOLD_NEXT],
   };
 
   if (json) {
@@ -567,7 +495,7 @@ export default defineComposition({
     for (const file of Object.keys(files)) {
       process.stdout.write(`  ${file}\n`);
     }
-    process.stdout.write("Next: npx frameyard doctor && npx frameyard dev\n");
+    process.stdout.write("Next: " + SCAFFOLD_NEXT.slice(0, 2).join(" && ") + "\n");
   }
   return 0;
 }

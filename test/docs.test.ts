@@ -1,6 +1,13 @@
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { SCAFFOLD_FILES, SCAFFOLD_NEXT } from "../src/scaffold.ts";
+import { VERSION } from "../src/version.ts";
+
+const BARE_CLI_LINE = /^\s*(?:frameyard(?:\s|$)|node\s+(?:\.\.?\/)?dist\/cli\.js(?:\s|$))/;
+const CLI_COMMAND =
+  /^(?:npx\s+)?(?:frameyard(?:@[^\s]+)?|node\s+(?:\.\.?\/)?dist\/cli\.js)\s+(?:init|dev|check|still|render|tts|transcribe|doctor|help)(?:\s|$)/;
+const PUBLISHED_CLI = /^npx\s+frameyard(?:@[^\s]+)?\s/;
 
 async function markdownFiles(directory: string): Promise<string[]> {
   const entries = await readdir(directory, { withFileTypes: true });
@@ -39,21 +46,48 @@ function beforeDevelopment(markdown: string): string {
   return heading === -1 ? markdown : markdown.slice(0, heading);
 }
 
+function fencedOffenders(markdown: string, label: string): string[] {
+  const offenders: string[] = [];
+  for (const block of shellBlocks(markdown)) {
+    for (const line of block) {
+      if (BARE_CLI_LINE.test(line)) {
+        offenders.push(`${label}: ${line.trim()}`);
+      }
+    }
+  }
+  return offenders;
+}
+
+function inlineOffenders(markdown: string, label: string): string[] {
+  const offenders: string[] = [];
+  for (const match of markdown.matchAll(/`([^`\n]+)`/g)) {
+    const command = (match[1] ?? "").trim();
+    if (CLI_COMMAND.test(command) && !PUBLISHED_CLI.test(command)) {
+      offenders.push(`${label}: ${command}`);
+    }
+  }
+  return offenders;
+}
+
 describe("documentation command examples", () => {
   it("uses the published CLI in user-facing examples", async () => {
-    const files = ["README.md", ...(await markdownFiles("skill"))];
     const offenders: string[] = [];
 
-    for (const file of files) {
+    for (const file of ["README.md", ...(await markdownFiles("skill"))]) {
       const source = await readFile(file, "utf8");
       const markdown = file === "README.md" ? beforeDevelopment(source) : source;
-      for (const block of shellBlocks(markdown)) {
-        for (const line of block) {
-          if (/^\s*(?:frameyard(?:\s|$)|node\s+(?:\.\.?\/)?dist\/cli\.js(?:\s|$))/.test(line)) {
-            offenders.push(`${file}: ${line.trim()}`);
-          }
-        }
-      }
+      offenders.push(...fencedOffenders(markdown, file));
+    }
+
+    for (const [file, contents] of Object.entries(SCAFFOLD_FILES)) {
+      if (!file.endsWith(".md")) continue;
+      const label = `scaffold/${file}`;
+      offenders.push(...fencedOffenders(contents, label));
+      offenders.push(...inlineOffenders(contents, label));
+    }
+
+    for (const command of SCAFFOLD_NEXT) {
+      expect(command).toMatch(PUBLISHED_CLI);
     }
 
     expect(offenders).toEqual([]);
@@ -63,5 +97,12 @@ describe("documentation command examples", () => {
     for (const file of ["README.md", "skill/SKILL.md"]) {
       expect(await readFile(file, "utf8")).toContain("npx frameyard ");
     }
+  });
+
+  it("links a scaffolded project to its agent guide and the full contract", () => {
+    expect(SCAFFOLD_FILES["README.md"]).toContain("AGENTS.md");
+    const agents = SCAFFOLD_FILES["AGENTS.md"] ?? "";
+    expect(agents).toContain(`npx frameyard@${VERSION}`);
+    expect(agents).toContain("https://github.com/vladiantio/frameyard/tree/main/skill");
   });
 });

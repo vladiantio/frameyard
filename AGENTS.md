@@ -38,7 +38,7 @@ node dist/cli.js render demo --project examples/demo --props examples/demo/props
 node dist/cli.js doctor
 ```
 
-Documentation command examples: runnable examples in `README.md`, `skill/`, the `init` scaffold, and `init --json` `next` use `npx frameyard`; repository-internal commands (this file, `examples/demo/README.md`, and README's `Development` section) use `node dist/cli.js` after `pnpm build`. Command reference tables and `--help` usage lines keep the bare `frameyard` name. `test/docs.test.ts` enforces the user-facing rule.
+Documentation command examples: runnable examples in `README.md`, `skill/`, the `init` scaffold, and `init --json` `next` use `npx frameyard`; repository-internal commands (this file, `examples/demo/README.md`, and README's `Development` section) use `node dist/cli.js` after `pnpm build`. Command reference tables and `--help` usage lines keep the bare `frameyard` name. `test/docs.test.ts` enforces the user-facing rule, including the generated scaffold markdown in `src/scaffold.ts`.
 
 A full 30-second demo render is sequential; run `pnpm bench` for current timings on the reference machine. The test fixtures render tiny compositions. TTS and transcription tests use fake `qwen-tts` and `whisper-cli` executables; real-model tests are opt-in.
 
@@ -55,6 +55,7 @@ A full 30-second demo render is sequential; run `pnpm bench` for current timings
 | `src/assets/` | TTS/transcription wrappers, executable resolution, atomic publishing, provenance |
 | `src/doctor.ts` | Environment, integration, and manifest inspection |
 | `src/project.ts` | `video.config.js` loading and explicit composition discovery |
+| `src/scaffold.ts` | `init` scaffold templates: project config, props, composition, README, and agent guide |
 | `src/cli.ts` | Argument parsing, command execution, human/JSON results |
 | `skill/` | Official host-neutral agent skill and references |
 | `examples/demo/` | 30-second reference composition |
@@ -62,7 +63,7 @@ A full 30-second demo render is sequential; run `pnpm bench` for current timings
 
 Per-frame path: `src/renderer/index.ts` loop (`seek` → `capture` → `writeFrame`) → `browser.ts` `seek()`/`capture()` (CDP `Page.captureScreenshot`) → `ffmpeg.ts` `writeFrame()` (stdin pipe) → `finish()`.
 
-`src/contracts.ts`, `src/transcript.ts`, and `src/runtime/` ship to the browser. Keep them free of `node:` imports. Node-only code belongs in `src/project.ts`, `src/server/`, `src/renderer/`, `src/assets/`, `src/doctor.ts`, or `src/cli.ts`.
+`src/contracts.ts`, `src/transcript.ts`, and `src/runtime/` ship to the browser. Keep them free of `node:` imports. Node-only code belongs in `src/project.ts`, `src/server/`, `src/renderer/`, `src/assets/`, `src/doctor.ts`, `src/scaffold.ts`, or `src/cli.ts`.
 
 ## Non-negotiable invariants
 
@@ -123,7 +124,8 @@ The current implementation still excludes built-in subtitle rendering, automatic
 - **TTS, transcription, provenance, executable resolution** → `src/assets/`; extend `test/assets-e2e.test.ts` with fake executables.
 - **Doctor checks** → `src/doctor.ts`, `src/cli.ts`; extend `test/assets-e2e.test.ts`.
 - **CLI flags, result schemas, exit behavior** → `src/cli.ts`; extend `test/cli-e2e.test.ts`.
-- **Documentation command examples** → `README.md`, `skill/`, and `runInit` in `src/cli.ts`; extend `test/docs.test.ts` and the `init` case in `test/cli-e2e.test.ts`.
+- **Documentation command examples** → `README.md`, `skill/`, and `src/scaffold.ts`; extend `test/docs.test.ts` and the `init` case in `test/cli-e2e.test.ts`.
+- **Init scaffold content** → `src/scaffold.ts` (project config, props, composition, README, agent guide, and `next`); keep the agent guide aligned with `skill/`; extend `test/docs.test.ts` and the `init` case.
 - **Agent skill contract** → `skill/`, `package.json`; extend `test/skill.test.ts`.
 - **Reference behavior** → `examples/demo/`; keep its README commands working.
 - **Performance benchmarks** → `scripts/bench-render.mjs`, `bench/fixtures/`; keep `pnpm bench` representative of the production capture path.
@@ -142,7 +144,7 @@ Test at public seams, not private helpers:
 - `test/agent-workflow.test.ts`: source preservation, check/still/render reporting, and failure reporting through the CLI.
 - `test/real-integrations.test.ts`: opt-in real-model checks enabled by `FRAMEYARD_REAL_INTEGRATIONS=1` and explicit model paths.
 - `test/skill.test.ts`: skill contents, API version, package inclusion, thin wrapper.
-- `test/docs.test.ts`: user-facing command examples use `npx frameyard`; README's `Development` section may use the local build.
+- `test/docs.test.ts`: user-facing command examples use `npx frameyard` in `README.md`, `skill/`, and the `init` scaffold; the scaffold's markdown is checked for fenced and inline commands, and README's `Development` section may use the local build.
 
 Prefer one failing public-behavior test, then the minimal implementation. Use real Chromium and FFmpeg for production-path behavior; mock only external model executables. Run `pnpm test` before finishing. Browser/CLI tests are intentionally sequential (`fileParallelism: false`).
 

@@ -28,6 +28,8 @@ npx frameyard dev
 
 `dev` prints a local preview URL. Select a composition, edit its JSON props, scrub frames, and play the composition with its audio timeline.
 
+The scaffold includes an `AGENTS.md` guide for coding agents working in the project, covering the determinism rules and the `check`, `still`, and `render` workflow.
+
 `npx frameyard` resolves the latest published version. Pin it with `npx frameyard@<version>`, or install the package locally, when a project needs a fixed CLI version.
 
 Validate and render:
@@ -134,7 +136,7 @@ Transcript paths are project-relative. `words: true` requires actual measured wo
 
 | Command | Purpose |
 | --- | --- |
-| `frameyard init [directory]` | Scaffold a minimal project |
+| `frameyard init [directory]` | Scaffold a minimal project, including an `AGENTS.md` agent guide |
 | `frameyard dev [--port <port>]` | Start the preview server |
 | `frameyard check <id> [--props <file>]` | Validate props, assets, audio, transcripts, and every frame without capture |
 | `frameyard still <id> --frame <n>` | Capture one PNG through the production path |
@@ -265,6 +267,7 @@ See the [v0.1 design baseline](./docs/v0.1-design.md) for the full product contr
 - `src/renderer/`: Chromium capture, audio mixing, transcript inspection, FFmpeg encoding
 - `src/assets/`: local TTS/transcription wrappers, executable resolution, atomic publishing, provenance
 - `src/doctor.ts`: environment, integration, and manifest inspection
+- `src/scaffold.ts`: `init` scaffold templates, including the generated project README and agent guide
 - `src/cli.ts`: command-line entry point
 - `skill/`: official host-neutral agent skill
 - `examples/demo/`: the 30-second reference composition

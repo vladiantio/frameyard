@@ -26,6 +26,8 @@ pnpm bench                             # seek/capture/encode/full-render timings
 
 `pnpm install` installs the local git hooks: pre-commit runs typecheck, test typecheck, and unit tests; pre-push runs the full suite.
 
+Releases are tag-driven. Read `RELEASING.md` before publishing. `pnpm set-version <version>` updates the package, runtime, and skill versions together; `pnpm set-version --check` verifies they agree.
+
 Reference project:
 
 ```sh

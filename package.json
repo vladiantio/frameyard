@@ -4,6 +4,28 @@
   "description": "Local-first, deterministic video composition framework for HTML, CSS, and JavaScript.",
   "type": "module",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vladiantio/frameyard.git"
+  },
+  "homepage": "https://github.com/vladiantio/frameyard#readme",
+  "bugs": {
+    "url": "https://github.com/vladiantio/frameyard/issues"
+  },
+  "keywords": [
+    "video",
+    "video-rendering",
+    "html",
+    "css",
+    "javascript",
+    "deterministic",
+    "ffmpeg",
+    "playwright",
+    "agent-skill"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "bin": {
     "frameyard": "./dist/cli.js"
   },
@@ -23,6 +45,7 @@
     "docs",
     "skill",
     "README.md",
+    "CHANGELOG.md",
     "GLOSSARY.md"
   ],
   "engines": {
@@ -35,7 +58,9 @@
     "test": "pnpm build && vitest run",
     "test:unit": "vitest run test/contracts.test.ts test/random.test.ts test/transcript.test.ts",
     "bench": "pnpm build && node scripts/bench-render.mjs",
-    "prepare": "node scripts/install-hooks.mjs"
+    "set-version": "node scripts/set-version.mjs",
+    "prepare": "node scripts/install-hooks.mjs",
+    "prepublishOnly": "node scripts/check-package-manager.mjs && pnpm build"
   },
   "dependencies": {
     "playwright": "1.64.1"
@@ -44,13 +69,6 @@
     "@types/node": "26.6.5",
     "typescript": "5.9.3",
     "vitest": "5.0.5"
-  },
-  "devEngines": {
-    "packageManager": {
-      "name": "pnpm",
-      "version": "12.15.0",
-      "onFail": "download"
-    }
   },
   "packageManager": "pnpm@12.15.0"
 }

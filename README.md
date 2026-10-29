@@ -289,12 +289,14 @@ See the [v0.1 design baseline](./docs/v0.1-design.md) for the full product contr
 - `skill/`: official host-neutral agent skill
 - `examples/demo/`: the 30-second reference composition
 - `bench/fixtures/`: controlled compositions for the render benchmark
-- `scripts/`: benchmark and git-hook installation
+- `scripts/`: benchmark, versioning, and git-hook installation
 - `docs/adr/`: architecture decision records
 
 ## Development
 
 `pnpm install` installs the repository's git hooks. Pre-commit runs typecheck, test typecheck, and unit tests; pre-push runs the full suite. CI runs the same checks on Linux with Node 22 and 24, using fake model executables.
+
+Releases are tag-driven. See [`RELEASING.md`](./RELEASING.md) for version policy, npm trusted publishing, and the release checklist, and [`CHANGELOG.md`](./CHANGELOG.md) for release notes.
 
 ## License
 

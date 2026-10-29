@@ -13,6 +13,15 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  workflow-lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Lint GitHub Actions workflows
+        run: docker run --rm -v "$PWD:$PWD" -w "$PWD" rhysd/actionlint:1.7.12 -color
+
   test:
     runs-on: ubuntu-latest
     strategy:
@@ -50,6 +59,8 @@ jobs:
         run: |
           node --check scripts/bench-render.mjs
           node --check scripts/install-hooks.mjs
+          node --check scripts/set-version.mjs
+          node --check scripts/check-package-manager.mjs
 
       - name: Test
         run: pnpm test

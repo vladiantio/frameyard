@@ -8,6 +8,36 @@ Frameyard uses `0.x` versions until the composition, configuration, CLI,
 JSON-result, transcript, and skill contracts stabilize. Before `1.0.0`, a
 contract change may ship in a minor release and is called out explicitly below.
 
+## [0.2.0] - 2026-10-29
+
+### Added
+
+- `init` scaffolds an `AGENTS.md` project guide with the determinism rules and
+  the `check`, `still`, and `render` workflow for coding agents.
+- `init` scaffolds a private `package.json` whose `dev`, `check`, `render`, and
+  `still` scripts pin the scaffolding CLI version, so `pnpm dev` and
+  `npm run dev` work without a global install. Project names are normalized to
+  valid npm package names.
+- `init --json` reports the additional scaffold files.
+
+### Changed
+
+- **Skill contract:** the official agent skill moved from `skill/` to
+  `skills/frameyard/` so agent hosts discover it automatically. The npm package
+  ships `skills/` instead of `skill/`. Update copied or linked installations
+  from the old path.
+- User-facing documentation, CLI help, and generated project guides use
+  `npx frameyard`; scaffolded scripts pin `npx --yes frameyard@<version>`.
+- Development tooling moved to `oxlint` and `oxfmt`, with pre-commit hooks and
+  matching CI and release workflow checks.
+
+### Fixed
+
+- Corrected documentation links and command examples after the skill relocation,
+  and enforced the `npx frameyard` convention in `test/docs.test.ts`.
+
+[0.2.0]: https://github.com/vladiantio/frameyard/compare/v0.1.0...v0.2.0
+
 ## [0.1.0] - 2026-10-28
 
 ### Added

@@ -1,7 +1,7 @@
 ---
 name: frameyard
 description: Create, validate, inspect, and render deterministic Frameyard videos authored with HTML, CSS, and native JavaScript. Use when a user asks to build or operate a Frameyard project, produce parameterized video, add a local TTS or transcription asset through Frameyard's wrappers, or diagnose a Frameyard render. Do not use for general-purpose media generation outside a Frameyard project.
-frameyard-api-version: 0.1.0
+frameyard-api-version: 0.2.0
 ---
 
 # Frameyard

@@ -66,6 +66,7 @@
     "bench": "pnpm build && node scripts/bench-render.mjs",
     "set-version": "node scripts/set-version.mjs",
     "verify-release": "node scripts/verify-release.mjs",
+    "retag-release": "node scripts/retag-release.mjs",
     "prepare": "node scripts/install-hooks.mjs",
     "prepublishOnly": "node scripts/check-package-manager.mjs && pnpm build"
   },

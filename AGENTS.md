@@ -30,7 +30,7 @@ pnpm bench                             # seek/capture/encode/full-render timings
 
 `pnpm install` installs the local git hooks: pre-commit runs `pnpm check:static` and the unit tests; pre-push runs the full suite. `pnpm check` is the single entry point CI, the release workflow, and local runs share; add new checks to `package.json`, not to the workflow files. Lint and formatting use `oxlint` and `oxfmt`; configuration lives in `.oxlintrc.json` and `.oxfmtrc.json`.
 
-Releases are tag-driven. Read `RELEASING.md` before publishing. `pnpm set-version <version>` updates the package, runtime, and skill versions together; `pnpm set-version --check` verifies they agree.
+Releases are tag-driven. Read `RELEASING.md` before publishing. `pnpm set-version <version>` updates the package, runtime, and skill versions together; `pnpm set-version --check` verifies they agree; `pnpm retag-release <version>` recovers an unpublished tag after a failed release.
 
 Reference project:
 
@@ -138,7 +138,7 @@ The current implementation still excludes built-in subtitle rendering, automatic
 - **Reference behavior** → `examples/demo/`; keep its README commands working.
 - **Performance benchmarks** → `scripts/bench-render.mjs`, `bench/fixtures/`; keep `pnpm bench` representative of the production capture path.
 - **Lint and formatting** → `.oxlintrc.json`, `.oxfmtrc.json`, `package.json`, `.githooks/pre-commit`, and the CI/release workflows; run `pnpm lint` and `pnpm format:check`, or `pnpm check:static` for the full static pass.
-- **Release checks and versioning** → `scripts/set-version.mjs`, `scripts/verify-release.mjs`, `RELEASING.md`, `.github/workflows/release.yml`; run `pnpm verify-release` after tagging.
+- **Release checks and versioning** → `scripts/set-version.mjs`, `scripts/verify-release.mjs`, `scripts/retag-release.mjs`, `RELEASING.md`, `.github/workflows/release.yml`; run `pnpm verify-release` after tagging.
 
 ## Testing
 

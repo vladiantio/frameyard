@@ -64,7 +64,9 @@ OIDC token with `id-token: write` and publishes with provenance.
 - Create a GitHub environment named `npm`. Restrict deployments to tags
   matching `v*`, and add required reviewers if releases should not start
   automatically.
-- Protect `v*` tags from deletion and modification.
+- Create a repository ruleset named `Protect release tags` that blocks deletion
+  and updates for `refs/tags/v*`. `pnpm retag-release` looks it up by name and
+  restores it after a recovery.
 - Keep `main` green; the release workflow runs the full suite before publishing.
 
 ## Release checklist
@@ -128,6 +130,8 @@ OIDC token with `id-token: write` and publishes with provenance.
 
    ```sh
    git push origin main --follow-tags
+   gh run list --workflow Release --limit 1
+   gh run watch <run-id> --compact --interval 30
    ```
 
    The workflow runs `node scripts/verify-release.mjs --ci`, which repeats the
@@ -135,12 +139,13 @@ OIDC token with `id-token: write` and publishes with provenance.
    `origin/main`. It then runs `pnpm check`, inspects the package, publishes
    with provenance, and creates the GitHub Release. CI and the release workflow
    share the same `pnpm check` command; add new checks to `package.json`, not
-   to the workflow files.
+   to the workflow files. If the run fails, `gh run view <run-id> --log-failed`
+   prints only the failed step.
 
 8. Verify the published result:
 
    ```sh
-   npm view frameyard@0.2.0 version dist.tarball
+   npm view frameyard@0.2.0 version dist.tarball dist.attestations
    npm view frameyard dist-tags
    ```
 
@@ -159,7 +164,12 @@ OIDC token with `id-token: write` and publishes with provenance.
    ```
 
    `registry.npmjs.com` has a separate cache and can serve the fresh document
-   first. Confirm the GitHub Release exists and the npm page shows provenance.
+   first. Confirm the GitHub Release is published, not a draft, and matches the
+   prerelease state:
+
+   ```sh
+   gh release view v0.2.0 --json tagName,isPrerelease,isDraft,url,publishedAt
+   ```
 
 ## Prereleases
 
@@ -174,8 +184,22 @@ npm dist-tag add frameyard@0.2.0 latest
 
 ## Failure handling
 
-- **Tests fail before publishing:** fix the problem, delete the tag locally and
-  remotely, and cut a new tag only if the version was never published.
+- **A release fails before publishing:** fix the problem on `main`, commit, and
+  run `pnpm check`. Push the fix without re-pushing the old tag, then inspect the
+  recovery plan and apply it:
+
+  ```sh
+  git push origin main
+  pnpm retag-release 0.2.0 --dry-run
+  pnpm retag-release 0.2.0 --yes
+  ```
+
+  Do not push with `--follow-tags` here; it re-sends the old tag and starts a
+  release run from the wrong commit. The script refuses if the version is
+  already on npm, the tag is not on `main`'s history, or a configured
+  `Protect release tags` ruleset is not active. It replaces the tag and
+  restores the ruleset. See
+  [Recovering an unpublished tag](#recovering-an-unpublished-tag).
 - **npm publish succeeded, GitHub Release failed:** create the release manually:
 
   ```sh
@@ -203,6 +227,61 @@ npm dist-tag add frameyard@0.2.0 latest
   repository, and environment match the trusted publisher configuration, and
   that the job has `id-token: write`. Do not add a long-lived npm token unless
   trusted publishing is unavailable.
+
+## Recovering an unpublished tag
+
+A tag can be replaced only while its version is unpublished. `pnpm retag-release`
+moves the local annotated tag to `HEAD`, temporarily disables the
+`Protect release tags` ruleset, deletes and re-pushes the remote tag, verifies
+the pushed tag object and peeled commit, and restores the ruleset.
+
+1. Confirm the version is unpublished:
+
+   ```sh
+   npm view frameyard@0.2.0 version
+   ```
+
+   It must fail with `E404`. If it prints a version, stop: never move a
+   published tag.
+
+2. Push the fix without the old tag:
+
+   ```sh
+   git push origin main
+   ```
+
+   Do not use `--follow-tags`; it re-sends the tag you are about to replace and
+   starts a release run from the wrong commit.
+
+3. Inspect the plan:
+
+   ```sh
+   pnpm retag-release 0.2.0 --dry-run
+   ```
+
+   The script fetches `origin/main` and requires `HEAD` to be on it. It also
+   requires `main`, a clean tree, `package.json` at the same version, `gh` admin
+   access, and an active `Protect release tags` ruleset when one exists. An
+   existing local or remote tag must point to a commit that is an ancestor of
+   `HEAD`; the script replaces lightweight local tags and creates or moves the
+   local annotated tag to `HEAD`.
+
+4. Apply the plan:
+
+   ```sh
+   pnpm retag-release 0.2.0 --yes
+   ```
+
+5. Watch the new run:
+
+   ```sh
+   gh run list --workflow Release --limit 1
+   gh run watch <run-id> --compact --interval 30
+   ```
+
+If the process is interrupted while the ruleset is disabled, open the
+repository ruleset settings and set `Protect release tags` back to `Active`.
+The script restores it in a `finally` block for normal failures.
 
 ## Why `pnpm publish`
 

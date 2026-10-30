@@ -82,6 +82,7 @@ A full 30-second demo render is sequential by default; pass `--concurrency <n>` 
 | `src/cli.ts` | Argument parsing, command execution, human/JSON results, diagnostics |
 | `skills/frameyard/` | Official host-neutral agent skill and references |
 | `examples/demo/` | 30-second reference HTML composition and external controller |
+| `examples/webgl/` | Focused WebGL shader example with an external controller |
 | `test/` | Public-seam tests |
 
 Per-frame path: `src/renderer/browser.ts` `openCompositionSession` navigates to the composition document, waits for `window.__fy`, calls `load`, then `seek`/`settle`/capture. `src/runtime/host.ts` applies bindings, imports the controller, mounts it, prepares media, sets frame-state variables, calls `update`, seeks animations, and settles media. `src/renderer/index.ts` merges static and runtime diagnostics into the result.
@@ -162,7 +163,7 @@ Per-frame path: `src/renderer/browser.ts` `openCompositionSession` navigates to 
 - **Doctor checks** → `src/doctor.ts`, `src/cli.ts`; extend `test/assets-e2e.test.ts`.
 - **Init scaffold content** → `src/scaffold.ts` (HTML composition, config, props, README, agent guide, and `next`); keep the agent guide aligned with `skills/frameyard/`; extend `test/scaffold.test.ts`, `test/docs.test.ts`, and the `init` case. When the scaffold file set changes, update `README.md`, `docs/v0.1-design.md` §6, and the scaffold README/agent guide.
 - **Agent skill contract** → `skills/frameyard/`, `package.json`; extend `test/skill.test.ts`.
-- **Reference behavior** → `examples/demo/`; keep its README commands working.
+- **Reference behavior** → `examples/demo/` and `examples/webgl/`; keep their README commands working.
 - **Performance benchmarks** → `scripts/bench-render.mjs`, `bench/fixtures/`, `bench/README.md`; keep `pnpm bench` representative of the production capture path.
 - **Lint and formatting** → `.oxlintrc.json`, `.oxfmtrc.json`, `package.json`, `.githooks/pre-commit`, and CI/release workflows; run `pnpm check:static`.
 - **Release checks and versioning** → `scripts/set-version.mjs`, `scripts/verify-release.mjs`, `scripts/retag-release.mjs`, `RELEASING.md`, `.github/workflows/release.yml`; run `pnpm verify-release` after tagging.

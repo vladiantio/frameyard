@@ -1,0 +1,215 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <script type="application/json" data-fy="props">
+      {
+        "kicker": "Shader Study / 001",
+        "title": "Liquid Light",
+        "subtitle": "A frame-driven WebGL field, resolved in software so every captured pixel stays reproducible.",
+        "accent": "#78f0c8"
+      }
+    </script>
+    <style>
+      @keyframes rise {
+        from {
+          opacity: 0;
+          transform: translateY(44px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+      @keyframes fade {
+        from {
+          opacity: 0;
+        }
+        to {
+          opacity: 1;
+        }
+      }
+      @keyframes draw {
+        from {
+          opacity: 0;
+          transform: scaleX(0);
+        }
+        to {
+          opacity: 1;
+          transform: scaleX(1);
+        }
+      }
+      html,
+      body,
+      fy-composition {
+        background: #060a0e;
+      }
+      #scene {
+        position: relative;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #060a0e;
+        color: #edf6f3;
+        font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+      }
+      #field {
+        position: absolute;
+        inset: 0;
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+      #scrim {
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(
+          90deg,
+          rgba(4, 8, 11, 0.94) 0%,
+          rgba(4, 8, 11, 0.78) 34%,
+          rgba(4, 8, 11, 0.18) 66%,
+          rgba(4, 8, 11, 0) 100%
+        );
+      }
+      #vignette {
+        position: absolute;
+        inset: 0;
+        background: radial-gradient(ellipse at 60% 45%, transparent 34%, rgba(0, 0, 0, 0.46) 100%);
+        pointer-events: none;
+      }
+      #kicker {
+        position: absolute;
+        top: 72px;
+        left: 148px;
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        font:
+          600 14px/1 ui-monospace,
+          monospace;
+        letter-spacing: 0.26em;
+        text-transform: uppercase;
+        color: var(--fy-prop-accent);
+        animation: fade 1s linear both;
+      }
+      #kicker::before {
+        content: "";
+        width: 8px;
+        height: 8px;
+        background: var(--fy-prop-accent);
+        box-shadow: 0 0 18px var(--fy-prop-accent);
+      }
+      #meta {
+        position: absolute;
+        top: 72px;
+        right: 148px;
+        text-align: right;
+        font:
+          500 13px/1.9 ui-monospace,
+          monospace;
+        letter-spacing: 0.12em;
+        color: #80908e;
+        animation: fade 1s linear both;
+      }
+      #meta strong {
+        color: #dce9e6;
+        font-weight: 500;
+      }
+      #title {
+        position: absolute;
+        top: 292px;
+        left: 148px;
+        width: 780px;
+        margin: 0;
+        font-size: 168px;
+        line-height: 0.88;
+        letter-spacing: -0.062em;
+        font-weight: 660;
+        animation: rise 1s cubic-bezier(0.215, 0.61, 0.355, 1) both;
+      }
+      #subtitle {
+        position: absolute;
+        top: 604px;
+        left: 152px;
+        width: 720px;
+        margin: 0;
+        font-size: 30px;
+        line-height: 1.45;
+        font-weight: 420;
+        color: #96a7a3;
+        animation: rise 1s cubic-bezier(0.215, 0.61, 0.355, 1) both;
+      }
+      #footer {
+        position: absolute;
+        left: 148px;
+        right: 148px;
+        bottom: 64px;
+        animation: fade 1s linear both;
+      }
+      #rule {
+        position: relative;
+        height: 1px;
+        background: rgba(237, 246, 243, 0.14);
+        transform-origin: left center;
+        animation: draw 1s cubic-bezier(0.215, 0.61, 0.355, 1) both;
+      }
+      #progress {
+        position: absolute;
+        inset: 0 auto 0 0;
+        width: calc(var(--fy-progress) * 100%);
+        background: var(--fy-prop-accent);
+        box-shadow: 0 0 16px var(--fy-prop-accent);
+      }
+      #footer-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 24px;
+        margin-top: 18px;
+        font:
+          500 13px/1 ui-monospace,
+          monospace;
+        letter-spacing: 0.14em;
+        color: #758581;
+        animation: fade 1s linear both;
+      }
+      #footer-row strong {
+        color: var(--fy-prop-accent);
+        font-weight: 600;
+      }
+      #footer-meta {
+        display: flex;
+        gap: 28px;
+      }
+    </style>
+  </head>
+  <body>
+    <fy-composition width="1920" height="1080" fps="30" duration-in-frames="360">
+      <div id="scene">
+        <canvas id="field" width="1920" height="1080"></canvas>
+        <div id="scrim"></div>
+        <div id="vignette"></div>
+        <div id="kicker" data-fy-text="kicker" data-fy-anim-start="0" data-fy-anim-duration="28"></div>
+        <div id="meta" data-fy-anim-start="18" data-fy-anim-duration="34">
+          <div><strong>WEBGL 1.0</strong> / SWIFTSHADER</div>
+          <div>1920 × 1080 · 30 FPS</div>
+          <div>12.00 S · 360 FRAMES</div>
+        </div>
+        <h1 id="title" data-fy-text="title" data-fy-anim-start="6" data-fy-anim-duration="56"></h1>
+        <p id="subtitle" data-fy-text="subtitle" data-fy-anim-start="34" data-fy-anim-duration="52"></p>
+        <div id="footer" data-fy-anim-start="28" data-fy-anim-duration="30">
+          <div id="rule" data-fy-anim-start="38" data-fy-anim-duration="60">
+            <div id="progress"></div>
+          </div>
+          <div id="footer-row" data-fy-anim-start="44" data-fy-anim-duration="30">
+            <span>FRAME <strong id="frame">000</strong> / <span id="total">359</span></span>
+            <span id="clock">0.00 S</span>
+            <span id="footer-meta"><span>FRAME-SEEKED</span><span>NO RAF</span></span>
+          </div>
+        </div>
+      </div>
+    </fy-composition>
+
+    <script type="text/fy-controller" src="./webgl.controller.js"></script>
+  </body>
+</html>

@@ -1,0 +1,6 @@
+{
+  "kicker": "Shader Study / 001",
+  "title": "Liquid Light",
+  "subtitle": "A frame-driven WebGL field, resolved in software so every captured pixel stays reproducible.",
+  "accent": "#78f0c8"
+}

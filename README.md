@@ -41,7 +41,7 @@ npx frameyard render hello --props props/hello.json --out hello.mp4
 npx frameyard still hello --frame 42 --out hello-frame.png
 ```
 
-The 30-second reference composition lives in [`examples/demo`](./examples/demo). Its README has the commands for running the demo from a repository checkout.
+The 30-second reference composition lives in [`examples/demo`](./examples/demo), and a focused WebGL shader example lives in [`examples/webgl`](./examples/webgl). Each README has the commands for running it from a repository checkout.
 
 ## Project format
 
@@ -176,7 +176,7 @@ The runtime pauses every video and seeks it to the frame-derived source time. Do
 
 An unmuted `<video>` also contributes its soundtrack to the same timeline as declarative audio clips. Frameyard extracts that track with FFmpeg for production and mirrors it in preview, while keeping the video element itself silent. Set `muted` or `data-fy-audio="off"` to use a video as a visual-only asset.
 
-WebGL 1 and WebGL 2 canvases are captured through the normal frame path. Draw the complete frame from the controller's `update()` and do not depend on the previous frame's drawing buffer; clear or redraw the scene each time. Production sessions pin software WebGL (SwiftShader) so rendered pixels do not vary with the host GPU.
+WebGL 1 and WebGL 2 canvases are captured through the normal frame path. Draw the complete frame from the controller's `update()` and do not depend on the previous frame's drawing buffer; clear or redraw the scene each time. Production sessions pin software WebGL (SwiftShader) so rendered pixels do not vary with the host GPU. See [`examples/webgl`](./examples/webgl) for a complete shader example.
 
 ## Audio timeline
 
@@ -363,6 +363,7 @@ See the [design baseline](./docs/v0.1-design.md) for the full product contract, 
 - `src/cli.ts`: command-line entry point
 - `skills/`: official host-neutral agent skill
 - `examples/demo/`: the 30-second reference composition
+- `examples/webgl/`: the focused WebGL shader example
 - `bench/fixtures/`: controlled HTML compositions for the render benchmark
 - `scripts/`: benchmark, release checks, versioning, and git-hook installation
 - `docs/adr/`: architecture decision records

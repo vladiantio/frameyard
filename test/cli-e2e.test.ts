@@ -626,6 +626,32 @@ describe("CLI end-to-end", () => {
     expect(late[2]).toBeLessThan(20);
   });
 
+  it("captures identical PNGs from concurrent still sessions", async () => {
+    const capturePair = async (compositionId: string, frame: number, label: string, extraArgs: string[] = []) => {
+      const baseArgs = ["still", compositionId, "--frame", String(frame), "--project", root, "--json", ...extraArgs];
+      const [first, second] = await Promise.all([
+        run([...baseArgs, "--out", `${label}-a.png`], root),
+        run([...baseArgs, "--out", `${label}-b.png`], root),
+      ]);
+
+      expect(first.code).toBe(0);
+      expect(second.code).toBe(0);
+      const firstJson = JSON.parse(first.stdout) as Record<string, unknown>;
+      const secondJson = JSON.parse(second.stdout) as Record<string, unknown>;
+      expect(firstJson).toMatchObject({ ok: true, command: "still", composition: compositionId, frame });
+      expect(secondJson).toMatchObject({ ok: true, command: "still", composition: compositionId, frame });
+
+      const [a, b] = await Promise.all([
+        readFile(path.join(root, `${label}-a.png`)),
+        readFile(path.join(root, `${label}-b.png`)),
+      ]);
+      expect(createHash("sha256").update(a).digest("hex")).toBe(createHash("sha256").update(b).digest("hex"));
+    };
+
+    await capturePair("demo", 3, "concurrent-demo", ["--props", "props.json"]);
+    await capturePair("media", 3, "concurrent-media");
+  });
+
   it("checks and renders embedded video audio with the declared timeline", async () => {
     const check = await run(["check", "media", "--project", root, "--json"], root);
     expect(check.code).toBe(0);
@@ -788,6 +814,9 @@ describe("CLI end-to-end", () => {
     expect(video).toMatchObject({ codec_name: "h264", nb_read_frames: "6" });
     expect(audio).toMatchObject({ codec_name: "aac", channels: 2 });
 
+    // End-to-end smoke check only: x264 threading and rate control are not a
+    // determinism guarantee. The capture-boundary check is "captures identical
+    // PNGs from concurrent still sessions".
     expect(await decodedVideoHash(path.join(root, "parallel.mp4"))).toBe(
       await decodedVideoHash(path.join(root, "sequential.mp4")),
     );

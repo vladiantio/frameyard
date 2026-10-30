@@ -216,23 +216,32 @@ async function withSessions<T>(
 
   try {
     try {
-      const open = async (): Promise<void> => {
+      const open = async (): Promise<CompositionSession> => {
         throwIfAborted(options.signal);
-        sessions.push(
-          await openCompositionSession({
-            serverUrl: server.url,
-            entry: composition.entry,
-            props: options.props,
-            info: staticInfo,
-            staticDiagnostics,
-          }),
-        );
+        return openCompositionSession({
+          serverUrl: server.url,
+          entry: composition.entry,
+          props: options.props,
+          info: staticInfo,
+          staticDiagnostics,
+        });
       };
 
-      await open();
+      sessions.push(await open());
       const sessionCount = Math.max(1, resolveSessionCount(sessions[0] as CompositionSession));
-      for (let index = sessions.length; index < sessionCount; index += 1) {
-        await open();
+      if (sessionCount > 1) {
+        // Browser startup dominates short parallel renders, so open the
+        // remaining sessions together instead of paying for each in sequence.
+        const additional = await Promise.allSettled(Array.from({ length: sessionCount - 1 }, () => open()));
+        for (const result of additional) {
+          if (result.status === "fulfilled") {
+            sessions.push(result.value);
+          }
+        }
+        const failed = additional.find((result): result is PromiseRejectedResult => result.status === "rejected");
+        if (failed) {
+          throw failed.reason;
+        }
       }
 
       return await callback(sessions);
@@ -248,13 +257,15 @@ async function withSessions<T>(
       throw error;
     }
   } finally {
-    for (const session of sessions) {
-      try {
-        await session.close();
-      } catch {
-        // Preserve the command's original error.
-      }
-    }
+    await Promise.all(
+      sessions.map(async (session) => {
+        try {
+          await session.close();
+        } catch {
+          // Preserve the command's original error.
+        }
+      }),
+    );
     try {
       await server.close();
     } catch {

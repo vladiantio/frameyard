@@ -4,5 +4,7 @@ export default {
     gradient: "./compositions/gradient.html",
     text: "./compositions/text.html",
     blur: "./compositions/blur.html",
+    webgl: "./compositions/webgl.html",
+    video: "./compositions/video.html",
   },
 };

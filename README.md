@@ -327,7 +327,7 @@ Rendering is sequential by default. Pass `--concurrency <n>` (1-16) to seek and 
 
 For the same composition revision, props, assets, frame, and pinned runtime/browser environment, the visual state is identical. Encoded bytes are not a reproducibility guarantee, even on the same machine; they depend on the FFmpeg build, encoder threading, and runtime environment.
 
-For a repeatable local measurement of seek, capture, encode, and full-render time, run `pnpm bench`. The demo and the controlled fixtures under `bench/fixtures/` are the reference workloads.
+For a repeatable local measurement of seek, capture, encode, and full-render time, run `pnpm bench`. See `bench/README.md` for the measurement recipe and browser-flag experiments. The demo and the controlled fixtures under `bench/fixtures/` are the reference workloads.
 
 ## Current limits
 

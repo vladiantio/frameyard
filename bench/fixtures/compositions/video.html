@@ -1,0 +1,43 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      #clip {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+      #tint {
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(135deg, #e4572e, #17bebb);
+        mix-blend-mode: screen;
+      }
+    </style>
+  </head>
+  <body>
+    <fy-composition width="1920" height="1080" fps="30" duration-in-frames="90">
+      <video id="clip" src="assets/clip.webm" data-fy-start="0" data-fy-duration="3" muted playsinline></video>
+      <div id="tint"></div>
+    </fy-composition>
+    <script type="text/fy-controller">
+      let tint;
+
+      export default {
+        mount({ root }) {
+          tint = root.querySelector("#tint");
+        },
+        update({ frame }) {
+          const t = frame / 89;
+          tint.style.opacity = String(0.15 + t * 0.25);
+        },
+        dispose() {
+          tint = undefined;
+        },
+      };
+    </script>
+  </body>
+</html>

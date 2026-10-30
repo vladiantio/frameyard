@@ -56,6 +56,11 @@ export const BROWSER_ARGS: string[] = [
   // software rasterizer shipped with the Playwright Chromium build.
   "--use-angle=swiftshader",
   "--enable-unsafe-swiftshader",
+  // SwiftShader already rasterizes WebGL in software. Routing every captured
+  // frame through GPU-process compositing adds a slow copy step without making
+  // the 2D output any less deterministic. Software compositing keeps WebGL on
+  // SwiftShader while removing that round trip. See ADR 0009.
+  "--disable-gpu-compositing",
 ];
 
 type BrowserContextOptions = Parameters<Browser["newContext"]>[0];

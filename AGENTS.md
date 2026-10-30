@@ -5,7 +5,7 @@ Frameyard is a local-first framework for deterministic, parameterized videos aut
 ## Read first
 
 - **Before changing public composition, props, audio, CLI, or JSON contracts**: read `docs/v0.1-design.md`, then `GLOSSARY.md` for domain terms.
-- **Before changing determinism or rendering architecture**: read `docs/adr/0002-make-frame-and-props-the-only-animation-state.md`, `docs/adr/0003-render-browser-frames-offline.md`, `docs/adr/0005-keep-parallel-rendering-opt-in-and-frame-ordered.md`, and the reproducibility guarantee in `docs/v0.1-design.md` §3.
+- **Before changing determinism or rendering architecture**: read `docs/adr/0002-make-frame-and-props-the-only-animation-state.md`, `docs/adr/0003-render-browser-frames-offline.md`, `docs/adr/0005-keep-parallel-rendering-opt-in-and-frame-ordered.md`, `docs/adr/0009-composite-production-frames-in-software.md`, and the reproducibility guarantee in `docs/v0.1-design.md` §3.
 - **Before changing authoring APIs or the HTML/controller boundary**: read `docs/adr/0001-keep-composition-authoring-web-native.md` (amended by ADR 0007), `docs/adr/0006-seek-embedded-media-from-the-frame-clock.md` (placement amended by ADR 0007), and `docs/adr/0007-make-html-documents-the-composition-unit.md`.
 - **For usage and project layout**: read `README.md` and `docs/migration-0.4.md`.
 
@@ -163,7 +163,7 @@ Per-frame path: `src/renderer/browser.ts` `openCompositionSession` navigates to 
 - **Init scaffold content** → `src/scaffold.ts` (HTML composition, config, props, README, agent guide, and `next`); keep the agent guide aligned with `skills/frameyard/`; extend `test/scaffold.test.ts`, `test/docs.test.ts`, and the `init` case. When the scaffold file set changes, update `README.md`, `docs/v0.1-design.md` §6, and the scaffold README/agent guide.
 - **Agent skill contract** → `skills/frameyard/`, `package.json`; extend `test/skill.test.ts`.
 - **Reference behavior** → `examples/demo/`; keep its README commands working.
-- **Performance benchmarks** → `scripts/bench-render.mjs`, `bench/fixtures/`; keep `pnpm bench` representative of the production capture path.
+- **Performance benchmarks** → `scripts/bench-render.mjs`, `bench/fixtures/`, `bench/README.md`; keep `pnpm bench` representative of the production capture path.
 - **Lint and formatting** → `.oxlintrc.json`, `.oxfmtrc.json`, `package.json`, `.githooks/pre-commit`, and CI/release workflows; run `pnpm check:static`.
 - **Release checks and versioning** → `scripts/set-version.mjs`, `scripts/verify-release.mjs`, `scripts/retag-release.mjs`, `RELEASING.md`, `.github/workflows/release.yml`; run `pnpm verify-release` after tagging.
 
@@ -178,7 +178,7 @@ Test at public seams, not private helpers:
 - `test/host-runtime.test.ts`: host bindings, repeat/if/class, animation scheduling, frame variables, inline/external controllers, props validation, load atomicity, dispose, diagnostics, auto mode, media settle.
 - `test/project-server.test.ts`: config loading, static routes, import map, ranges, traversal rejection.
 - `test/preview-runtime.test.ts`: HTML iframe preview, props, seeking, CSS animation, Canvas, WebGL, embedded video, determinism, diagnostics.
-- `test/cli-e2e.test.ts`: real CLI with Chromium and FFmpeg, JSON envelopes, missing assets, deterministic stills, embedded video/WebGL capture and audio, MP4/audio output, overwrite behavior, HTML check/still/render, static diagnostics, `dev`, `init`.
+- `test/cli-e2e.test.ts`: real CLI with Chromium and FFmpeg, JSON envelopes, missing assets, deterministic stills across concurrent sessions, embedded video/WebGL capture and audio, MP4/audio output, overwrite behavior, HTML check/still/render, static diagnostics, `dev`, `init`.
 - `test/assets-e2e.test.ts`: `tts`/`transcribe`/`doctor` with fake upstream executables, normalization, word timings, exports, manifests, cancellation, transcript validation.
 - `test/agent-workflow.test.ts`: source preservation, check/still/render reporting, failure reporting through the CLI.
 - `test/real-integrations.test.ts`: opt-in real-model checks enabled by `FRAMEYARD_REAL_INTEGRATIONS=1` and explicit model paths.

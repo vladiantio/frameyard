@@ -41,6 +41,11 @@ Options:
   --frames <n>          Sample frames per composition (default: 24)
   --warmup <n>          Warmup captures per mode (default: 4)
   --capture <list>      Capture modes: ${Object.keys(CAPTURE_MODES).join(", ")}
+  --concurrency <n>     Production render concurrency (1-16, default 1)
+  --browser-arg <flag>  Add a Chromium flag for this run (repeatable; bench-only)
+  --no-browser-arg <flag>
+                        Remove a production Chromium flag for an A/B run
+                        (repeatable; bench-only)
   --no-full             Skip the end-to-end render
   --no-encode           Skip the encode-only measurement
   --quick               Shorthand for --frames 12 --no-full
@@ -57,6 +62,9 @@ function parseArgs(argv) {
     frames: 24,
     warmup: 4,
     capture: ["png", "png-fast"],
+    concurrency: 1,
+    browserArgs: [],
+    removeBrowserArgs: [],
     full: true,
     encode: true,
     json: false,
@@ -65,6 +73,14 @@ function parseArgs(argv) {
 
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
+    if (arg.startsWith("--browser-arg=")) {
+      options.browserArgs.push(arg.slice("--browser-arg=".length));
+      continue;
+    }
+    if (arg.startsWith("--no-browser-arg=")) {
+      options.removeBrowserArgs.push(arg.slice("--no-browser-arg=".length));
+      continue;
+    }
     const value = () => {
       index += 1;
       if (index >= argv.length) {
@@ -98,6 +114,15 @@ function parseArgs(argv) {
           .map((mode) => mode.trim())
           .filter(Boolean);
         break;
+      case "--concurrency":
+        options.concurrency = Number(value());
+        break;
+      case "--browser-arg":
+        options.browserArgs.push(value());
+        break;
+      case "--no-browser-arg":
+        options.removeBrowserArgs.push(value());
+        break;
       case "--no-full":
         options.full = false;
         break;
@@ -125,6 +150,15 @@ function parseArgs(argv) {
   }
   if (!Number.isInteger(options.warmup) || options.warmup < 0) {
     throw new Error("--warmup must be a non-negative integer.");
+  }
+  if (!Number.isInteger(options.concurrency) || options.concurrency < 1 || options.concurrency > 16) {
+    throw new Error("--concurrency must be an integer from 1 to 16.");
+  }
+  if (options.browserArgs.some((arg) => arg.trim() === "")) {
+    throw new Error("--browser-arg requires a non-empty Chromium flag.");
+  }
+  if (options.removeBrowserArgs.some((arg) => arg.trim() === "")) {
+    throw new Error("--no-browser-arg requires a non-empty Chromium flag.");
   }
   if (options.capture.length === 0) {
     throw new Error("--capture must name at least one mode.");
@@ -204,13 +238,18 @@ function formatBytes(value) {
   return `${(value / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function resolveBrowserArgs(options) {
+  const removed = new Set(options.removeBrowserArgs);
+  return [...BROWSER_ARGS.filter((arg) => !removed.has(arg)), ...options.browserArgs];
+}
+
 function pageErrors(session) {
   if (session.errors.length > 0) {
     throw new Error(`Unhandled browser error: ${session.errors.join("\n")}`);
   }
 }
 
-async function openSession(serverUrl, projectRoot, entry, props) {
+async function openSession(serverUrl, projectRoot, entry, props, browserArgs = BROWSER_ARGS) {
   // Mirrors the production HTML session so capture numbers match production;
   // the production session does not expose CDP for capture-mode comparisons.
   const validation = await validateHtmlComposition({ projectRoot, entry, props });
@@ -227,7 +266,7 @@ async function openSession(serverUrl, projectRoot, entry, props) {
   const pageErrorsList = [];
 
   try {
-    browser = await chromium.launch({ headless: true, args: BROWSER_ARGS });
+    browser = await chromium.launch({ headless: true, args: browserArgs });
     context = await browser.newContext({
       ...BROWSER_CONTEXT_OPTIONS,
       viewport: { width: info.metadata.width, height: info.metadata.height },
@@ -415,10 +454,13 @@ function runCli(args) {
   });
 }
 
-async function measureFullRender(project, compositionId, propsPath, outputPath) {
+async function measureFullRender(project, compositionId, propsPath, outputPath, concurrency) {
   const args = ["render", compositionId, "--project", project.root, "--out", outputPath, "--overwrite", "--json"];
   if (propsPath) {
     args.push("--props", propsPath);
+  }
+  if (concurrency > 1) {
+    args.push("--concurrency", String(concurrency));
   }
 
   const startedAt = performance.now();
@@ -437,6 +479,7 @@ async function measureFullRender(project, compositionId, propsPath, outputPath) 
     frames: result.durationInFrames,
     fps: (result.framesRendered / wallMs) * 1000,
     bytes: result.bytes,
+    concurrency,
   };
 }
 
@@ -484,7 +527,13 @@ async function benchComposition({ project, compositionId, options, tempDir }) {
   let encodeBuffers = [];
 
   try {
-    session = await openSession(server.url, project.root, composition.entry, resolvedProps.props);
+    session = await openSession(
+      server.url,
+      project.root,
+      composition.entry,
+      resolvedProps.props,
+      resolveBrowserArgs(options),
+    );
     const { width, height, fps: compositionFps, durationInFrames } = session.metadata;
     fps = compositionFps;
     const frames = sampleFrames(durationInFrames, options.frames);
@@ -554,6 +603,7 @@ async function benchComposition({ project, compositionId, options, tempDir }) {
       compositionId,
       resolvedProps.path,
       path.join(tempDir, `${compositionId}-render.mp4`),
+      options.concurrency,
     );
   }
 
@@ -563,6 +613,11 @@ async function benchComposition({ project, compositionId, options, tempDir }) {
 function printHuman(results, options) {
   console.log("Frameyard render benchmark");
   console.log(`capture modes: ${options.capture.join(", ")}; samples: ${options.frames}`);
+  if (options.browserArgs.length > 0 || options.removeBrowserArgs.length > 0) {
+    console.log(
+      `browser args: +[${options.browserArgs.join(", ")}] -[${options.removeBrowserArgs.join(", ")}] (bench-only)`,
+    );
+  }
   console.log("Timings are machine-dependent; encoded MP4 bytes are not a reproducibility guarantee.");
 
   for (const result of results) {
@@ -600,7 +655,7 @@ function printHuman(results, options) {
 
     if (result.fullRender) {
       console.log(
-        `  full render     ${(result.fullRender.wallMs / 1000).toFixed(1)} s  (${result.fullRender.fps.toFixed(1)} fps, ${formatBytes(result.fullRender.bytes)})`,
+        `  full render     ${(result.fullRender.wallMs / 1000).toFixed(1)} s  (${result.fullRender.fps.toFixed(1)} fps, ${formatBytes(result.fullRender.bytes)})${result.fullRender.concurrency > 1 ? `, concurrency ${result.fullRender.concurrency}` : ""}`,
       );
     }
   }
@@ -648,7 +703,23 @@ async function main() {
   }
 
   if (options.json) {
-    console.log(JSON.stringify({ ok: true, command: "bench", results }, null, 2));
+    console.log(
+      JSON.stringify(
+        {
+          ok: true,
+          command: "bench",
+          settings: {
+            concurrency: options.concurrency,
+            browserArgs: options.browserArgs,
+            removeBrowserArgs: options.removeBrowserArgs,
+            effectiveBrowserArgs: resolveBrowserArgs(options),
+          },
+          results,
+        },
+        null,
+        2,
+      ),
+    );
     return;
   }
 

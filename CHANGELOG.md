@@ -8,7 +8,7 @@ Frameyard uses `0.x` versions until the composition, configuration, CLI,
 JSON-result, transcript, and skill contracts stabilize. Before `1.0.0`, a
 contract change may ship in a minor release and is called out explicitly below.
 
-## [Unreleased]
+## [0.3.0] - 2026-10-30
 
 ### Added
 
@@ -23,6 +23,21 @@ contract change may ship in a minor release and is called out explicitly below.
   sessions pin SwiftShader so pixels do not vary with the host GPU.
 - Media-settle step between `seek()` and capture for embedded video decode and
   browser paint.
+- Optional parallel frame capture with `render --concurrency <n>` (1-16).
+  Independent browser sessions seek and capture assigned frames while one
+  ordered writer feeds a single FFmpeg encoder. Sequential rendering remains the
+  default.
+- `render --json` reports the effective `concurrency`.
+- `MEDIA_INVALID` and `MEDIA_SEEK_FAILED` error codes for embedded-media
+  validation and seek failures.
+
+### Changed
+
+- CI and the release workflow share `pnpm check`, and `pnpm verify-release`
+  preflights the tag, version locations, changelog, branch, and working tree
+  before a release is pushed.
+
+[0.3.0]: https://github.com/vladiantio/frameyard/compare/v0.2.0...v0.3.0
 
 ## [0.2.0] - 2026-10-29
 

@@ -153,7 +153,21 @@ export function renderPreviewHtml(): string {
       repeating-conic-gradient(#0d1014 0% 25%, #0b0d10 0% 50%) 50% / 24px 24px;
   }
   .stage-wrap { position: relative; flex: 0 0 auto; }
-  .stage { transform-origin: top left; overflow: hidden; background: #000; }
+  .stage-frame { position: absolute; top: 0; left: 0; border: 0; transform-origin: top left; background: #000; }
+  .diagnostics {
+    border: 1px solid var(--line);
+    background: var(--panel-2);
+    border-radius: 7px;
+    padding: 8px 10px;
+    max-height: 26vh;
+    overflow: auto;
+    font-family: var(--mono);
+    font-size: 11px;
+    line-height: 1.5;
+  }
+  .diagnostics .diagnostic { display: block; white-space: pre-wrap; }
+  .diagnostics .warning { color: #e8c76a; }
+  .diagnostics .error { color: var(--danger); }
   .transport {
     grid-row: 3;
     grid-column: 2;
@@ -175,18 +189,6 @@ export function renderPreviewHtml(): string {
   .audio { display: flex; align-items: center; gap: 7px; color: var(--muted); font-family: var(--mono); font-size: 11px; }
   .audio input[type="range"] { width: 72px; accent-color: var(--accent); }
 
-  body.render #app { display: block; height: auto; }
-  body.render .topbar, body.render .panel, body.render .transport { display: none; }
-  body.render .viewport {
-    position: fixed;
-    inset: 0;
-    display: block;
-    padding: 0;
-    overflow: hidden;
-    background: #000;
-  }
-  body.render .stage-wrap { position: absolute; inset: 0; width: auto !important; height: auto !important; }
-  body.render .stage { transform: none !important; }
 </style>
 </head>
 <body>
@@ -206,13 +208,16 @@ export function renderPreviewHtml(): string {
     </div>
     <button id="apply" class="primary" type="button">Apply props</button>
     <div id="error" class="error" role="alert" hidden></div>
+    <div id="diagnostics" class="diagnostics" hidden></div>
     <div class="hint">
       Frames are derived from <code>frame</code> and <code>props</code> only.
       Wall-clock animation and unseeded randomness are not deterministic.
     </div>
   </aside>
   <main id="viewport" class="viewport">
-    <div id="stage-wrap" class="stage-wrap"><div id="stage" class="stage"></div></div>
+    <div id="stage-wrap" class="stage-wrap">
+      <iframe id="stage-frame" class="stage-frame" title="Composition" hidden></iframe>
+    </div>
   </main>
   <footer class="transport">
     <button id="play" class="play" type="button" aria-label="Play">&#9654;</button>

@@ -24,6 +24,10 @@ Run the CLI with `npx frameyard`. It resolves the latest published version; pin 
 
 - `SKILL.md`: trigger description and operating workflow
 - `references/deterministic-authoring.md`
+- `references/bindings.md`
+- `references/controllers.md`
+- `references/diagnostics.md`
+- `references/common-mistakes.md`
 - `references/audio-assets.md`
 - `references/subtitles-karaoke.md`
 - `references/json-results.md`

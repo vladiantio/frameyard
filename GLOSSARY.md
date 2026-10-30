@@ -19,12 +19,36 @@ The fixed dimensions, frame rate, and duration in frames that define a compositi
 _Avoid_: Render options, props
 
 **Composition lifecycle**:
-The `mount → update → dispose` sequence that governs a composition's frame production.
+The host-driven sequence that loads an HTML composition, seeks it to frames, and releases it.
 _Avoid_: Render loop, playback lifecycle
+
+**Controller lifecycle**:
+The `mount → update → dispose` sequence a composition controller uses for per-frame computation.
+_Avoid_: Composition lifecycle
 
 **Composition revision**:
 A specific version of a composition's source and metadata.
 _Avoid_: Build, release
+
+**HTML composition**:
+A composition whose source is an HTML document.
+_Avoid_: HTML template, page
+
+**Composition controller**:
+An optional JavaScript controller, either inline in the composition document or in an external module, that performs per-frame computation an HTML composition's declarative HTML and CSS cannot express.
+_Avoid_: Composition module, plugin
+
+**Inline controller**:
+A composition controller whose source is embedded in the composition document.
+_Avoid_: Embedded script
+
+**External controller**:
+A composition controller whose source is a separate JavaScript module referenced by the composition document.
+_Avoid_: Controller file
+
+**Declarative binding**:
+An HTML attribute that maps a prop into text, an attribute, a class, or element presence.
+_Avoid_: Template expression, interpolation
 
 **Props**:
 The immutable, JSON-serializable inputs supplied to a composition for one render.
@@ -47,6 +71,10 @@ _Avoid_: Playback-driven animation
 **Frame clock**:
 The single source of animation time, derived from the current frame and the composition's frame rate.
 _Avoid_: Wall clock, playback timer
+
+**Frame-state variable**:
+A CSS custom property whose value is derived from the current composition frame.
+_Avoid_: Animation variable, clock variable
 
 **Seek safety**:
 The property that any frame can be produced correctly without depending on previously produced frames.
@@ -88,13 +116,25 @@ _Avoid_: Soundtrack, audio track, final cut
 
 ### Rendering
 
+**Composition host**:
+The injected runtime that loads an HTML composition, applies its bindings, and exposes its frame clock to preview and render.
+_Avoid_: Preview runtime, render runtime
+
 **Preview**:
 An interactive, frame-accurate inspection of a composition using the same composition behavior as a render.
 _Avoid_: Visual editor
 
 **Check**:
-A validation operation that checks configuration, props, assets, audio, and transcript requirements, then mounts a composition and evaluates every frame without capturing or encoding.
+A validation operation that first runs static composition validation, then loads a composition and evaluates every frame without capturing or encoding.
 _Avoid_: Test render, dry run
+
+**Static composition validation**:
+The Node-side validation of a composition document's metadata, bindings, controller declaration, scripts, and asset references before browser frame production.
+_Avoid_: Lint, preflight
+
+**Composition diagnostic**:
+A structured error or warning about a composition's source, metadata, bindings, controller, assets, or frame production, with a stable code and optional source location.
+_Avoid_: Log message, error string
 
 **Render**:
 The production of one complete video from a composition and a fixed set of props.

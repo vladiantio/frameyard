@@ -1,0 +1,43 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      #bg {
+        position: absolute;
+        inset: 0;
+        background: #101820;
+      }
+      #box {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 280px;
+        height: 280px;
+        border-radius: 36px;
+        background: #f2aa4c;
+      }
+    </style>
+  </head>
+  <body>
+    <fy-composition width="1920" height="1080" fps="30" duration-in-frames="90">
+      <div id="bg"></div>
+      <div id="box"></div>
+    </fy-composition>
+    <script type="text/fy-controller">
+      let box;
+      export default {
+        mount({ root }) {
+          box = root.querySelector("#box");
+        },
+        update({ frame }) {
+          const t = frame / 89;
+          box.style.transform = `translate(${200 + t * 1200}px, ${300 + Math.sin(t * Math.PI) * 200}px)`;
+        },
+        dispose() {
+          box = undefined;
+        },
+      };
+    </script>
+  </body>
+</html>

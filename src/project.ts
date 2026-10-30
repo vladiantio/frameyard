@@ -4,11 +4,14 @@ import { pathToFileURL } from "node:url";
 import { FrameyardError } from "./errors.js";
 import { isPlainObject } from "./contracts.js";
 
+export type CompositionKind = "html";
+
 export interface ProjectComposition {
   id: string;
   /** Forward-slash relative path from the project root, without a leading "./". */
   entry: string;
   absoluteEntry: string;
+  kind: CompositionKind;
 }
 
 export interface Project {
@@ -112,10 +115,15 @@ export async function loadProject(projectRoot: string): Promise<Project> {
       throw new FrameyardError("CONFIG_INVALID", `Composition "${id}" entry does not exist: ${rawEntry}`);
     }
 
+    if (path.extname(absoluteEntry).toLowerCase() !== ".html") {
+      throw new FrameyardError("CONFIG_INVALID", `Composition "${id}" entry must be an .html file: ${rawEntry}`);
+    }
+
     compositions.set(id, {
       id,
       entry: path.relative(root, absoluteEntry).split(path.sep).join("/"),
       absoluteEntry,
+      kind: "html",
     });
   }
 

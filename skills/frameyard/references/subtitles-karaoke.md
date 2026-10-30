@@ -1,6 +1,6 @@
 # Subtitles and karaoke
 
-Frameyard does not burn captions into videos and has no built-in subtitle renderer. Compositions render timed text themselves. Transcription produces a canonical transcript; SRT and VTT are derived exports.
+Frameyard does not burn captions into videos and has no built-in subtitle renderer. A composition controller renders timed text. Transcription produces a canonical transcript; SRT and VTT are derived exports.
 
 ## Canonical transcript
 
@@ -33,29 +33,21 @@ All timestamps are integer milliseconds relative to the source audio:
 
 ## Declaring transcript requirements
 
-```js
-transcripts: [
-  { src: "assets/voice.transcript.json", words: true },
-],
+```html
+<fy-transcript src="assets/voice.transcript.json" words></fy-transcript>
 ```
 
-Transcript `src` paths are project-relative. `check`, `still`, and `render` validate declared transcript files. Preview loads the declarations but leaves visual presentation to the composition.
+Transcript `src` paths resolve from the project root. `check`, `still`, and `render` validate declared transcript files. Preview loads the declarations but leaves visual presentation to the composition controller.
 
 ## Converting source time to frames
 
-Given an audio clip:
+Given an `<audio>` element:
 
-```js
-const clip = {
-  src: "assets/voice.wav",
-  startFrame: 30,
-  trimStart: 0.25,
-  trimDuration: 4.2,
-  volume: 0.8,
-};
+```html
+<audio src="assets/voice.wav" data-fy-start="30" data-fy-trim="0.25" data-fy-duration="4.2" data-fy-volume="0.8"></audio>
 ```
 
-Convert a word or segment time with:
+the controller can read the attributes or keep matching constants. Convert a word or segment time with:
 
 ```js
 const FPS = 30;
@@ -64,7 +56,7 @@ const frame = clip.startFrame + Math.round((word.startMs / 1000 - clip.trimStart
 
 Skip words before the trimmed source range or after `trimStart + trimDuration`. Do not divide by `durationInFrames` or assume a 30 fps composition.
 
-A seek-safe karaoke update only reads the current frame:
+A seek-safe karaoke update in the controller only reads the current frame:
 
 ```js
 function wordProgress(word, frame) {
@@ -74,7 +66,7 @@ function wordProgress(word, frame) {
 }
 ```
 
-Apply that value to text styling inside `update({ frame })`. Do not use timers, `requestAnimationFrame`, or transitions.
+Apply that value to text styling inside the controller's `update({ frame })`. Do not use timers, `requestAnimationFrame`, or transitions. Declare the transcript with `<fy-transcript src="..." words>` and fetch the canonical JSON in `mount()`.
 
 ## Check and inspect
 

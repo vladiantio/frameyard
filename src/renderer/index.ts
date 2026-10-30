@@ -2,9 +2,10 @@ import { link, mkdir, mkdtemp, rename, rm, stat, writeFile } from "node:fs/promi
 import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import type { CompositionMetadata } from "../contracts.js";
+import type { CompositionDiagnostic, CompositionMetadata, CompositionSourceInfo } from "../contracts.js";
 import { FrameyardError, isFrameyardError } from "../errors.js";
-import type { Project } from "../project.js";
+import { validateHtmlComposition } from "../html/validate.js";
+import type { Project, ProjectComposition } from "../project.js";
 import { startPreviewServer } from "../server/server.js";
 import { inspectTimelineAudio, type AudioInspection, type InspectAudioClip } from "./audio.js";
 import { openCompositionSession, type CompositionSession } from "./browser.js";
@@ -27,32 +28,38 @@ interface SessionOptions {
 
 export interface CheckResult {
   composition: string;
+  entry: string;
+  controller: { kind: "inline" } | { kind: "external"; src: string } | null;
   metadata: CompositionMetadata;
   framesChecked: number;
   audio: {
     clips: number;
-    warnings: string[];
     details: AudioInspection["clips"];
   };
   transcripts: {
     clips: number;
-    warnings: string[];
     details: TranscriptInspection["clips"];
   };
+  diagnostics: CompositionDiagnostic[];
   elapsedMs: number;
 }
 
 export interface StillResult {
   composition: string;
+  entry: string;
+  controller: { kind: "inline" } | { kind: "external"; src: string } | null;
   frame: number;
   path: string;
   width: number;
   height: number;
+  diagnostics: CompositionDiagnostic[];
   elapsedMs: number;
 }
 
 export interface RenderResult {
   composition: string;
+  entry: string;
+  controller: { kind: "inline" } | { kind: "external"; src: string } | null;
   path: string;
   width: number;
   height: number;
@@ -64,12 +71,11 @@ export interface RenderResult {
   bytes: number;
   audio: {
     clips: number;
-    warnings: string[];
   };
   transcripts: {
     clips: number;
-    warnings: string[];
   };
+  diagnostics: CompositionDiagnostic[];
   elapsedMs: number;
 }
 
@@ -90,7 +96,7 @@ export function validateRenderConcurrency(value: number | undefined): number {
   return concurrency;
 }
 
-function compositionEntry(project: Project, id: string): string {
+function compositionFor(project: Project, id: string): ProjectComposition {
   const composition = project.compositions.get(id);
   if (!composition) {
     const available = [...project.compositions.keys()].join(", ") || "(none)";
@@ -99,11 +105,43 @@ function compositionEntry(project: Project, id: string): string {
       `Composition "${id}" is not listed in video.config.js. Available: ${available}.`,
     );
   }
-  return composition.entry;
+  return composition;
 }
 
 function timelineAudioClips(session: CompositionSession): InspectAudioClip[] {
   return [...session.audioClips, ...session.embeddedAudioClips.map((clip) => ({ ...clip, allowSilent: true }))];
+}
+
+function audioDiagnostics(warnings: readonly string[]): CompositionDiagnostic[] {
+  return warnings.map((message) => ({ severity: "warning", code: "AUDIO_WARNING", message }));
+}
+
+function transcriptDiagnostics(warnings: readonly string[]): CompositionDiagnostic[] {
+  return warnings.map((message) => ({ severity: "warning", code: "TRANSCRIPT_WARNING", message }));
+}
+
+function diagnosticKey(diagnostic: CompositionDiagnostic): string {
+  return JSON.stringify([diagnostic.severity, diagnostic.code, diagnostic.message, diagnostic.details ?? null]);
+}
+
+function mergeDiagnostics(...groups: CompositionDiagnostic[][]): CompositionDiagnostic[] {
+  const seen = new Set<string>();
+  const result: CompositionDiagnostic[] = [];
+  for (const group of groups) {
+    for (const diagnostic of group) {
+      const key = diagnosticKey(diagnostic);
+      if (!seen.has(key)) {
+        seen.add(key);
+        result.push(diagnostic);
+      }
+    }
+  }
+  return result;
+}
+
+async function readSessionDiagnostics(sessions: readonly CompositionSession[]): Promise<CompositionDiagnostic[]> {
+  const groups = await Promise.all(sessions.map((session) => session.readDiagnostics()));
+  return mergeDiagnostics(...groups);
 }
 
 function throwIfAborted(signal: AbortSignal | undefined): void {
@@ -155,7 +193,24 @@ async function withSessions<T>(
   callback: (sessions: CompositionSession[]) => Promise<T>,
 ): Promise<T> {
   throwIfAborted(options.signal);
-  const entry = compositionEntry(options.project, options.compositionId);
+  const composition = compositionFor(options.project, options.compositionId);
+  const validation = await validateHtmlComposition({
+    projectRoot: options.project.root,
+    entry: composition.entry,
+    props: options.props,
+  });
+  const staticDiagnostics = validation.diagnostics;
+  const staticErrors = staticDiagnostics.filter((diagnostic) => diagnostic.severity === "error");
+  if (!validation.info || staticErrors.length > 0) {
+    const first = staticErrors[0];
+    throw new FrameyardError(
+      first?.code ?? "COMPOSITION_INVALID",
+      `Composition "${options.compositionId}": ${first?.message ?? "static validation failed."}`,
+      { diagnostics: validation.diagnostics },
+    );
+  }
+  const staticInfo: CompositionSourceInfo = validation.info;
+
   const server = await startPreviewServer({ projectRoot: options.project.root, port: 0 });
   const sessions: CompositionSession[] = [];
 
@@ -166,8 +221,10 @@ async function withSessions<T>(
         sessions.push(
           await openCompositionSession({
             serverUrl: server.url,
-            entry,
+            entry: composition.entry,
             props: options.props,
+            info: staticInfo,
+            staticDiagnostics,
           }),
         );
       };
@@ -181,8 +238,11 @@ async function withSessions<T>(
       return await callback(sessions);
     } catch (error) {
       if (isFrameyardError(error)) {
+        const runtimeDiagnostics = sessions.length > 0 ? await readSessionDiagnostics(sessions).catch(() => []) : [];
         throw new FrameyardError(error.code, `Composition "${options.compositionId}": ${error.message}`, {
           cause: error,
+          details: error.details,
+          diagnostics: error.diagnostics ?? (runtimeDiagnostics.length > 0 ? runtimeDiagnostics : undefined),
         });
       }
       throw error;
@@ -337,16 +397,24 @@ export async function checkComposition(options: SessionOptions): Promise<CheckRe
       reportProgress(options, frame + 1, total, startedAt);
     }
 
+    const diagnostics = mergeDiagnostics(
+      await session.readDiagnostics(),
+      audioDiagnostics(audio.warnings),
+      transcriptDiagnostics(transcripts.warnings),
+    );
+
     return {
       composition: options.compositionId,
+      entry: session.entry,
+      controller: session.controller,
       metadata: session.metadata,
       framesChecked: total,
-      audio: { clips: audio.clips.length, warnings: audio.warnings, details: audio.clips },
+      audio: { clips: audio.clips.length, details: audio.clips },
       transcripts: {
         clips: transcripts.clips.length,
-        warnings: transcripts.warnings,
         details: transcripts.clips,
       },
+      diagnostics,
       elapsedMs: performance.now() - startedAt,
     };
   });
@@ -382,7 +450,7 @@ export async function captureStill(
       );
     }
 
-    await inspectTranscriptClips({
+    const transcripts = await inspectTranscriptClips({
       projectRoot: options.project.root,
       clips: session.transcriptClips,
       signal: options.signal,
@@ -391,6 +459,7 @@ export async function captureStill(
     throwIfAborted(options.signal);
     await session.seek(options.frame);
     const png = await session.capture();
+    const diagnostics = mergeDiagnostics(await session.readDiagnostics(), transcriptDiagnostics(transcripts.warnings));
 
     const tempPath = path.join(
       path.dirname(options.outPath),
@@ -406,10 +475,13 @@ export async function captureStill(
 
     return {
       composition: options.compositionId,
+      entry: session.entry,
+      controller: session.controller,
       frame: options.frame,
       path: options.outPath,
       width: session.metadata.width,
       height: session.metadata.height,
+      diagnostics,
       elapsedMs: performance.now() - startedAt,
     };
   });
@@ -530,8 +602,16 @@ export async function renderComposition(
         await publishFile(tempOut, options.outPath, overwrite);
         completed = true;
 
+        const diagnostics = mergeDiagnostics(
+          await readSessionDiagnostics(sessions),
+          audioDiagnostics(audio.warnings),
+          transcriptDiagnostics(transcripts.warnings),
+        );
+
         return {
           composition: options.compositionId,
+          entry: session.entry,
+          controller: session.controller,
           path: options.outPath,
           width,
           height,
@@ -541,11 +621,11 @@ export async function renderComposition(
           framesRendered: total,
           concurrency,
           bytes: (await stat(options.outPath)).size,
-          audio: { clips: audio.clips.length, warnings: audio.warnings },
+          audio: { clips: audio.clips.length },
           transcripts: {
             clips: transcripts.clips.length,
-            warnings: transcripts.warnings,
           },
+          diagnostics,
           elapsedMs: performance.now() - startedAt,
         };
       } catch (error) {

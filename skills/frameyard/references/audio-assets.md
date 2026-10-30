@@ -1,25 +1,36 @@
 # Audio and generated assets
 
-Audio clips are a declarative timeline. Generated speech and transcripts are frozen local inputs produced before composition loading.
+Audio clips are a declarative `<audio>` timeline. Generated speech and transcripts are frozen local inputs produced before composition loading.
 
 ## Audio timeline
 
-```js
-audio: [
-  {
-    src: "assets/voice.wav", // project-relative local file
-    startFrame: 30,          // composition timeline position
-    trimStart: 0.25,         // seconds trimmed from the source
-    trimDuration: 4.2,       // optional seconds to use
-    volume: 0.8,             // 0..1
-  },
-];
+```html
+<audio
+  src="assets/voice.wav"
+  data-fy-start="30"
+  data-fy-trim="0.25"
+  data-fy-duration="4.2"
+  data-fy-volume="0.8"
+></audio>
 ```
 
-- Placement is in composition frames.
-- Trimming is in seconds from the source.
+- `src` resolves from the project root.
+- `data-fy-start` is the composition timeline position in frames.
+- `data-fy-trim` is seconds trimmed from the source.
+- `data-fy-duration` optionally limits how many source seconds are used.
+- `data-fy-volume` is `0..1`.
 - Frameyard never time-stretches audio or changes composition duration to fit it.
-- `check` reports clip durations and overrun warnings.
+- `check` reports clip durations and overrun diagnostics.
+
+An unmuted `<video>` contributes its audio track to the same mix. Use `muted` or `data-fy-audio="off"` for a visual-only video.
+
+Declare required transcripts with:
+
+```html
+<fy-transcript src="assets/voice.transcript.json" words></fy-transcript>
+```
+
+`words` requires measured word timings. See [subtitles and karaoke](subtitles-karaoke.md).
 
 ## Local speech synthesis
 

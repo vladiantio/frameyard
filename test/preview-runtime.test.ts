@@ -9,42 +9,40 @@ import { startPreviewServer, type PreviewServer } from "../src/server/server.ts"
 
 const exec = promisify(execFile);
 
-const composition = String.raw`
-import { defineComposition } from "frameyard";
+const demoHtml = String.raw`<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <script type="application/json" data-fy="props">{ "label": "Hello", "color": "#ff0000" }</script>
+    <style>
+      @keyframes slide { from { transform: translateX(0px); } to { transform: translateX(100px); } }
+      #box { width: 40px; height: 40px; background: var(--fy-prop-color); animation: slide 2s linear infinite; }
+    </style>
+  </head>
+  <body>
+    <fy-composition width="200" height="100" fps="10" duration-in-frames="20">
+      <div id="box" data-frame="-1" data-fy-anim-start="0" data-fy-anim-duration="20"></div>
+      <div id="label"></div>
+      <canvas id="canvas" width="20" height="20"></canvas>
+      <audio src="assets/tone.wav" data-fy-start="2" data-fy-volume="0.5"></audio>
+      <audio src="assets/tone.wav" data-fy-start="8" data-fy-trim="0.1" data-fy-duration="0.2"></audio>
+      <fy-transcript src="assets/voice.json" words></fy-transcript>
+    </fy-composition>
+    <script type="text/fy-controller">
 import { random } from "frameyard/runtime";
 
 let box;
 let label;
-let canvas;
 let context;
 
-export default defineComposition({
-  width: 200,
-  height: 100,
-  fps: 10,
-  durationInFrames: 20,
-  defaultProps: { label: "Hello", color: "#ff0000" },
+export default {
   validateProps(props) {
     return typeof props.label === "string" ? [] : ["label must be a string"];
   },
-  audio: ({ props }) => [
-    { src: "assets/tone.wav", startFrame: 2, volume: 0.5 },
-    { src: "assets/tone.wav", startFrame: 8, trimStart: 0.1, trimDuration: 0.2 },
-  ],
-  transcripts: [{ src: "assets/voice.json", words: true }],
-  mount({ container, props }) {
-    container.innerHTML =
-      '<style>' +
-      '@keyframes slide { from { transform: translateX(0px); } to { transform: translateX(100px); } }' +
-      '#box { width: 40px; height: 40px; background: ' + props.color + '; animation: slide 2s linear infinite; }' +
-      '</style>' +
-      '<div id="box" data-frame="-1"></div>' +
-      '<div id="label"></div>' +
-      '<canvas id="canvas" width="20" height="20"></canvas>';
-    box = container.querySelector("#box");
-    label = container.querySelector("#label");
-    canvas = container.querySelector("#canvas");
-    context = canvas.getContext("2d");
+  mount({ root }) {
+    box = root.querySelector("#box");
+    label = root.querySelector("#label");
+    context = root.querySelector("#canvas").getContext("2d");
   },
   update({ frame, props }) {
     box.dataset.frame = String(frame);
@@ -56,27 +54,32 @@ export default defineComposition({
   dispose() {
     box.dataset.disposed = "yes";
   },
-});
+};
+    </script>
+  </body>
+</html>
 `;
 
-const mediaComposition = String.raw`
-import { defineComposition } from "frameyard";
-
+const mediaHtml = String.raw`<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <style>video,canvas{position:absolute;top:0;width:80px;height:90px}video{left:0}canvas{left:80px}</style>
+  </head>
+  <body>
+    <fy-composition width="160" height="90" fps="10" duration-in-frames="12">
+      <video id="clip" src="assets/clip.webm" data-fy-start="1" data-fy-trim="0.2" data-fy-duration="0.5" data-fy-volume="0.6"></video>
+      <canvas id="gl" width="80" height="90"></canvas>
+    </fy-composition>
+    <script type="text/fy-controller">
 let video;
 let gl;
 
-export default defineComposition({
-  width: 160,
-  height: 90,
-  fps: 10,
-  durationInFrames: 12,
-  mount({ container }) {
-    container.innerHTML =
-      '<style>video,canvas{position:absolute;top:0;width:80px;height:90px}video{left:0}canvas{left:80px}</style>' +
-      '<video id="clip" src="assets/clip.webm" data-frameyard-start="1" data-frameyard-trim="0.2" data-frameyard-duration="0.5" data-frameyard-volume="0.6"></video>' +
-      '<canvas id="gl" width="80" height="90"></canvas>';
-    video = container.querySelector("#clip");
-    gl = container.querySelector("#gl").getContext("webgl2") ?? container.querySelector("#gl").getContext("webgl");
+export default {
+  mount({ root }) {
+    video = root.querySelector("#clip");
+    const canvas = root.querySelector("#gl");
+    gl = canvas.getContext("webgl2") ?? canvas.getContext("webgl");
   },
   update({ frame }) {
     const red = frame >= 6;
@@ -87,7 +90,55 @@ export default defineComposition({
     gl.canvas.dataset.pixel = Array.from(pixel).join(",");
     video.dataset.frame = String(frame);
   },
-});
+};
+    </script>
+  </body>
+</html>
+`;
+
+const htmlComposition = `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <script type="application/json" data-fy="props">{ "title": "HTML", "accent": "#b8f36b" }</script>
+    <style>
+      @keyframes move { from { transform: translateX(0px); } to { transform: translateX(40px); } }
+      #box { width: 20px; height: 20px; background: var(--fy-prop-accent); animation: move 0.6s linear infinite; }
+    </style>
+  </head>
+  <body>
+    <fy-composition width="200" height="100" fps="10" duration-in-frames="20">
+      <div id="box" data-fy-anim-start="0" data-fy-anim-duration="20"></div>
+      <div id="title" data-fy-text="title"></div>
+      <div id="warning" data-fy-anim-start="0"></div>
+    </fy-composition>
+    <script type="text/fy-controller">
+export default {
+  update({ frame, root }) {
+    root.querySelector("#box").dataset.frame = String(frame);
+  },
+};
+    </script>
+  </body>
+</html>
+`;
+
+const diagnosticsHtml = `<!doctype html>
+<html>
+  <head><meta charset="utf-8"></head>
+  <body>
+    <fy-composition width="200" height="100" fps="10" duration-in-frames="20">
+      <div id="box"></div>
+    </fy-composition>
+    <script type="text/fy-controller">
+export default {
+  update() {
+    Math.random();
+  },
+};
+    </script>
+  </body>
+</html>
 `;
 
 let root: string;
@@ -125,24 +176,12 @@ beforeAll(async () => {
   await mkdir(path.join(root, "assets"), { recursive: true });
   await writeFile(
     path.join(root, "video.config.js"),
-    `export default { compositions: { demo: "./compositions/demo.js", diagnostics: "./compositions/diagnostics.js", media: "./compositions/media.js" } };\n`,
+    `export default { compositions: { demo: "./compositions/demo.html", diagnostics: "./compositions/diagnostics.html", media: "./compositions/media.html", html: "./compositions/html.html" } };\n`,
   );
-  await writeFile(path.join(root, "compositions", "demo.js"), composition);
-  await writeFile(path.join(root, "compositions", "media.js"), mediaComposition);
-  await writeFile(
-    path.join(root, "compositions", "diagnostics.js"),
-    `export default {
-  width: 200,
-  height: 100,
-  fps: 10,
-  durationInFrames: 20,
-  mount() {},
-  update() {
-    Math.random();
-  },
-};
-`,
-  );
+  await writeFile(path.join(root, "compositions", "demo.html"), demoHtml);
+  await writeFile(path.join(root, "compositions", "media.html"), mediaHtml);
+  await writeFile(path.join(root, "compositions", "html.html"), htmlComposition);
+  await writeFile(path.join(root, "compositions", "diagnostics.html"), diagnosticsHtml);
   await writeFile(path.join(root, "assets", "tone.wav"), toneWav());
   await exec("ffmpeg", [
     "-hide_banner",
@@ -219,12 +258,10 @@ describe("browser preview runtime", () => {
             audioClips: Array<Record<string, unknown>>;
             transcriptClips: Array<Record<string, unknown>>;
           }>;
-          seek(frame: number): void;
-          dispose(): Promise<void>;
         };
         return api.load(entry, { label: "Custom" });
       },
-      { entry: "compositions/demo.js" },
+      { entry: "compositions/demo.html" },
     );
 
     expect(loaded.metadata).toEqual({ width: 200, height: 100, fps: 10, durationInFrames: 20 });
@@ -241,13 +278,15 @@ describe("browser preview runtime", () => {
           seek(frame: number): void;
         };
         api.seek(targetFrame);
-        const box = document.querySelector("#box") as HTMLElement;
-        const canvas = document.querySelector("#canvas") as HTMLCanvasElement;
+        const stage = document.querySelector("#stage-frame") as HTMLIFrameElement;
+        const frameDocument = stage.contentDocument as Document;
+        const box = frameDocument.querySelector("#box") as HTMLElement;
+        const canvas = frameDocument.querySelector("#canvas") as HTMLCanvasElement;
         const pixel = Array.from(canvas.getContext("2d")!.getImageData(0, 0, 1, 1).data);
         return {
           frame: box.dataset.frame,
           random: box.dataset.random,
-          label: document.querySelector("#label")!.textContent,
+          label: frameDocument.querySelector("#label")!.textContent,
           transform: getComputedStyle(box).transform,
           pixel,
         };
@@ -272,9 +311,15 @@ describe("browser preview runtime", () => {
       };
       await api.dispose();
     });
-    await expect(
-      page.evaluate(() => (document.querySelector("#box") as HTMLElement | null)?.dataset.disposed),
-    ).resolves.toBeUndefined();
+    expect(
+      await page.evaluate(() => {
+        const stage = document.querySelector("#stage-frame") as HTMLIFrameElement;
+        return {
+          hidden: stage.hidden,
+          box: stage.contentDocument?.querySelector("#box") ?? null,
+        };
+      }),
+    ).toEqual({ hidden: true, box: null });
 
     expect(pageErrors).toEqual([]);
     await context.close();
@@ -298,7 +343,7 @@ describe("browser preview runtime", () => {
           embeddedAudioClips: Array<Record<string, unknown>>;
         }>;
       };
-      return api.load("compositions/media.js");
+      return api.load("compositions/media.html");
     });
     expect(loaded.embeddedAudioClips).toEqual([
       {
@@ -318,8 +363,10 @@ describe("browser preview runtime", () => {
         };
         api.seek(targetFrame);
         await api.settle();
-        const video = document.querySelector("#clip") as HTMLVideoElement;
-        const canvas = document.querySelector("#gl") as HTMLCanvasElement;
+        const stage = document.querySelector("#stage-frame") as HTMLIFrameElement;
+        const frameDocument = stage.contentDocument as Document;
+        const video = frameDocument.querySelector("#clip") as HTMLVideoElement;
+        const canvas = frameDocument.querySelector("#gl") as HTMLCanvasElement;
         const sample = document.createElement("canvas");
         sample.width = video.videoWidth;
         sample.height = video.videoHeight;
@@ -363,10 +410,14 @@ describe("browser preview runtime", () => {
     page.on("pageerror", (error) => pageErrors.push(error.message));
 
     await page.goto(new URL("/__frameyard/?composition=media", server.url).href);
-    await page.waitForFunction(() => document.querySelector("#clip")?.getAttribute("data-frame") === "0");
+    await page.waitForFunction(() => {
+      const stage = document.querySelector("#stage-frame") as HTMLIFrameElement | null;
+      return stage?.contentDocument?.querySelector("#clip")?.getAttribute("data-frame") === "0";
+    });
     await page.waitForFunction(() => !(document.querySelector("#play") as HTMLButtonElement).disabled);
 
-    expect(await page.locator("#clip").evaluate((video: HTMLVideoElement) => video.muted)).toBe(true);
+    const frame = page.frameLocator("#stage-frame");
+    expect(await frame.locator("#clip").evaluate((video: HTMLVideoElement) => video.muted)).toBe(true);
     expect(await page.locator("#play").isEnabled()).toBe(true);
 
     await page.evaluate(() => {
@@ -375,7 +426,8 @@ describe("browser preview runtime", () => {
       scrubber.dispatchEvent(new Event("input", { bubbles: true }));
     });
     await page.waitForFunction(() => {
-      const video = document.querySelector("#clip") as HTMLVideoElement | null;
+      const stage = document.querySelector("#stage-frame") as HTMLIFrameElement | null;
+      const video = stage?.contentDocument?.querySelector("#clip") as HTMLVideoElement | null;
       return video?.dataset.frame === "8" && Math.abs(video.currentTime - 0.7) < 0.01;
     });
 
@@ -390,8 +442,12 @@ describe("browser preview runtime", () => {
     page.on("pageerror", (error) => pageErrors.push(error.message));
 
     await page.goto(new URL("/__frameyard/", server.url).href);
-    await page.waitForFunction(() => document.querySelector("#box")?.getAttribute("data-frame") === "0");
+    await page.waitForFunction(() => {
+      const stage = document.querySelector("#stage-frame") as HTMLIFrameElement | null;
+      return stage?.contentDocument?.querySelector("#box")?.getAttribute("data-frame") === "0";
+    });
 
+    const frame = page.frameLocator("#stage-frame");
     expect(await page.locator("#composition").inputValue()).toBe("demo");
     expect(await page.locator("#meta").textContent()).toContain("200×100");
     expect(await page.locator("#duration").textContent()).toBe("19");
@@ -403,7 +459,10 @@ describe("browser preview runtime", () => {
       scrubber.value = "10";
       scrubber.dispatchEvent(new Event("input", { bubbles: true }));
     });
-    expect(await page.locator("#box").getAttribute("data-frame")).toBe("10");
+    await page.waitForFunction(() => {
+      const stage = document.querySelector("#stage-frame") as HTMLIFrameElement | null;
+      return stage?.contentDocument?.querySelector("#box")?.getAttribute("data-frame") === "10";
+    });
     expect(await page.locator("#clock").textContent()).toBe("1.00s");
 
     await page.evaluate(() => {
@@ -411,32 +470,76 @@ describe("browser preview runtime", () => {
       editor.value = JSON.stringify({ label: "Preview" });
       (document.querySelector("#apply") as HTMLButtonElement).click();
     });
-    await page.waitForFunction(() => document.querySelector("#label")?.textContent?.startsWith("Preview"));
-    expect(await page.locator("#label").textContent()).toBe("Preview:0");
+    await page.waitForFunction(() => {
+      const stage = document.querySelector("#stage-frame") as HTMLIFrameElement | null;
+      return stage?.contentDocument?.querySelector("#label")?.textContent?.startsWith("Preview");
+    });
+    expect(await frame.locator("#label").textContent()).toBe("Preview:0");
     expect(pageErrors).toEqual([]);
 
+    await context.close();
+  });
+
+  it("loads an HTML composition in the iframe preview, scrubs, and applies props", async () => {
+    const context = await browser.newContext({ viewport: { width: 900, height: 700 } });
+    const page = await context.newPage();
+    const pageErrors: string[] = [];
+    page.on("pageerror", (error) => pageErrors.push(error.message));
+
+    await page.goto(new URL("/__frameyard/?composition=html", server.url).href);
+    await page.waitForFunction(() => {
+      const element = document.querySelector("#stage-frame") as HTMLIFrameElement | null;
+      return element?.contentDocument?.querySelector("#box")?.getAttribute("data-frame") === "0";
+    });
+    await page.waitForFunction(() => !(document.querySelector("#play") as HTMLButtonElement).disabled);
+    await page.waitForFunction(() =>
+      document.querySelector("#diagnostics")?.textContent?.includes("ANIMATION_NOT_FOUND"),
+    );
+
+    const frame = page.frameLocator("#stage-frame");
+    expect(await page.locator("#composition").inputValue()).toBe("html");
+    expect(await page.locator("#meta").textContent()).toContain("200×100");
+    expect(await page.locator("#duration").textContent()).toBe("19");
+    expect(await page.locator("#props").inputValue()).toContain('"title": "HTML"');
+    expect(await page.locator("#play").isEnabled()).toBe(true);
+    expect(await frame.locator("#title").textContent()).toBe("HTML");
+    expect(await page.locator("#diagnostics").textContent()).toContain("ANIMATION_NOT_FOUND");
+
+    await page.evaluate(() => {
+      const scrubber = document.querySelector("#scrub") as HTMLInputElement;
+      scrubber.value = "10";
+      scrubber.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await page.waitForFunction(() => {
+      const element = document.querySelector("#stage-frame") as HTMLIFrameElement | null;
+      return element?.contentDocument?.querySelector("#box")?.getAttribute("data-frame") === "10";
+    });
+    expect(await page.locator("#clock").textContent()).toBe("1.00s");
+
+    await page.evaluate(() => {
+      const editor = document.querySelector("#props") as HTMLTextAreaElement;
+      editor.value = JSON.stringify({ title: "Preview", accent: "#ff0000" });
+      (document.querySelector("#apply") as HTMLButtonElement).click();
+    });
+    await page.waitForFunction(() => {
+      const element = document.querySelector("#stage-frame") as HTMLIFrameElement | null;
+      return element?.contentDocument?.querySelector("#title")?.textContent === "Preview";
+    });
+    expect(await frame.locator("#title").textContent()).toBe("Preview");
+
+    expect(pageErrors).toEqual([]);
     await context.close();
   });
 
   it("warns about forbidden clocks and randomness in preview mode", async () => {
     const context = await browser.newContext({ viewport: { width: 900, height: 700 } });
     const page = await context.newPage();
-    await page.goto(new URL("/__frameyard/", server.url).href);
-    await page.waitForFunction(() => Boolean((window as unknown as Record<string, unknown>).__frameyardPreview));
+    await page.goto(new URL("/__frameyard/?composition=diagnostics", server.url).href);
+    await page.waitForFunction(() => document.querySelector("#diagnostics")?.textContent?.includes("Math.random()"));
 
-    const warning = page.waitForEvent("console", {
-      predicate: (message) => message.text().includes("Math.random()"),
-    });
-    await page.evaluate(async () => {
-      const api = (window as unknown as Record<string, unknown>).__frameyardPreview as {
-        load(entry: string, props?: unknown): Promise<unknown>;
-      };
-      await api.load("compositions/diagnostics.js");
-    });
-
-    const message = await warning;
-    expect(message.type()).toBe("warning");
-    expect(message.text()).toContain('use random("stable:key")');
+    const diagnostics = await page.locator("#diagnostics").textContent();
+    expect(diagnostics).toContain('use random("stable:key")');
+    expect(diagnostics).toContain("DETERMINISM_WARNING");
     await context.close();
   });
 
@@ -450,7 +553,7 @@ describe("browser preview runtime", () => {
       const api = (window as unknown as Record<string, unknown>).__frameyardPreview as {
         load(entry: string, props?: unknown): Promise<unknown>;
       };
-      return api.load("compositions/demo.js", { label: 42 });
+      return api.load("compositions/demo.html", { label: 42 });
     });
     await expect(invalidProps).rejects.toThrow(/label must be a string/);
 
@@ -458,7 +561,7 @@ describe("browser preview runtime", () => {
       const api = (window as unknown as Record<string, unknown>).__frameyardPreview as {
         load(entry: string, props?: unknown): Promise<unknown>;
       };
-      await api.load("compositions/demo.js", {});
+      await api.load("compositions/demo.html", {});
     });
 
     const outOfRange = page.evaluate(() => {

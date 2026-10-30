@@ -1,8 +1,8 @@
 # Frameyard
 
-Frameyard is a local-first framework for building short, parameterized videos with HTML, CSS, and JavaScript and rendering them deterministically.
+Frameyard is a local-first framework for building short, parameterized videos with HTML, CSS, and an optional JavaScript controller, and rendering them deterministically.
 
-The v0.1 design is implemented: composition contracts, browser runtime and preview, `init`, `dev`, `check`, `still`, `render`, `tts`, `transcribe`, `doctor`, deterministic Chromium capture, embedded video and WebGL, FFmpeg output, provenance manifests, transcript validation, and the official agent skill.
+The 0.4 design is implemented: HTML composition documents, declarative bindings, CSS animation scheduling, frame-state variables, inline and external controllers, the composition host, static validation with structured diagnostics, iframe preview, direct render/check/still sessions, audio and transcripts, deterministic Chromium capture, FFmpeg output, and the official agent skill.
 
 ## Requirements
 
@@ -28,7 +28,7 @@ npx frameyard dev
 
 `dev` prints a local preview URL. Select a composition, edit its JSON props, scrub frames, and play the composition with its audio timeline.
 
-The scaffold includes an `AGENTS.md` guide for coding agents working in the project, covering the determinism rules and the `check`, `still`, and `render` workflow. It also includes a `package.json` with `dev`, `check`, `render`, and `still` scripts pinned to the scaffolding CLI version, so `pnpm dev` or `npm run dev` works without a global install.
+The scaffold includes an `AGENTS.md` guide for coding agents working in the project, covering the HTML authoring rules and the `check`, `still`, and `render` workflow. It also includes a `package.json` with `dev`, `check`, `render`, and `still` scripts pinned to the scaffolding CLI version, so `pnpm dev` or `npm run dev` works without a global install.
 
 `npx frameyard` resolves the latest published version. Pin it with `npx frameyard@<version>`, or install the package locally, when a project needs a fixed CLI version.
 
@@ -45,127 +45,176 @@ The 30-second reference composition lives in [`examples/demo`](./examples/demo).
 
 ## Project format
 
-A project is ordinary HTML, CSS, assets, and native JavaScript ES modules. `video.config.js` explicitly lists composition entry points; there is no directory scanning:
+A project is ordinary HTML, CSS, assets, and optional native JavaScript controller modules. `video.config.js` explicitly lists composition entry points; there is no directory scanning:
 
 ```js
 export default {
   compositions: {
-    hello: "./compositions/hello.js",
+    hello: "./compositions/hello.html",
   },
 };
 ```
 
-A composition default-exports a definition. `defineComposition` is optional but gives early metadata validation and editor types:
+A composition is a full HTML document with one `<fy-composition>` root. Metadata, default props, markup, CSS, bindings, audio, transcripts, and an optional controller all live in the document:
 
-```js
-import { defineComposition } from "frameyard";
-import { random } from "frameyard/runtime";
-
-let title;
-
-export default defineComposition({
-  width: 1920,
-  height: 1080,
-  fps: 30,
-  durationInFrames: 900,
-  defaultProps: { title: "Hello" },
-  validateProps(props) {
-    return typeof props.title === "string" ? [] : ["title must be a string"];
-  },
-  audio: [{ src: "assets/hit.wav", startFrame: 15, volume: 0.8 }],
-
-  mount({ container }) {
-    container.innerHTML = "<h1 id='title'></h1>";
-    title = container.querySelector("#title");
-  },
-
-  update({ frame, props }) {
-    title.textContent = props.title;
-    title.style.transform = `translateX(${random("title:" + frame) * 40}px)`;
-  },
-
-  dispose() {
-    title = undefined;
-  },
-});
+```html
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <script type="application/json" data-fy="props">
+    { "title": "Hello", "accent": "#b8f36b" }
+    </script>
+    <style>
+      @keyframes fade-up {
+        from { opacity: 0; transform: translateY(24px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+      #title { animation: fade-up 1s ease-out both; }
+    </style>
+  </head>
+  <body>
+    <fy-composition width="1920" height="1080" fps="30" duration-in-frames="900">
+      <h1 id="title"
+          data-fy-text="title"
+          data-fy-anim-start="0"
+          data-fy-anim-duration="30"></h1>
+      <div id="progress" style="width: calc(var(--fy-progress) * 100%)"></div>
+    </fy-composition>
+  </body>
+</html>
 ```
 
-The runtime supplies an import map for `frameyard` and `frameyard/runtime`, so project code needs no bundling step and no `node_modules` import.
+`width`, `height`, `fps`, and `duration-in-frames` are fixed. Props are JSON-serializable, deep-frozen, and merged shallowly over the `data-fy="props"` defaults. They cannot change metadata.
+
+### Bindings
+
+- `data-fy-text="path"` sets text content.
+- `data-fy-attr-src="path"` (and other `data-fy-attr-*` names) sets an attribute.
+- `data-fy-class-active="path"` toggles a class.
+- `data-fy-if="path"` removes the element when the value is false.
+- `<template data-fy-repeat="items">` clones its content for each item, with `item` and `index` in scope and `--fy-index` on each clone.
+- Paths are dot-separated (`user.name`, `items.0.label`). Missing paths warn and resolve to an empty value.
+- Primitive top-level props are also exposed as `--fy-prop-<name>` CSS custom properties.
+
+Bindings apply once when a composition loads, before the controller mounts. Controller-created DOM is the controller's responsibility.
+
+### Animation
+
+CSS `@keyframes` and the Web Animations API are the animation language. The runtime pauses every animation and seeks it from the frame clock.
+
+`data-fy-anim-start`, `data-fy-anim-duration`, and `data-fy-anim-easing` schedule one animation per element in composition frames. The CSS `animation` shorthand supplies keyframes and fill mode; the attributes override its delay and duration.
+
+The runtime sets frame-state variables on `:root`:
+
+| Variable | Meaning |
+| --- | --- |
+| `--fy-frame` | Current frame |
+| `--fy-time` | Current time in seconds |
+| `--fy-progress` | Progress from `0` to `1` |
+| `--fy-fps` | Composition frame rate |
+| `--fy-duration` | Duration in seconds |
+| `--fy-duration-frames` | Duration in frames |
+
+Use `--fy-progress` for progress bars and `--fy-frame` or `--fy-time` in `calc()` for simple computed motion. CSS transitions are not deterministic and are diagnosed.
+
+### Controller
+
+An optional controller handles what HTML and CSS cannot express. It is declared exactly once, either inline or as an external module:
+
+```html
+<script type="text/fy-controller">
+export default {
+  mount({ root, props }) { /* ... */ },
+  update({ frame, props, root }) { /* ... */ },
+  dispose() { /* ... */ },
+  validateProps(props) { /* ... */ },
+};
+</script>
+```
+
+```html
+<script type="text/fy-controller" src="./hello.controller.js"></script>
+```
+
+- `mount()` may be asynchronous; `update()` and `validateProps()` are synchronous and seek-safe; `dispose()` releases resources.
+- Inline controllers are the default for small, single-use controllers. Extract to an external module for Canvas 2D, WebGL, karaoke, reuse, tests, or a large controller.
+- A validation-only controller may export just `validateProps(props)`.
+- The controller is the only executable code in a composition. Other executable scripts and `on*` handlers are rejected.
+- Inline source is served through a virtual module URL, so relative imports and `import.meta.url` behave like an external module. A literal `</script>` inside inline source must be escaped.
 
 ### Composition lifecycle
 
-- `mount({ container, props })` creates the visual structure once and may finish asynchronous work.
-- `update({ frame, props })` makes that structure represent the frame. It must be synchronous and seek-safe.
-- `dispose()` releases resources after the last frame.
+The composition host loads the document, applies bindings, imports the controller, calls `mount()`, prepares media, and seeks to frame 0. `check`, `still`, and `render` then seek explicitly to requested frames and wait for embedded media and browser paint before evaluating or capturing. `dispose()` runs before the host releases the document.
 
-The only animation inputs are the integer frame and immutable props. Metadata (`width`, `height`, `fps`, `durationInFrames`) is fixed and validated before mounting. Props are JSON-serializable, deep-frozen, and merged shallowly over `defaultProps`.
+The controller lifecycle is `mount → update → dispose`. `update({ frame, props })` must be synchronous and seek-safe. Use `random("stable:key")` from `frameyard/runtime` instead of `Math.random()`. Independent `requestAnimationFrame` loops, timers, wall-clock reads, and CSS transitions are not deterministic animation drivers.
 
-Use `random("stable:key")` instead of `Math.random()`. The runtime pauses CSS animations and the Web Animations API inside the composition container and seeks them to the current frame. Independent `requestAnimationFrame` loops, timers, transitions, and wall-clock reads are not deterministic animation drivers.
+`check` runs static composition validation before launching Chromium. It validates metadata, the root and controller declarations, default props, bindings, animation attributes, scripts and handlers, unsupported visual elements, and asset references, then reports stable diagnostic codes with source locations.
 
 ## Embedded video and WebGL
 
-Embedded videos are frame-seeked by the runtime. Place a `<video>` element in `mount()` and describe its place on the composition timeline with data attributes:
+Embedded videos are declared in the composition document and frame-seeked by the runtime:
 
 ```html
 <video
   src="assets/clip.webm"
-  data-frameyard-start="30"
-  data-frameyard-trim="0.5"
-  data-frameyard-duration="4"
-  data-frameyard-volume="0.8"
+  data-fy-start="30"
+  data-fy-trim="0.5"
+  data-fy-duration="4"
+  data-fy-volume="0.8"
 ></video>
 ```
 
 | Attribute | Meaning | Default |
 | --- | --- | --- |
-| `data-frameyard-start` | Composition frame where the source starts | `0` |
-| `data-frameyard-trim` | Seconds trimmed from the source start | `0` |
-| `data-frameyard-duration` | Optional seconds of source to use | rest of source |
-| `data-frameyard-volume` | Embedded audio volume from `0` to `1` | `1` |
+| `data-fy-start` | Composition frame where the source starts | `0` |
+| `data-fy-trim` | Seconds trimmed from the source start | `0` |
+| `data-fy-duration` | Optional seconds of source to use | rest of source |
+| `data-fy-volume` | Embedded audio volume from `0` to `1` | `1` |
 
-The runtime pauses every video and seeks it to the frame-derived source time. Do not call `play()`, `pause()`, or set `currentTime` in `update()`. Create video elements and set these attributes in `mount()`: a video added or changed during `update()` cannot be prepared without network access and is rejected. Videos must be in the composition container's light DOM; shadow roots are not scanned. Video sources are project-relative local files; live streams, remote URLs, and sources that cannot be seeked are not supported. The runtime loads the complete file during the loading phase, so frame production performs no media network requests.
+The runtime pauses every video and seeks it to the frame-derived source time. Do not call `play()`, `pause()`, or set `currentTime` in a controller. Videos must be in the composition document's light DOM; shadow roots are not scanned. Video sources are local project-relative files; live streams, remote URLs, and sources that cannot be seeked are not supported. The runtime loads the complete file during the loading phase, so frame production performs no media network requests.
 
-An unmuted `<video>` also contributes its soundtrack to the same timeline as declarative `audio` clips. Frameyard extracts that track with FFmpeg for production and mirrors it in preview, while keeping the video element itself silent. Set `muted` or `data-frameyard-audio="off"` to use a video as a visual-only asset. The attributes above also control where its audio enters the mix.
+An unmuted `<video>` also contributes its soundtrack to the same timeline as declarative audio clips. Frameyard extracts that track with FFmpeg for production and mirrors it in preview, while keeping the video element itself silent. Set `muted` or `data-fy-audio="off"` to use a video as a visual-only asset.
 
-WebGL 1 and WebGL 2 canvases are captured through the normal frame path. Draw the complete frame from `update()` and do not depend on the previous frame's drawing buffer; clear or redraw the scene each time. Production sessions pin software WebGL (SwiftShader) so rendered pixels do not vary with the host GPU.
+WebGL 1 and WebGL 2 canvases are captured through the normal frame path. Draw the complete frame from the controller's `update()` and do not depend on the previous frame's drawing buffer; clear or redraw the scene each time. Production sessions pin software WebGL (SwiftShader) so rendered pixels do not vary with the host GPU.
 
 ## Audio timeline
 
-Audio clips are declarative:
+Audio clips are `<audio>` elements:
 
-```js
-audio: [
-  {
-    src: "assets/voice.wav", // project-relative local file
-    startFrame: 30,          // composition timeline position
-    trimStart: 0.25,         // seconds trimmed from the source
-    trimDuration: 4.2,       // optional seconds to use
-    volume: 0.8,             // 0..1
-  },
-];
+```html
+<audio src="assets/voice.wav"
+       data-fy-start="30"
+       data-fy-trim="0.25"
+       data-fy-duration="4.2"
+       data-fy-volume="0.8"></audio>
 ```
 
-Preview synchronizes the timeline in the browser. Production mixes the same clips offline with FFmpeg. Unmuted embedded videos contribute their audio tracks to this mix unless they opt out. `check` reports clip durations and warnings when a clip extends beyond the composition. Frameyard never time-stretches audio or changes composition duration to fit it.
+- Placement is in composition frames.
+- Trimming is in seconds from the source.
+- Audio, video, and transcript `src` values resolve from the project root.
+- Frameyard never time-stretches audio or changes composition duration to fit it.
+- `check` reports clip durations and overrun diagnostics.
+
+Preview synchronizes the timeline in the browser. Production mixes the same clips offline with FFmpeg. Unmuted embedded videos contribute their audio tracks to this mix unless they opt out.
 
 ## Transcripts
 
-A composition can declare canonical transcript assets that `check`, `still`, and `render` must validate:
+A composition declares canonical transcript assets with `<fy-transcript>`:
 
-```js
-transcripts: [
-  { src: "assets/voice.transcript.json", words: true },
-],
+```html
+<fy-transcript src="assets/voice.transcript.json" words></fy-transcript>
 ```
 
-Transcript paths are project-relative. `words: true` requires actual measured word timings for karaoke-style presentation; Frameyard fails with `TRANSCRIPT_WORDS_UNAVAILABLE` rather than interpolating them. See [subtitles and karaoke](./skills/frameyard/references/subtitles-karaoke.md) for the canonical JSON shape and the seek-safe frame conversion recipe.
+Transcript paths resolve from the project root. `words` requires actual measured word timings for karaoke-style presentation; Frameyard fails with `TRANSCRIPT_WORDS_UNAVAILABLE` rather than interpolating them. `check`, `still`, and `render` validate declared transcripts. Visual presentation is the composition's responsibility; a controller can read the transcript JSON and render timed text or karaoke. See [subtitles and karaoke](./skills/frameyard/references/subtitles-karaoke.md) for the canonical JSON shape and the seek-safe frame conversion recipe.
 
 ## Commands
 
 | Command | Purpose |
 | --- | --- |
-| `frameyard init [directory]` | Scaffold a minimal project, including an `AGENTS.md` agent guide and pinned `package.json` scripts |
+| `frameyard init [directory]` | Scaffold a minimal HTML project, including an `AGENTS.md` agent guide and pinned `package.json` scripts |
 | `frameyard dev [--port <port>]` | Start the preview server |
-| `frameyard check <id> [--props <file>]` | Validate props, assets, audio, transcripts, and every frame without capture |
+| `frameyard check <id> [--props <file>]` | Run static validation, then evaluate every frame without capture |
 | `frameyard still <id> --frame <n>` | Capture one PNG through the production path |
 | `frameyard render <id> --out <video.mp4>` | Capture frames with Chromium and encode with FFmpeg, optionally in parallel |
 | `frameyard tts ...` | Produce one frozen 24 kHz mono WAV with local qwentts.cpp |
@@ -183,27 +232,33 @@ Non-interactive commands support `--json`. Results go to stdout and human progre
 ```json
 {
   "ok": true,
-  "command": "render",
+  "command": "check",
   "composition": "hello",
-  "path": "/absolute/path/hello.mp4",
-  "width": 1920,
-  "height": 1080,
-  "fps": 30,
-  "durationInFrames": 900,
-  "framesRendered": 900,
-  "concurrency": 1,
-  "audio": { "clips": 1, "warnings": [] },
-  "transcripts": { "clips": 1, "warnings": [] }
+  "entry": "compositions/hello.html",
+  "controller": { "kind": "inline" },
+  "metadata": { "width": 1920, "height": 1080, "fps": 30, "durationInFrames": 900 },
+  "framesChecked": 900,
+  "audio": { "clips": 1 },
+  "transcripts": { "clips": 0 },
+  "diagnostics": []
 }
 ```
 
-Errors use the same envelope:
+Diagnostics carry `severity`, `code`, `message`, and optional `details` with source locations, element or attribute names, values, and suggestions. Errors use the same envelope and may include `error.details` and top-level `diagnostics`:
 
 ```json
 {
   "ok": false,
-  "command": "render",
-  "error": { "code": "OUTPUT_EXISTS", "message": "Output already exists: ..." }
+  "command": "check",
+  "error": { "code": "BINDING_INVALID", "message": "Unknown Frameyard attribute ..." },
+  "diagnostics": [
+    {
+      "severity": "error",
+      "code": "BINDING_INVALID",
+      "message": "Unknown Frameyard attribute \"data-fy-txt\".",
+      "details": { "path": "compositions/hello.html", "line": 12, "column": 5, "attribute": "data-fy-txt" }
+    }
+  ]
 }
 ```
 
@@ -254,18 +309,19 @@ npx frameyard doctor --talker-model models/talker.gguf --codec-model models/code
 
 ## Agent skill
 
-The optional host-neutral agent skill lives in [`skills/frameyard/`](./skills/frameyard). It uses the same project format and CLI as humans, documents deterministic authoring, audio assets, subtitle/karaoke recipes, JSON results, and failure recovery, and ships a thin CLI wrapper. The npm package includes the skill files matching its API version. Install it with `npx skills add vladiantio/frameyard`, or see [`skills/frameyard/README.md`](./skills/frameyard/README.md) for host-specific installation or referencing.
+The optional host-neutral agent skill lives in [`skills/frameyard/`](./skills/frameyard). It uses the same project format and CLI as humans, documents HTML authoring, bindings, controllers, static diagnostics, audio assets, subtitle/karaoke recipes, JSON results, and failure recovery, and ships a thin CLI wrapper. The npm package includes the skill files matching its API version. Install it with `npx skills add vladiantio/frameyard`, or see [`skills/frameyard/README.md`](./skills/frameyard/README.md) for host-specific installation or referencing.
 
 ## Rendering and reproducibility
 
 Production rendering:
 
-1. Starts the same preview server and browser runtime used by `dev`.
-2. Launches one pinned Chromium session, or several independent sessions when `--concurrency` is greater than 1.
-3. Seeks explicitly to each frame and waits for composition updates.
-4. Captures the viewport through the Chrome DevTools Protocol.
-5. Pipes PNG frames in timeline order and the offline audio mix to FFmpeg.
-6. Encodes H.264 video with `yuv420p` and AAC audio into an MP4.
+1. Runs static composition validation and resolves metadata before launching Chromium.
+2. Navigates directly to the composition document with the composition host.
+3. Launches one pinned Chromium session, or several independent sessions when `--concurrency` is greater than 1.
+4. Seeks explicitly to each frame, calls the controller, seeks CSS/WAAPI animations, and waits for embedded media decode and browser paint.
+5. Captures the viewport through the Chrome DevTools Protocol.
+6. Pipes PNG frames in timeline order and the offline audio mix to FFmpeg.
+7. Encodes H.264 video with `yuv420p` and AAC audio into an MP4.
 
 Rendering is sequential by default. Pass `--concurrency <n>` (1-16) to seek and capture frames with up to `n` independent browser sessions; the effective value is capped by the composition's frame count. Captured frames are always encoded in timeline order, so parallel and sequential renders of the same inputs produce equivalent visual frames. Concurrency only changes scheduling: it does not change composition behavior or the determinism contract. Parallel rendering uses more CPU and memory, so choose a value appropriate for the machine.
 
@@ -277,31 +333,36 @@ For a repeatable local measurement of seek, capture, encode, and full-render tim
 
 Deferred from this implementation slice:
 
-- Built-in subtitle rendering, automatic caption burn-in, and karaoke rendering
+- Built-in subtitle rendering, automatic caption burn-in, and declarative karaoke elements
+- Nested `data-fy-repeat` scopes and a general template language
+- Declarative JSON Schema validation
+- Arbitrary executable scripts in composition HTML
 - `qwentts.cpp` reference-audio voice cloning and VoiceDesign
 - Automatic long-text chunking, streaming synthesis, and alternative generated-audio formats
 - Automatic upstream builds, model downloads, environment repair, and hosted rendering
-- Frame caches and general image-sequence output
+- Frame caches, batch still capture, and general image-sequence output
 - React or other UI-framework adapters, plugin APIs, and agent-only runtimes
 - TypeScript transpilation for project compositions and npm dependency optimization
 
-See the [v0.1 design baseline](./docs/v0.1-design.md) for the full product contract and the [domain glossary](./GLOSSARY.md) for terminology.
+See the [design baseline](./docs/v0.1-design.md) for the full product contract, [ADR 0007](./docs/adr/0007-make-html-documents-the-composition-unit.md) for the HTML authoring decision, and the [domain glossary](./GLOSSARY.md) for terminology.
 
 ## Repository layout
 
-- `src/contracts.ts`: shared composition, props, audio, and transcript requirement contracts
+- `src/contracts.ts`: shared composition, props, audio, transcript, and diagnostic contracts
+- `src/bindings.ts`: browser-safe binding path and value semantics
+- `src/html/`: Node-side parsing, static composition validation, and host injection
 - `src/transcript.ts`: canonical transcript validation and SRT/VTT formatting
-- `src/runtime/`: browser lifecycle, frame clock, deterministic randomness
-- `src/preview/`: interactive preview client
-- `src/server/`: native ES-module server and import map
-- `src/renderer/`: Chromium capture, audio mixing, transcript inspection, FFmpeg encoding
+- `src/runtime/`: browser host, frame clock, deterministic randomness, bindings, media, diagnostics
+- `src/preview/`: interactive iframe preview client
+- `src/server/`: native ES-module server, host injection, and inline-controller route
+- `src/renderer/`: Chromium capture, static validation integration, audio mixing, transcript inspection, FFmpeg encoding
 - `src/assets/`: local TTS/transcription wrappers, executable resolution, atomic publishing, provenance
 - `src/doctor.ts`: environment, integration, and manifest inspection
 - `src/scaffold.ts`: `init` scaffold templates, including the generated package manifest, project README, and agent guide
 - `src/cli.ts`: command-line entry point
 - `skills/`: official host-neutral agent skill
 - `examples/demo/`: the 30-second reference composition
-- `bench/fixtures/`: controlled compositions for the render benchmark
+- `bench/fixtures/`: controlled HTML compositions for the render benchmark
 - `scripts/`: benchmark, release checks, versioning, and git-hook installation
 - `docs/adr/`: architecture decision records
 

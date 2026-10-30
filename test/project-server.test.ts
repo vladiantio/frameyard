@@ -7,15 +7,18 @@ import { startPreviewServer, type PreviewServer } from "../src/server/server.ts"
 
 let root: string;
 
-const compositionSource = `
-export default {
-  width: 320,
-  height: 180,
-  fps: 10,
-  durationInFrames: 5,
-  mount() {},
-  update() {},
-};
+const compositionSource = `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <script type="application/json" data-fy="props">{ "title": "Alpha" }</script>
+  </head>
+  <body>
+    <fy-composition width="320" height="180" fps="10" duration-in-frames="5">
+      <h1 data-fy-text="title"></h1>
+    </fy-composition>
+  </body>
+</html>
 `;
 
 beforeAll(async () => {
@@ -24,9 +27,9 @@ beforeAll(async () => {
   await mkdir(path.join(root, "assets"), { recursive: true });
   await writeFile(
     path.join(root, "video.config.js"),
-    `export default { compositions: { alpha: "./compositions/alpha.js" } };\n`,
+    `export default { compositions: { alpha: "./compositions/alpha.html" } };\n`,
   );
-  await writeFile(path.join(root, "compositions", "alpha.js"), compositionSource);
+  await writeFile(path.join(root, "compositions", "alpha.html"), compositionSource);
   await writeFile(path.join(root, "assets", "hello.txt"), "0123456789");
   await writeFile(path.join(root, "assets", "captions.srt"), "1\n00:00:00,000 --> 00:00:01,000\nHello\n");
   await writeFile(path.join(root, "assets", "captions.vtt"), "WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nHello\n");
@@ -44,8 +47,9 @@ describe("project configuration", () => {
     expect(project.configPath).toBe(path.join(root, "video.config.js"));
     expect(project.compositions.get("alpha")).toEqual({
       id: "alpha",
-      entry: "compositions/alpha.js",
-      absoluteEntry: path.join(root, "compositions", "alpha.js"),
+      entry: "compositions/alpha.html",
+      absoluteEntry: path.join(root, "compositions", "alpha.html"),
+      kind: "html",
     });
   });
 
@@ -69,7 +73,7 @@ describe("project configuration", () => {
     try {
       await writeFile(
         path.join(bad, "video.config.js"),
-        `export default { compositions: { bad: "../outside.js" } };\n`,
+        `export default { compositions: { bad: "../outside.html" } };\n`,
       );
       await expect(loadProject(bad)).rejects.toMatchObject({ code: "CONFIG_INVALID" });
     } finally {
@@ -77,14 +81,47 @@ describe("project configuration", () => {
     }
   });
 
-  it("rejects missing composition modules", async () => {
+  it("rejects missing composition documents", async () => {
     const bad = await mkdtemp(path.join(tmpdir(), "frameyard-missing-"));
     try {
       await writeFile(
         path.join(bad, "video.config.js"),
-        `export default { compositions: { missing: "./compositions/missing.js" } };\n`,
+        `export default { compositions: { missing: "./compositions/missing.html" } };\n`,
       );
       await expect(loadProject(bad)).rejects.toMatchObject({ code: "CONFIG_INVALID" });
+    } finally {
+      await rm(bad, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects unsupported composition entry extensions", async () => {
+    const bad = await mkdtemp(path.join(tmpdir(), "frameyard-extension-"));
+    try {
+      await mkdir(path.join(bad, "compositions"), { recursive: true });
+      await writeFile(
+        path.join(bad, "video.config.js"),
+        `export default { compositions: { bad: "./compositions/bad.txt" } };\n`,
+      );
+      await writeFile(path.join(bad, "compositions", "bad.txt"), "not a composition");
+      await expect(loadProject(bad)).rejects.toMatchObject({ code: "CONFIG_INVALID" });
+    } finally {
+      await rm(bad, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects legacy JavaScript composition entries", async () => {
+    const bad = await mkdtemp(path.join(tmpdir(), "frameyard-legacy-"));
+    try {
+      await mkdir(path.join(bad, "compositions"), { recursive: true });
+      await writeFile(
+        path.join(bad, "video.config.js"),
+        `export default { compositions: { legacy: "./compositions/legacy.js" } };\n`,
+      );
+      await writeFile(path.join(bad, "compositions", "legacy.js"), "export default {};\n");
+      await expect(loadProject(bad)).rejects.toMatchObject({
+        code: "CONFIG_INVALID",
+        message: expect.stringContaining(".html"),
+      });
     } finally {
       await rm(bad, { recursive: true, force: true });
     }
@@ -118,17 +155,29 @@ describe("preview server", () => {
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({
-      compositions: [{ id: "alpha", entry: "compositions/alpha.js" }],
+      compositions: [
+        {
+          id: "alpha",
+          entry: "compositions/alpha.html",
+          kind: "html",
+          metadata: { width: 320, height: 180, fps: 10, durationInFrames: 5 },
+          controller: null,
+          diagnostics: [],
+        },
+      ],
     });
   });
 
-  it("serves composition modules and assets from the project root", async () => {
-    const moduleResponse = await fetch(new URL("/compositions/alpha.js", server.url));
+  it("serves composition documents with the host injected", async () => {
+    const documentResponse = await fetch(new URL("/compositions/alpha.html", server.url));
     const assetResponse = await fetch(new URL("/assets/hello.txt", server.url));
 
-    expect(moduleResponse.status).toBe(200);
-    expect(moduleResponse.headers.get("content-type")).toContain("text/javascript");
-    expect(await moduleResponse.text()).toContain("durationInFrames: 5");
+    expect(documentResponse.status).toBe(200);
+    expect(documentResponse.headers.get("content-type")).toContain("text/html");
+    const html = await documentResponse.text();
+    expect(html).toContain('duration-in-frames="5"');
+    expect(html).toContain("/__frameyard/framework/runtime/host.js");
+    expect(html).toContain('"frameyard":"/__frameyard/framework/index.js"');
     expect(assetResponse.status).toBe(200);
     expect(await assetResponse.text()).toBe("0123456789");
   });

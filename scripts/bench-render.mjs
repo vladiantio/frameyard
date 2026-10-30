@@ -10,6 +10,7 @@ import { loadProject } from "../dist/project.js";
 import { startPreviewServer } from "../dist/server/server.js";
 import { BROWSER_ARGS, BROWSER_CONTEXT_OPTIONS } from "../dist/renderer/browser.js";
 import { startVideoEncoder } from "../dist/renderer/ffmpeg.js";
+import { validateHtmlComposition } from "../dist/html/validate.js";
 
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 const distCli = path.join(repoRoot, "dist", "cli.js");
@@ -209,35 +210,54 @@ function pageErrors(session) {
   }
 }
 
-async function openSession(serverUrl, entry, props) {
-  // Mirrors src/renderer/browser.ts so capture numbers match production; the
-  // production session does not expose CDP for capture-mode comparisons.
+async function openSession(serverUrl, projectRoot, entry, props) {
+  // Mirrors the production HTML session so capture numbers match production;
+  // the production session does not expose CDP for capture-mode comparisons.
+  const validation = await validateHtmlComposition({ projectRoot, entry, props });
+  const errors = validation.diagnostics.filter((diagnostic) => diagnostic.severity === "error");
+  if (!validation.info || errors.length > 0) {
+    throw new Error(`Composition "${entry}" is invalid: ${errors[0]?.message ?? "unknown error"}`);
+  }
+  const info = validation.info;
+
   let browser;
   let context;
   let page;
   let cdp;
-  const errors = [];
+  const pageErrorsList = [];
 
   try {
     browser = await chromium.launch({ headless: true, args: BROWSER_ARGS });
-    context = await browser.newContext(BROWSER_CONTEXT_OPTIONS);
+    context = await browser.newContext({
+      ...BROWSER_CONTEXT_OPTIONS,
+      viewport: { width: info.metadata.width, height: info.metadata.height },
+    });
     page = await context.newPage();
     page.setDefaultTimeout(60_000);
-    page.on("pageerror", (error) => errors.push(error.message));
-    page.on("crash", () => errors.push("The browser page crashed."));
+    page.on("pageerror", (error) => pageErrorsList.push(error.message));
+    page.on("crash", () => pageErrorsList.push("The browser page crashed."));
 
-    await page.goto(new URL("/__frameyard/?render=1", serverUrl).href, {
+    const url = new URL(entry, serverUrl);
+    url.searchParams.set("__fy-manual", "1");
+    url.searchParams.set("__fy-load", "bench");
+    await page.goto(url.href, {
       waitUntil: "domcontentloaded",
       timeout: 60_000,
     });
-    await page.waitForFunction(() => Boolean(window.__frameyardPreview), undefined, { timeout: 30_000 });
+    await page.waitForFunction(() => Boolean(window.__fy) || Boolean(window.__fyError), undefined, { timeout: 30_000 });
+    const initError = await page.evaluate(() => window.__fyError);
+    if (initError) {
+      throw new Error(`[${initError.code}] ${initError.message}`);
+    }
 
-    const loaded = await page.evaluate(
-      async ({ entry: targetEntry, props: targetProps }) => window.__frameyardPreview.load(targetEntry, targetProps),
-      { entry, props },
+    await page.evaluate(
+      async ({ props: targetProps }) => {
+        await window.__fy.ready;
+        await window.__fy.load({ props: targetProps });
+      },
+      { props },
     );
 
-    await page.setViewportSize({ width: loaded.metadata.width, height: loaded.metadata.height });
     await page.waitForLoadState("networkidle", { timeout: 30_000 });
     await page.evaluate(
       () =>
@@ -248,7 +268,7 @@ async function openSession(serverUrl, entry, props) {
     await page.route("**/*", (route) => route.abort("blockedbyclient"));
 
     cdp = await context.newCDPSession(page);
-    const session = { browser, context, page, cdp, metadata: loaded.metadata, errors };
+    const session = { browser, context, page, cdp, metadata: info.metadata, errors: pageErrorsList };
     pageErrors(session);
     return session;
   } catch (error) {
@@ -264,7 +284,7 @@ async function closeSession(session) {
   if (session.page) {
     try {
       await session.page.evaluate(async () => {
-        await window.__frameyardPreview?.dispose?.();
+        await window.__fy?.dispose?.();
       });
     } catch {
       // Cleanup must not hide the benchmark result.
@@ -296,8 +316,9 @@ async function closeSession(session) {
 async function seek(session, frame) {
   pageErrors(session);
   const startedAt = performance.now();
-  await session.page.evaluate((targetFrame) => {
-    window.__frameyardPreview.seek(targetFrame);
+  await session.page.evaluate(async (targetFrame) => {
+    window.__fy.seek(targetFrame);
+    await window.__fy.settle();
   }, frame);
   pageErrors(session);
   return performance.now() - startedAt;
@@ -463,7 +484,7 @@ async function benchComposition({ project, compositionId, options, tempDir }) {
   let encodeBuffers = [];
 
   try {
-    session = await openSession(server.url, composition.entry, resolvedProps.props);
+    session = await openSession(server.url, project.root, composition.entry, resolvedProps.props);
     const { width, height, fps: compositionFps, durationInFrames } = session.metadata;
     fps = compositionFps;
     const frames = sampleFrames(durationInFrames, options.frames);

@@ -11,7 +11,7 @@ Every non-interactive command supports `--json`. Stdout contains one JSON docume
 }
 ```
 
-Additional fields are command-specific and stable within the 0.1 contract.
+Additional fields are command-specific and stable within the 0.4 contract.
 
 ## Error envelope
 
@@ -21,12 +21,37 @@ Additional fields are command-specific and stable within the 0.1 contract.
   "command": "render",
   "error": {
     "code": "OUTPUT_EXISTS",
-    "message": "Output already exists: ..."
+    "message": "Output already exists: ...",
+    "details": {}
+  },
+  "diagnostics": []
+}
+```
+
+`error.details` and top-level `diagnostics` are optional. Use the error `code` for decisions, not message text. `command` is `null` only for usage failures that occur before a command is known. Exit code `2` means usage; `130` means cancellation; other failures exit `1`.
+
+## Diagnostics
+
+`check`, `still`, and `render` results contain a `diagnostics` array:
+
+```json
+{
+  "severity": "warning",
+  "code": "BINDING_PATH_MISSING",
+  "message": "data-fy-text references prop \"titel\", which is not in the resolved props.",
+  "details": {
+    "path": "compositions/hello.html",
+    "line": 12,
+    "column": 5,
+    "element": "h1",
+    "attribute": "data-fy-text",
+    "value": "titel",
+    "suggestion": "title"
   }
 }
 ```
 
-Use the error `code` for decisions, not message text. `command` is `null` only for usage failures that occur before a command is known. Exit code `2` means usage; `130` means cancellation; other failures exit `1`.
+Static validation diagnostics include source locations. Runtime diagnostics may include a `frame`. Audio and transcript warnings use `AUDIO_WARNING` and `TRANSCRIPT_WARNING`; controller clock/randomness and CSS transition warnings use `DETERMINISM_WARNING`. See [diagnostics](diagnostics.md) for the code table.
 
 ## check
 
@@ -35,11 +60,12 @@ Use the error `code` for decisions, not message text. `command` is `null` only f
   "ok": true,
   "command": "check",
   "composition": "hello",
+  "entry": "compositions/hello.html",
+  "controller": { "kind": "inline" },
   "metadata": { "width": 1920, "height": 1080, "fps": 30, "durationInFrames": 900 },
   "framesChecked": 900,
   "audio": {
     "clips": 1,
-    "warnings": [],
     "details": [
       {
         "src": "assets/voice.wav",
@@ -54,14 +80,16 @@ Use the error `code` for decisions, not message text. `command` is `null` only f
   },
   "transcripts": {
     "clips": 1,
-    "warnings": [],
     "details": [
       { "src": "assets/voice.transcript.json", "language": "en", "segments": 3, "words": 17, "durationMs": 5200, "bytes": 2048 }
     ]
   },
+  "diagnostics": [],
   "elapsedMs": 1200
 }
 ```
+
+`entry` is the project-relative HTML path. `controller` is `{ kind: "inline" }`, `{ kind: "external", src }`, or `null`.
 
 ## still
 
@@ -70,10 +98,13 @@ Use the error `code` for decisions, not message text. `command` is `null` only f
   "ok": true,
   "command": "still",
   "composition": "hello",
+  "entry": "compositions/hello.html",
+  "controller": { "kind": "external", "src": "compositions/hello.controller.js" },
   "frame": 42,
   "path": "/absolute/path/hello-42.png",
   "width": 1920,
   "height": 1080,
+  "diagnostics": [],
   "elapsedMs": 700
 }
 ```
@@ -85,6 +116,8 @@ Use the error `code` for decisions, not message text. `command` is `null` only f
   "ok": true,
   "command": "render",
   "composition": "hello",
+  "entry": "compositions/hello.html",
+  "controller": { "kind": "inline" },
   "path": "/absolute/path/hello.mp4",
   "width": 1920,
   "height": 1080,
@@ -94,8 +127,9 @@ Use the error `code` for decisions, not message text. `command` is `null` only f
   "framesRendered": 900,
   "concurrency": 1,
   "bytes": 1234567,
-  "audio": { "clips": 1, "warnings": [] },
-  "transcripts": { "clips": 1, "warnings": [] },
+  "audio": { "clips": 1 },
+  "transcripts": { "clips": 1 },
+  "diagnostics": [],
   "elapsedMs": 99000
 }
 ```

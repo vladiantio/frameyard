@@ -1,0 +1,62 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      #bg {
+        position: absolute;
+        inset: 0;
+        background: #070b14;
+      }
+      .orb {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 720px;
+        height: 720px;
+        border-radius: 50%;
+        filter: blur(110px);
+      }
+      #a {
+        background: #e4572e;
+      }
+      #b {
+        background: #17bebb;
+      }
+      #c {
+        background: #ffc914;
+      }
+    </style>
+  </head>
+  <body>
+    <fy-composition width="1920" height="1080" fps="30" duration-in-frames="90">
+      <div id="bg"></div>
+      <div id="a" class="orb"></div>
+      <div id="b" class="orb"></div>
+      <div id="c" class="orb"></div>
+    </fy-composition>
+    <script type="text/fy-controller">
+      let a;
+      let b;
+      let c;
+      export default {
+        mount({ root }) {
+          a = root.querySelector("#a");
+          b = root.querySelector("#b");
+          c = root.querySelector("#c");
+        },
+        update({ frame }) {
+          const t = frame / 89;
+          a.style.transform = `translate(${400 + Math.sin(t * Math.PI * 2) * 420}px, ${200 + Math.cos(t * Math.PI * 2) * 180}px)`;
+          b.style.transform = `translate(${700 + Math.cos(t * Math.PI * 2) * 380}px, ${500 + Math.sin(t * Math.PI * 2) * 260}px)`;
+          c.style.transform = `translate(${1000 + Math.sin(t * Math.PI * 2 + 1) * 300}px, ${300 + Math.cos(t * Math.PI * 2 + 1) * 220}px)`;
+        },
+        dispose() {
+          a = undefined;
+          b = undefined;
+          c = undefined;
+        },
+      };
+    </script>
+  </body>
+</html>

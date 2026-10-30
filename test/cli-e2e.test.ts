@@ -10,39 +10,39 @@ import { VERSION } from "../src/version.ts";
 const exec = promisify(execFile);
 const cli = path.resolve("dist/cli.js");
 
-const composition = String.raw`
-import { defineComposition } from "frameyard";
+const composition = `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <script type="application/json" data-fy="props">{ "label": "Hello" }</script>
+    <style>
+      @keyframes move { from { transform: translateX(0px); } to { transform: translateX(40px); } }
+      #box { width: 20px; height: 20px; background: #ff5500; animation: move 0.6s linear infinite; }
+      #label { color: white; font: 12px monospace; }
+    </style>
+  </head>
+  <body>
+    <fy-composition width="160" height="90" fps="10" duration-in-frames="6">
+      <div id="box" data-frame="-1" data-fy-anim-start="0" data-fy-anim-duration="6"></div>
+      <div id="label"></div>
+      <canvas id="canvas" width="160" height="90"></canvas>
+      <audio src="assets/tone.wav" data-fy-start="1" data-fy-duration="0.4" data-fy-volume="0.4"></audio>
+    </fy-composition>
+    <script type="text/fy-controller">
 import { random } from "frameyard/runtime";
 
 let box;
 let label;
 let context;
 
-export default defineComposition({
-  width: 160,
-  height: 90,
-  fps: 10,
-  durationInFrames: 6,
-  defaultProps: { label: "Hello" },
+export default {
   validateProps(props) {
     return typeof props.label === "string" ? [] : ["label must be a string"];
   },
-  audio: [
-    { src: "assets/tone.wav", startFrame: 1, trimDuration: 0.4, volume: 0.4 },
-  ],
-  mount({ container, props }) {
-    container.innerHTML =
-      '<style>' +
-      '@keyframes move { from { transform: translateX(0px); } to { transform: translateX(40px); } }' +
-      '#box { width: 20px; height: 20px; background: #ff5500; animation: move 0.6s linear infinite; }' +
-      '#label { color: white; font: 12px monospace; }' +
-      '</style>' +
-      '<div id="box" data-frame="-1"></div>' +
-      '<div id="label"></div>' +
-      '<canvas id="canvas" width="160" height="90"></canvas>';
-    box = container.querySelector("#box");
-    label = container.querySelector("#label");
-    context = container.querySelector("#canvas").getContext("2d");
+  mount({ root }) {
+    box = root.querySelector("#box");
+    label = root.querySelector("#label");
+    context = root.querySelector("#canvas").getContext("2d");
   },
   update({ frame, props }) {
     box.dataset.frame = String(frame);
@@ -52,29 +52,33 @@ export default defineComposition({
     context.fillRect(0, 0, 160, 90);
   },
   dispose() {},
-});
+};
+    </script>
+  </body>
+</html>
 `;
 
-const mediaComposition = String.raw`
-import { defineComposition } from "frameyard";
-
+const mediaComposition = `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <script type="application/json" data-fy="props">{ "declaredTone": true }</script>
+    <style>video,canvas{position:absolute;top:0;width:80px;height:90px}video{left:0}canvas{left:80px}</style>
+  </head>
+  <body>
+    <fy-composition width="160" height="90" fps="10" duration-in-frames="12">
+      <video id="clip" src="assets/clip.webm" data-fy-start="2" data-fy-trim="0.1" data-fy-duration="0.6" data-fy-volume="0.5"></video>
+      <canvas id="gl" width="80" height="90"></canvas>
+      <audio data-fy-if="declaredTone" src="assets/tone.wav" data-fy-start="0" data-fy-volume="0.25"></audio>
+    </fy-composition>
+    <script type="text/fy-controller">
 let video;
 let gl;
 
-export default defineComposition({
-  width: 160,
-  height: 90,
-  fps: 10,
-  durationInFrames: 12,
-  defaultProps: { declaredTone: true },
-  audio: ({ props }) => (props.declaredTone ? [{ src: "assets/tone.wav", startFrame: 0, volume: 0.25 }] : []),
-  mount({ container }) {
-    container.innerHTML =
-      '<style>video,canvas{position:absolute;top:0;width:80px;height:90px}video{left:0}canvas{left:80px}</style>' +
-      '<video id="clip" src="assets/clip.webm" data-frameyard-start="2" data-frameyard-trim="0.1" data-frameyard-duration="0.6" data-frameyard-volume="0.5"></video>' +
-      '<canvas id="gl" width="80" height="90"></canvas>';
-    video = container.querySelector("#clip");
-    const canvas = container.querySelector("#gl");
+export default {
+  mount({ root }) {
+    video = root.querySelector("#clip");
+    const canvas = root.querySelector("#gl");
     gl = canvas.getContext("webgl2") ?? canvas.getContext("webgl");
   },
   update({ frame }) {
@@ -83,20 +87,25 @@ export default defineComposition({
     gl.clear(gl.COLOR_BUFFER_BIT);
     video.dataset.frame = String(frame);
   },
-});
+};
+    </script>
+  </body>
+</html>
 `;
 
-const webglComposition = String.raw`
+const webglComposition = `<!doctype html>
+<html>
+  <head><meta charset="utf-8"></head>
+  <body>
+    <fy-composition width="160" height="90" fps="10" duration-in-frames="6">
+      <canvas id="gl" width="160" height="90"></canvas>
+    </fy-composition>
+    <script type="text/fy-controller">
 let gl;
 
 export default {
-  width: 160,
-  height: 90,
-  fps: 10,
-  durationInFrames: 6,
-  mount({ container }) {
-    container.innerHTML = '<canvas id="gl" width="160" height="90"></canvas>';
-    const canvas = container.querySelector("#gl");
+  mount({ root }) {
+    const canvas = root.querySelector("#gl");
     gl = canvas.getContext("webgl2") ?? canvas.getContext("webgl");
   },
   update({ frame }) {
@@ -105,19 +114,58 @@ export default {
     gl.clear(gl.COLOR_BUFFER_BIT);
   },
 };
+    </script>
+  </body>
+</html>
 `;
 
-const missingVideoComposition = String.raw`
+const missingVideoComposition = `<!doctype html>
+<html>
+  <head><meta charset="utf-8"></head>
+  <body>
+    <fy-composition width="160" height="90" fps="10" duration-in-frames="2">
+      <video src="assets/missing.webm"></video>
+    </fy-composition>
+  </body>
+</html>
+`;
+
+const htmlComposition = `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <script type="application/json" data-fy="props">{ "label": "HTML" }</script>
+    <style>
+      @keyframes move { from { transform: translateX(0px); } to { transform: translateX(40px); } }
+      #box { width: 20px; height: 20px; background: #ff5500; animation: move 0.6s linear infinite; }
+    </style>
+  </head>
+  <body>
+    <fy-composition width="160" height="90" fps="10" duration-in-frames="6">
+      <div id="box" data-fy-anim-start="0" data-fy-anim-duration="6"></div>
+      <div id="label" data-fy-text="label"></div>
+      <audio src="assets/tone.wav" data-fy-start="1" data-fy-duration="0.4" data-fy-volume="0.4"></audio>
+    </fy-composition>
+    <script type="text/fy-controller">
 export default {
-  width: 160,
-  height: 90,
-  fps: 10,
-  durationInFrames: 2,
-  mount({ container }) {
-    container.innerHTML = '<video src="assets/missing.webm"></video>';
+  update({ frame, root }) {
+    root.querySelector("#box").dataset.frame = String(frame);
   },
-  update() {},
 };
+    </script>
+  </body>
+</html>
+`;
+
+const invalidHtmlComposition = `<!doctype html>
+<html>
+  <head><meta charset="utf-8"></head>
+  <body>
+    <fy-composition width="160" height="90" fps="10" duration-in-frames="2">
+      <div data-fy-txt="label"></div>
+    </fy-composition>
+  </body>
+</html>
 `;
 
 let root: string;
@@ -227,37 +275,45 @@ beforeAll(async () => {
   await mkdir(path.join(root, "assets"), { recursive: true });
   await writeFile(
     path.join(root, "video.config.js"),
-    `export default { compositions: { demo: "./compositions/demo.js", media: "./compositions/media.js", webgl: "./compositions/webgl.js", "missing-video": "./compositions/missing-video.js", broken: "./compositions/broken.js", throwing: "./compositions/throwing.js" } };\n`,
+    `export default { compositions: { demo: "./compositions/demo.html", media: "./compositions/media.html", webgl: "./compositions/webgl.html", "missing-video": "./compositions/missing-video.html", broken: "./compositions/broken.html", throwing: "./compositions/throwing.html", html: "./compositions/html.html", "html-invalid": "./compositions/html-invalid.html" } };\n`,
   );
-  await writeFile(path.join(root, "compositions", "demo.js"), composition);
-  await writeFile(path.join(root, "compositions", "media.js"), mediaComposition);
-  await writeFile(path.join(root, "compositions", "webgl.js"), webglComposition);
-  await writeFile(path.join(root, "compositions", "missing-video.js"), missingVideoComposition);
+  await writeFile(path.join(root, "compositions", "demo.html"), composition);
+  await writeFile(path.join(root, "compositions", "media.html"), mediaComposition);
+  await writeFile(path.join(root, "compositions", "webgl.html"), webglComposition);
+  await writeFile(path.join(root, "compositions", "missing-video.html"), missingVideoComposition);
+  await writeFile(path.join(root, "compositions", "html.html"), htmlComposition);
+  await writeFile(path.join(root, "compositions", "html-invalid.html"), invalidHtmlComposition);
   await writeFile(
-    path.join(root, "compositions", "broken.js"),
-    `export default {
-  width: 160,
-  height: 90,
-  fps: 10,
-  durationInFrames: 2,
-  audio: [{ src: "assets/missing.wav", startFrame: 0 }],
-  mount() {},
-  update() {},
-};
+    path.join(root, "compositions", "broken.html"),
+    `<!doctype html>
+<html>
+  <head><meta charset="utf-8"></head>
+  <body>
+    <fy-composition width="160" height="90" fps="10" duration-in-frames="2">
+      <audio src="assets/missing.wav" data-fy-start="0"></audio>
+    </fy-composition>
+  </body>
+</html>
 `,
   );
   await writeFile(
-    path.join(root, "compositions", "throwing.js"),
-    `export default {
-  width: 160,
-  height: 90,
-  fps: 10,
-  durationInFrames: 6,
-  mount() {},
+    path.join(root, "compositions", "throwing.html"),
+    `<!doctype html>
+<html>
+  <head><meta charset="utf-8"></head>
+  <body>
+    <fy-composition width="160" height="90" fps="10" duration-in-frames="6">
+      <div id="box"></div>
+    </fy-composition>
+    <script type="text/fy-controller">
+export default {
   update({ frame }) {
     if (frame === 3) throw new Error("frame boom");
   },
 };
+    </script>
+  </body>
+</html>
 `,
   );
   await writeFile(path.join(root, "assets", "tone.wav"), toneWav());
@@ -320,7 +376,94 @@ describe("CLI end-to-end", () => {
       },
       framesChecked: 6,
     });
-    expect(json.audio).toMatchObject({ clips: 1, warnings: [] });
+    expect(json.audio).toMatchObject({ clips: 1 });
+    expect(json.diagnostics).toEqual([]);
+  });
+
+  it("checks, stills, and renders an HTML composition", async () => {
+    const check = await run(["check", "html", "--project", root, "--json"], root);
+    expect(check.code).toBe(0);
+    const checked = JSON.parse(check.stdout) as Record<string, unknown>;
+    expect(checked).toMatchObject({
+      ok: true,
+      command: "check",
+      composition: "html",
+      entry: "compositions/html.html",
+      controller: { kind: "inline" },
+      metadata: { width: 160, height: 90, fps: 10, durationInFrames: 6 },
+      framesChecked: 6,
+      audio: { clips: 1 },
+      diagnostics: [],
+    });
+
+    const still = await run(
+      ["still", "html", "--frame", "3", "--out", "html-3.png", "--project", root, "--json"],
+      root,
+    );
+    expect(still.code).toBe(0);
+    const stillJson = JSON.parse(still.stdout) as Record<string, unknown>;
+    expect(stillJson).toMatchObject({
+      ok: true,
+      command: "still",
+      composition: "html",
+      entry: "compositions/html.html",
+      controller: { kind: "inline" },
+      frame: 3,
+      width: 160,
+      height: 90,
+      diagnostics: [],
+    });
+    const pixel = await pngPixel(path.join(root, "html-3.png"), 25, 5);
+    expect(pixel[0]).toBeGreaterThan(200);
+    expect(pixel[1]).toBeGreaterThan(40);
+    expect(pixel[2]).toBeLessThan(40);
+
+    const render = await run(["render", "html", "--out", "html.mp4", "--project", root, "--json"], root);
+    expect(render.code).toBe(0);
+    const rendered = JSON.parse(render.stdout) as Record<string, unknown>;
+    expect(rendered).toMatchObject({
+      ok: true,
+      command: "render",
+      composition: "html",
+      entry: "compositions/html.html",
+      controller: { kind: "inline" },
+      framesRendered: 6,
+      audio: { clips: 1 },
+      diagnostics: [],
+    });
+    const probe = await ffprobe(path.join(root, "html.mp4"), ["-count_frames"]);
+    const streams = probe.streams as Array<Record<string, unknown>>;
+    expect(streams.find((stream) => stream.codec_type === "video")).toMatchObject({
+      codec_name: "h264",
+      width: 160,
+      height: 90,
+      nb_read_frames: "6",
+    });
+    expect(streams.find((stream) => stream.codec_type === "audio")).toMatchObject({ codec_name: "aac" });
+  });
+
+  it("returns static diagnostics for an invalid HTML composition", async () => {
+    const result = await run(["check", "html-invalid", "--project", root, "--json"], root);
+    expect(result.code).not.toBe(0);
+    const json = JSON.parse(result.stdout) as Record<string, unknown>;
+    expect(json).toMatchObject({
+      ok: false,
+      command: "check",
+      error: { code: "BINDING_INVALID" },
+    });
+    expect(json.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          severity: "error",
+          code: "BINDING_INVALID",
+          details: expect.objectContaining({
+            line: expect.any(Number),
+            column: expect.any(Number),
+            attribute: "data-fy-txt",
+          }),
+        }),
+      ]),
+    );
   });
 
   it("fails check with invalid props and a structured error", async () => {
@@ -344,7 +487,7 @@ describe("CLI end-to-end", () => {
     expect(json).toMatchObject({
       ok: false,
       command: "check",
-      error: { code: "ASSET_NOT_FOUND" },
+      error: { code: "MEDIA_INVALID" },
     });
     expect(String((json.error as Record<string, unknown>).message)).toContain('Composition "broken"');
     expect(String((json.error as Record<string, unknown>).message)).toContain("assets/missing.wav");
@@ -358,7 +501,7 @@ describe("CLI end-to-end", () => {
     expect(json).toMatchObject({
       ok: false,
       command: "check",
-      error: { code: "ASSET_NOT_FOUND" },
+      error: { code: "MEDIA_INVALID" },
     });
     expect(String((json.error as Record<string, unknown>).message)).toContain("assets/missing.webm");
   });
@@ -488,9 +631,9 @@ describe("CLI end-to-end", () => {
     expect(check.code).toBe(0);
     const checked = JSON.parse(check.stdout) as Record<string, unknown>;
     expect(checked).toMatchObject({ ok: true, command: "check", composition: "media", framesChecked: 12 });
-    const audio = checked.audio as { clips: number; warnings: string[]; details: Array<Record<string, unknown>> };
+    const audio = checked.audio as { clips: number; details: Array<Record<string, unknown>> };
     expect(audio.clips).toBe(2);
-    expect(audio.warnings).toEqual([]);
+    expect(checked.diagnostics).toEqual([]);
     expect(audio.details.map((clip) => clip.src)).toEqual(["assets/tone.wav", "assets/clip.webm"]);
 
     const sequential = await run(
@@ -513,7 +656,8 @@ describe("CLI end-to-end", () => {
       durationInFrames: 12,
       framesRendered: 12,
     });
-    expect(rendered.audio).toMatchObject({ clips: 2, warnings: [] });
+    expect(rendered.audio).toMatchObject({ clips: 2 });
+    expect(rendered.diagnostics).toEqual([]);
 
     const probe = await ffprobe(path.join(root, "media-sequential.mp4"), ["-count_frames"]);
     const streams = probe.streams as Array<Record<string, unknown>>;
@@ -533,7 +677,8 @@ describe("CLI end-to-end", () => {
     );
     expect(embeddedOnly.code).toBe(0);
     const embeddedJson = JSON.parse(embeddedOnly.stdout) as Record<string, unknown>;
-    expect(embeddedJson.audio).toMatchObject({ clips: 1, warnings: [] });
+    expect(embeddedJson.audio).toMatchObject({ clips: 1 });
+    expect(embeddedJson.diagnostics).toEqual([]);
     const embeddedProbe = await ffprobe(path.join(root, "media-embedded.mp4"));
     const embeddedStreams = embeddedProbe.streams as Array<Record<string, unknown>>;
     expect(embeddedStreams.find((stream) => stream.codec_type === "audio")).toMatchObject({ codec_name: "aac" });
@@ -741,7 +886,7 @@ describe("CLI end-to-end", () => {
       "npx frameyard render hello --out hello.mp4",
     ]);
     expect((await stat(path.join(target, "video.config.js"))).isFile()).toBe(true);
-    expect((await stat(path.join(target, "compositions", "hello.js"))).isFile()).toBe(true);
+    expect((await stat(path.join(target, "compositions", "hello.html"))).isFile()).toBe(true);
 
     const manifest = JSON.parse(await readFile(path.join(target, "package.json"), "utf8"));
     expect(manifest).toEqual({
@@ -757,7 +902,9 @@ describe("CLI end-to-end", () => {
     });
 
     const agents = await readFile(path.join(target, "AGENTS.md"), "utf8");
-    expect(agents).toContain("update({ frame, props })");
+    expect(agents).toContain("fy-composition");
+    expect(agents).toContain("data-fy-text");
+    expect(agents).toContain("data-fy-anim-start");
     expect(agents).toContain('random("stable:key")');
     expect(agents).toContain("qwen-tts");
     expect(agents).toContain("whisper-cli");

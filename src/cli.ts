@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { access, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { FrameyardError, isFrameyardError } from "./errors.js";
+import { FrameyardError, isFrameyardError, type FrameyardDiagnostic } from "./errors.js";
 import { loadProject, resolveProjectRoot, type Project } from "./project.js";
 import {
   checkComposition,
@@ -443,9 +443,12 @@ function formatDuration(seconds: number): string {
   return `${seconds.toFixed(2)}s`;
 }
 
-function printWarnings(warnings: string[]): void {
-  for (const warning of warnings) {
-    process.stderr.write(`warning: ${warning}\n`);
+function printDiagnostics(diagnostics: readonly FrameyardDiagnostic[]): void {
+  for (const diagnostic of diagnostics) {
+    const details = diagnostic.details as { path?: string; line?: number; column?: number } | undefined;
+    const location =
+      details?.line !== undefined ? ` (${details.path ?? "composition"}:${details.line}:${details.column ?? 1})` : "";
+    process.stderr.write(`${diagnostic.severity}: [${diagnostic.code}] ${diagnostic.message}${location}\n`);
   }
 }
 
@@ -553,9 +556,7 @@ async function runCheck(parsed: ParsedArgs, signal: AbortSignal): Promise<number
     process.stdout.write(
       `✓ ${compositionId}: ${result.framesChecked} frames, ${meta.width}×${meta.height} @ ${meta.fps} fps (${formatDuration(meta.durationInFrames / meta.fps)})\n`,
     );
-    process.stdout.write(
-      `  audio: ${result.audio.clips} clip${result.audio.clips === 1 ? "" : "s"}, ${result.audio.warnings.length} warning${result.audio.warnings.length === 1 ? "" : "s"}\n`,
-    );
+    process.stdout.write(`  audio: ${result.audio.clips} clip${result.audio.clips === 1 ? "" : "s"}\n`);
     for (const clip of result.audio.details) {
       process.stdout.write(
         `    ${clip.src}: ${clip.startSeconds.toFixed(2)}s–${clip.endSeconds.toFixed(2)}s (source ${clip.sourceDurationSeconds.toFixed(2)}s, volume ${clip.volume})\n`,
@@ -563,7 +564,7 @@ async function runCheck(parsed: ParsedArgs, signal: AbortSignal): Promise<number
     }
     if (result.transcripts.clips > 0) {
       process.stdout.write(
-        `  transcripts: ${result.transcripts.clips} asset${result.transcripts.clips === 1 ? "" : "s"}, ${result.transcripts.warnings.length} warning${result.transcripts.warnings.length === 1 ? "" : "s"}\n`,
+        `  transcripts: ${result.transcripts.clips} asset${result.transcripts.clips === 1 ? "" : "s"}\n`,
       );
       for (const transcript of result.transcripts.details) {
         process.stdout.write(
@@ -572,8 +573,7 @@ async function runCheck(parsed: ParsedArgs, signal: AbortSignal): Promise<number
       }
     }
   }
-  printWarnings(result.audio.warnings);
-  printWarnings(result.transcripts.warnings);
+  printDiagnostics(result.diagnostics);
   return 0;
 }
 
@@ -603,6 +603,7 @@ async function runStill(parsed: ParsedArgs, signal: AbortSignal): Promise<number
     signal,
   });
 
+  printDiagnostics(result.diagnostics);
   if (json) {
     printJson({ ok: true, command: "still", ...result });
   } else {
@@ -639,8 +640,7 @@ async function runRender(parsed: ParsedArgs, signal: AbortSignal): Promise<numbe
     onProgress: progressPrinter("Rendering"),
   });
 
-  printWarnings(result.audio.warnings);
-  printWarnings(result.transcripts.warnings);
+  printDiagnostics(result.diagnostics);
   if (json) {
     printJson({ ok: true, command: "render", ...result });
   } else {
@@ -811,10 +811,24 @@ function reportFailure(error: unknown, command: string, jsonRequested: boolean, 
   const code = aborted ? "CANCELLED" : isFrameyardError(error) ? error.code : "INTERNAL";
   const message = aborted ? "Operation cancelled." : error instanceof Error ? error.message : String(error);
 
+  const details = isFrameyardError(error) ? error.details : undefined;
+  const diagnostics = isFrameyardError(error) ? error.diagnostics : undefined;
   if (jsonRequested) {
-    printJson({ ok: false, command: command || null, error: { code, message } });
+    printJson({
+      ok: false,
+      command: command || null,
+      error: {
+        code,
+        message,
+        ...(details !== undefined ? { details } : {}),
+      },
+      ...(diagnostics !== undefined ? { diagnostics } : {}),
+    });
   }
   process.stderr.write(`${aborted ? "Cancelled" : `error [${code}]`}${aborted ? "" : `: ${message}`}\n`);
+  if (diagnostics !== undefined) {
+    printDiagnostics(diagnostics);
+  }
 
   if (!aborted && !isFrameyardError(error) && process.env.FRAMEYARD_DEBUG === "1" && error instanceof Error) {
     process.stderr.write(`${error.stack ?? ""}\n`);

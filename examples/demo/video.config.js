@@ -1,5 +1,5 @@
 export default {
   compositions: {
-    demo: "./compositions/demo.js",
+    demo: "./compositions/demo.html",
   },
 };

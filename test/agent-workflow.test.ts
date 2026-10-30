@@ -9,21 +9,25 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 const exec = promisify(execFile);
 const cli = path.resolve("dist/cli.js");
 
-const composition = `
+const composition = `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <script type="application/json" data-fy="props">{ "title": "Agent workflow" }</script>
+  </head>
+  <body>
+    <fy-composition width="160" height="90" fps="10" duration-in-frames="3">
+      <div id="label"></div>
+      <canvas id="canvas" width="160" height="90"></canvas>
+    </fy-composition>
+    <script type="text/fy-controller">
 let label;
 let context;
 
 export default {
-  width: 160,
-  height: 90,
-  fps: 10,
-  durationInFrames: 3,
-  defaultProps: { title: "Agent workflow" },
-  mount({ container }) {
-    container.innerHTML =
-      '<div id="label"></div><canvas id="canvas" width="160" height="90"></canvas>';
-    label = container.querySelector("#label");
-    context = container.querySelector("#canvas").getContext("2d");
+  mount({ root }) {
+    label = root.querySelector("#label");
+    context = root.querySelector("#canvas").getContext("2d");
   },
   update({ frame, props }) {
     label.textContent = props.title + ":" + frame;
@@ -31,6 +35,9 @@ export default {
     context.fillRect(0, 0, 160, 90);
   },
 };
+    </script>
+  </body>
+</html>
 `;
 
 let root: string;
@@ -57,9 +64,9 @@ beforeAll(async () => {
   await mkdir(path.join(root, "compositions"), { recursive: true });
   await writeFile(
     path.join(root, "video.config.js"),
-    `export default { compositions: { agent: "./compositions/agent.js" } };\n`,
+    `export default { compositions: { agent: "./compositions/agent.html" } };\n`,
   );
-  await writeFile(path.join(root, "compositions", "agent.js"), composition);
+  await writeFile(path.join(root, "compositions", "agent.html"), composition);
   await writeFile(path.join(root, "props.json"), JSON.stringify({ title: "Preserved source" }));
 });
 
@@ -71,7 +78,7 @@ describe("agent-style workflow", () => {
   it("preserves source, validates, inspects a still, renders, and reports failures", async () => {
     const sourceBefore = {
       config: digest(await readFile(path.join(root, "video.config.js"))),
-      composition: digest(await readFile(path.join(root, "compositions", "agent.js"))),
+      composition: digest(await readFile(path.join(root, "compositions", "agent.html"))),
       props: digest(await readFile(path.join(root, "props.json"))),
     };
 
@@ -122,7 +129,7 @@ describe("agent-style workflow", () => {
 
     const sourceAfter = {
       config: digest(await readFile(path.join(root, "video.config.js"))),
-      composition: digest(await readFile(path.join(root, "compositions", "agent.js"))),
+      composition: digest(await readFile(path.join(root, "compositions", "agent.html"))),
       props: digest(await readFile(path.join(root, "props.json"))),
     };
     expect(sourceAfter).toEqual(sourceBefore);

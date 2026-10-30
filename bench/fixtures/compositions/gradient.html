@@ -1,0 +1,48 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      #panel {
+        position: absolute;
+        inset: 0;
+      }
+      #orb {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 520px;
+        height: 520px;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.16);
+        mix-blend-mode: screen;
+      }
+    </style>
+  </head>
+  <body>
+    <fy-composition width="1920" height="1080" fps="30" duration-in-frames="90">
+      <div id="panel"></div>
+      <div id="orb"></div>
+    </fy-composition>
+    <script type="text/fy-controller">
+      let panel;
+      let orb;
+      export default {
+        mount({ root }) {
+          panel = root.querySelector("#panel");
+          orb = root.querySelector("#orb");
+        },
+        update({ frame }) {
+          const t = frame / 89;
+          const hue = Math.round(t * 360);
+          panel.style.background = `linear-gradient(135deg, hsl(${hue} 70% 24%), hsl(${(hue + 120) % 360} 80% 58%))`;
+          orb.style.transform = `translate(${900 + Math.cos(t * Math.PI * 2) * 520}px, ${300 + Math.sin(t * Math.PI * 2) * 220}px)`;
+        },
+        dispose() {
+          panel = undefined;
+          orb = undefined;
+        },
+      };
+    </script>
+  </body>
+</html>

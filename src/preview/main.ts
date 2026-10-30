@@ -1,25 +1,30 @@
-import type { CompositionMetadata, Props, ResolvedAudioClip, ResolvedTranscriptClip } from "../index.js";
-import {
-  createCompositionRuntime,
-  frameToMilliseconds,
-  loadCompositionModule,
-  type CompositionRuntime,
-} from "../runtime/index.js";
-import { FrameyardError, errorMessage, isFrameyardError } from "../errors.js";
+import type {
+  CompositionDiagnostic,
+  CompositionMetadata,
+  FrameyardHost,
+  Props,
+  ResolvedAudioClip,
+  ResolvedTranscriptClip,
+} from "../index.js";
+import { frameToMilliseconds } from "../runtime/index.js";
+import { FrameyardError, errorMessage, isFrameyardError, type FrameyardErrorCode } from "../errors.js";
 
-interface PreviewLoadResult {
+interface CompositionEntry {
+  id: string;
+  entry: string;
+  metadata?: CompositionMetadata;
+  controller: { kind: "inline" } | { kind: "external"; src: string } | null;
+  diagnostics: CompositionDiagnostic[];
+}
+
+interface LoadedHostState {
   metadata: CompositionMetadata;
   props: Props;
+  controller: { kind: "inline" } | { kind: "external"; src: string } | null;
   audioClips: ResolvedAudioClip[];
   embeddedAudioClips: ResolvedAudioClip[];
   transcriptClips: ResolvedTranscriptClip[];
-}
-
-interface PreviewApi {
-  load(entry: string, props?: unknown): Promise<PreviewLoadResult>;
-  seek(frame: number): void;
-  settle(): Promise<void>;
-  dispose(): Promise<void>;
+  diagnostics: CompositionDiagnostic[];
 }
 
 interface AudioEntry {
@@ -27,13 +32,18 @@ interface AudioEntry {
   element: HTMLAudioElement;
 }
 
+interface PreviewApi {
+  load(entry: string, props?: unknown): Promise<LoadedHostState>;
+  seek(frame: number): void;
+  settle(): Promise<void>;
+  dispose(): Promise<void>;
+}
+
 declare global {
   interface Window {
     __frameyardPreview: PreviewApi;
   }
 }
-
-const isRender = new URLSearchParams(window.location.search).get("render") === "1";
 
 function byId<T extends HTMLElement>(id: string): T {
   const element = document.getElementById(id);
@@ -43,10 +53,11 @@ function byId<T extends HTMLElement>(id: string): T {
   return element as T;
 }
 
-const stage = byId<HTMLDivElement>("stage");
+const stageFrame = byId<HTMLIFrameElement>("stage-frame");
 const stageWrap = byId<HTMLDivElement>("stage-wrap");
 const viewport = byId<HTMLElement>("viewport");
 const errorBox = byId<HTMLDivElement>("error");
+const diagnosticsBox = byId<HTMLDivElement>("diagnostics");
 const propsEditor = byId<HTMLTextAreaElement>("props");
 const applyButton = byId<HTMLButtonElement>("apply");
 const formatButton = byId<HTMLButtonElement>("format");
@@ -60,7 +71,7 @@ const clockLabel = byId<HTMLSpanElement>("clock");
 const muteCheckbox = byId<HTMLInputElement>("mute");
 const volumeSlider = byId<HTMLInputElement>("volume");
 
-let runtime: CompositionRuntime | null = null;
+let hostFrame: FrameyardHost | null = null;
 let metadata: CompositionMetadata | null = null;
 let audioClips: readonly ResolvedAudioClip[] = [];
 let embeddedAudioClips: readonly ResolvedAudioClip[] = [];
@@ -75,7 +86,8 @@ let muted = false;
 let lastError: string | null = null;
 let selectedEntry: string | null = null;
 let loadQueue: Promise<unknown> = Promise.resolve();
-const entries = new Map<string, string>();
+let loadSequence = 0;
+const entries = new Map<string, CompositionEntry>();
 
 function showError(error: unknown): void {
   lastError = errorMessage(error);
@@ -120,18 +132,11 @@ function fitStage(): void {
     return;
   }
 
-  if (isRender) {
-    stage.style.transform = "none";
-    stageWrap.style.width = "";
-    stageWrap.style.height = "";
-    return;
-  }
-
   const padding = 48;
   const availableWidth = Math.max(1, viewport.clientWidth - padding);
   const availableHeight = Math.max(1, viewport.clientHeight - padding);
   const scale = Math.min(availableWidth / metadata.width, availableHeight / metadata.height, 1);
-  stage.style.transform = `scale(${scale})`;
+  stageFrame.style.transform = `scale(${scale})`;
   stageWrap.style.width = `${metadata.width * scale}px`;
   stageWrap.style.height = `${metadata.height * scale}px`;
 }
@@ -164,7 +169,7 @@ function releaseAudio(): void {
 
 function buildAudio(): void {
   releaseAudio();
-  if (isRender || !metadata) {
+  if (!metadata) {
     return;
   }
 
@@ -235,12 +240,13 @@ function stopPlayback(): void {
 }
 
 function renderFrame(frame: number, options: { settle?: boolean } = {}): void {
-  if (!runtime || !metadata) {
+  const active = hostFrame;
+  if (!active || !metadata) {
     throw new FrameyardError("COMPOSITION_ERROR", "No composition is loaded.");
   }
 
   try {
-    runtime.seek(frame);
+    active.seek(frame);
   } catch (error) {
     stopPlayback();
     showError(error);
@@ -251,11 +257,11 @@ function renderFrame(frame: number, options: { settle?: boolean } = {}): void {
   clearError();
   updateTransport();
   syncAudio();
+  refreshDiagnostics();
 
   if (options.settle !== false) {
-    const active = runtime;
     void active.settle().catch((error) => {
-      if (runtime !== active) {
+      if (hostFrame !== active) {
         return;
       }
       stopPlayback();
@@ -265,7 +271,7 @@ function renderFrame(frame: number, options: { settle?: boolean } = {}): void {
 }
 
 function playbackLoop(): void {
-  if (!playing || !runtime || !metadata) {
+  if (!playing || !hostFrame || !metadata) {
     return;
   }
 
@@ -293,7 +299,7 @@ function playbackLoop(): void {
 }
 
 function setPlaying(value: boolean): void {
-  if (!runtime || !metadata || playing === value) {
+  if (!hostFrame || !metadata || playing === value) {
     return;
   }
 
@@ -319,21 +325,29 @@ async function teardown(): Promise<void> {
   releaseAudio();
   playButton.disabled = true;
   scrubber.disabled = true;
-  if (runtime) {
-    const active = runtime;
-    runtime = null;
-    await active.dispose();
-  } else {
-    stage.replaceChildren();
+
+  if (hostFrame) {
+    const active = hostFrame;
+    hostFrame = null;
+    try {
+      await active.dispose();
+    } catch {
+      // The host may already be disposed after a failed load.
+    }
   }
+
+  stageFrame.hidden = true;
+  stageFrame.removeAttribute("src");
+  stageFrame.style.width = "0px";
+  stageFrame.style.height = "0px";
   metadata = null;
   audioClips = [];
   embeddedAudioClips = [];
   currentFrame = 0;
+  diagnosticsBox.hidden = true;
+  diagnosticsBox.replaceChildren();
   updateMeta();
   updateTransport();
-  stage.style.width = "0px";
-  stage.style.height = "0px";
 }
 
 function enqueue<T>(task: () => Promise<T>): Promise<T> {
@@ -345,70 +359,183 @@ function enqueue<T>(task: () => Promise<T>): Promise<T> {
   return run;
 }
 
-async function loadNow(entry: string, propOverrides?: unknown): Promise<PreviewLoadResult> {
+async function loadNow(entry: string, propOverrides?: unknown): Promise<LoadedHostState> {
   if (typeof entry !== "string" || entry.length === 0) {
     throw new FrameyardError("COMPOSITION_INVALID", "A composition entry path is required.");
   }
 
-  await teardown();
-  clearError();
-
-  const moduleUrl = new URL(entry, `${window.location.origin}/`);
-  if (moduleUrl.origin !== window.location.origin) {
-    throw new FrameyardError("COMPOSITION_INVALID", "Composition entry must be served from this project.");
+  const composition = [...entries.values()].find((candidate) => candidate.entry === entry);
+  if (!composition) {
+    throw new FrameyardError("COMPOSITION_NOT_FOUND", `Composition entry is not listed: ${entry}`);
   }
 
-  const loadedComposition = await loadCompositionModule(moduleUrl.href);
-  const loadedMetadata: CompositionMetadata = {
-    width: loadedComposition.width,
-    height: loadedComposition.height,
-    fps: loadedComposition.fps,
-    durationInFrames: loadedComposition.durationInFrames,
-  };
-  metadata = loadedMetadata;
+  if (hostFrame && selectedEntry === composition.entry) {
+    clearError();
+    return loadHtmlProps(composition, hostFrame, propOverrides);
+  }
 
-  stage.style.width = `${loadedMetadata.width}px`;
-  stage.style.height = `${loadedMetadata.height}px`;
-  stage.style.transform = isRender ? "none" : "";
+  await teardown();
+  clearError();
+  selectedEntry = composition.entry;
+  return loadHtmlNow(composition, propOverrides);
+}
+
+async function loadHtmlNow(composition: CompositionEntry, propOverrides?: unknown): Promise<LoadedHostState> {
+  if (!composition.metadata) {
+    throw new FrameyardError("COMPOSITION_INVALID", `Composition "${composition.id}" has no static metadata.`);
+  }
+
+  stageFrame.hidden = false;
+  metadata = composition.metadata;
+  stageFrame.style.width = `${metadata.width}px`;
+  stageFrame.style.height = `${metadata.height}px`;
   fitStage();
   updateMeta();
 
-  const active = await createCompositionRuntime({
-    composition: loadedComposition,
-    container: stage,
-    props: propOverrides,
-    ...(isRender
-      ? {}
-      : {
-          diagnostics: (warning: string) => {
-            console.warn(`[frameyard] ${warning}`);
-          },
-        }),
-  });
+  const url = new URL(composition.entry, window.location.origin);
+  url.searchParams.set("__fy-manual", "1");
+  const loadToken = String(++loadSequence);
+  url.searchParams.set("__fy-load", loadToken);
+  stageFrame.src = url.href;
 
-  runtime = active;
-  audioClips = active.audioClips;
-  embeddedAudioClips = active.embeddedAudioClips;
+  const host = await waitForHost(composition, loadToken);
+  await host.load({ props: clonePropsForHost(propOverrides) });
+  hostFrame = host;
+  stageFrame.contentDocument?.addEventListener("fy-diagnostic", () => refreshDiagnostics());
+
+  const loaded = readHostState(host);
+  applyLoadedHostState(composition, loaded);
+  return loaded;
+}
+
+async function loadHtmlProps(
+  composition: CompositionEntry,
+  host: FrameyardHost,
+  propOverrides?: unknown,
+): Promise<LoadedHostState> {
+  await host.load({ props: clonePropsForHost(propOverrides) });
+  const loaded = readHostState(host);
+  applyLoadedHostState(composition, loaded);
+  return loaded;
+}
+
+function readHostState(host: FrameyardHost): LoadedHostState {
+  return {
+    metadata: host.metadata,
+    props: host.props,
+    controller: host.controller,
+    audioClips: [...host.audioClips],
+    embeddedAudioClips: [...host.embeddedAudioClips],
+    transcriptClips: [...host.transcriptClips],
+    diagnostics: [...host.diagnostics],
+  };
+}
+
+function applyLoadedHostState(composition: CompositionEntry, loaded: LoadedHostState): void {
+  metadata = loaded.metadata;
+  audioClips = loaded.audioClips;
+  embeddedAudioClips = loaded.embeddedAudioClips;
   currentFrame = 0;
   buildAudio();
   updateTransport();
-  propsEditor.value = JSON.stringify(active.props, null, 2);
-  selectedEntry = entry;
-  const idForEntry = [...entries].find(([, value]) => value === entry)?.[0];
-  if (idForEntry) {
-    compositionSelect.value = idForEntry;
-  }
+  propsEditor.value = JSON.stringify(loaded.props, null, 2);
+  selectedEntry = composition.entry;
+  compositionSelect.value = composition.id;
   updateAudioVolumes();
   syncAudio();
   fitStage();
+  refreshDiagnostics(loaded.diagnostics);
+}
 
-  return {
-    metadata: loadedMetadata,
-    props: active.props as Props,
-    audioClips: [...audioClips],
-    embeddedAudioClips: [...embeddedAudioClips],
-    transcriptClips: [...active.transcriptClips],
-  };
+function clonePropsForHost(props: unknown): unknown {
+  if (props === undefined) {
+    return undefined;
+  }
+  try {
+    const serialized = JSON.stringify(props);
+    const contentWindow = stageFrame.contentWindow as (Window & { JSON?: { parse(value: string): unknown } }) | null;
+    return contentWindow?.JSON ? contentWindow.JSON.parse(serialized) : JSON.parse(serialized);
+  } catch {
+    return props;
+  }
+}
+
+async function waitForHost(composition: CompositionEntry, loadToken: string): Promise<FrameyardHost> {
+  const deadline = performance.now() + 30_000;
+  while (performance.now() < deadline) {
+    const contentWindow = stageFrame.contentWindow as
+      | (Window & { __fy?: FrameyardHost; __fyError?: { code: string; message: string } })
+      | null;
+    let currentToken: string | null = null;
+    try {
+      currentToken = contentWindow ? new URL(contentWindow.location.href).searchParams.get("__fy-load") : null;
+    } catch {
+      currentToken = null;
+    }
+    if (contentWindow && currentToken === loadToken) {
+      if (contentWindow.__fyError) {
+        throw new FrameyardError(contentWindow.__fyError.code as FrameyardErrorCode, contentWindow.__fyError.message);
+      }
+      if (contentWindow.__fy) {
+        await contentWindow.__fy.ready;
+        return contentWindow.__fy;
+      }
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new FrameyardError("RENDER_FAILED", `Timed out waiting for composition "${composition.id}" to load.`);
+}
+
+function mergeDiagnostics(...groups: Array<readonly CompositionDiagnostic[]>): CompositionDiagnostic[] {
+  const seen = new Set<string>();
+  const result: CompositionDiagnostic[] = [];
+  for (const group of groups) {
+    for (const diagnostic of group) {
+      const key = JSON.stringify([
+        diagnostic.severity,
+        diagnostic.code,
+        diagnostic.message,
+        diagnostic.details ?? null,
+      ]);
+      if (!seen.has(key)) {
+        seen.add(key);
+        result.push(diagnostic);
+      }
+    }
+  }
+  return result;
+}
+
+function refreshDiagnostics(runtimeDiagnostics?: readonly CompositionDiagnostic[]): void {
+  const composition = selectedEntry
+    ? [...entries.values()].find((candidate) => candidate.entry === selectedEntry)
+    : undefined;
+  const all = mergeDiagnostics(composition?.diagnostics ?? [], runtimeDiagnostics ?? hostFrame?.diagnostics ?? []);
+  diagnosticsBox.hidden = all.length === 0;
+  diagnosticsBox.replaceChildren(...all.map(renderDiagnostic));
+}
+
+function renderDiagnostic(diagnostic: CompositionDiagnostic): HTMLElement {
+  const element = document.createElement("span");
+  element.className = `diagnostic ${diagnostic.severity}`;
+  const details = diagnostic.details;
+  const location =
+    details?.line !== undefined ? ` (${details.path ?? "composition"}:${details.line}:${details.column ?? 1})` : "";
+  element.textContent = `${diagnostic.severity}: [${diagnostic.code}] ${diagnostic.message}${location}`;
+  return element;
+}
+
+function isCompositionMetadata(value: unknown): value is CompositionMetadata {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  return (
+    typeof record.width === "number" &&
+    typeof record.height === "number" &&
+    typeof record.fps === "number" &&
+    typeof record.durationInFrames === "number"
+  );
 }
 
 function browserCommandError(error: unknown): Error {
@@ -419,7 +546,7 @@ function browserCommandError(error: unknown): Error {
 }
 
 const api: PreviewApi = {
-  load(entry: string, propOverrides?: unknown): Promise<PreviewLoadResult> {
+  load(entry: string, propOverrides?: unknown): Promise<LoadedHostState> {
     return enqueue(async () => {
       playButton.disabled = true;
       scrubber.disabled = true;
@@ -428,12 +555,14 @@ const api: PreviewApi = {
       } catch (error) {
         throw browserCommandError(error);
       } finally {
-        playButton.disabled = runtime === null;
-        scrubber.disabled = runtime === null;
+        const ready = hostFrame !== null;
+        playButton.disabled = !ready;
+        scrubber.disabled = !ready;
       }
     });
   },
-  seek(frame: number) {
+
+  seek(frame: number): void {
     try {
       renderFrame(frame, { settle: false });
       if (playing) {
@@ -444,16 +573,18 @@ const api: PreviewApi = {
       throw browserCommandError(error);
     }
   },
+
   async settle(): Promise<void> {
     try {
-      if (!runtime) {
+      if (!hostFrame) {
         throw new FrameyardError("COMPOSITION_ERROR", "No composition is loaded.");
       }
-      await runtime.settle();
+      await hostFrame.settle();
     } catch (error) {
       throw browserCommandError(error);
     }
   },
+
   dispose(): Promise<void> {
     return enqueue(async () => {
       try {
@@ -475,7 +606,15 @@ async function initPreview(): Promise<void> {
   if (!response.ok) {
     throw new FrameyardError("CONFIG_INVALID", `Could not load project.json (${response.status}).`);
   }
-  const data = (await response.json()) as { compositions?: Array<{ id?: unknown; entry?: unknown }> };
+  const data = (await response.json()) as {
+    compositions?: Array<{
+      id?: unknown;
+      entry?: unknown;
+      metadata?: unknown;
+      controller?: unknown;
+      diagnostics?: unknown;
+    }>;
+  };
   if (!Array.isArray(data.compositions) || data.compositions.length === 0) {
     throw new FrameyardError("CONFIG_INVALID", "The project has no compositions.");
   }
@@ -485,10 +624,17 @@ async function initPreview(): Promise<void> {
     if (typeof item.id !== "string" || typeof item.entry !== "string") {
       continue;
     }
-    entries.set(item.id, item.entry);
+    const metadata = isCompositionMetadata(item.metadata) ? item.metadata : undefined;
+    const controller =
+      item.controller === null || item.controller === undefined
+        ? null
+        : (item.controller as CompositionEntry["controller"]);
+    const diagnostics = Array.isArray(item.diagnostics) ? (item.diagnostics as CompositionDiagnostic[]) : [];
+    entries.set(item.id, { id: item.id, entry: item.entry, metadata, controller, diagnostics });
+
     const option = document.createElement("option");
     option.value = item.id;
-    option.textContent = item.id;
+    option.textContent = metadata ? `${item.id} — ${metadata.width}×${metadata.height} · ${metadata.fps} fps` : item.id;
     compositionSelect.append(option);
   }
 
@@ -497,7 +643,7 @@ async function initPreview(): Promise<void> {
   if (!firstId) {
     throw new FrameyardError("CONFIG_INVALID", "The project has no usable compositions.");
   }
-  const firstEntry = entries.get(firstId) as string;
+  const firstEntry = (entries.get(firstId) as CompositionEntry).entry;
   selectedEntry = firstEntry;
   compositionSelect.value = firstId;
   document.title = `${firstId} — Frameyard Preview`;
@@ -524,13 +670,13 @@ async function initPreview(): Promise<void> {
 
   compositionSelect.addEventListener("change", () => {
     const id = compositionSelect.value;
-    const entry = entries.get(id);
-    if (!entry) {
+    const composition = entries.get(id);
+    if (!composition) {
       return;
     }
-    selectedEntry = entry;
+    selectedEntry = composition.entry;
     document.title = `${id} — Frameyard Preview`;
-    void api.load(entry).catch(showError);
+    void api.load(composition.entry).catch(showError);
   });
 
   applyButton.addEventListener("click", () => {
@@ -572,9 +718,4 @@ window.addEventListener("unhandledrejection", (event) => {
   showError(event.reason);
 });
 
-if (isRender) {
-  document.body.classList.add("render");
-  updateTransport();
-} else {
-  void initPreview();
-}
+void initPreview();

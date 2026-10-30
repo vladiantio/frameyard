@@ -1,17 +1,17 @@
 # AGENTS.md
 
-Frameyard is a local-first framework for deterministic, parameterized videos authored with HTML, CSS, and native JavaScript. The v0.1 design is implemented: composition contracts, browser runtime and preview, `init`/`dev`/`check`/`still`/`render`, `tts`/`transcribe`/`doctor`, Chromium capture, FFmpeg output, provenance manifests, transcript validation, and the official agent skill.
+Frameyard is a local-first framework for deterministic, parameterized videos authored with HTML, CSS, and an optional JavaScript controller. The 0.4 design is implemented: HTML composition documents, declarative bindings, CSS animation scheduling, frame-state variables, inline and external controllers, the composition host, static validation, iframe preview, direct render/check/still sessions, audio and transcripts, Chromium capture, FFmpeg output, provenance manifests, and the official agent skill.
 
 ## Read first
 
 - **Before changing public composition, props, audio, CLI, or JSON contracts**: read `docs/v0.1-design.md`, then `GLOSSARY.md` for domain terms.
 - **Before changing determinism or rendering architecture**: read `docs/adr/0002-make-frame-and-props-the-only-animation-state.md`, `docs/adr/0003-render-browser-frames-offline.md`, `docs/adr/0005-keep-parallel-rendering-opt-in-and-frame-ordered.md`, and the reproducibility guarantee in `docs/v0.1-design.md` §3.
-- **Before adding authoring APIs or asset-production features**: read `docs/adr/0001-keep-composition-authoring-web-native.md` and `docs/adr/0004-produce-local-ai-assets-outside-rendering.md`.
-- **For usage and project layout**: read `README.md`.
+- **Before changing authoring APIs or the HTML/controller boundary**: read `docs/adr/0001-keep-composition-authoring-web-native.md` (amended by ADR 0007), `docs/adr/0006-seek-embedded-media-from-the-frame-clock.md` (placement amended by ADR 0007), and `docs/adr/0007-make-html-documents-the-composition-unit.md`.
+- **For usage and project layout**: read `README.md` and `docs/migration-0.4.md`.
 
 ## Commands
 
-Use pnpm. The browser runtime is served from `dist/`, so build before starting the preview or running a single server/browser test.
+Use pnpm. The browser host and preview are served from `dist/`, so build before starting the preview or running a single server/browser test.
 
 ```sh
 pnpm install
@@ -50,53 +50,81 @@ A full 30-second demo render is sequential by default; pass `--concurrency <n>` 
 
 | Path | Responsibility |
 | --- | --- |
-| `src/contracts.ts` | Shared composition, metadata, props, audio, and transcript requirement contract |
+| `src/contracts.ts` | Shared composition, metadata, props, audio, transcript, diagnostic, controller, and host contracts |
+| `src/bindings.ts` | Browser-safe binding path validation, resolution, and value coercion |
+| `src/html/parse.ts` | Node-only parse5 document helpers and source locations |
+| `src/html/validate.ts` | Static composition validation and diagnostic extraction |
+| `src/html/index.ts` | Node-only HTML validation exports |
 | `src/transcript.ts` | Canonical transcript validation and SRT/VTT formatting (browser-safe) |
-| `src/runtime/` | Browser-only lifecycle, frame clock, deterministic randomness, diagnostics, embedded media settling |
-| `src/preview/` | Browser preview client: loading, scrubbing, playback, audio sync |
-| `src/server/` | Node preview/static server and injected import map |
-| `src/renderer/` | Node Chromium session, audio/transcript inspection, FFmpeg pipeline |
+| `src/runtime/index.ts` | Frame/time conversion and stateless keyed deterministic randomness |
+| `src/runtime/host.ts` | Browser composition host exposed as `window.__fy` |
+| `src/runtime/bindings.ts` | Browser binding application and `--fy-prop-*` variables |
+| `src/runtime/media.ts` | Embedded video/audio preparation, seeking, settling, and release |
+| `src/runtime/diagnostics.ts` | Best-effort clock/randomness diagnostics around controller `mount`/`update` |
+| `src/runtime/clock.ts` | Frame/time conversion |
+| `src/runtime/random.ts` | Stateless keyed deterministic randomness |
+| `src/preview/` | Browser iframe preview client and playback transport |
+| `src/server/server.ts` | Static project server, `project.json`, HTML host injection, inline-controller route |
+| `src/server/composition-html.ts` | parse5-based import map, sizing style, and host injection |
+| `src/server/preview-html.ts` | Preview markup, iframe stage, diagnostics panel |
+| `src/renderer/browser.ts` | Chromium composition sessions, host loading, seek, capture, diagnostics |
+| `src/renderer/index.ts` | `check`, `still`, `render`, static validation integration, result schemas |
+| `src/renderer/audio.ts` | Audio timeline inspection and overrun diagnostics |
+| `src/renderer/transcripts.ts` | Transcript validation and inspection |
+| `src/renderer/ffmpeg.ts` | FFmpeg probing, encoding, and offline audio mixing |
 | `src/assets/` | TTS/transcription wrappers, executable resolution, atomic publishing, provenance |
 | `src/doctor.ts` | Environment, integration, and manifest inspection |
-| `src/project.ts` | `video.config.js` loading and explicit composition discovery |
-| `src/scaffold.ts` | `init` scaffold templates: project config, props, composition, README, and agent guide |
-| `src/cli.ts` | Argument parsing, command execution, human/JSON results |
+| `src/project.ts` | `video.config.js` loading and explicit `.html` discovery |
+| `src/scaffold.ts` | `init` scaffold templates: HTML composition, config, props, README, agent guide |
+| `src/cli.ts` | Argument parsing, command execution, human/JSON results, diagnostics |
 | `skills/frameyard/` | Official host-neutral agent skill and references |
-| `examples/demo/` | 30-second reference composition |
+| `examples/demo/` | 30-second reference HTML composition and external controller |
 | `test/` | Public-seam tests |
 
-Per-frame path: `src/renderer/index.ts` loop (`seek` → `settle` → `capture` → `writeFrame`) → `browser.ts` `seek()`/`capture()` (CDP `Page.captureScreenshot`) → `ffmpeg.ts` `writeFrame()` (stdin pipe) → `finish()`. `seek()` runs `update()` and seeks CSS/Web Animations synchronously; `settle()` waits for embedded video decode and browser paint. With `--concurrency <n>`, independent sessions capture assigned frames concurrently and an ordered writer still feeds the single encoder in timeline order.
-
-`src/contracts.ts`, `src/transcript.ts`, and `src/runtime/` ship to the browser. Keep them free of `node:` imports. Node-only code belongs in `src/project.ts`, `src/server/`, `src/renderer/`, `src/assets/`, `src/doctor.ts`, `src/scaffold.ts`, or `src/cli.ts`.
+Per-frame path: `src/renderer/browser.ts` `openCompositionSession` navigates to the composition document, waits for `window.__fy`, calls `load`, then `seek`/`settle`/capture. `src/runtime/host.ts` applies bindings, imports the controller, mounts it, prepares media, sets frame-state variables, calls `update`, seeks animations, and settles media. `src/renderer/index.ts` merges static and runtime diagnostics into the result.
 
 ## Non-negotiable invariants
+
+### Authoring
+
+- A composition is a full HTML document with one `<fy-composition>` root. `video.config.js` explicitly maps IDs to `.html` entries; there is no directory scanning. JavaScript composition modules are rejected.
+- Metadata (`width`, `height`, `fps`, `duration-in-frames`) is fixed on the root. Props cannot change it.
+- Default props are a `data-fy="props"` JSON block. Props are JSON, deep-frozen, and merged shallowly over defaults.
+- Bindings are explicit: `data-fy-text`, `data-fy-attr-*`, `data-fy-class-*`, `data-fy-if`, and `data-fy-repeat` on `<template>`. Bindings apply once per load, before controller `mount`.
+- The `fy` prefix is the authoring namespace: `fy-composition`, `fy-transcript`, `data-fy-*`, `--fy-*`, `text/fy-controller`. The package, CLI, config, manifest, server route, import specifier, and error codes remain `frameyard`.
+- A composition has exactly one optional controller, inline or external. It may export `mount`, `update`, `dispose`, and `validateProps`; at least one is required; `mount` and `update` are optional for validation-only controllers.
+- The controller is the only executable code. Other executable `<script>` elements, `on*` handlers, `javascript:` URLs, and unsupported visual elements (`iframe`, `object`, `embed`) are rejected.
+- Media and transcript `src` values resolve from the project root. The controller `src` and ordinary HTML asset URLs resolve relative to the composition document.
+- `mount()` may await loading work. `update({ frame, props })` is synchronous and seek-safe. `dispose()` releases resources. Keep mutable state in module scope, not on `this`.
 
 ### Determinism
 
 - A frame's visual state derives only from the integer `frame`, immutable `props`, and data/assets loaded before frame production.
-- `update({ frame, props })` is synchronous and seek-safe. It must not depend on previously visited frames.
-- `mount()` may await loading work; `dispose()` releases resources.
-- Animation drivers are `update()` plus runtime-seeked CSS/Web Animations. `Math.random()`, `Date.now()`, `performance.now()`, timers, and independent `requestAnimationFrame` loops are not animation inputs. Use `random("stable:key")` from `frameyard/runtime`.
-- The runtime seeks CSS animations and the Web Animations API inside the composition container. CSS transitions are diagnosed as non-deterministic in preview.
-- Embedded `<video>` elements are local, preloaded, paused, and seeked from the frame clock after `update()`. Create them and their `data-frameyard-*` attributes in `mount()` in the container's light DOM; `update()` must not play, pause, seek, add, or re-source them. `settle()` is the asynchronous boundary before capture.
-- WebGL canvases must be redrawn from the current frame. Production sessions pin SwiftShader so WebGL pixels do not depend on the host GPU.
-- The preview and production renderer must use the same composition bundle, runtime, and server. Production differs only in driving the clock explicitly and capturing frames.
-- Optional parallel rendering may distribute frames across independent browser sessions, but frames must be encoded in timeline order and must be pixel-equivalent to a sequential render. The default remains one session.
+- `update()` must not depend on previously visited frames. Declarative bindings apply once per load; controller-created DOM is not re-bound.
+- Animation drivers are `update()`, runtime-seeked CSS/WAAPI, and `data-fy-anim-*` scheduling. `Math.random()`, `Date.now()`, `performance.now()`, timers, independent `requestAnimationFrame` loops, CSS transitions, and wall-clock reads are not animation inputs. Use `random("stable:key")`.
+- Frame-state variables (`--fy-frame`, `--fy-time`, `--fy-progress`, `--fy-fps`, `--fy-duration`, `--fy-duration-frames`) are set on `document.documentElement` before controller `update`; animations are sought after `update`.
+- Embedded `<video>` and `<audio>` are declared in the composition HTML with `data-fy-*` attributes. The host loads local files during the loading phase, pauses them, and seeks video after each `update()`; `settle()` waits for decode and paint.
+- WebGL canvases must be redrawn from the current frame. Production sessions pin SwiftShader so pixels do not depend on the host GPU.
+- Remote data, fonts, and images belong in the loading phase. Network requests are blocked during capture; a `fetch()` from `update()` is a bug.
 - Verify determinism at the capture boundary: compare captured PNG pixels or `still` output, not MP4 hashes. Encoded bytes are not a reproducibility guarantee; see `docs/v0.1-design.md` §3.
-- Remote data, fonts, and images belong in the loading phase before the first frame. After loading, `browser.ts` blocks network requests; a fetch from `update()` is a bug.
-- Do not add a load hook or props-dependent metadata without revising the design baseline first. `width`, `height`, `fps`, and `durationInFrames` are fixed.
 
-### Authoring contract
+### Static validation and diagnostics
 
-- Project compositions are native JavaScript ES modules; no transpilation.
-- `video.config.js` explicitly maps IDs to entry modules. There is no directory scanning.
-- Composition code imports bare `frameyard` and `frameyard/runtime`; the preview server injects the import map. Keep those specifiers stable.
-- Composition props are plain JSON, deep-frozen, and merged shallowly over `defaultProps`.
-- Composition functions are invoked on a frozen definition. Keep mutable state in module-scope variables, not on `this`.
-- Audio clips use composition frames for placement and seconds for source trimming. Audio is mixed offline with FFmpeg; no time-stretching or automatic duration changes.
-- Embedded videos use `data-frameyard-start` (frames), `data-frameyard-trim` (seconds), optional `data-frameyard-duration` (seconds), and optional `data-frameyard-volume` (0-1). Unmuted videos contribute audio to the offline mix; `muted` or `data-frameyard-audio="off"` opts out.
-- Transcript requirements are project-relative canonical JSON. `words: true` requires measured word timings; never interpolate segment timings.
-- Compositions are trusted local developer code. Do not claim sandboxing or untrusted execution.
+- `src/html/validate.ts` parses composition HTML with parse5 and reports all static diagnostics in source order. It is Node-only; `src/contracts.ts`, `src/bindings.ts`, and `src/runtime/` must stay free of `node:` imports.
+- `check`, `still`, and `render` run static validation before Chromium. Static errors fail without launching a browser; warnings allow frame evaluation. `dev` validates on composition request.
+- Diagnostics carry `severity`, `code`, `message`, and optional `details` with `path`, `line`, `column`, `element`, `attribute`, `value`, and `suggestion`. Error envelopes carry optional `error.details` and top-level `diagnostics`.
+- Unknown `data-fy-*` attributes, repeat misuse, controller declaration errors, executable scripts, event handlers, `javascript:` URLs, unsupported elements, and missing media/transcript references are errors. Missing binding paths and animation mismatches are warnings.
+- The result schemas expose `entry`, `controller`, and top-level `diagnostics` for `check`, `still`, and `render`. Audio/transcript warnings are `AUDIO_WARNING`/`TRANSCRIPT_WARNING` diagnostics, not nested string arrays.
+
+### Host, preview, and rendering
+
+- The preview server serves composition HTML at its real project path and injects the framework import map, sizing style, and host module only for configured composition entries.
+- Inline controllers are served through the virtual URL `<composition>?__fy-controller`; the host imports either that URL or the external `src`. A composition has exactly one controller.
+- `window.__fy` exposes `ready`, `metadata`, `defaultProps`, `props`, `controller`, `audioClips`, `embeddedAudioClips`, `transcriptClips`, `diagnostics`, `frame`, `load`, `seek`, `settle`, and `dispose`.
+- Manual mode (`?__fy-manual`) waits for `load` and hides the root until the first successful load. Auto mode loads defaults and seeks frame 0. `load` validates props before disposing, restores the pristine DOM snapshot, re-applies bindings, remounts the controller, and prepares media.
+- Preview loads the composition in a same-origin iframe and owns preview audio/playback. Props apply reuses the host `load`; composition changes reload the iframe with a unique load token. `check`, `still`, and `render` navigate directly to the composition URL and drive the same host API.
+- The renderer uses static metadata for the viewport before navigation, blocks network after loading, and captures through CDP. Concurrency uses independent sessions but ordered writing; output order and pixels must match a sequential render.
+- `check` exercises every frame; `still` follows the production capture path. A render writes a temporary output and publishes atomically; existing outputs are replaced only with `--overwrite`.
 
 ### Generated assets
 
@@ -110,53 +138,50 @@ Per-frame path: `src/renderer/index.ts` loop (`seek` → `settle` → `capture` 
 ### CLI and outputs
 
 - Non-interactive commands support `--json`. With `--json`, stdout contains only the structured result/error envelope; progress and human diagnostics go to stderr.
-- Keep error envelopes stable: `{ ok: false, command, error: { code, message } }`. Usage failures emitted before a command is known still produce an envelope with `command: null`.
-- Failures exit nonzero. A render never publishes a partial file; it writes a temporary output and publishes atomically.
-- Existing outputs are replaced only with `--overwrite` (stills/renders) or `--force` (generated assets).
+- Keep error envelopes stable: `{ ok: false, command, error: { code, message, details? }, diagnostics? }`. Usage failures emitted before a command is known still produce an envelope with `command: null`.
+- Failures exit nonzero. A render never publishes a partial file.
 - Preserve exact frame counts in FFmpeg (`-frames:v`) and bounded audio (`-t`).
-- `check` must inspect every frame and report audio/transcript durations and warnings without capturing or encoding.
-- `still` uses the production capture path, not a separate renderer path.
+- `check` must inspect every frame and report audio/transcript durations and diagnostics without capturing or encoding.
 - `doctor` exits nonzero when required checks fail but does not throw away the structured findings.
-
-### Scope
-
-The current implementation still excludes built-in subtitle rendering, automatic caption burn-in, qwentts.cpp voice cloning/VoiceDesign, long-text chunking/streaming, automatic model downloads or environment repair, frame caches, general image sequences, live or remote video streams, plugin APIs, and hosted/agent-only runtimes.
 
 ## Change map
 
-- **Contracts, props, metadata, audio, transcripts** → `src/contracts.ts`, `src/transcript.ts`, `src/index.ts`; extend `test/contracts.test.ts` and `test/transcript.test.ts`.
-- **Runtime seeking, randomness, diagnostics, transcript requirements, embedded media** → `src/runtime/`; extend `test/preview-runtime.test.ts` through real Chromium.
-- **Preview behavior/UI** → `src/preview/main.ts`, `src/server/preview-html.ts`; extend the preview browser test.
-- **Server routes, static serving, import map** → `src/server/server.ts`; extend `test/project-server.test.ts`.
-- **Chromium capture, embedded media audio, audio/transcript inspection, FFmpeg encoding** → `src/renderer/`; extend `test/cli-e2e.test.ts` and verify artifacts with FFprobe.
+- **Contracts, props, audio, transcripts, diagnostics, host types** → `src/contracts.ts`, `src/transcript.ts`, `src/index.ts`; extend `test/contracts.test.ts`, `test/transcript.test.ts`.
+- **Binding semantics** → `src/bindings.ts`, `src/runtime/bindings.ts`; extend `test/bindings.test.ts`, `test/host-runtime.test.ts`.
+- **HTML parsing and static validation** → `src/html/parse.ts`, `src/html/validate.ts`; extend `test/static-validation.test.ts`, `test/server-html.test.ts`.
+- **Host runtime** → `src/runtime/host.ts`, `src/runtime/media.ts`, `src/runtime/diagnostics.ts`; extend `test/host-runtime.test.ts`.
+- **Preview** → `src/preview/main.ts`, `src/server/preview-html.ts`; extend the HTML iframe case in `test/preview-runtime.test.ts`.
+- **Server routes, host injection, inline controller, `project.json`** → `src/server/server.ts`, `src/server/composition-html.ts`; extend `test/project-server.test.ts`, `test/server-html.test.ts`.
+- **Chromium capture, audio/transcript inspection, FFmpeg** → `src/renderer/`; extend `test/cli-e2e.test.ts` and verify artifacts with FFprobe.
+- **Static validation integration and result schemas** → `src/renderer/index.ts`, `src/cli.ts`; extend `test/cli-e2e.test.ts`, `test/agent-workflow.test.ts`.
 - **TTS, transcription, provenance, executable resolution** → `src/assets/`; extend `test/assets-e2e.test.ts` with fake executables.
 - **Doctor checks** → `src/doctor.ts`, `src/cli.ts`; extend `test/assets-e2e.test.ts`.
-- **CLI flags, result schemas, exit behavior** → `src/cli.ts`; extend `test/cli-e2e.test.ts`.
-- **Documentation command examples** → `README.md`, `skills/frameyard/`, and `src/scaffold.ts`; extend `test/docs.test.ts` and the `init` case in `test/cli-e2e.test.ts`.
-- **Init scaffold content** → `src/scaffold.ts` (package manifest and pinned scripts, project config, props, composition, README, agent guide, and `next`); keep the agent guide aligned with `skills/frameyard/`; extend `test/scaffold.test.ts`, `test/docs.test.ts`, and the `init` case. When the scaffold file set changes, also update the `README.md` command table, `docs/v0.1-design.md` §6, and the scaffold README/agent guide.
+- **Init scaffold content** → `src/scaffold.ts` (HTML composition, config, props, README, agent guide, and `next`); keep the agent guide aligned with `skills/frameyard/`; extend `test/scaffold.test.ts`, `test/docs.test.ts`, and the `init` case. When the scaffold file set changes, update `README.md`, `docs/v0.1-design.md` §6, and the scaffold README/agent guide.
 - **Agent skill contract** → `skills/frameyard/`, `package.json`; extend `test/skill.test.ts`.
 - **Reference behavior** → `examples/demo/`; keep its README commands working.
 - **Performance benchmarks** → `scripts/bench-render.mjs`, `bench/fixtures/`; keep `pnpm bench` representative of the production capture path.
-- **Lint and formatting** → `.oxlintrc.json`, `.oxfmtrc.json`, `package.json`, `.githooks/pre-commit`, and the CI/release workflows; run `pnpm lint` and `pnpm format:check`, or `pnpm check:static` for the full static pass.
+- **Lint and formatting** → `.oxlintrc.json`, `.oxfmtrc.json`, `package.json`, `.githooks/pre-commit`, and CI/release workflows; run `pnpm check:static`.
 - **Release checks and versioning** → `scripts/set-version.mjs`, `scripts/verify-release.mjs`, `scripts/retag-release.mjs`, `RELEASING.md`, `.github/workflows/release.yml`; run `pnpm verify-release` after tagging.
 
 ## Testing
 
 Test at public seams, not private helpers:
 
-- `test/contracts.test.ts`: composition metadata, props, JSON serialization, audio clips, transcript requirements.
-- `test/transcript.test.ts`: canonical transcript validation, word requirements, SRT/VTT formatting.
-- `test/random.test.ts`: frame time and deterministic randomness.
+- `test/contracts.test.ts`: composition metadata, props, JSON serialization, audio clips, transcript requirements, diagnostics.
+- `test/bindings.test.ts`: binding path syntax, resolution, repeat scope, value coercion, suggestions.
+- `test/static-validation.test.ts`: HTML metadata, defaults, bindings, scripts, controllers, media, transcripts, source locations, diagnostics.
+- `test/server-html.test.ts`: `.html` entries, host injection, virtual inline controller, static error pages, `project.json` diagnostics.
+- `test/host-runtime.test.ts`: host bindings, repeat/if/class, animation scheduling, frame variables, inline/external controllers, props validation, load atomicity, dispose, diagnostics, auto mode, media settle.
 - `test/project-server.test.ts`: config loading, static routes, import map, ranges, traversal rejection.
-- `test/preview-runtime.test.ts`: real Chromium loading, props, seeking, CSS animation, Canvas, WebGL, embedded video, determinism, diagnostics, preview UI, transcript declarations.
-- `test/cli-e2e.test.ts`: real CLI with Chromium and FFmpeg, JSON envelopes, missing assets, deterministic stills, embedded video/WebGL capture and audio, MP4/audio output, overwrite behavior, `dev`, `init`.
+- `test/preview-runtime.test.ts`: HTML iframe preview, props, seeking, CSS animation, Canvas, WebGL, embedded video, determinism, diagnostics.
+- `test/cli-e2e.test.ts`: real CLI with Chromium and FFmpeg, JSON envelopes, missing assets, deterministic stills, embedded video/WebGL capture and audio, MP4/audio output, overwrite behavior, HTML check/still/render, static diagnostics, `dev`, `init`.
 - `test/assets-e2e.test.ts`: `tts`/`transcribe`/`doctor` with fake upstream executables, normalization, word timings, exports, manifests, cancellation, transcript validation.
-- `test/agent-workflow.test.ts`: source preservation, check/still/render reporting, and failure reporting through the CLI.
+- `test/agent-workflow.test.ts`: source preservation, check/still/render reporting, failure reporting through the CLI.
 - `test/real-integrations.test.ts`: opt-in real-model checks enabled by `FRAMEYARD_REAL_INTEGRATIONS=1` and explicit model paths.
-- `test/skill.test.ts`: skill layout discovery (standard container, frontmatter name, single skill), contents, API version, package inclusion, thin wrapper.
-- `test/docs.test.ts`: user-facing command examples use `npx frameyard` in `README.md`, `skills/frameyard/`, and the `init` scaffold; the scaffold's markdown is checked for fenced and inline commands, and README's `Development` section may use the local build.
-- `test/release.test.ts`: CI, the release workflow, and the pre-commit hook share `pnpm check`, they do not hand-list scripts, and the release workflow verifies metadata with `scripts/verify-release.mjs`.
-- `test/scaffold.test.ts`: scaffold file generation, package manifest, and project-name normalization.
+- `test/skill.test.ts`: skill layout discovery, frontmatter name, single skill, contents, API version, package inclusion, thin wrapper.
+- `test/docs.test.ts`: user-facing command examples use `npx frameyard`; scaffold markdown commands and package scripts are real.
+- `test/release.test.ts`: CI, release workflow, and pre-commit hook share `pnpm check`; release metadata verification.
+- `test/scaffold.test.ts`: scaffold file generation, package manifest, project-name normalization.
 
 Prefer one failing public-behavior test, then the minimal implementation. Use real Chromium and FFmpeg for production-path behavior; mock only external model executables. Run `pnpm test` before finishing. Browser/CLI tests are intentionally sequential (`fileParallelism: false`).
 
@@ -170,12 +195,14 @@ Prefer one failing public-behavior test, then the minimal implementation. Use re
 ## Gotchas
 
 - **Rebuild before browser work**: the server serves `/__frameyard/framework/*` from `dist/`.
-- **Preview loads are serialized** through a queue. Add work through `api.load` / `enqueue`; do not call the internal load path directly.
+- **Iframe preview**: the parent owns preview audio/playback. Props apply reuses the host; composition changes reload the iframe with a unique `__fy-load` token. Cross-realm props are cloned into the iframe realm before `load`.
+- **Host load**: validates props before disposing, restores the pristine DOM snapshot, re-applies bindings, remounts the controller, and prepares media. `seek`/`settle` before a successful load reject `COMPOSITION_NOT_READY`; `dispose` during a load rejects `COMPOSITION_DISPOSED`.
 - **Errors cross the Playwright boundary** as `[CODE] message`; `src/renderer/browser.ts` parses that tag back into a `FrameyardError`. Preserve the tag and stable codes.
-- **Session close calls the runtime's `dispose()`** before closing the browser. Do not bypass that cleanup.
-- **Network is blocked after loading** with `page.route`. Asset URLs must resolve during mount or `networkidle`; later requests fail the render.
+- **Session close calls the host's `dispose()`** before closing the browser. Do not bypass that cleanup.
+- **Network is blocked after loading** with `page.route`. Asset URLs must resolve during loading; later requests fail the render.
 - **FFmpeg capability checks** run before rendering (`libx264`, `aac`). Keep the actionable error path.
-- **Diagnostics are best-effort**: preview mode wraps common forbidden clocks/randomness and warns on CSS transitions, but does not police third-party libraries perfectly.
-- **`project.json` is derived from explicit config**, not scanning. New composition files must be listed in `video.config.js`.
-- **Path containment** is lexical throughout the server, project loader, and audio resolver. The preview server binds loopback by default; treat project roots as trusted.
-- **Point new docs at the environment** (`package.json` scripts, `--help`) for exhaustive option lists; keep this guide focused on workflow and unwritten conventions.
+- **Diagnostics are best-effort**: the host wraps common forbidden clocks/randomness in `mount`/`update`, but does not police every third-party library perfectly.
+- **`project.json` is derived from explicit config**, not scanning. New `.html` compositions must be listed in `video.config.js`.
+- **Path containment** is lexical throughout the server, project loader, and media resolver. The preview server binds loopback by default; treat project roots as trusted.
+- **Media/transcript paths** resolve from the project root. Controller `src` and ordinary HTML asset URLs resolve from the composition document.
+- **Inline controllers** are served through `<composition>?__fy-controller`; a literal `</script>` in inline source must be escaped. Exactly one controller is allowed.

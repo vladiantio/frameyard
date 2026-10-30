@@ -1,10 +1,13 @@
 import { createReadStream } from "node:fs";
-import { stat } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import type { CompositionDiagnostic, ControllerDeclaration } from "../contracts.js";
 import { FrameyardError } from "../errors.js";
-import { loadProject, type Project } from "../project.js";
+import { validateHtmlComposition } from "../html/validate.js";
+import { loadProject, type Project, type ProjectComposition } from "../project.js";
+import { injectCompositionHost } from "./composition-html.js";
 import { renderPreviewHtml } from "./preview-html.js";
 
 export interface PreviewServer {
@@ -180,14 +183,85 @@ async function serveFile(
     .pipe(response);
 }
 
+function sendHtml(response: ServerResponse, status: number, body: string, headOnly = false): void {
+  response.writeHead(status, {
+    "Content-Type": "text/html; charset=utf-8",
+    "Content-Length": Buffer.byteLength(body),
+    "Cache-Control": "no-store",
+  });
+  response.end(headOnly ? undefined : body);
+}
+
+function sendJavaScript(response: ServerResponse, status: number, body: string, headOnly = false): void {
+  response.writeHead(status, {
+    "Content-Type": "text/javascript; charset=utf-8",
+    "Content-Length": Buffer.byteLength(body),
+    "Cache-Control": "no-store",
+  });
+  response.end(headOnly ? undefined : body);
+}
+
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (character) => {
+    switch (character) {
+      case "&":
+        return "&amp;";
+      case "<":
+        return "&lt;";
+      case ">":
+        return "&gt;";
+      case '"':
+        return "&quot;";
+      default:
+        return "&#39;";
+    }
+  });
+}
+
+function renderCompositionError(entry: string, diagnostics: CompositionDiagnostic[]): string {
+  const items = diagnostics
+    .map((diagnostic) => {
+      const location = diagnostic.details?.line ? ` at line ${diagnostic.details.line}` : "";
+      return `<li><code>${escapeHtml(diagnostic.code)}</code> ${escapeHtml(diagnostic.message)}${escapeHtml(location)}</li>`;
+    })
+    .join("");
+  return `<!doctype html><html><head><meta charset="utf-8"><title>Frameyard composition error</title></head><body><h1>Composition error</h1><p>${escapeHtml(entry)}</p><ul>${items}</ul></body></html>`;
+}
+
+function publicController(
+  controller: ControllerDeclaration | null,
+): { kind: "inline" } | { kind: "external"; src: string } | null {
+  if (!controller) {
+    return null;
+  }
+  return controller.kind === "inline" ? { kind: "inline" } : { kind: "external", src: controller.src ?? "" };
+}
+
+async function buildProjectJson(project: Project): Promise<{ compositions: unknown[] }> {
+  const compositions: unknown[] = [];
+  for (const composition of project.compositions.values()) {
+    const result = await validateHtmlComposition({ projectRoot: project.root, entry: composition.entry });
+    compositions.push({
+      id: composition.id,
+      entry: composition.entry,
+      kind: "html",
+      metadata: result.info?.metadata ?? null,
+      controller: publicController(result.info?.controller ?? null),
+      diagnostics: result.diagnostics,
+    });
+  }
+  return { compositions };
+}
+
+function findCompositionForPath(project: Project, pathname: string): ProjectComposition | undefined {
+  return [...project.compositions.values()].find((composition) => `/${composition.entry}` === pathname);
+}
+
 export async function startPreviewServer(options: PreviewServerOptions): Promise<PreviewServer> {
   const project = await loadProject(options.projectRoot);
   const frameworkDir = options.frameworkDir ?? path.join(fileURLToPath(new URL("../../", import.meta.url)), "dist");
   const host = options.host ?? "127.0.0.1";
   const html = renderPreviewHtml();
-  const projectJson = {
-    compositions: Array.from(project.compositions.values(), ({ id, entry }) => ({ id, entry })),
-  };
 
   const server = createServer((request, response) => {
     void (async () => {
@@ -197,9 +271,11 @@ export async function startPreviewServer(options: PreviewServerOptions): Promise
         return;
       }
 
+      let url: URL;
       let pathname: string;
       try {
-        pathname = decodeURIComponent(new URL(request.url ?? "/", "http://localhost").pathname);
+        url = new URL(request.url ?? "/", "http://localhost");
+        pathname = decodeURIComponent(url.pathname);
       } catch {
         sendJson(response, 400, { error: "Invalid URL" });
         return;
@@ -228,12 +304,41 @@ export async function startPreviewServer(options: PreviewServerOptions): Promise
       }
 
       if (pathname === "/__frameyard/project.json") {
-        sendJson(response, 200, projectJson);
+        sendJson(response, 200, await buildProjectJson(project));
         return;
       }
 
       if (pathname.startsWith("/__frameyard/framework/")) {
         await serveFile(request, response, frameworkDir, pathname.slice("/__frameyard/framework/".length));
+        return;
+      }
+
+      const composition = findCompositionForPath(project, pathname);
+      if (composition) {
+        const result = await validateHtmlComposition({ projectRoot: project.root, entry: composition.entry });
+        if (url.searchParams.has("__fy-controller")) {
+          const controller = result.info?.controller;
+          if (controller?.kind === "inline" && controller.source !== undefined) {
+            sendJavaScript(response, 200, controller.source, request.method === "HEAD");
+          } else {
+            sendJson(response, 404, { error: "Composition has no inline controller." });
+          }
+          return;
+        }
+
+        const errors = result.diagnostics.filter((diagnostic) => diagnostic.severity === "error");
+        if (errors.length > 0) {
+          sendHtml(
+            response,
+            500,
+            renderCompositionError(composition.entry, result.diagnostics),
+            request.method === "HEAD",
+          );
+          return;
+        }
+
+        const source = await readFile(composition.absoluteEntry, "utf8");
+        sendHtml(response, 200, injectCompositionHost({ html: source }), request.method === "HEAD");
         return;
       }
 

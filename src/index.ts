@@ -1,26 +1,26 @@
 export { VERSION, VERSION as version } from "./version.js";
 export {
   assertJsonSerializable,
-  defineComposition,
-  normalizeComposition,
-  resolveAudioClips,
-  resolveProps,
-  resolveTranscriptClips,
+  isPlainObject,
+  mergeProps,
+  normalizeAudioClip,
+  normalizeTranscriptClip,
 } from "./contracts.js";
 export type {
   AudioClip,
-  AudioContext,
-  Composition,
-  CompositionDefinition,
+  CompositionDiagnostic,
+  CompositionDiagnosticDetails,
   CompositionMetadata,
+  CompositionSourceInfo,
+  ControllerDeclaration,
+  DiagnosticSeverity,
+  FrameyardHost,
   JsonPrimitive,
   JsonValue,
-  MountContext,
   Props,
   ResolvedAudioClip,
   ResolvedTranscriptClip,
   TranscriptClip,
-  UpdateContext,
 } from "./contracts.js";
 export { FrameyardError, errorMessage, isFrameyardError } from "./errors.js";
 export type { FrameyardErrorCode } from "./errors.js";

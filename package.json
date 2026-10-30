@@ -1,6 +1,6 @@
 {
   "name": "frameyard",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Local-first, deterministic video composition framework for HTML, CSS, and JavaScript.",
   "type": "module",
   "license": "MIT",
@@ -71,6 +71,7 @@
     "prepublishOnly": "node scripts/check-package-manager.mjs && pnpm build"
   },
   "dependencies": {
+    "parse5": "^8.0.1",
     "playwright": "1.64.1"
   },
   "devDependencies": {

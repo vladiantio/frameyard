@@ -8,6 +8,77 @@ Frameyard uses `0.x` versions until the composition, configuration, CLI,
 JSON-result, transcript, and skill contracts stabilize. Before `1.0.0`, a
 contract change may ship in a minor release and is called out explicitly below.
 
+## [0.4.0] - 2026-10-30
+
+### Breaking
+
+- **Composition authoring model:** compositions are HTML documents, not
+  JavaScript modules. `video.config.js` entries point to `.html` files, and the
+  public `defineComposition` authoring path is removed. The `mount → update →
+  dispose` lifecycle remains only as the optional controller contract.
+- **Authoring namespace:** `fy-composition`, `fy-transcript`, `data-fy-*`,
+  `--fy-*`, and `text/fy-controller` replace the corresponding
+  `frameyard`/`data-frameyard-*` names. Existing embedded-media attributes move
+  from `data-frameyard-*` to `data-fy-*`.
+- **Executable code:** only the optional controller, inline or external, may
+  execute. Other executable `<script>` elements and inline `on*` handlers are
+  rejected.
+- **Validation and karaoke:** domain validation and subtitle/karaoke rendering
+  move to the optional controller; no built-in subtitle renderer is added.
+- **Diagnostics:** warnings are structured diagnostic objects with `severity`,
+  `code`, `message`, and optional `details`, not plain strings. Error envelopes
+  gain optional `error.details` and top-level `diagnostics`. Unsupported visual
+  elements inside a composition (`iframe`, `object`, `embed`) and `javascript:`
+  URLs are rejected.
+
+### Added
+
+- Declarative HTML composition contract: `<fy-composition>` metadata, a
+  `data-fy="props"` default-props block, `data-fy-text`, `data-fy-attr-*`,
+  `data-fy-class-*`, `data-fy-if`, and `data-fy-repeat` bindings.
+- Frame-scheduled CSS animation with `data-fy-anim-start`,
+  `data-fy-anim-duration`, and `data-fy-anim-easing`, plus `--fy-frame`,
+  `--fy-time`, `--fy-progress`, `--fy-fps`, and `--fy-duration` frame-state
+  variables.
+- Optional composition controller, inline or external, with `mount`, `update`,
+  `dispose`, and `validateProps`. Inline controllers are extracted and served
+  through a virtual module URL so relative imports and `import.meta.url` work.
+- Node-side static composition validation before Chromium in `check`, `still`,
+  and `render`, and on load in `dev`, with source-located diagnostics.
+- Binding, animation, script, event-handler, unsupported-element, and
+  asset-reference validation.
+- `entry`, `controller`, and top-level `diagnostics` in `check`, `still`, and
+  `render` JSON results.
+- Agent-facing minimal skeleton, binding table, controller examples, and
+  common-mistakes guidance in the skill and scaffold.
+- Injected composition host exposing `window.__fy` with metadata, resolved
+  audio/transcript clips, `load`, `seek`, `settle`, and `dispose`.
+- HTML `<audio>` and `<fy-transcript>` declarations for the audio timeline and
+  transcript requirements.
+- Same-origin iframe preview and a direct render/check/still path that share
+  the host API.
+
+### Changed
+
+- Preview loads each composition document in a same-origin iframe; `check`,
+  `still`, and `render` navigate directly to the composition URL. The separate
+  preview-page render path is removed.
+- `check` fails fast on static errors without launching Chromium; warnings
+  still allow frame evaluation. Nested `data-fy-repeat` is rejected with a
+  clear diagnostic; nested data uses the controller.
+- `init` scaffolds an HTML composition and no longer generates a JavaScript
+  composition module.
+- The agent skill, README, design baseline, and project guides document the
+  HTML model. See [the 0.4 migration guide](./docs/migration-0.4.md).
+
+### Removed
+
+- JavaScript composition modules, `defineComposition`, and the
+  `data-frameyard-*` authoring attributes.
+- The preview-page composition loading path used by the renderer.
+
+[0.4.0]: https://github.com/vladiantio/frameyard/compare/v0.3.0...v0.4.0
+
 ## [0.3.0] - 2026-10-30
 
 ### Added

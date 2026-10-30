@@ -239,25 +239,25 @@ function secondsAttribute(element: Element, name: string, fallback: number, allo
 }
 
 function volumeAttribute(element: Element): number {
-  const raw = element.getAttribute("data-frameyard-volume");
+  const raw = element.getAttribute("data-fy-volume");
   if (raw === null || raw.trim().length === 0) {
     return Math.max(0, Math.min(1, (element as HTMLVideoElement).volume));
   }
   const value = Number(raw);
   if (!Number.isFinite(value) || value < 0 || value > 1) {
-    throw new FrameyardError("MEDIA_INVALID", "Embedded video data-frameyard-volume must be between 0 and 1.");
+    throw new FrameyardError("MEDIA_INVALID", "Embedded video data-fy-volume must be between 0 and 1.");
   }
   return value;
 }
 
 function mediaSpec(element: Element): MediaSpec {
-  const startFrame = integerAttribute(element, "data-frameyard-start", 0);
-  const trimStart = secondsAttribute(element, "data-frameyard-trim", 0, true);
-  const durationRaw = element.getAttribute("data-frameyard-duration");
+  const startFrame = integerAttribute(element, "data-fy-start", 0);
+  const trimStart = secondsAttribute(element, "data-fy-trim", 0, true);
+  const durationRaw = element.getAttribute("data-fy-duration");
   const trimDuration =
     durationRaw === null || durationRaw.trim().length === 0
       ? undefined
-      : secondsAttribute(element, "data-frameyard-duration", 0, false);
+      : secondsAttribute(element, "data-fy-duration", 0, false);
   const spec: MediaSpec = {
     startFrame,
     trimStart,
@@ -346,7 +346,7 @@ export function describeMediaAudio(container: HTMLElement): readonly ResolvedAud
   const clips: ResolvedAudioClip[] = [];
   for (const video of Array.from(container.querySelectorAll("video"))) {
     const state = preparedMedia.get(video);
-    if (!state || state.authorMuted || video.getAttribute("data-frameyard-audio") === "off") {
+    if (!state || state.authorMuted || video.getAttribute("data-fy-audio") === "off") {
       continue;
     }
     const spec = state.spec;

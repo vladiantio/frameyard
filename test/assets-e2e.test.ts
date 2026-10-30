@@ -255,32 +255,32 @@ beforeAll(async () => {
   await writeFile(path.join(root, "script.txt"), "Hello from Frameyard.");
   await writeFile(
     path.join(root, "video.config.js"),
-    `export default { compositions: { checked: "./compositions/checked.js", karaoke: "./compositions/karaoke.js" } };\n`,
+    `export default { compositions: { checked: "./compositions/checked.html", karaoke: "./compositions/karaoke.html" } };\n`,
   );
   await writeFile(
-    path.join(root, "compositions", "checked.js"),
-    `export default {
-  width: 160,
-  height: 90,
-  fps: 10,
-  durationInFrames: 2,
-  transcripts: [{ src: "transcripts/checked.json" }],
-  mount() {},
-  update() {},
-};
+    path.join(root, "compositions", "checked.html"),
+    `<!doctype html>
+<html>
+  <head><meta charset="utf-8"></head>
+  <body>
+    <fy-composition width="160" height="90" fps="10" duration-in-frames="2">
+      <fy-transcript src="transcripts/checked.json"></fy-transcript>
+    </fy-composition>
+  </body>
+</html>
 `,
   );
   await writeFile(
-    path.join(root, "compositions", "karaoke.js"),
-    `export default {
-  width: 160,
-  height: 90,
-  fps: 10,
-  durationInFrames: 2,
-  transcripts: [{ src: "transcripts/no-words.json", words: true }],
-  mount() {},
-  update() {},
-};
+    path.join(root, "compositions", "karaoke.html"),
+    `<!doctype html>
+<html>
+  <head><meta charset="utf-8"></head>
+  <body>
+    <fy-composition width="160" height="90" fps="10" duration-in-frames="2">
+      <fy-transcript src="transcripts/no-words.json" words></fy-transcript>
+    </fy-composition>
+  </body>
+</html>
 `,
   );
   const source = {

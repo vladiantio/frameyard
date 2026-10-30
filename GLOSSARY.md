@@ -18,6 +18,10 @@ _Avoid_: Scene, template, video
 The fixed dimensions, frame rate, and duration in frames that define a composition's output contract.
 _Avoid_: Render options, props
 
+**Composition descriptor**:
+The fixed facts read from an HTML composition before frame production: composition metadata, default props, and the controller declaration. It excludes per-load declarations such as audio clips, transcripts, and animation schedules.
+_Avoid_: Composition config, parsed document
+
 **Composition lifecycle**:
 The host-driven sequence that loads an HTML composition, seeks it to frames, and releases it.
 _Avoid_: Render loop, playback lifecycle

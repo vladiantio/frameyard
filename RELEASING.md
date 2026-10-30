@@ -33,12 +33,8 @@ first publish is therefore manual:
 ```sh
 cd "$(git rev-parse --show-toplevel)"
 npm login
-pnpm lint
-pnpm format:check
-pnpm typecheck
-pnpm typecheck:test
-pnpm test
-pnpm pack --dry-run
+pnpm check
+pnpm pack --dry-run --json
 test "$(git branch --show-current)" = "main" || { echo "publish from main"; exit 1; }
 test -z "$(git status --porcelain)" || { echo "working tree is dirty"; exit 1; }
 pnpm publish --no-git-checks --access public
@@ -73,7 +69,15 @@ OIDC token with `id-token: write` and publishes with provenance.
 
 ## Release checklist
 
-1. Confirm `main` is green and the working tree is clean.
+1. Confirm `main` is green and the working tree is clean:
+
+   ```sh
+   gh run list --branch main --workflow CI --limit 1
+   git status --short --branch
+   ```
+
+   A branch ahead of `origin/main` means the release includes unpushed commits;
+   the push in step 7 carries them.
 
 2. Choose the version and update all version locations:
 
@@ -83,46 +87,79 @@ OIDC token with `id-token: write` and publishes with provenance.
    ```
 
 3. Update `CHANGELOG.md`: add the new version section with today's date, list
-   the changes, and add the comparison link.
+   the changes, and add the comparison link. The tag is the source of truth for
+   what shipped; start from the commits since the last one:
+
+   ```sh
+   git log --oneline $(git describe --tags --abbrev=0)..HEAD
+   ```
 
 4. Run the release checks locally:
 
    ```sh
-   pnpm lint
-   pnpm format:check
-   pnpm typecheck
-   pnpm typecheck:test
-   pnpm test
-   pnpm pack --dry-run
+   pnpm check
+   pnpm pack --dry-run --json
    ```
 
-   Confirm the tarball contains `dist/`, `docs/`, `examples/`, `skills/`,
-   `README.md`, `CHANGELOG.md`, `GLOSSARY.md`, and the license.
+   `pnpm check` runs the script syntax checks, lint, formatting, typechecks,
+   and the full suite. The `--json` output lists the tarball contents; confirm
+   it contains `dist/`, `docs/`, `examples/`, `skills/`, `README.md`,
+   `CHANGELOG.md`, `GLOSSARY.md`, and the license.
 
-5. Commit and tag:
+5. Commit and tag locally:
 
    ```sh
    git add package.json src/version.ts skills/frameyard/SKILL.md CHANGELOG.md
    git commit -m "chore(release): v0.2.0"
    git tag -a v0.2.0 -m "frameyard v0.2.0"
+   ```
+
+6. Verify the release before pushing:
+
+   ```sh
+   pnpm verify-release
+   ```
+
+   It checks that the version locations agree, the tag is annotated and points
+   at `HEAD`, `CHANGELOG.md` has a dated section and comparison link for the
+   version, the branch is `main`, and the working tree is clean.
+
+7. Push and watch the `Release` workflow:
+
+   ```sh
    git push origin main --follow-tags
    ```
 
-6. Watch the `Release` workflow. It verifies the tag against `package.json`,
-   that the tag is reachable from `main`, and that `CHANGELOG.md` has a dated
-   section for the version. It then runs lint, formatting checks, typechecks,
-   and the full suite, inspects the package, publishes with provenance, and
-   creates the GitHub Release. The release job repeats the CI setup; when you
-   change the checks in `ci.yml`, update `release.yml` too.
+   The workflow runs `node scripts/verify-release.mjs --ci`, which repeats the
+   local metadata checks and also confirms the tag is reachable from
+   `origin/main`. It then runs `pnpm check`, inspects the package, publishes
+   with provenance, and creates the GitHub Release. CI and the release workflow
+   share the same `pnpm check` command; add new checks to `package.json`, not
+   to the workflow files.
 
-7. Verify the published result:
+8. Verify the published result:
 
    ```sh
    npm view frameyard@0.2.0 version dist.tarball
    npm view frameyard dist-tags
    ```
 
-   Confirm the GitHub Release exists and the npm page shows provenance.
+   Registry reads lag publishes: the package document is cached for up to five
+   minutes (`cache-control: max-age=300`), so `npm view` can return a 404 and
+   `registry.npmjs.org` can serve a stale document after the publish step
+   succeeded. Check the publish timestamp in the workflow log, then poll rather
+   than treating the 404 as a failed publish:
+
+   ```sh
+   for _ in $(seq 1 30); do
+     npm view frameyard@0.2.0 version && break
+     sleep 10
+   done
+   npm view frameyard time --json
+   ```
+
+   `registry.npmjs.com` has a separate cache and can serve the fresh document
+   first. Confirm the GitHub Release exists and the npm page shows provenance.
 
 ## Prereleases
 

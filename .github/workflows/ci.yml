@@ -49,24 +49,5 @@ jobs:
       - name: Install Chromium
         run: pnpm exec playwright install --with-deps chromium
 
-      - name: Typecheck source
-        run: pnpm typecheck
-
-      - name: Typecheck tests
-        run: pnpm typecheck:test
-
-      - name: Check JavaScript tooling
-        run: |
-          node --check scripts/bench-render.mjs
-          node --check scripts/install-hooks.mjs
-          node --check scripts/set-version.mjs
-          node --check scripts/check-package-manager.mjs
-
-      - name: Lint
-        run: pnpm lint
-
-      - name: Check formatting
-        run: pnpm format:check
-
-      - name: Test
-        run: pnpm test
+      - name: Check
+        run: pnpm check

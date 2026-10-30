@@ -302,7 +302,7 @@ See the [v0.1 design baseline](./docs/v0.1-design.md) for the full product contr
 - `skills/`: official host-neutral agent skill
 - `examples/demo/`: the 30-second reference composition
 - `bench/fixtures/`: controlled compositions for the render benchmark
-- `scripts/`: benchmark, versioning, and git-hook installation
+- `scripts/`: benchmark, release checks, versioning, and git-hook installation
 - `docs/adr/`: architecture decision records
 
 ## Development
@@ -313,14 +313,13 @@ From a repository checkout:
 pnpm install
 pnpm exec playwright install chromium
 pnpm build
-pnpm lint
-pnpm format:check
+pnpm check
 node dist/cli.js doctor
 ```
 
 These commands use the local build; `npx frameyard` runs the published package.
 
-`pnpm install` installs the repository's git hooks. Pre-commit runs lint, formatting checks, typecheck, test typecheck, and unit tests; pre-push runs the full suite. CI runs the same checks on Linux with Node 22 and 24.
+`pnpm check` runs the script syntax checks, lint, formatting checks, typechecks, and the full suite. `pnpm install` installs the repository's git hooks; pre-commit runs `pnpm check:static` and the unit tests, and pre-push runs the full suite. CI runs the same `pnpm check` on Linux with Node 22 and 24.
 
 CI uses fake `qwen-tts` and `whisper-cli` executables. Real-model tests are opt-in:
 

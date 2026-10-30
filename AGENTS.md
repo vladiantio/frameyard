@@ -22,12 +22,13 @@ pnpm typecheck:test                    # typechecks test/*.ts
 pnpm lint                              # oxlint
 pnpm format:check                      # oxfmt --check
 pnpm format                            # rewrite formatting with oxfmt
+pnpm check                             # scripts, lint, format, typechecks, full suite
 pnpm test                              # builds first, then runs the full suite
 pnpm vitest run test/contracts.test.ts # one test file
 pnpm bench                             # seek/capture/encode/full-render timings
 ```
 
-`pnpm install` installs the local git hooks: pre-commit runs lint, formatting checks, typecheck, test typecheck, and unit tests; pre-push runs the full suite. Lint and formatting use `oxlint` and `oxfmt`; configuration lives in `.oxlintrc.json` and `.oxfmtrc.json`.
+`pnpm install` installs the local git hooks: pre-commit runs `pnpm check:static` and the unit tests; pre-push runs the full suite. `pnpm check` is the single entry point CI, the release workflow, and local runs share; add new checks to `package.json`, not to the workflow files. Lint and formatting use `oxlint` and `oxfmt`; configuration lives in `.oxlintrc.json` and `.oxfmtrc.json`.
 
 Releases are tag-driven. Read `RELEASING.md` before publishing. `pnpm set-version <version>` updates the package, runtime, and skill versions together; `pnpm set-version --check` verifies they agree.
 
@@ -136,7 +137,8 @@ The current implementation still excludes built-in subtitle rendering, automatic
 - **Agent skill contract** → `skills/frameyard/`, `package.json`; extend `test/skill.test.ts`.
 - **Reference behavior** → `examples/demo/`; keep its README commands working.
 - **Performance benchmarks** → `scripts/bench-render.mjs`, `bench/fixtures/`; keep `pnpm bench` representative of the production capture path.
-- **Lint and formatting** → `.oxlintrc.json`, `.oxfmtrc.json`, `package.json`, `.githooks/pre-commit`, and the CI/release workflows; run `pnpm lint` and `pnpm format:check`.
+- **Lint and formatting** → `.oxlintrc.json`, `.oxfmtrc.json`, `package.json`, `.githooks/pre-commit`, and the CI/release workflows; run `pnpm lint` and `pnpm format:check`, or `pnpm check:static` for the full static pass.
+- **Release checks and versioning** → `scripts/set-version.mjs`, `scripts/verify-release.mjs`, `RELEASING.md`, `.github/workflows/release.yml`; run `pnpm verify-release` after tagging.
 
 ## Testing
 
@@ -153,17 +155,14 @@ Test at public seams, not private helpers:
 - `test/real-integrations.test.ts`: opt-in real-model checks enabled by `FRAMEYARD_REAL_INTEGRATIONS=1` and explicit model paths.
 - `test/skill.test.ts`: skill layout discovery (standard container, frontmatter name, single skill), contents, API version, package inclusion, thin wrapper.
 - `test/docs.test.ts`: user-facing command examples use `npx frameyard` in `README.md`, `skills/frameyard/`, and the `init` scaffold; the scaffold's markdown is checked for fenced and inline commands, and README's `Development` section may use the local build.
+- `test/release.test.ts`: CI, the release workflow, and the pre-commit hook share `pnpm check`, they do not hand-list scripts, and the release workflow verifies metadata with `scripts/verify-release.mjs`.
 - `test/scaffold.test.ts`: scaffold file generation, package manifest, and project-name normalization.
 
 Prefer one failing public-behavior test, then the minimal implementation. Use real Chromium and FFmpeg for production-path behavior; mock only external model executables. Run `pnpm test` before finishing. Browser/CLI tests are intentionally sequential (`fileParallelism: false`).
 
 ## Before finishing
 
-- `pnpm lint` passes.
-- `pnpm format:check` passes.
-- `pnpm typecheck` passes.
-- `pnpm typecheck:test` passes.
-- `pnpm test` passes after a build.
+- `pnpm check` passes (script syntax, lint, formatting, typechecks, then the full suite).
 - If capture, encoding, or audio changed, render a small fixture and verify the artifact with FFprobe; render `examples/demo` when its composition changed.
 - If public behavior changed, update `README.md` and, for contract changes, the design baseline or an ADR.
 - Confirm failures still exit nonzero and leave no published partial output.

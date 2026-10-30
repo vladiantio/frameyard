@@ -1,0 +1,21 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false,
+    "types": []
+  },
+  "include": [
+    "src/composition/**/*.ts",
+    "src/runtime/**/*.ts",
+    "src/preview/**/*.ts",
+    "src/index.ts",
+    "src/version.ts",
+    "src/contracts.ts",
+    "src/bindings.ts",
+    "src/transcript.ts",
+    "src/errors.ts"
+  ]
+}

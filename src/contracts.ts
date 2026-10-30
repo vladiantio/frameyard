@@ -82,6 +82,8 @@ export interface ControllerDeclaration {
   kind: "inline" | "external";
   /** Project-relative path for external controllers. */
   src?: string;
+  /** Authoring value for external controllers, relative to the composition document. */
+  rawSrc?: string;
   /** Inline source for inline controllers. */
   source?: string;
   /** One-based line of the controller block in the composition document. */

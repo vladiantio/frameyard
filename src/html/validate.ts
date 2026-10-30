@@ -1,8 +1,7 @@
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
+import { isLocalRelative, isRemote, readCompositionDescriptor } from "../composition/index.js";
 import {
-  assertJsonSerializable,
-  isPlainObject,
   mergeProps,
   normalizeAudioClip,
   normalizeTranscriptClip,
@@ -19,6 +18,7 @@ import {
 import { resolveBindingPath, suggestBindingPath, validateBindingPath } from "../bindings.js";
 import { errorMessage, isFrameyardError, type FrameyardErrorCode } from "../errors.js";
 import { parseTranscript } from "../transcript.js";
+import { createParse5Adapter } from "./document-adapter.js";
 import {
   findElements,
   getAttribute,
@@ -27,7 +27,6 @@ import {
   getElementByTagName,
   getElementLocation,
   getNodeLocation,
-  getTextContent,
   hasAttribute,
   isDescendantOf,
   isElement,
@@ -38,7 +37,6 @@ import {
   type HtmlDocument,
   type HtmlElement,
   type HtmlNode,
-  type HtmlParentNode,
   type SourceLocation,
 } from "./parse.js";
 
@@ -55,7 +53,6 @@ export interface StaticValidationResult {
   diagnostics: CompositionDiagnostic[];
 }
 
-const SCHEME = /^[a-zA-Z][a-zA-Z0-9+.-]*:/;
 const VOID_ELEMENTS = new Set([
   "area",
   "base",
@@ -108,9 +105,9 @@ class HtmlCompositionValidator {
   private metadata: CompositionMetadata | null = null;
   private controller: ControllerDeclaration | null = null;
   private documentValid = true;
-  private defaultsValid = true;
-  private controllerValid = true;
-  private rootValid = false;
+  private fixedFactsValid = false;
+  private overridesValid = false;
+  private controllerFileValid = true;
   private root: HtmlElement | null = null;
   private readonly audioClips: ResolvedAudioClip[] = [];
   private readonly embeddedAudioClips: ResolvedAudioClip[] = [];
@@ -127,11 +124,21 @@ class HtmlCompositionValidator {
 
   async run(): Promise<StaticValidationResult> {
     this.validateDoctype();
-    this.findRoot();
-    this.validateMetadata();
-    await this.validateDefaultProps();
-    this.validateControllerDeclaration();
+
+    const read = readCompositionDescriptor(createParse5Adapter(this.document), {
+      path: this.entry,
+      resolvePath: (raw) => this.resolveControllerPath(raw),
+    });
+    this.diagnostics.push(...read.diagnostics);
+    this.fixedFactsValid = read.valid;
+    const readRoot = read.root;
+    this.root = readRoot !== null && isElement(readRoot) ? readRoot : null;
+    this.metadata = read.descriptor.metadata;
+    this.defaultPropsValue = read.descriptor.defaultProps;
+    this.controller = read.descriptor.controller;
+    this.mergeOverrides();
     await this.validateControllerFile();
+
     this.validateScripts();
     this.validateUnsupportedElements();
     this.validateDocumentAttributes();
@@ -143,10 +150,12 @@ class HtmlCompositionValidator {
     await this.validateTranscripts();
     await this.validateOrdinaryAssets();
 
+    const metadata = this.metadata;
+    const root = this.root;
     const info: CompositionSourceInfo | null =
-      this.metadata && this.root && this.rootValid && this.documentValid && this.defaultsValid && this.controllerValid
+      metadata && root && this.fixedFactsValid && this.overridesValid && this.controllerFileValid && this.documentValid
         ? {
-            metadata: this.metadata,
+            metadata,
             defaultProps: this.defaultPropsValue,
             controller: this.controller,
             audioClips: Object.freeze([...this.audioClips]),
@@ -271,263 +280,48 @@ class HtmlCompositionValidator {
     }
   }
 
-  private findRoot(): void {
-    const roots = findElements(this.document, (element) => element.tagName === "fy-composition");
-    if (roots.length === 0) {
-      this.error("COMPOSITION_INVALID", "Composition document must contain one <fy-composition> root.");
-      return;
-    }
-
-    for (const extra of roots.slice(1)) {
-      this.error(
-        "COMPOSITION_INVALID",
-        "Composition document must contain exactly one <fy-composition> root.",
-        this.elementDetails(extra),
-      );
-    }
-
-    const root = roots[0] as HtmlElement;
-    this.root = root;
-
-    let valid = roots.length === 1;
-    const body = getElementByTagName(this.document, "body");
-    if (!body || !isDescendantOf(root, body)) {
-      valid = false;
-      this.error("COMPOSITION_INVALID", "The <fy-composition> root must be inside <body>.", this.elementDetails(root));
-    }
-    if (this.isInsideTemplate(root)) {
-      valid = false;
-      this.error(
-        "COMPOSITION_INVALID",
-        "The <fy-composition> root must not be inside a <template>.",
-        this.elementDetails(root),
-      );
-    }
-    this.rootValid = valid;
-  }
-
-  private isInsideTemplate(node: HtmlNode): boolean {
-    let current: HtmlParentNode | null = "parentNode" in node ? node.parentNode : null;
-    while (current) {
-      if (isElement(current) && current.tagName === "template") {
-        return true;
-      }
-      current = "parentNode" in current ? current.parentNode : null;
-    }
-    return false;
-  }
-
-  private validateMetadata(): void {
-    const root = this.root;
-    if (!root) {
-      return;
-    }
-
-    const width = this.readPositiveInteger(root, "width");
-    const height = this.readPositiveInteger(root, "height");
-    const fps = this.readPositiveNumber(root, "fps");
-    const durationInFrames = this.readPositiveInteger(root, "duration-in-frames");
-
-    if (width !== null && height !== null && fps !== null && durationInFrames !== null) {
-      this.metadata = { width, height, fps, durationInFrames };
-    }
-  }
-
-  private readPositiveInteger(element: HtmlElement, attribute: string): number | null {
-    const raw = getAttribute(element, attribute);
-    if (raw === undefined) {
-      this.error(
-        "COMPOSITION_INVALID",
-        `Missing required "${attribute}" attribute on <fy-composition>.`,
-        this.attributeDetails(element, attribute),
-      );
-      return null;
-    }
-    const value = Number(raw);
-    if (!/^\d+$/.test(raw.trim()) || !Number.isInteger(value) || value <= 0) {
-      this.error(
-        "COMPOSITION_INVALID",
-        `"${attribute}" must be a positive integer; received "${raw}".`,
-        this.attributeDetails(element, attribute, { value: raw }),
-      );
-      return null;
-    }
-    return value;
-  }
-
-  private readPositiveNumber(element: HtmlElement, attribute: string): number | null {
-    const raw = getAttribute(element, attribute);
-    if (raw === undefined) {
-      this.error(
-        "COMPOSITION_INVALID",
-        `Missing required "${attribute}" attribute on <fy-composition>.`,
-        this.attributeDetails(element, attribute),
-      );
-      return null;
-    }
-    const value = Number(raw);
-    if (!Number.isFinite(value) || value <= 0) {
-      this.error(
-        "COMPOSITION_INVALID",
-        `"${attribute}" must be a positive number; received "${raw}".`,
-        this.attributeDetails(element, attribute, { value: raw }),
-      );
-      return null;
-    }
-    return value;
-  }
-
-  private async validateDefaultProps(): Promise<void> {
-    const blocks = findElements(
-      this.document,
-      (element) =>
-        element.tagName === "script" &&
-        getAttribute(element, "type")?.toLowerCase() === "application/json" &&
-        getAttribute(element, "data-fy") === "props",
-    );
-
-    if (blocks.length > 1) {
-      this.defaultsValid = false;
-      for (const extra of blocks.slice(1)) {
-        this.error(
-          "PROPS_INVALID",
-          'A composition may contain at most one data-fy="props" block.',
-          this.elementDetails(extra),
-        );
-      }
-    }
-
-    const block = blocks[0];
-    let defaults: Readonly<Props> = Object.freeze({});
-    if (block) {
-      if (this.isInsideTemplate(block)) {
-        this.defaultsValid = false;
-        this.error(
-          "PROPS_INVALID",
-          'The data-fy="props" block must not be inside a <template>.',
-          this.elementDetails(block),
-        );
-      }
-      try {
-        const parsed: unknown = JSON.parse(getTextContent(block));
-        if (!isPlainObject(parsed)) {
-          throw new Error('The data-fy="props" block must contain a JSON object.');
-        }
-        assertJsonSerializable(parsed, "defaultProps");
-        defaults = mergeProps(parsed as Props, undefined);
-      } catch (error) {
-        this.defaultsValid = false;
-        this.error("PROPS_INVALID", `Invalid default props: ${errorMessage(error)}`, this.elementDetails(block));
-      }
-    }
-
+  private mergeOverrides(): void {
     try {
-      this.props = mergeProps(defaults, this.propsOverrides);
+      this.props = mergeProps(this.defaultPropsValue, this.propsOverrides);
+      this.overridesValid = true;
     } catch (error) {
-      this.defaultsValid = false;
+      this.overridesValid = false;
       this.error("PROPS_INVALID", `Invalid props: ${errorMessage(error)}`);
-      this.props = defaults;
+      this.props = this.defaultPropsValue;
     }
-
-    if (this.defaultsValid) {
-      this.defaultPropsValue = defaults;
-    }
-  }
-
-  private validateControllerDeclaration(): void {
-    const blocks = findElements(
-      this.document,
-      (element) =>
-        element.tagName === "script" && getAttribute(element, "type")?.toLowerCase() === "text/fy-controller",
-    );
-
-    if (blocks.length > 1) {
-      this.controllerValid = false;
-      for (const extra of blocks.slice(1)) {
-        this.error(
-          "CONTROLLER_INVALID",
-          "A composition may declare at most one controller.",
-          this.elementDetails(extra),
-        );
-      }
-    }
-
-    const block = blocks[0];
-    if (!block) {
-      return;
-    }
-
-    if (this.isInsideTemplate(block)) {
-      this.controllerValid = false;
-      this.error(
-        "CONTROLLER_INVALID",
-        "The controller block must not be inside a <template>.",
-        this.elementDetails(block),
-      );
-    }
-
-    const src = getAttribute(block, "src");
-    const source = getTextContent(block);
-    const hasSource = source.trim().length > 0;
-
-    if (src !== undefined && hasSource) {
-      this.controllerValid = false;
-      this.error(
-        "CONTROLLER_INVALID",
-        "A controller must be either inline or external, not both.",
-        this.attributeDetails(block, "src"),
-      );
-      return;
-    }
-    if (src === undefined && !hasSource) {
-      this.controllerValid = false;
-      this.error(
-        "CONTROLLER_INVALID",
-        "A controller must contain inline source or reference an external module with src.",
-        this.elementDetails(block),
-      );
-      return;
-    }
-
-    if (src !== undefined) {
-      this.controller = {
-        kind: "external",
-        src,
-        ...this.locationDetails(getAttributeLocation(block, "src")),
-      };
-      return;
-    }
-
-    const textNode = block.childNodes[0];
-    const location = textNode ? getNodeLocation(textNode) : getElementLocation(block);
-    this.controller = {
-      kind: "inline",
-      source,
-      ...this.locationDetails(location),
-    };
   }
 
   private async validateControllerFile(): Promise<void> {
-    if (!this.controller || this.controller.kind !== "external" || this.controller.src === undefined) {
+    const controller = this.controller;
+    if (
+      !controller ||
+      controller.kind !== "external" ||
+      controller.rawSrc === undefined ||
+      controller.src === undefined
+    ) {
       return;
     }
 
     const details: CompositionDiagnosticDetails = {
       path: this.entry,
-      ...(this.controller.line !== undefined ? { line: this.controller.line, column: this.controller.column } : {}),
+      ...(controller.line !== undefined ? { line: controller.line, column: controller.column } : {}),
     };
     const resolved = await this.resolveLocalFile(
-      this.controller.src,
+      controller.rawSrc,
       this.compositionDir,
       "CONTROLLER_INVALID",
       "Controller",
       details,
     );
     if (!resolved) {
-      this.controllerValid = false;
+      this.controllerFileValid = false;
       return;
     }
-    this.controller = { ...this.controller, src: resolved.relative };
+    this.controller = { ...controller, src: resolved.relative };
+  }
+
+  private resolveControllerPath(raw: string): string {
+    return path.relative(this.projectRoot, path.resolve(this.compositionDir, raw)).split(path.sep).join("/");
   }
 
   private validateScripts(): void {
@@ -1284,14 +1078,6 @@ export async function validateHtmlComposition(
 
   const validator = new HtmlCompositionValidator({ ...options, projectRoot }, document);
   return validator.run();
-}
-
-function isRemote(value: string): boolean {
-  return SCHEME.test(value) || value.startsWith("//");
-}
-
-function isLocalRelative(value: string): boolean {
-  return !SCHEME.test(value) && !value.startsWith("/") && !value.includes("\\") && !value.split("/").includes("..");
 }
 
 function describeValue(value: unknown): string {

@@ -1,4 +1,7 @@
 import { parse, type DefaultTreeAdapterTypes } from "parse5";
+import type { SourceLocation } from "../composition/adapter.js";
+
+export type { SourceLocation } from "../composition/adapter.js";
 
 export type HtmlDocument = DefaultTreeAdapterTypes.Document;
 export type HtmlElement = DefaultTreeAdapterTypes.Element;
@@ -7,13 +10,6 @@ export type HtmlNode = DefaultTreeAdapterTypes.Node;
 export type HtmlParentNode = DefaultTreeAdapterTypes.ParentNode;
 export type HtmlTextNode = DefaultTreeAdapterTypes.TextNode;
 export type HtmlDocumentType = DefaultTreeAdapterTypes.DocumentType;
-
-export interface SourceLocation {
-  startLine: number;
-  startCol: number;
-  endLine: number;
-  endCol: number;
-}
 
 export function parseHtml(html: string): HtmlDocument {
   return parse(html, { sourceCodeLocationInfo: true });

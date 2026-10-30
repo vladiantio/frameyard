@@ -19,6 +19,7 @@ pnpm exec playwright install chromium   # once per environment
 pnpm build
 pnpm typecheck
 pnpm typecheck:test                    # typechecks test/*.ts
+pnpm typecheck:browser                 # typechecks browser-safe modules without Node types
 pnpm lint                              # oxlint
 pnpm format:check                      # oxfmt --check
 pnpm format                            # rewrite formatting with oxfmt
@@ -52,7 +53,9 @@ A full 30-second demo render is sequential by default; pass `--concurrency <n>` 
 | --- | --- |
 | `src/contracts.ts` | Shared composition, metadata, props, audio, transcript, diagnostic, controller, and host contracts |
 | `src/bindings.ts` | Browser-safe binding path validation, resolution, and value coercion |
+| `src/composition/` | Browser-safe composition document reader, descriptor, adapter contract, and path rules |
 | `src/html/parse.ts` | Node-only parse5 document helpers and source locations |
+| `src/html/document-adapter.ts` | parse5 adapter for the composition document reader |
 | `src/html/validate.ts` | Static composition validation and diagnostic extraction |
 | `src/html/index.ts` | Node-only HTML validation exports |
 | `src/transcript.ts` | Canonical transcript validation and SRT/VTT formatting (browser-safe) |
@@ -110,7 +113,7 @@ Per-frame path: `src/renderer/browser.ts` `openCompositionSession` navigates to 
 
 ### Static validation and diagnostics
 
-- `src/html/validate.ts` parses composition HTML with parse5 and reports all static diagnostics in source order. It is Node-only; `src/contracts.ts`, `src/bindings.ts`, and `src/runtime/` must stay free of `node:` imports.
+- `src/html/validate.ts` parses composition HTML with parse5 and reports all static diagnostics in source order. It is Node-only. `src/contracts.ts`, `src/bindings.ts`, `src/composition/`, and `src/runtime/` must stay free of `node:` imports; `pnpm typecheck:browser` enforces it.
 - `check`, `still`, and `render` run static validation before Chromium. Static errors fail without launching a browser; warnings allow frame evaluation. `dev` validates on composition request.
 - Diagnostics carry `severity`, `code`, `message`, and optional `details` with `path`, `line`, `column`, `element`, `attribute`, `value`, and `suggestion`. Error envelopes carry optional `error.details` and top-level `diagnostics`.
 - Unknown `data-fy-*` attributes, repeat misuse, controller declaration errors, executable scripts, event handlers, `javascript:` URLs, unsupported elements, and missing media/transcript references are errors. Missing binding paths and animation mismatches are warnings.
@@ -148,6 +151,7 @@ Per-frame path: `src/renderer/browser.ts` `openCompositionSession` navigates to 
 
 - **Contracts, props, audio, transcripts, diagnostics, host types** → `src/contracts.ts`, `src/transcript.ts`, `src/index.ts`; extend `test/contracts.test.ts`, `test/transcript.test.ts`.
 - **Binding semantics** → `src/bindings.ts`, `src/runtime/bindings.ts`; extend `test/bindings.test.ts`, `test/host-runtime.test.ts`.
+- **Composition document reading** → `src/composition/`, `src/html/document-adapter.ts`; extend `test/composition-document.test.ts`, `test/static-validation.test.ts`.
 - **HTML parsing and static validation** → `src/html/parse.ts`, `src/html/validate.ts`; extend `test/static-validation.test.ts`, `test/server-html.test.ts`.
 - **Host runtime** → `src/runtime/host.ts`, `src/runtime/media.ts`, `src/runtime/diagnostics.ts`; extend `test/host-runtime.test.ts`.
 - **Preview** → `src/preview/main.ts`, `src/server/preview-html.ts`; extend the HTML iframe case in `test/preview-runtime.test.ts`.

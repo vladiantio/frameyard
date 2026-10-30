@@ -5,7 +5,7 @@ Frameyard is a local-first framework for deterministic, parameterized videos aut
 ## Read first
 
 - **Before changing public composition, props, audio, CLI, or JSON contracts**: read `docs/v0.1-design.md`, then `GLOSSARY.md` for domain terms.
-- **Before changing determinism or rendering architecture**: read `docs/adr/0002-make-frame-and-props-the-only-animation-state.md`, `docs/adr/0003-render-browser-frames-offline.md`, and the reproducibility guarantee in `docs/v0.1-design.md` §3.
+- **Before changing determinism or rendering architecture**: read `docs/adr/0002-make-frame-and-props-the-only-animation-state.md`, `docs/adr/0003-render-browser-frames-offline.md`, `docs/adr/0005-keep-parallel-rendering-opt-in-and-frame-ordered.md`, and the reproducibility guarantee in `docs/v0.1-design.md` §3.
 - **Before adding authoring APIs or asset-production features**: read `docs/adr/0001-keep-composition-authoring-web-native.md` and `docs/adr/0004-produce-local-ai-assets-outside-rendering.md`.
 - **For usage and project layout**: read `README.md`.
 
@@ -43,7 +43,7 @@ node dist/cli.js doctor
 
 Documentation command examples: runnable examples in `README.md`, `skills/frameyard/`, the `init` scaffold, and `init --json` `next` use `npx frameyard`; repository-internal commands (this file, `examples/demo/README.md`, and README's `Development` section) use `node dist/cli.js` after `pnpm build`. Command reference tables and `--help` usage lines keep the bare `frameyard` name. `test/docs.test.ts` enforces the user-facing rule, including the generated scaffold markdown in `src/scaffold.ts`.
 
-A full 30-second demo render is sequential; run `pnpm bench` for current timings on the reference machine. The test fixtures render tiny compositions. TTS and transcription tests use fake `qwen-tts` and `whisper-cli` executables; real-model tests are opt-in.
+A full 30-second demo render is sequential by default; pass `--concurrency <n>` (1-16) to use multiple browser sessions. Run `pnpm bench` for current timings on the reference machine. The test fixtures render tiny compositions. TTS and transcription tests use fake `qwen-tts` and `whisper-cli` executables; real-model tests are opt-in.
 
 ## Architecture
 
@@ -64,7 +64,7 @@ A full 30-second demo render is sequential; run `pnpm bench` for current timings
 | `examples/demo/` | 30-second reference composition |
 | `test/` | Public-seam tests |
 
-Per-frame path: `src/renderer/index.ts` loop (`seek` → `capture` → `writeFrame`) → `browser.ts` `seek()`/`capture()` (CDP `Page.captureScreenshot`) → `ffmpeg.ts` `writeFrame()` (stdin pipe) → `finish()`.
+Per-frame path: `src/renderer/index.ts` loop (`seek` → `capture` → `writeFrame`) → `browser.ts` `seek()`/`capture()` (CDP `Page.captureScreenshot`) → `ffmpeg.ts` `writeFrame()` (stdin pipe) → `finish()`. With `--concurrency <n>`, independent sessions capture assigned frames concurrently and an ordered writer still feeds the single encoder in timeline order.
 
 `src/contracts.ts`, `src/transcript.ts`, and `src/runtime/` ship to the browser. Keep them free of `node:` imports. Node-only code belongs in `src/project.ts`, `src/server/`, `src/renderer/`, `src/assets/`, `src/doctor.ts`, `src/scaffold.ts`, or `src/cli.ts`.
 
@@ -78,6 +78,7 @@ Per-frame path: `src/renderer/index.ts` loop (`seek` → `capture` → `writeFra
 - Animation drivers are `update()` plus runtime-seeked CSS/Web Animations. `Math.random()`, `Date.now()`, `performance.now()`, timers, and independent `requestAnimationFrame` loops are not animation inputs. Use `random("stable:key")` from `frameyard/runtime`.
 - The runtime seeks CSS animations and the Web Animations API inside the composition container. CSS transitions are diagnosed as non-deterministic in preview.
 - The preview and production renderer must use the same composition bundle, runtime, and server. Production differs only in driving the clock explicitly and capturing frames.
+- Optional parallel rendering may distribute frames across independent browser sessions, but frames must be encoded in timeline order and must be pixel-equivalent to a sequential render. The default remains one session.
 - Verify determinism at the capture boundary: compare captured PNG pixels or `still` output, not MP4 hashes. Encoded bytes are not a reproducibility guarantee; see `docs/v0.1-design.md` §3.
 - Remote data, fonts, and images belong in the loading phase before the first frame. After loading, `browser.ts` blocks network requests; a fetch from `update()` is a bug.
 - Do not add a load hook or props-dependent metadata without revising the design baseline first. `width`, `height`, `fps`, and `durationInFrames` are fixed.
@@ -115,7 +116,7 @@ Per-frame path: `src/renderer/index.ts` loop (`seek` → `capture` → `writeFra
 
 ### Scope
 
-The current implementation still excludes built-in subtitle rendering, automatic caption burn-in, qwentts.cpp voice cloning/VoiceDesign, long-text chunking/streaming, automatic model downloads or environment repair, parallel rendering, frame caches, general image sequences, plugin APIs, and hosted/agent-only runtimes.
+The current implementation still excludes built-in subtitle rendering, automatic caption burn-in, qwentts.cpp voice cloning/VoiceDesign, long-text chunking/streaming, automatic model downloads or environment repair, frame caches, general image sequences, plugin APIs, and hosted/agent-only runtimes.
 
 ## Change map
 

@@ -88,6 +88,10 @@ _Avoid_: Test render, dry run
 The production of one complete video from a composition and a fixed set of props.
 _Avoid_: Recording, export
 
+**Render concurrency**:
+The optional number of independent browser sessions used to seek and capture frames during a render. Frames are still encoded in timeline order, and concurrency must not change visual state.
+_Avoid_: Parallel composition, out-of-order output
+
 **Video**:
 The finished audiovisual output of a successful render.
 _Avoid_: Composition, project

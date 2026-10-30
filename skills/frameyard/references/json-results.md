@@ -92,6 +92,7 @@ Use the error `code` for decisions, not message text. `command` is `null` only f
   "durationInFrames": 900,
   "durationSeconds": 30,
   "framesRendered": 900,
+  "concurrency": 1,
   "bytes": 1234567,
   "audio": { "clips": 1, "warnings": [] },
   "transcripts": { "clips": 1, "warnings": [] },
@@ -99,7 +100,7 @@ Use the error `code` for decisions, not message text. `command` is `null` only f
 }
 ```
 
-A successful render means the final path exists and was published atomically. A nonzero exit means no new partial video was published.
+A successful render means the final path exists and was published atomically. A nonzero exit means no new partial video was published. `concurrency` is the number of browser sessions actually used; it is capped by `durationInFrames` and by the CLI maximum of 16.
 
 ## tts
 

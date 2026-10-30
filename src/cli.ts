@@ -3,7 +3,14 @@ import { access, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { FrameyardError, isFrameyardError } from "./errors.js";
 import { loadProject, resolveProjectRoot, type Project } from "./project.js";
-import { checkComposition, captureStill, renderComposition, type ProgressEvent } from "./renderer/index.js";
+import {
+  checkComposition,
+  captureStill,
+  MAX_RENDER_CONCURRENCY,
+  renderComposition,
+  validateRenderConcurrency,
+  type ProgressEvent,
+} from "./renderer/index.js";
 import { startPreviewServer } from "./server/server.js";
 import { scaffoldFiles, SCAFFOLD_NEXT } from "./scaffold.js";
 import { VERSION } from "./version.js";
@@ -19,6 +26,7 @@ const VALUE_FLAGS = new Set([
   "out",
   "frame",
   "port",
+  "concurrency",
   "text-file",
   "speaker",
   "talker-model",
@@ -126,7 +134,7 @@ function allowedFlags(command: string): Set<string> {
     case "still":
       return new Set([...common, "props", "out", "frame", "overwrite"]);
     case "render":
-      return new Set([...common, "props", "out", "overwrite"]);
+      return new Set([...common, "props", "out", "overwrite", "concurrency"]);
     case "tts":
       return new Set([
         ...common,
@@ -188,6 +196,9 @@ function validateArgs(parsed: ParsedArgs): void {
   if (parsed.command === "render" && !parsed.flags.has("out")) {
     usage('"render" requires --out <video.mp4>.');
   }
+  if (parsed.command === "render" && parsed.flags.has("concurrency")) {
+    validateRenderConcurrency(Number(parsed.flags.get("concurrency")));
+  }
   if (parsed.command === "tts") {
     for (const required of ["speaker", "talker-model", "codec-model", "out"]) {
       if (!parsed.flags.has(required)) {
@@ -235,7 +246,7 @@ Usage:
   frameyard dev [--port <port>] [--project <dir>]
   frameyard check <composition-id> [--props <file>] [--project <dir>] [--json]
   frameyard still <composition-id> --frame <n> [--out <file.png>] [--props <file>] [--project <dir>] [--json]
-  frameyard render <composition-id> --out <video.mp4> [--props <file>] [--project <dir>] [--overwrite] [--json]
+  frameyard render <composition-id> --out <video.mp4> [--props <file>] [--project <dir>] [--concurrency <n>] [--overwrite] [--json]
   frameyard tts --speaker <name> --talker-model <gguf> --codec-model <gguf> --out <file.wav> [--text-file <file>] [--style <text>] [--language <lang>] [--device <name>] [--executable <path>] [--manifest <file>] [--force] [--json]
   frameyard transcribe <source> --model <gguf> --out <file.json> [--words] [--export srt,vtt] [--language <lang>] [--executable <path>] [--manifest <file>] [--force] [--json]
   frameyard doctor [--qwen-tts <path>] [--whisper-cli <path>] [--talker-model <gguf>] [--codec-model <gguf>] [--model <gguf>] [--manifest <file>] [--project <dir>] [--json]
@@ -245,6 +256,7 @@ Options:
   --props <file>         JSON props merged over composition defaults.
   --out <file>           Output path for still, render, tts, or transcribe.
   --frame <n>            Frame to capture for still.
+  --concurrency <n>      Parallel browser sessions for render, 1-${MAX_RENDER_CONCURRENCY} (default: 1).
   --overwrite            Replace an existing still or render output.
   --force                Replace existing generated assets and manifest entries.
   --text-file <file>     Text to synthesize. Reads stdin when omitted.
@@ -289,7 +301,7 @@ function printCommandHelp(command: string): void {
       return;
     case "render":
       process.stdout.write(
-        "Usage: frameyard render <composition-id> --out <video.mp4> [--props <file>] [--project <dir>] [--overwrite] [--json]\nRender a complete MP4 with H.264 video and AAC audio.\n",
+        `Usage: frameyard render <composition-id> --out <video.mp4> [--props <file>] [--project <dir>] [--concurrency <n>] [--overwrite] [--json]\nRender a complete MP4 with H.264 video and AAC audio. Concurrency is 1-${MAX_RENDER_CONCURRENCY} (default: 1).\n`,
       );
       return;
     case "tts":
@@ -611,12 +623,17 @@ async function runRender(parsed: ParsedArgs, signal: AbortSignal): Promise<numbe
   }
   const outPath = path.resolve(process.cwd(), outValue);
   const json = parsed.flags.has("json") === true;
+  const concurrencyValue = parsed.flags.get("concurrency");
+  const concurrency = validateRenderConcurrency(
+    typeof concurrencyValue === "string" ? Number(concurrencyValue) : undefined,
+  );
 
   const result = await renderComposition({
     project,
     compositionId,
     props,
     outPath,
+    concurrency,
     overwrite: parsed.flags.has("overwrite") === true,
     signal,
     onProgress: progressPrinter("Rendering"),

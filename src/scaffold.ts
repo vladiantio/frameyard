@@ -20,7 +20,7 @@ This project produces deterministic, parameterized video with Frameyard. Follow 
 2. Author the composition or props with native HTML, CSS, SVG, Canvas 2D, and JavaScript. Do not add a bundling step.
 3. Validate every frame: \`npx frameyard check <id> --json\`. Use \`--props <file>\` to validate a specific props file.
 4. Inspect a representative frame: \`npx frameyard still <id> --frame <n> --out <file.png> --json\`, then view the PNG when the host supports images. State explicitly when visual inspection is not possible.
-5. Render: \`npx frameyard render <id> --props <file> --out <file.mp4> --json\`.
+5. Render: \`npx frameyard render <id> --props <file> --out <file.mp4> [--concurrency <n>] --json\`.
 6. Report the composition, props, validation result, still path and inspection status, video path, and any failure. Never claim success when \`check\` fails, a still is missing, or a render exits nonzero.
 
 ## Commands
@@ -35,6 +35,7 @@ npx frameyard render hello --props props/hello.json --out hello.mp4 --json
 
 - Use \`--json\` for non-interactive commands. Parse stdout as the structured result; treat stderr as progress and diagnostics.
 - Use \`--project <dir>\` when running outside the project root.
+- Use \`--concurrency <n>\` for faster local rendering when useful; the default is \`1\` and the maximum is \`16\`. It changes capture scheduling only, not composition behavior or output frame order.
 - \`still\` and \`render\` replace existing outputs only with \`--overwrite\`. Generated assets are replaced only with \`--force\`, and only with user approval.
 
 ## Determinism rules

@@ -109,13 +109,22 @@ async function ffprobe(filePath: string, args: string[] = []): Promise<Record<st
   return JSON.parse(stdout) as Record<string, unknown>;
 }
 
+async function decodedVideoHash(filePath: string): Promise<string> {
+  const { stdout } = await exec("ffmpeg", ["-v", "error", "-i", filePath, "-map", "0:v:0", "-f", "md5", "-"]);
+  const match = /MD5=([0-9a-f]+)/i.exec(stdout);
+  if (!match) {
+    throw new Error(`FFmpeg did not report a decoded video hash for ${filePath}.`);
+  }
+  return match[1] as string;
+}
+
 beforeAll(async () => {
   root = await mkdtemp(path.join(tmpdir(), "frameyard-cli-"));
   await mkdir(path.join(root, "compositions"), { recursive: true });
   await mkdir(path.join(root, "assets"), { recursive: true });
   await writeFile(
     path.join(root, "video.config.js"),
-    `export default { compositions: { demo: "./compositions/demo.js", broken: "./compositions/broken.js" } };\n`,
+    `export default { compositions: { demo: "./compositions/demo.js", broken: "./compositions/broken.js", throwing: "./compositions/throwing.js" } };\n`,
   );
   await writeFile(path.join(root, "compositions", "demo.js"), composition);
   await writeFile(
@@ -128,6 +137,20 @@ beforeAll(async () => {
   audio: [{ src: "assets/missing.wav", startFrame: 0 }],
   mount() {},
   update() {},
+};
+`,
+  );
+  await writeFile(
+    path.join(root, "compositions", "throwing.js"),
+    `export default {
+  width: 160,
+  height: 90,
+  fps: 10,
+  durationInFrames: 6,
+  mount() {},
+  update({ frame }) {
+    if (frame === 3) throw new Error("frame boom");
+  },
 };
 `,
   );
@@ -251,6 +274,7 @@ describe("CLI end-to-end", () => {
       fps: 10,
       durationInFrames: 6,
       framesRendered: 6,
+      concurrency: 1,
     });
 
     const outputPath = path.join(root, "video.mp4");
@@ -263,6 +287,100 @@ describe("CLI end-to-end", () => {
     expect(video).toMatchObject({ codec_name: "h264", width: 160, height: 90, nb_read_frames: "6" });
     expect(audio).toMatchObject({ codec_name: "aac", channels: 2 });
     expect(Number((probe.format as Record<string, unknown>).duration)).toBeCloseTo(0.6, 1);
+  });
+
+  it("rejects an invalid render concurrency", async () => {
+    for (const value of ["0", "1.5", "many", "17"]) {
+      const result = await run(
+        ["render", "demo", "--out", "invalid.mp4", "--concurrency", value, "--project", root, "--json"],
+        root,
+      );
+
+      expect(result.code).toBe(2);
+      const json = JSON.parse(result.stdout) as Record<string, unknown>;
+      expect(json).toMatchObject({
+        ok: false,
+        command: "render",
+        error: { code: "USAGE" },
+      });
+      expect(String((json.error as Record<string, unknown>).message)).toContain("--concurrency");
+    }
+  });
+
+  it("renders identical frames with parallel capture sessions", async () => {
+    const sequential = await run(
+      [
+        "render",
+        "demo",
+        "--props",
+        "props.json",
+        "--out",
+        "sequential.mp4",
+        "--concurrency",
+        "1",
+        "--project",
+        root,
+        "--json",
+      ],
+      root,
+    );
+    const parallel = await run(
+      [
+        "render",
+        "demo",
+        "--props",
+        "props.json",
+        "--out",
+        "parallel.mp4",
+        "--concurrency",
+        "2",
+        "--project",
+        root,
+        "--json",
+      ],
+      root,
+    );
+
+    expect(sequential.code).toBe(0);
+    expect(parallel.code).toBe(0);
+    const json = JSON.parse(parallel.stdout) as Record<string, unknown>;
+    expect(json).toMatchObject({
+      ok: true,
+      command: "render",
+      composition: "demo",
+      durationInFrames: 6,
+      framesRendered: 6,
+      concurrency: 2,
+    });
+
+    const parallelProbe = await ffprobe(path.join(root, "parallel.mp4"), ["-count_frames"]);
+    const streams = parallelProbe.streams as Array<Record<string, unknown>>;
+    const video = streams.find((stream) => stream.codec_type === "video");
+    const audio = streams.find((stream) => stream.codec_type === "audio");
+    expect(video).toMatchObject({ codec_name: "h264", nb_read_frames: "6" });
+    expect(audio).toMatchObject({ codec_name: "aac", channels: 2 });
+
+    expect(await decodedVideoHash(path.join(root, "parallel.mp4"))).toBe(
+      await decodedVideoHash(path.join(root, "sequential.mp4")),
+    );
+  });
+
+  it("stops a parallel render when a frame fails and publishes nothing", async () => {
+    const outputPath = path.join(root, "throwing.mp4");
+    const result = await run(
+      ["render", "throwing", "--out", "throwing.mp4", "--concurrency", "2", "--project", root, "--json"],
+      root,
+    );
+
+    expect(result.code).not.toBe(0);
+    const json = JSON.parse(result.stdout) as Record<string, unknown>;
+    expect(json).toMatchObject({
+      ok: false,
+      command: "render",
+      error: { code: "COMPOSITION_ERROR" },
+    });
+    expect(String((json.error as Record<string, unknown>).message)).toContain("frame boom");
+    await expect(stat(outputPath)).rejects.toThrow();
   });
 
   it("refuses to overwrite an existing render unless asked", async () => {

@@ -140,12 +140,12 @@ Transcript paths are project-relative. `words: true` requires actual measured wo
 | `frameyard dev [--port <port>]` | Start the preview server |
 | `frameyard check <id> [--props <file>]` | Validate props, assets, audio, transcripts, and every frame without capture |
 | `frameyard still <id> --frame <n>` | Capture one PNG through the production path |
-| `frameyard render <id> --out <video.mp4>` | Capture frames with Chromium and encode with FFmpeg |
+| `frameyard render <id> --out <video.mp4>` | Capture frames with Chromium and encode with FFmpeg, optionally in parallel |
 | `frameyard tts ...` | Produce one frozen 24 kHz mono WAV with local qwentts.cpp |
 | `frameyard transcribe ...` | Produce canonical transcript JSON with optional word timings and SRT/VTT exports |
 | `frameyard doctor` | Inspect core requirements, optional integrations, and manifest integrity |
 
-Common options: `--project <dir>`, `--json`, `--help`, and `--version`. `still` and `render` accept `--overwrite`; `tts` and `transcribe` accept `--force`. `init` takes the target directory as a positional argument. Output paths are relative to the current working directory.
+Common options: `--project <dir>`, `--json`, `--help`, and `--version`. `still` and `render` accept `--overwrite`; `render` also accepts `--concurrency <n>` (1-16); `tts` and `transcribe` accept `--force`. `init` takes the target directory as a positional argument. Output paths are relative to the current working directory.
 
 A render fails immediately on an uncaught error, unhandled rejection, missing required asset, or invalid composition output. It writes to a temporary file and publishes only after FFmpeg succeeds. Existing outputs are not replaced unless `--overwrite` is supplied.
 
@@ -164,6 +164,7 @@ Non-interactive commands support `--json`. Results go to stdout and human progre
   "fps": 30,
   "durationInFrames": 900,
   "framesRendered": 900,
+  "concurrency": 1,
   "audio": { "clips": 1, "warnings": [] },
   "transcripts": { "clips": 1, "warnings": [] }
 }
@@ -233,13 +234,15 @@ The optional host-neutral agent skill lives in [`skills/frameyard/`](./skills/fr
 Production rendering:
 
 1. Starts the same preview server and browser runtime used by `dev`.
-2. Launches pinned Chromium through Playwright.
+2. Launches one pinned Chromium session, or several independent sessions when `--concurrency` is greater than 1.
 3. Seeks explicitly to each frame and waits for composition updates.
 4. Captures the viewport through the Chrome DevTools Protocol.
-5. Pipes PNG frames and the offline audio mix to FFmpeg.
+5. Pipes PNG frames in timeline order and the offline audio mix to FFmpeg.
 6. Encodes H.264 video with `yuv420p` and AAC audio into an MP4.
 
-Rendering is sequential in v0.1. For the same composition revision, props, assets, frame, and pinned runtime/browser environment, the visual state is identical. Encoded bytes are not a reproducibility guarantee, even on the same machine; they depend on the FFmpeg build, encoder threading, and runtime environment.
+Rendering is sequential by default. Pass `--concurrency <n>` (1-16) to seek and capture frames with up to `n` independent browser sessions; the effective value is capped by the composition's frame count. Captured frames are always encoded in timeline order, so parallel and sequential renders of the same inputs produce equivalent visual frames. Concurrency only changes scheduling: it does not change composition behavior or the determinism contract. Parallel rendering uses more CPU and memory, so choose a value appropriate for the machine.
+
+For the same composition revision, props, assets, frame, and pinned runtime/browser environment, the visual state is identical. Encoded bytes are not a reproducibility guarantee, even on the same machine; they depend on the FFmpeg build, encoder threading, and runtime environment.
 
 For a repeatable local measurement of seek, capture, encode, and full-render time, run `pnpm bench`. The demo and the controlled fixtures under `bench/fixtures/` are the reference workloads.
 
@@ -251,7 +254,7 @@ Deferred from this implementation slice:
 - `qwentts.cpp` reference-audio voice cloning and VoiceDesign
 - Automatic long-text chunking, streaming synthesis, and alternative generated-audio formats
 - Automatic upstream builds, model downloads, environment repair, and hosted rendering
-- Parallel rendering, frame caches, and general image-sequence output
+- Frame caches and general image-sequence output
 - React or other UI-framework adapters, plugin APIs, and agent-only runtimes
 - TypeScript transpilation for project compositions and npm dependency optimization
 

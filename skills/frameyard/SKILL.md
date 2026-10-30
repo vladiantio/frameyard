@@ -22,7 +22,7 @@ Use Frameyard's public project format and CLI. Do not introduce an agent-only ru
 3. **Produce optional assets** with `npx frameyard tts` and `npx frameyard transcribe`, never with the upstream executables. Read [audio assets](references/audio-assets.md). Do not overwrite or regenerate existing generated assets without permission.
 4. **Validate** with `npx frameyard check <id> --json`. It evaluates every frame, checks audio and declared transcripts, and does not encode.
 5. **Inspect** representative frames with `npx frameyard still <id> --frame <n> --out <file.png> --json`. View the PNGs when the host supports image viewing. If visual inspection is impossible, say so explicitly.
-6. **Render** with `npx frameyard render <id> --out <file.mp4> [--props <file>] --json`.
+6. **Render** with `npx frameyard render <id> --out <file.mp4> [--props <file>] [--concurrency <n>] --json`.
 7. **Report** the project path, composition entry, props, generated assets, provenance manifest, validation results, still paths and inspection status, final video path, and any failures.
 
 Never claim success when `check` fails, a still is missing, a render exits nonzero, or visual inspection was skipped. A partial or unpublished render is not a successful result.
@@ -32,6 +32,7 @@ Never claim success when `check` fails, a still is missing, a render exits nonze
 - Use `--json` for every non-interactive command. Parse stdout as the structured result; treat stderr as progress and diagnostics.
 - Keep the current output files unless the user explicitly approves replacement. Use `--force` only with that approval.
 - Use `--project <dir>` when not running from the project root.
+- Use `--concurrency <n>` only when faster local rendering is useful; the default is `1` and the maximum is `16`. It changes capture scheduling only, not composition behavior or output frame order.
 - Use `npx frameyard doctor --json` before reporting an environment problem. It inspects without repairing or downloading.
 - Read [JSON results](references/json-results.md) for result and error shapes, and [failure recovery](references/failure-recovery.md) for actionable error codes.
 

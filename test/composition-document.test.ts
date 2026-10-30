@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { readCompositionDescriptor, type DocumentAdapter, type SourceLocation } from "../src/composition/index.ts";
+import {
+  readAnimationDeclarations,
+  readCompositionDescriptor,
+  readMediaDeclarations,
+  readTranscriptDeclarations,
+  type DocumentAdapter,
+  type SourceLocation,
+} from "../src/composition/index.ts";
 
 interface FakeDocument {
   kind: "document";
@@ -432,6 +439,251 @@ describe("composition document reader", () => {
         code: "CONTROLLER_INVALID",
         message: expect.stringContaining("Could not resolve"),
       }),
+    );
+  });
+
+  it("reads animation declarations and rejects invalid values", () => {
+    const animated = element("div", {
+      attributes: {
+        "data-fy-anim-start": "2",
+        "data-fy-anim-duration": "8",
+        "data-fy-anim-easing": "ease-in",
+      },
+    });
+    const valid = readAnimationDeclarations(adapterFor(makeDocument({ body: [animated] })), {
+      path: "compositions/hello.html",
+      includeTemplateContent: true,
+    });
+
+    expect(valid.diagnostics).toEqual([]);
+    expect(valid.entries).toHaveLength(1);
+    expect(valid.entries[0]).toMatchObject({
+      startFrame: 2,
+      durationInFrames: 8,
+      easing: "ease-in",
+      attributes: ["data-fy-anim-start", "data-fy-anim-duration", "data-fy-anim-easing"],
+    });
+
+    const invalid = element("div", {
+      attributes: {
+        "data-fy-anim-start": "-1",
+        "data-fy-anim-duration": "0",
+        "data-fy-anim-easing": " ",
+      },
+    });
+    const rejected = readAnimationDeclarations(adapterFor(makeDocument({ body: [invalid] })), {
+      path: "compositions/hello.html",
+      includeTemplateContent: true,
+    });
+    expect(rejected.diagnostics).toHaveLength(3);
+    expect(rejected.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: "ANIMATION_INVALID",
+        details: expect.objectContaining({ attribute: "data-fy-anim-start", value: "-1" }),
+      }),
+    );
+  });
+
+  it("includes template animation content only when requested", () => {
+    const document = makeDocument({
+      body: [
+        element("template", {
+          content: [element("div", { attributes: { "data-fy-anim-start": "0" } })],
+        }),
+      ],
+    });
+    const included = readAnimationDeclarations(adapterFor(document), {
+      path: "compositions/hello.html",
+      includeTemplateContent: true,
+    });
+    const excluded = readAnimationDeclarations(adapterFor(document), {
+      path: "compositions/hello.html",
+      includeTemplateContent: false,
+    });
+
+    expect(included.entries).toHaveLength(1);
+    expect(excluded.entries).toHaveLength(0);
+  });
+
+  it("reads audio, embedded video, and prop-bound media", () => {
+    const audio = element("audio", {
+      attributes: {
+        src: "./assets/tone.wav",
+        "data-fy-start": "2",
+        "data-fy-trim": "0.1",
+        "data-fy-volume": "0.5",
+      },
+    });
+    const video = element("video", {
+      attributes: {
+        src: "assets/clip.webm",
+        "data-fy-start": "1",
+        "data-fy-trim": "0.2",
+        "data-fy-duration": "0.5",
+        "data-fy-volume": "0.6",
+      },
+    });
+    const bound = element("audio", { attributes: { "data-fy-attr-src": "voice" } });
+    const result = readMediaDeclarations(adapterFor(makeDocument({ body: [audio, video, bound] })), {
+      path: "compositions/hello.html",
+      includeTemplateContent: true,
+      props: { voice: "assets/voice.wav" },
+    });
+
+    expect(result.diagnostics).toEqual([]);
+    expect(result.audio).toHaveLength(2);
+    expect(result.audio[0]?.clip).toMatchObject({
+      src: "assets/tone.wav",
+      startFrame: 2,
+      trimStart: 0.1,
+      volume: 0.5,
+    });
+    expect(result.audio[1]?.clip).toMatchObject({ src: "assets/voice.wav" });
+    expect(result.embedded).toHaveLength(1);
+    expect(result.embedded[0]?.clip).toMatchObject({
+      src: "assets/clip.webm",
+      startFrame: 1,
+      trimStart: 0.2,
+      trimDuration: 0.5,
+      volume: 0.6,
+    });
+  });
+
+  it("reports media declaration errors", () => {
+    const result = readMediaDeclarations(
+      adapterFor(
+        makeDocument({
+          body: [
+            element("audio", { attributes: { src: "assets/tone.wav", "data-fy-attr-src": "voice" } }),
+            element("audio", {}),
+            element("audio", { attributes: { src: "https://example.com/tone.wav" } }),
+            element("div", { attributes: { "data-fy-start": "0" } }),
+          ],
+        }),
+      ),
+      {
+        path: "compositions/hello.html",
+        includeTemplateContent: true,
+        props: { voice: "assets/voice.wav" },
+      },
+    );
+
+    expect(result.audio).toHaveLength(0);
+    expect(result.embedded).toHaveLength(0);
+    expect(result.diagnostics).toHaveLength(4);
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({ code: "MEDIA_INVALID", message: expect.stringContaining("not both") }),
+    );
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({ code: "MEDIA_INVALID", message: expect.stringContaining("requires a src") }),
+    );
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({ code: "MEDIA_INVALID", message: expect.stringContaining("local project file") }),
+    );
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({ code: "MEDIA_INVALID", message: expect.stringContaining("only valid on") }),
+    );
+  });
+
+  it("rejects invalid media attributes", () => {
+    const result = readMediaDeclarations(
+      adapterFor(
+        makeDocument({
+          body: [
+            element("audio", {
+              attributes: {
+                src: "assets/tone.wav",
+                "data-fy-start": "-1",
+                "data-fy-trim": "-1",
+                "data-fy-duration": "0",
+                "data-fy-volume": "2",
+              },
+            }),
+            element("video", {
+              attributes: { src: "assets/clip.webm", "data-fy-audio": "on" },
+            }),
+          ],
+        }),
+      ),
+      {
+        path: "compositions/hello.html",
+        includeTemplateContent: true,
+        props: {},
+      },
+    );
+
+    expect(result.audio).toHaveLength(0);
+    expect(result.embedded).toHaveLength(0);
+    expect(result.diagnostics).toHaveLength(5);
+    expect(result.diagnostics.every((diagnostic) => diagnostic.code === "MEDIA_INVALID")).toBe(true);
+  });
+
+  it("includes template media content only when requested", () => {
+    const document = makeDocument({
+      body: [
+        element("template", {
+          content: [element("audio", { attributes: { src: "assets/tone.wav" } })],
+        }),
+      ],
+    });
+    const included = readMediaDeclarations(adapterFor(document), {
+      path: "compositions/hello.html",
+      includeTemplateContent: true,
+      props: {},
+    });
+    const excluded = readMediaDeclarations(adapterFor(document), {
+      path: "compositions/hello.html",
+      includeTemplateContent: false,
+      props: {},
+    });
+
+    expect(included.audio).toHaveLength(1);
+    expect(excluded.audio).toHaveLength(0);
+  });
+
+  it("reads transcripts and resolves prop-bound sources", () => {
+    const literal = element("fy-transcript", { attributes: { src: "assets/voice.json", words: "" } });
+    const bound = element("fy-transcript", { attributes: { "data-fy-attr-src": "transcript" } });
+    const result = readTranscriptDeclarations(adapterFor(makeDocument({ body: [literal, bound] })), {
+      path: "compositions/hello.html",
+      includeTemplateContent: true,
+      props: { transcript: "assets/other.json" },
+    });
+
+    expect(result.diagnostics).toEqual([]);
+    expect(result.declarations).toHaveLength(2);
+    expect(result.declarations[0]?.clip).toEqual({ src: "assets/voice.json", words: true });
+    expect(result.declarations[1]?.clip).toEqual({ src: "assets/other.json", words: false });
+  });
+
+  it("reports transcript declaration errors", () => {
+    const result = readTranscriptDeclarations(
+      adapterFor(
+        makeDocument({
+          body: [
+            element("fy-transcript", { attributes: { src: "assets/voice.json", "data-fy-attr-src": "transcript" } }),
+            element("fy-transcript", {}),
+            element("fy-transcript", { attributes: { src: "https://example.com/voice.json" } }),
+          ],
+        }),
+      ),
+      {
+        path: "compositions/hello.html",
+        includeTemplateContent: true,
+        props: { transcript: "assets/other.json" },
+      },
+    );
+
+    expect(result.declarations).toHaveLength(0);
+    expect(result.diagnostics).toHaveLength(3);
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({ code: "TRANSCRIPT_INVALID", message: expect.stringContaining("not both") }),
+    );
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({ code: "TRANSCRIPT_INVALID", message: expect.stringContaining("requires a src") }),
+    );
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({ code: "TRANSCRIPT_INVALID", message: expect.stringContaining("local project file") }),
     );
   });
 });

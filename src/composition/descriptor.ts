@@ -12,6 +12,7 @@ import { errorMessage } from "../errors.js";
 import type { DocumentAdapter } from "./adapter.js";
 import { attributeDetails, createDiagnostic, elementDetails, lineColumn, locationDetails } from "./diagnostics.js";
 import { isLocalRelative } from "./paths.js";
+import { findElements, getAttribute, type ElementMatch } from "./walk.js";
 
 export interface CompositionDescriptor {
   metadata: CompositionMetadata | null;
@@ -37,49 +38,6 @@ export interface ReadCompositionDescriptorOptions {
 }
 
 const METADATA_ATTRIBUTES = ["width", "height", "fps", "duration-in-frames"] as const;
-
-interface ElementMatch<Node> {
-  node: Node;
-  inTemplate: boolean;
-  ancestors: readonly Node[];
-}
-
-function getAttribute<Node>(adapter: DocumentAdapter<Node>, node: Node, name: string): string | undefined {
-  return adapter.attributes(node).find((attribute) => attribute.name === name)?.value;
-}
-
-function findElements<Node>(
-  adapter: DocumentAdapter<Node>,
-  predicate: (node: Node) => boolean,
-  includeTemplateContent = true,
-): ElementMatch<Node>[] {
-  const matches: ElementMatch<Node>[] = [];
-
-  const visit = (node: Node, inTemplate: boolean, ancestors: readonly Node[]): void => {
-    if (adapter.isElement(node)) {
-      if (predicate(node)) {
-        matches.push({ node, inTemplate, ancestors });
-      }
-      const childAncestors = [...ancestors, node];
-      for (const child of adapter.children(node)) {
-        visit(child, inTemplate, childAncestors);
-      }
-      if (includeTemplateContent && adapter.tagName(node) === "template") {
-        for (const child of adapter.templateContent(node) ?? []) {
-          visit(child, true, childAncestors);
-        }
-      }
-      return;
-    }
-
-    for (const child of adapter.children(node)) {
-      visit(child, inTemplate, ancestors);
-    }
-  };
-
-  visit(adapter.root, false, []);
-  return matches;
-}
 
 function readRoot<Node>(
   adapter: DocumentAdapter<Node>,

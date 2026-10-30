@@ -1,8 +1,13 @@
 import {
+  readAnimationDeclarations,
+  readCompositionDescriptor,
+  readMediaDeclarations,
+  readTranscriptDeclarations,
+  type AnimationDeclaration,
+} from "../composition/index.js";
+import {
   isPlainObject,
   mergeProps,
-  normalizeAudioClip,
-  normalizeTranscriptClip,
   type CompositionDiagnostic,
   type CompositionMetadata,
   type ControllerDeclaration,
@@ -11,10 +16,17 @@ import {
   type ResolvedAudioClip,
   type ResolvedTranscriptClip,
 } from "../contracts.js";
-import { errorMessage, FrameyardError, isFrameyardError, type FrameyardErrorCode } from "../errors.js";
+import {
+  errorMessage,
+  FrameyardError,
+  isFrameyardError,
+  type FrameyardDiagnostic,
+  type FrameyardErrorCode,
+} from "../errors.js";
 import { applyBindings, applyPropVariables } from "./bindings.js";
 import { frameToMilliseconds } from "./clock.js";
 import { withDiagnosticsAsync, withDiagnosticsSync, type DiagnosticSink } from "./diagnostics.js";
+import { createDomAdapter } from "./document-adapter.js";
 import { describeMediaAudio, prepareMedia, releaseMedia, settleMedia } from "./media.js";
 
 interface ControllerMountContext {
@@ -37,6 +49,7 @@ interface ControllerModule {
 
 interface HostRuntimeOptions {
   root: HTMLElement;
+  path: string;
   metadata: CompositionMetadata;
   defaultProps: Readonly<Props>;
   declaration: ControllerDeclaration | null;
@@ -61,6 +74,7 @@ class HostRuntime implements FrameyardHost {
   readonly controller: FrameyardHost["controller"];
 
   private readonly root: HTMLElement;
+  private readonly path: string;
   private readonly snapshot: HTMLElement;
   private readonly controllerModule: ControllerModule | null;
   private readonly manual: boolean;
@@ -87,6 +101,7 @@ class HostRuntime implements FrameyardHost {
 
   constructor(options: HostRuntimeOptions) {
     this.root = options.root;
+    this.path = options.path;
     this.metadata = options.metadata;
     this.defaultProps = options.defaultProps;
     this.controllerModule = options.controllerModule;
@@ -247,7 +262,14 @@ class HostRuntime implements FrameyardHost {
         props,
         onDiagnostic: (diagnostic) => this.addDiagnostic(diagnostic),
       });
-      applyAnimationSchedule(this.root, this.metadata.fps);
+
+      const animation = readAnimationDeclarations(createDomAdapter(this.root), {
+        path: this.path,
+        includeTemplateContent: false,
+      });
+      this.addDiagnostics(animation.diagnostics);
+      this.assertNoReadErrors(animation.diagnostics);
+      applyAnimationSchedule(animation.entries, this.metadata.fps);
 
       if (this.controllerModule?.mount) {
         await withDiagnosticsAsync("Composition mount()", this.diagnosticSink, () =>
@@ -259,11 +281,28 @@ class HostRuntime implements FrameyardHost {
 
       await waitForAssets(this.root);
       this.assertActive();
+      const media = readMediaDeclarations(createDomAdapter(this.root), {
+        path: this.path,
+        includeTemplateContent: false,
+        props,
+        bindingsApplied: true,
+      });
+      this.addDiagnostics(media.diagnostics);
+      this.assertNoReadErrors(media.diagnostics);
       await prepareMedia(this.root);
       this.assertActive();
-      this.audio = collectAudioClips(this.root, (diagnostic) => this.addDiagnostic(diagnostic));
+      this.audio = Object.freeze(media.audio.map((declaration) => declaration.clip));
       this.embedded = describeMediaAudio(this.root);
-      this.transcripts = collectTranscriptClips(this.root, (diagnostic) => this.addDiagnostic(diagnostic));
+
+      const transcripts = readTranscriptDeclarations(createDomAdapter(this.root), {
+        path: this.path,
+        includeTemplateContent: false,
+        props,
+        bindingsApplied: true,
+      });
+      this.addDiagnostics(transcripts.diagnostics);
+      this.assertNoReadErrors(transcripts.diagnostics);
+      this.transcripts = Object.freeze(transcripts.declarations.map((declaration) => declaration.clip));
       checkAnimationDiagnostics(this.root, (diagnostic) => this.addDiagnostic(diagnostic));
 
       this.seekNow(0);
@@ -366,6 +405,19 @@ class HostRuntime implements FrameyardHost {
     }
   }
 
+  private addDiagnostics(diagnostics: readonly CompositionDiagnostic[]): void {
+    for (const diagnostic of diagnostics) {
+      this.addDiagnostic(diagnostic);
+    }
+  }
+
+  private assertNoReadErrors(diagnostics: readonly CompositionDiagnostic[]): void {
+    const first = diagnostics.find((diagnostic) => diagnostic.severity === "error");
+    if (first) {
+      throw new FrameyardError(first.code, first.message, { diagnostics: [...diagnostics] });
+    }
+  }
+
   private addDiagnostic(diagnostic: CompositionDiagnostic): void {
     const key = JSON.stringify([diagnostic.severity, diagnostic.code, diagnostic.message, diagnostic.details ?? null]);
     if (this.diagnosticKeys.has(key)) {
@@ -453,85 +505,6 @@ async function waitForDom(): Promise<void> {
   });
 }
 
-function readMetadata(root: HTMLElement): CompositionMetadata {
-  const width = readPositiveInteger(root, "width");
-  const height = readPositiveInteger(root, "height");
-  const fps = readPositiveNumber(root, "fps");
-  const durationInFrames = readPositiveInteger(root, "duration-in-frames");
-  return { width, height, fps, durationInFrames };
-}
-
-function readPositiveInteger(root: HTMLElement, attribute: string): number {
-  const raw = root.getAttribute(attribute);
-  if (raw === null) {
-    throw new FrameyardError("COMPOSITION_INVALID", `Missing required "${attribute}" attribute on <fy-composition>.`);
-  }
-  const value = Number(raw);
-  if (!/^\d+$/.test(raw.trim()) || !Number.isInteger(value) || value <= 0) {
-    throw new FrameyardError("COMPOSITION_INVALID", `"${attribute}" must be a positive integer; received "${raw}".`);
-  }
-  return value;
-}
-
-function readPositiveNumber(root: HTMLElement, attribute: string): number {
-  const raw = root.getAttribute(attribute);
-  if (raw === null) {
-    throw new FrameyardError("COMPOSITION_INVALID", `Missing required "${attribute}" attribute on <fy-composition>.`);
-  }
-  const value = Number(raw);
-  if (!Number.isFinite(value) || value <= 0) {
-    throw new FrameyardError("COMPOSITION_INVALID", `"${attribute}" must be a positive number; received "${raw}".`);
-  }
-  return value;
-}
-
-function readDefaultProps(): Readonly<Props> {
-  const blocks = document.querySelectorAll('script[type="application/json"][data-fy="props"]');
-  if (blocks.length > 1) {
-    throw new FrameyardError("PROPS_INVALID", 'A composition may contain at most one data-fy="props" block.');
-  }
-  const block = blocks[0];
-  if (!block) {
-    return Object.freeze({});
-  }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(block.textContent ?? "");
-  } catch (error) {
-    throw new FrameyardError("PROPS_INVALID", `Invalid default props JSON: ${errorMessage(error)}`);
-  }
-  if (!isPlainObject(parsed)) {
-    throw new FrameyardError("PROPS_INVALID", 'The data-fy="props" block must contain a JSON object.');
-  }
-  return mergeProps(parsed as Props, undefined);
-}
-
-function readControllerDeclaration(): ControllerDeclaration | null {
-  const blocks = document.querySelectorAll('script[type="text/fy-controller"]');
-  if (blocks.length > 1) {
-    throw new FrameyardError("CONTROLLER_INVALID", "A composition may declare at most one controller.");
-  }
-  const block = blocks[0];
-  if (!block) {
-    return null;
-  }
-  const src = block.getAttribute("src");
-  const source = block.textContent ?? "";
-  if (src !== null && source.trim().length > 0) {
-    throw new FrameyardError("CONTROLLER_INVALID", "A controller must be either inline or external, not both.");
-  }
-  if (src === null && source.trim().length === 0) {
-    throw new FrameyardError(
-      "CONTROLLER_INVALID",
-      "A controller must contain inline source or reference an external module with src.",
-    );
-  }
-  if (src !== null) {
-    return { kind: "external", src };
-  }
-  return { kind: "inline", source };
-}
-
 async function importController(declaration: ControllerDeclaration | null): Promise<ControllerModule | null> {
   if (!declaration) {
     return null;
@@ -539,7 +512,7 @@ async function importController(declaration: ControllerDeclaration | null): Prom
 
   const url =
     declaration.kind === "external"
-      ? new URL(declaration.src ?? "", document.baseURI).href
+      ? new URL(declaration.rawSrc ?? declaration.src ?? "", document.baseURI).href
       : new URL("?__fy-controller", document.baseURI).href;
 
   let module: { default?: unknown };
@@ -619,35 +592,21 @@ function animationElements(root: HTMLElement): Element[] {
   return [...(root.matches(selector) ? [root] : []), ...Array.from(root.querySelectorAll(selector))];
 }
 
-function applyAnimationSchedule(root: HTMLElement, fps: number): void {
-  for (const element of animationElements(root)) {
+function applyAnimationSchedule(entries: readonly AnimationDeclaration<Node>[], fps: number): void {
+  for (const entry of entries) {
+    const element = entry.element;
     const style = element instanceof HTMLElement || element instanceof SVGElement ? element.style : null;
     if (!style) {
       continue;
     }
-    const start = element.getAttribute("data-fy-anim-start");
-    const duration = element.getAttribute("data-fy-anim-duration");
-    const easing = element.getAttribute("data-fy-anim-easing");
-
-    if (start !== null) {
-      const frames = Number(start);
-      if (!Number.isInteger(frames) || frames < 0) {
-        throw new FrameyardError("ANIMATION_INVALID", "data-fy-anim-start must be a non-negative integer frame.");
-      }
-      style.setProperty("animation-delay", `${frames / fps}s`, "important");
+    if (entry.startFrame !== undefined) {
+      style.setProperty("animation-delay", `${entry.startFrame / fps}s`, "important");
     }
-    if (duration !== null) {
-      const frames = Number(duration);
-      if (!Number.isInteger(frames) || frames <= 0) {
-        throw new FrameyardError("ANIMATION_INVALID", "data-fy-anim-duration must be a positive integer frame.");
-      }
-      style.setProperty("animation-duration", `${frames / fps}s`, "important");
+    if (entry.durationInFrames !== undefined) {
+      style.setProperty("animation-duration", `${entry.durationInFrames / fps}s`, "important");
     }
-    if (easing !== null) {
-      if (easing.trim().length === 0) {
-        throw new FrameyardError("ANIMATION_INVALID", "data-fy-anim-easing must not be empty.");
-      }
-      style.setProperty("animation-timing-function", easing, "important");
+    if (entry.easing !== undefined) {
+      style.setProperty("animation-timing-function", entry.easing, "important");
     }
   }
 }
@@ -713,108 +672,39 @@ function setFrameState(metadata: CompositionMetadata, frame: number): void {
   root.style.setProperty("--fy-duration-frames", String(metadata.durationInFrames));
 }
 
-function collectAudioClips(root: HTMLElement, onDiagnostic: HostDiagnosticSink): readonly ResolvedAudioClip[] {
-  const clips: ResolvedAudioClip[] = [];
-  for (const element of Array.from(root.querySelectorAll("audio"))) {
-    const src = element.getAttribute("src");
-    if (src === null || src.length === 0) {
-      continue;
-    }
-    const startFrame = readMediaInteger(element, "data-fy-start", 0);
-    const trimStart = readMediaNumber(element, "data-fy-trim", 0);
-    const trimDuration = readOptionalMediaNumber(element, "data-fy-duration");
-    const volume = element.hasAttribute("muted") ? 0 : readMediaNumber(element, "data-fy-volume", 1);
-    if (startFrame === undefined || trimStart === undefined || volume === undefined) {
-      continue;
-    }
-    try {
-      clips.push(
-        normalizeAudioClip(
-          {
-            src,
-            startFrame,
-            trimStart,
-            ...(trimDuration !== undefined ? { trimDuration } : {}),
-            volume,
-          },
-          clips.length,
-        ),
-      );
-    } catch (error) {
-      onDiagnostic({
-        severity: "warning",
-        code: isFrameyardError(error) ? error.code : "MEDIA_INVALID",
-        message: errorMessage(error),
-      });
-    }
-  }
-  return Object.freeze(clips);
-}
-
-function collectTranscriptClips(
-  root: HTMLElement,
-  onDiagnostic: HostDiagnosticSink,
-): readonly ResolvedTranscriptClip[] {
-  const clips: ResolvedTranscriptClip[] = [];
-  for (const element of Array.from(root.querySelectorAll("fy-transcript"))) {
-    const src = element.getAttribute("src");
-    if (src === null || src.length === 0) {
-      continue;
-    }
-    try {
-      clips.push(normalizeTranscriptClip({ src, words: element.hasAttribute("words") }, clips.length));
-    } catch (error) {
-      onDiagnostic({
-        severity: "warning",
-        code: isFrameyardError(error) ? error.code : "TRANSCRIPT_INVALID",
-        message: errorMessage(error),
-      });
-    }
-  }
-  return Object.freeze(clips);
-}
-
-function readMediaInteger(element: Element, attribute: string, fallback: number): number | undefined {
-  const raw = element.getAttribute(attribute);
-  if (raw === null) {
-    return fallback;
-  }
-  const value = Number(raw);
-  return /^\d+$/.test(raw.trim()) && Number.isInteger(value) && value >= 0 ? value : undefined;
-}
-
-function readMediaNumber(element: Element, attribute: string, fallback: number): number | undefined {
-  const raw = element.getAttribute(attribute);
-  if (raw === null) {
-    return fallback;
-  }
-  const value = Number(raw);
-  return Number.isFinite(value) && value >= 0 ? value : undefined;
-}
-
-function readOptionalMediaNumber(element: Element, attribute: string): number | undefined {
-  const raw = element.getAttribute(attribute);
-  if (raw === null) {
-    return undefined;
-  }
-  const value = Number(raw);
-  return Number.isFinite(value) && value > 0 ? value : undefined;
-}
-
 export async function createFrameyardHost(): Promise<FrameyardHost> {
   await waitForDom();
-  const root = document.querySelector("fy-composition");
+  const path = decodeURIComponent(window.location.pathname).replace(/^\/+/, "");
+  const read = readCompositionDescriptor(createDomAdapter(document), {
+    path,
+    resolvePath: (raw) => {
+      const url = new URL(raw, document.baseURI);
+      return decodeURIComponent(url.pathname).replace(/^\/+/, "");
+    },
+  });
+  const firstError = read.diagnostics.find((diagnostic) => diagnostic.severity === "error");
+  const root = read.root;
+  const metadata = read.descriptor.metadata;
+  if (!read.valid || firstError !== undefined || root === null || metadata === null) {
+    throw new FrameyardError(
+      firstError?.code ?? "COMPOSITION_INVALID",
+      firstError?.message ?? "Composition document is invalid.",
+      { diagnostics: read.diagnostics },
+    );
+  }
   if (!(root instanceof HTMLElement)) {
-    throw new FrameyardError("COMPOSITION_INVALID", "Composition document must contain one <fy-composition> root.");
+    throw new FrameyardError("COMPOSITION_INVALID", "Composition document must contain one <fy-composition> root.", {
+      diagnostics: read.diagnostics,
+    });
   }
 
-  const metadata = readMetadata(root);
-  const defaultProps = readDefaultProps();
-  const declaration = readControllerDeclaration();
+  const defaultProps = read.descriptor.defaultProps;
+  const declaration = read.descriptor.controller;
   const controllerModule = await importController(declaration);
   const manual = new URLSearchParams(window.location.search).has("__fy-manual");
   const host = new HostRuntime({
     root,
+    path,
     metadata,
     defaultProps,
     declaration,
@@ -839,7 +729,7 @@ export async function createFrameyardHost(): Promise<FrameyardHost> {
 declare global {
   interface Window {
     __fy: FrameyardHost;
-    __fyError?: { code: string; message: string };
+    __fyError?: { code: string; message: string; diagnostics?: FrameyardDiagnostic[] };
   }
 }
 
@@ -847,7 +737,12 @@ if (typeof window !== "undefined" && typeof document !== "undefined") {
   void createFrameyardHost().catch((error: unknown) => {
     const code: FrameyardErrorCode = isFrameyardError(error) ? error.code : "COMPOSITION_ERROR";
     const message = errorMessage(error);
-    window.__fyError = { code, message };
+    const diagnostics = isFrameyardError(error) ? error.diagnostics : undefined;
+    window.__fyError = {
+      code,
+      message,
+      ...(diagnostics !== undefined ? { diagnostics } : {}),
+    };
     console.error(`[frameyard] ${message}`);
     document.dispatchEvent(new CustomEvent("fy-error", { detail: { code, message } }));
   });

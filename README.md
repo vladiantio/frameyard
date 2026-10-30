@@ -350,7 +350,7 @@ See the [design baseline](./docs/v0.1-design.md) for the full product contract, 
 
 - `src/contracts.ts`: shared composition, props, audio, transcript, and diagnostic contracts
 - `src/bindings.ts`: browser-safe binding path and value semantics
-- `src/composition/`: browser-safe composition document reader, descriptor, and adapter contract
+- `src/composition/`: browser-safe composition document reader, descriptor, per-kind declarations, and adapter contract
 - `src/html/`: Node-side parse5 adapter and static composition validation
 - `src/transcript.ts`: canonical transcript validation and SRT/VTT formatting
 - `src/runtime/`: browser host, frame clock, deterministic randomness, bindings, media, diagnostics

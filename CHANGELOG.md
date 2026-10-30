@@ -63,6 +63,10 @@ contract change may ship in a minor release and is called out explicitly below.
 - Preview loads each composition document in a same-origin iframe; `check`,
   `still`, and `render` navigate directly to the composition URL. The separate
   preview-page render path is removed.
+- Static validation and the composition host read metadata, default props,
+  controller declarations, animation, media, and transcript rules through one
+  browser-safe composition document reader. Controller `src` is project-relative
+  in host output; the authoring value is retained as `rawSrc`.
 - `check` fails fast on static errors without launching Chromium; warnings
   still allow frame evaluation. Nested `data-fy-repeat` is rejected with a
   clear diagnostic; nested data uses the controller.

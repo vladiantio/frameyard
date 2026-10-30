@@ -130,6 +130,18 @@ const mediaHtml = `<!doctype html>
 </html>
 `;
 
+const boundHtml = `<!doctype html>
+<html>
+  <head><meta charset="utf-8"></head>
+  <body>
+    <fy-composition width="160" height="90" fps="10" duration-in-frames="12">
+      <audio data-fy-attr-src="voice"></audio>
+      <fy-transcript data-fy-attr-src="transcript"></fy-transcript>
+    </fy-composition>
+  </body>
+</html>
+`;
+
 beforeAll(async () => {
   root = await mkdtemp(path.join(tmpdir(), "frameyard-host-"));
   await mkdir(path.join(root, "compositions"), { recursive: true });
@@ -142,6 +154,7 @@ beforeAll(async () => {
       inline: "./compositions/inline.html",
       diagnostics: "./compositions/diagnostics.html",
       media: "./compositions/media.html",
+      bound: "./compositions/bound.html",
     } };\n`,
   );
   await writeFile(path.join(root, "compositions", "hello.html"), helloHtml);
@@ -150,6 +163,19 @@ beforeAll(async () => {
   await writeFile(path.join(root, "compositions", "inline.html"), inlineHtml);
   await writeFile(path.join(root, "compositions", "diagnostics.html"), diagnosticsHtml);
   await writeFile(path.join(root, "compositions", "media.html"), mediaHtml);
+  await writeFile(path.join(root, "compositions", "bound.html"), boundHtml);
+  await writeFile(
+    path.join(root, "broken.html"),
+    `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <script type="module" src="/__frameyard/framework/runtime/host.js"></script>
+  </head>
+  <body><p>No composition root.</p></body>
+</html>
+`,
+  );
   await writeFile(path.join(root, "assets", "tone.wav"), "");
   await writeFile(
     path.join(root, "assets", "voice.json"),
@@ -352,7 +378,7 @@ describe("browser composition host", () => {
       label: (document.querySelector("#box") as HTMLElement).dataset.label,
     }));
     expect(loaded).toMatchObject({
-      controller: { kind: "external", src: "./controller.js" },
+      controller: { kind: "external", src: "compositions/controller.js" },
       mounted: "yes",
       frame: "0",
       label: "Custom",
@@ -486,5 +512,51 @@ describe("browser composition host", () => {
     expect(video.muted).toBe(true);
     expect(video.currentTime).toBeCloseTo(0.3, 3);
     await mediaPage.close();
+  });
+
+  it("resolves prop-bound media and transcript sources after bindings", async () => {
+    const page = await openHost("bound.html");
+    await host(page, async (api) => {
+      await (api.load as (options: { props: unknown }) => Promise<void>)({
+        props: { voice: "assets/tone.wav", transcript: "assets/voice.json" },
+      });
+    });
+    const loaded = await page.evaluate(() => {
+      const api = (window as unknown as Record<string, unknown>).__fy as {
+        audioClips: unknown;
+        transcriptClips: unknown;
+      };
+      return { audio: api.audioClips, transcripts: api.transcriptClips };
+    });
+
+    expect(loaded.audio).toEqual([{ src: "assets/tone.wav", startFrame: 0, trimStart: 0, volume: 1 }]);
+    expect(loaded.transcripts).toEqual([{ src: "assets/voice.json", words: false }]);
+    await page.close();
+  });
+
+  it("publishes descriptor diagnostics through __fyError", async () => {
+    const page = await browser.newPage();
+    await page.goto(new URL("/broken.html", server.url).href);
+    await page.waitForFunction(() => Boolean((window as unknown as Record<string, unknown>).__fyError));
+    const error = await page.evaluate(
+      () =>
+        (window as unknown as Record<string, unknown>).__fyError as {
+          code: string;
+          message: string;
+          diagnostics?: Array<{ code: string; severity: string; details?: { path?: string } }>;
+        },
+    );
+
+    expect(error).toMatchObject({
+      code: "COMPOSITION_INVALID",
+      diagnostics: expect.arrayContaining([
+        expect.objectContaining({
+          severity: "error",
+          code: "COMPOSITION_INVALID",
+          details: expect.objectContaining({ path: "broken.html" }),
+        }),
+      ]),
+    });
+    await page.close();
   });
 });

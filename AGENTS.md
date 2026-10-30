@@ -53,7 +53,7 @@ A full 30-second demo render is sequential by default; pass `--concurrency <n>` 
 | --- | --- |
 | `src/contracts.ts` | Shared composition, metadata, props, audio, transcript, diagnostic, controller, and host contracts |
 | `src/bindings.ts` | Browser-safe binding path validation, resolution, and value coercion |
-| `src/composition/` | Browser-safe composition document reader, descriptor, adapter contract, and path rules |
+| `src/composition/` | Browser-safe composition document reader, descriptor, per-kind declarations, adapter contract, and path rules |
 | `src/html/parse.ts` | Node-only parse5 document helpers and source locations |
 | `src/html/document-adapter.ts` | parse5 adapter for the composition document reader |
 | `src/html/validate.ts` | Static composition validation and diagnostic extraction |

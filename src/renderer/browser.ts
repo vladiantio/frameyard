@@ -7,7 +7,7 @@ import type {
   ResolvedAudioClip,
   ResolvedTranscriptClip,
 } from "../contracts.js";
-import { FrameyardError, isFrameyardError, type FrameyardErrorCode } from "../errors.js";
+import { FrameyardError, isFrameyardError, type FrameyardDiagnostic, type FrameyardErrorCode } from "../errors.js";
 
 export interface CompositionSession {
   readonly entry: string;
@@ -175,10 +175,15 @@ export async function openCompositionSession(options: {
     );
 
     const initError = await page.evaluate(
-      () => (window as unknown as Record<string, unknown>).__fyError as { code: string; message: string } | undefined,
+      () =>
+        (window as unknown as Record<string, unknown>).__fyError as
+          | { code: string; message: string; diagnostics?: FrameyardDiagnostic[] }
+          | undefined,
     );
     if (initError) {
-      throw new FrameyardError(initError.code as FrameyardErrorCode, initError.message);
+      throw new FrameyardError(initError.code as FrameyardErrorCode, initError.message, {
+        diagnostics: initError.diagnostics,
+      });
     }
 
     let loaded: {

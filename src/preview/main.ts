@@ -7,7 +7,13 @@ import type {
   ResolvedTranscriptClip,
 } from "../index.js";
 import { frameToMilliseconds } from "../runtime/index.js";
-import { FrameyardError, errorMessage, isFrameyardError, type FrameyardErrorCode } from "../errors.js";
+import {
+  FrameyardError,
+  errorMessage,
+  isFrameyardError,
+  type FrameyardDiagnostic,
+  type FrameyardErrorCode,
+} from "../errors.js";
 
 interface CompositionEntry {
   id: string;
@@ -464,7 +470,10 @@ async function waitForHost(composition: CompositionEntry, loadToken: string): Pr
   const deadline = performance.now() + 30_000;
   while (performance.now() < deadline) {
     const contentWindow = stageFrame.contentWindow as
-      | (Window & { __fy?: FrameyardHost; __fyError?: { code: string; message: string } })
+      | (Window & {
+          __fy?: FrameyardHost;
+          __fyError?: { code: string; message: string; diagnostics?: FrameyardDiagnostic[] };
+        })
       | null;
     let currentToken: string | null = null;
     try {
@@ -474,7 +483,9 @@ async function waitForHost(composition: CompositionEntry, loadToken: string): Pr
     }
     if (contentWindow && currentToken === loadToken) {
       if (contentWindow.__fyError) {
-        throw new FrameyardError(contentWindow.__fyError.code as FrameyardErrorCode, contentWindow.__fyError.message);
+        throw new FrameyardError(contentWindow.__fyError.code as FrameyardErrorCode, contentWindow.__fyError.message, {
+          diagnostics: contentWindow.__fyError.diagnostics,
+        });
       }
       if (contentWindow.__fy) {
         await contentWindow.__fy.ready;

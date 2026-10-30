@@ -1,10 +1,21 @@
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
-import { isLocalRelative, isRemote, readCompositionDescriptor } from "../composition/index.js";
+import {
+  KNOWN_DATA_FY_ATTRIBUTES,
+  isAnimationAttribute,
+  isLocalRelative,
+  isMediaAttribute,
+  isRemote,
+  readAnimationDeclarations,
+  readCompositionDescriptor,
+  readMediaDeclarations,
+  readTranscriptDeclarations,
+  type AnimationDeclaration,
+  type MediaDeclaration,
+  type TranscriptDeclaration,
+} from "../composition/index.js";
 import {
   mergeProps,
-  normalizeAudioClip,
-  normalizeTranscriptClip,
   type CompositionDiagnostic,
   type CompositionDiagnosticDetails,
   type CompositionMetadata,
@@ -71,27 +82,6 @@ const VOID_ELEMENTS = new Set([
 ]);
 const NON_VISUAL_ELEMENTS = new Set(["script", "style", "link", "meta", "template", "noscript", "title"]);
 const NON_ANIMATED_ELEMENTS = new Set(["audio", "fy-transcript", "script", "style", "link", "meta", "template"]);
-const MEDIA_ATTRIBUTES = new Set([
-  "data-fy-start",
-  "data-fy-trim",
-  "data-fy-duration",
-  "data-fy-volume",
-  "data-fy-audio",
-]);
-const KNOWN_BINDING_ATTRIBUTES = [
-  "data-fy",
-  "data-fy-text",
-  "data-fy-if",
-  "data-fy-repeat",
-  "data-fy-anim-start",
-  "data-fy-anim-duration",
-  "data-fy-anim-easing",
-  "data-fy-start",
-  "data-fy-trim",
-  "data-fy-duration",
-  "data-fy-volume",
-  "data-fy-audio",
-];
 
 class HtmlCompositionValidator {
   private readonly diagnostics: CompositionDiagnostic[] = [];
@@ -125,7 +115,8 @@ class HtmlCompositionValidator {
   async run(): Promise<StaticValidationResult> {
     this.validateDoctype();
 
-    const read = readCompositionDescriptor(createParse5Adapter(this.document), {
+    const adapter = createParse5Adapter(this.document);
+    const read = readCompositionDescriptor(adapter, {
       path: this.entry,
       resolvePath: (raw) => this.resolveControllerPath(raw),
     });
@@ -146,8 +137,30 @@ class HtmlCompositionValidator {
     if (this.root) {
       this.validateBindings(this.root, 0);
     }
-    await this.validateMedia();
-    await this.validateTranscripts();
+
+    const animation = readAnimationDeclarations(adapter, {
+      path: this.entry,
+      includeTemplateContent: true,
+    });
+    this.diagnostics.push(...animation.diagnostics);
+    this.validateAnimationTargets(animation.entries);
+
+    const media = readMediaDeclarations(adapter, {
+      path: this.entry,
+      includeTemplateContent: true,
+      props: this.props,
+    });
+    this.diagnostics.push(...media.diagnostics);
+    await this.validateMediaFiles(media.audio, media.embedded);
+
+    const transcripts = readTranscriptDeclarations(adapter, {
+      path: this.entry,
+      includeTemplateContent: true,
+      props: this.props,
+    });
+    this.diagnostics.push(...transcripts.diagnostics);
+    await this.validateTranscriptFiles(transcripts.declarations);
+
     await this.validateOrdinaryAssets();
 
     const metadata = this.metadata;
@@ -562,28 +575,13 @@ class HtmlCompositionValidator {
         this.validateClassBinding(element, name, attribute.value, inRepeat);
         continue;
       }
-      if (name === "data-fy-anim-start" || name === "data-fy-anim-duration") {
-        this.validateAnimationDuration(element, name, attribute.value);
-        continue;
-      }
-      if (name === "data-fy-anim-easing") {
-        if (attribute.value.trim().length === 0) {
-          this.error(
-            "ANIMATION_INVALID",
-            "data-fy-anim-easing must not be empty.",
-            this.attributeDetails(element, name),
-          );
-        }
-        continue;
-      }
-      if (MEDIA_ATTRIBUTES.has(name)) {
-        this.validateMediaAttribute(element, name, attribute.value);
+      if (isAnimationAttribute(name) || isMediaAttribute(name)) {
         continue;
       }
       if (name.startsWith("data-fy-")) {
         this.error(
           "BINDING_INVALID",
-          `Unknown Frameyard attribute "${name}". Known attributes: ${KNOWN_BINDING_ATTRIBUTES.join(", ")}.`,
+          `Unknown Frameyard attribute "${name}". Known attributes: ${KNOWN_DATA_FY_ATTRIBUTES.join(", ")}.`,
           this.attributeDetails(element, name, { value: attribute.value }),
         );
       }
@@ -692,266 +690,82 @@ class HtmlCompositionValidator {
     });
   }
 
-  private validateAnimationDuration(element: HtmlElement, name: string, value: string): void {
-    const frames = Number(value);
-    const valid =
-      /^\d+$/.test(value.trim()) &&
-      Number.isInteger(frames) &&
-      (name === "data-fy-anim-start" ? frames >= 0 : frames > 0);
-    if (!valid) {
-      this.error(
-        "ANIMATION_INVALID",
-        `${name} must be a ${name === "data-fy-anim-start" ? "non-negative" : "positive"} integer frame count.`,
-        this.attributeDetails(element, name, { value }),
-      );
-    }
-    if (NON_ANIMATED_ELEMENTS.has(element.tagName)) {
-      this.warning(
-        "ANIMATION_NOT_FOUND",
-        `${name} has no visual animation target on <${element.tagName}>.`,
-        this.attributeDetails(element, name),
-      );
-    }
-  }
-
-  private validateMediaAttribute(element: HtmlElement, name: string, value: string): void {
-    if (element.tagName !== "audio" && element.tagName !== "video") {
-      this.error("MEDIA_INVALID", `${name} is only valid on <audio> or <video>.`, this.attributeDetails(element, name));
-      return;
-    }
-    if (name === "data-fy-audio") {
-      if (element.tagName !== "video" || value !== "off") {
-        this.error(
-          "MEDIA_INVALID",
-          'data-fy-audio is only valid on <video> with the value "off".',
-          this.attributeDetails(element, name, { value }),
-        );
-      }
-      return;
-    }
-    if (name === "data-fy-start") {
-      const frames = Number(value);
-      if (!/^\d+$/.test(value.trim()) || !Number.isInteger(frames) || frames < 0) {
-        this.error(
-          "MEDIA_INVALID",
-          "data-fy-start must be a non-negative integer frame.",
-          this.attributeDetails(element, name, { value }),
-        );
-      }
-      return;
-    }
-    if (name === "data-fy-trim") {
-      const seconds = Number(value);
-      if (!Number.isFinite(seconds) || seconds < 0) {
-        this.error(
-          "MEDIA_INVALID",
-          "data-fy-trim must be a non-negative number of seconds.",
-          this.attributeDetails(element, name, { value }),
-        );
-      }
-      return;
-    }
-    if (name === "data-fy-duration") {
-      const seconds = Number(value);
-      if (!Number.isFinite(seconds) || seconds <= 0) {
-        this.error(
-          "MEDIA_INVALID",
-          "data-fy-duration must be a positive number of seconds.",
-          this.attributeDetails(element, name, { value }),
-        );
-      }
-      return;
-    }
-    const volume = Number(value);
-    if (!Number.isFinite(volume) || volume < 0 || volume > 1) {
-      this.error(
-        "MEDIA_INVALID",
-        "data-fy-volume must be between 0 and 1.",
-        this.attributeDetails(element, name, { value }),
-      );
-    }
-  }
-
-  private async validateMedia(): Promise<void> {
-    const media = findElements(this.document, (element) => element.tagName === "audio" || element.tagName === "video");
-    for (const element of media) {
-      const literal = getAttribute(element, "src");
-      const bound = getAttribute(element, "data-fy-attr-src");
-      if (literal !== undefined && bound !== undefined) {
-        this.error(
-          "MEDIA_INVALID",
-          `Use either src or data-fy-attr-src on <${element.tagName}>, not both.`,
-          this.elementDetails(element),
-        );
+  private validateAnimationTargets(entries: readonly AnimationDeclaration<HtmlNode>[]): void {
+    for (const entry of entries) {
+      if (!isElement(entry.element)) {
         continue;
       }
-      if (literal === undefined && bound === undefined) {
-        this.error(
-          "MEDIA_INVALID",
-          `<${element.tagName}> requires a src attribute or data-fy-attr-src binding.`,
-          this.elementDetails(element),
-        );
+      const tag = entry.element.tagName;
+      if (!NON_ANIMATED_ELEMENTS.has(tag)) {
         continue;
       }
-
-      let source: string | undefined;
-      if (literal !== undefined) {
-        source = literal;
-      } else if (bound !== undefined) {
-        const resolved = this.resolveMediaBinding(bound);
-        if (resolved === null) {
+      for (const attribute of entry.attributes) {
+        if (attribute !== "data-fy-anim-start" && attribute !== "data-fy-anim-duration") {
           continue;
         }
-        source = resolved;
+        this.warning(
+          "ANIMATION_NOT_FOUND",
+          `${attribute} has no visual animation target on <${tag}>.`,
+          this.attributeDetails(entry.element, attribute),
+        );
       }
+    }
+  }
 
-      if (source === undefined) {
+  private async validateMediaFiles(
+    audio: readonly MediaDeclaration<HtmlNode>[],
+    embedded: readonly MediaDeclaration<HtmlNode>[],
+  ): Promise<void> {
+    for (const declaration of audio) {
+      if (await this.mediaFileExists(declaration)) {
+        this.audioClips.push(declaration.clip);
+      }
+    }
+    for (const declaration of embedded) {
+      if (await this.mediaFileExists(declaration)) {
+        this.embeddedAudioClips.push(declaration.clip);
+      }
+    }
+  }
+
+  private async mediaFileExists(declaration: MediaDeclaration<HtmlNode>): Promise<boolean> {
+    if (!isElement(declaration.element)) {
+      return false;
+    }
+    const file = await this.resolveLocalFile(
+      declaration.clip.src,
+      this.projectRoot,
+      "MEDIA_INVALID",
+      "Media",
+      this.elementDetails(declaration.element),
+    );
+    return file !== null;
+  }
+
+  private async validateTranscriptFiles(declarations: readonly TranscriptDeclaration<HtmlNode>[]): Promise<void> {
+    for (const declaration of declarations) {
+      if (!isElement(declaration.element)) {
         continue;
       }
-
       const file = await this.resolveLocalFile(
-        source,
-        this.projectRoot,
-        "MEDIA_INVALID",
-        "Media",
-        this.elementDetails(element),
-      );
-      if (!file) {
-        continue;
-      }
-
-      const startFrame = this.readMediaInteger(element, "data-fy-start", 0);
-      const trimStart = this.readMediaNumber(element, "data-fy-trim", 0);
-      const trimDuration = this.readOptionalMediaNumber(element, "data-fy-duration");
-      const volume = hasAttribute(element, "muted") ? 0 : this.readMediaNumber(element, "data-fy-volume", 1);
-      if (startFrame === undefined || trimStart === undefined || volume === undefined) {
-        continue;
-      }
-
-      try {
-        const clip = normalizeAudioClip(
-          {
-            src: file.relative,
-            startFrame,
-            trimStart,
-            ...(trimDuration !== undefined ? { trimDuration } : {}),
-            volume,
-          },
-          this.audioClips.length + this.embeddedAudioClips.length,
-        );
-        if (element.tagName === "audio") {
-          this.audioClips.push(clip);
-        } else if (!hasAttribute(element, "muted") && getAttribute(element, "data-fy-audio") !== "off") {
-          this.embeddedAudioClips.push(clip);
-        }
-      } catch (error) {
-        this.error(errorCode(error, "MEDIA_INVALID"), errorMessage(error), this.elementDetails(element));
-      }
-    }
-  }
-
-  private resolveMediaBinding(path: string): string | null {
-    const root = path.split(".")[0];
-    if (root === "item" || root === "index") {
-      return null;
-    }
-    const resolved = resolveBindingPath({ props: this.props }, path);
-    if (!resolved.found) {
-      return null;
-    }
-    if (typeof resolved.value !== "string" || resolved.value.length === 0) {
-      this.error("MEDIA_INVALID", `Media binding "${path}" must resolve to a non-empty local path.`, { value: path });
-      return null;
-    }
-    return resolved.value;
-  }
-
-  private readMediaInteger(element: HtmlElement, attribute: string, fallback: number): number | undefined {
-    const raw = getAttribute(element, attribute);
-    if (raw === undefined) {
-      return fallback;
-    }
-    const value = Number(raw);
-    return /^\d+$/.test(raw.trim()) && Number.isInteger(value) && value >= 0 ? value : undefined;
-  }
-
-  private readMediaNumber(element: HtmlElement, attribute: string, fallback: number): number | undefined {
-    const raw = getAttribute(element, attribute);
-    if (raw === undefined) {
-      return fallback;
-    }
-    const value = Number(raw);
-    return Number.isFinite(value) && value >= 0 ? value : undefined;
-  }
-
-  private readOptionalMediaNumber(element: HtmlElement, attribute: string): number | undefined {
-    const raw = getAttribute(element, attribute);
-    if (raw === undefined) {
-      return undefined;
-    }
-    const value = Number(raw);
-    return Number.isFinite(value) && value > 0 ? value : undefined;
-  }
-
-  private async validateTranscripts(): Promise<void> {
-    const transcripts = findElements(this.document, (element) => element.tagName === "fy-transcript");
-    for (const element of transcripts) {
-      const literal = getAttribute(element, "src");
-      const bound = getAttribute(element, "data-fy-attr-src");
-      if (literal !== undefined && bound !== undefined) {
-        this.error(
-          "TRANSCRIPT_INVALID",
-          "Use either src or data-fy-attr-src on <fy-transcript>, not both.",
-          this.elementDetails(element),
-        );
-        continue;
-      }
-      if (literal === undefined && bound === undefined) {
-        this.error(
-          "TRANSCRIPT_INVALID",
-          "<fy-transcript> requires a src attribute or data-fy-attr-src binding.",
-          this.elementDetails(element),
-        );
-        continue;
-      }
-
-      let source: string | undefined;
-      if (literal !== undefined) {
-        source = literal;
-      } else if (bound !== undefined) {
-        const resolved = this.resolveMediaBinding(bound);
-        if (resolved === null) {
-          continue;
-        }
-        source = resolved;
-      }
-
-      if (source === undefined) {
-        continue;
-      }
-
-      const file = await this.resolveLocalFile(
-        source,
+        declaration.clip.src,
         this.projectRoot,
         "TRANSCRIPT_INVALID",
         "Transcript",
-        this.elementDetails(element),
+        this.elementDetails(declaration.element),
       );
       if (!file) {
         continue;
       }
-
-      const words = hasAttribute(element, "words");
+      this.transcriptClips.push(declaration.clip);
       try {
-        const clip = normalizeTranscriptClip({ src: file.relative, words }, this.transcriptClips.length);
-        this.transcriptClips.push(clip);
         const content = await readFile(file.absolute, "utf8");
         const parsed: unknown = JSON.parse(content);
-        parseTranscript(parsed, { requireWords: words });
+        parseTranscript(parsed, { requireWords: declaration.clip.words });
       } catch (error) {
         this.error(errorCode(error, "TRANSCRIPT_INVALID"), errorMessage(error), {
           path: file.relative,
-          ...this.elementDetails(element),
+          ...this.elementDetails(declaration.element),
         });
       }
     }

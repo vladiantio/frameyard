@@ -1,6 +1,8 @@
-import type { ResolvedAudioClip } from "../contracts.js";
+import { readMediaSpec, type MediaSpec } from "../composition/index.js";
+import type { CompositionDiagnostic, ResolvedAudioClip } from "../contracts.js";
 import { FrameyardError } from "../errors.js";
 import { frameToSeconds } from "./clock.js";
+import { createDomAdapter } from "./document-adapter.js";
 
 interface PreparedMedia {
   element: HTMLVideoElement;
@@ -12,13 +14,6 @@ interface PreparedMedia {
   spec: MediaSpec;
   /** Whether the composition explicitly muted the element before Frameyard prepared it. */
   authorMuted: boolean;
-}
-
-interface MediaSpec {
-  startFrame: number;
-  trimStart: number;
-  trimDuration?: number;
-  volume: number;
 }
 
 const MEDIA_TIMEOUT_MS = 30_000;
@@ -123,7 +118,7 @@ function waitForEvent(
 async function prepareVideo(video: HTMLVideoElement, owner: HTMLElement): Promise<PreparedMedia> {
   const raw = mediaSource(video);
   const source = normalizeMediaSource(raw);
-  const spec = mediaSpec(video);
+  const spec = mediaSpec(video, source);
   const existing = preparedMedia.get(video);
   if (existing && existing.owner === owner && existing.source === source) {
     return existing;
@@ -211,60 +206,16 @@ export async function prepareMedia(container: HTMLElement): Promise<void> {
   await Promise.all(videos.map((video) => prepareOrGet(video, container)));
 }
 
-function integerAttribute(element: Element, name: string, fallback: number): number {
-  const raw = element.getAttribute(name);
-  if (raw === null || raw.trim().length === 0) {
-    return fallback;
-  }
-  const value = Number(raw);
-  if (!Number.isInteger(value) || value < 0) {
-    throw new FrameyardError("MEDIA_INVALID", `Embedded video ${name} must be a non-negative integer.`);
-  }
-  return value;
-}
-
-function secondsAttribute(element: Element, name: string, fallback: number, allowZero: boolean): number {
-  const raw = element.getAttribute(name);
-  if (raw === null || raw.trim().length === 0) {
-    return fallback;
-  }
-  const value = Number(raw);
-  if (!Number.isFinite(value) || value < 0 || (!allowZero && value === 0)) {
+function mediaSpec(video: HTMLVideoElement, source: string): MediaSpec {
+  const diagnostics: CompositionDiagnostic[] = [];
+  const spec = readMediaSpec(createDomAdapter(video), source, video, diagnostics, video.volume);
+  if (!spec) {
+    const first = diagnostics.find((diagnostic) => diagnostic.severity === "error");
     throw new FrameyardError(
-      "MEDIA_INVALID",
-      `Embedded video ${name} must be ${allowZero ? "a non-negative" : "a positive"} number of seconds.`,
+      first?.code ?? "MEDIA_INVALID",
+      first?.message ?? `Embedded video "${source}" has invalid media attributes.`,
+      { diagnostics },
     );
-  }
-  return value;
-}
-
-function volumeAttribute(element: Element): number {
-  const raw = element.getAttribute("data-fy-volume");
-  if (raw === null || raw.trim().length === 0) {
-    return Math.max(0, Math.min(1, (element as HTMLVideoElement).volume));
-  }
-  const value = Number(raw);
-  if (!Number.isFinite(value) || value < 0 || value > 1) {
-    throw new FrameyardError("MEDIA_INVALID", "Embedded video data-fy-volume must be between 0 and 1.");
-  }
-  return value;
-}
-
-function mediaSpec(element: Element): MediaSpec {
-  const startFrame = integerAttribute(element, "data-fy-start", 0);
-  const trimStart = secondsAttribute(element, "data-fy-trim", 0, true);
-  const durationRaw = element.getAttribute("data-fy-duration");
-  const trimDuration =
-    durationRaw === null || durationRaw.trim().length === 0
-      ? undefined
-      : secondsAttribute(element, "data-fy-duration", 0, false);
-  const spec: MediaSpec = {
-    startFrame,
-    trimStart,
-    volume: volumeAttribute(element),
-  };
-  if (trimDuration !== undefined) {
-    spec.trimDuration = trimDuration;
   }
   return spec;
 }

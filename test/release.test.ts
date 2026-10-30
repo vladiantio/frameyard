@@ -25,4 +25,9 @@ describe("release guardrails", () => {
   it("verifies release metadata with the shared script", async () => {
     expect(await readFile(".github/workflows/release.yml", "utf8")).toContain("node scripts/verify-release.mjs --ci");
   });
+
+  it("restores the annotated tag after checkout rewrites it", async () => {
+    const workflow = await readFile(".github/workflows/release.yml", "utf8");
+    expect(workflow).toContain('"+refs/tags/${GITHUB_REF_NAME}:refs/tags/${GITHUB_REF_NAME}"');
+  });
 });

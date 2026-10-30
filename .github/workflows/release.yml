@@ -32,6 +32,9 @@ jobs:
 
       - name: Verify release metadata
         run: |
+          # actions/checkout rewrites the pushed tag as a lightweight tag, so
+          # fetch it again to restore the annotated tag object.
+          git fetch --force --no-tags origin "+refs/tags/${GITHUB_REF_NAME}:refs/tags/${GITHUB_REF_NAME}"
           # The tag, package version, changelog entry, and main branch must agree.
           git fetch --no-tags origin main:refs/remotes/origin/main
           node scripts/verify-release.mjs --ci

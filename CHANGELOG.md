@@ -8,6 +8,22 @@ Frameyard uses `0.x` versions until the composition, configuration, CLI,
 JSON-result, transcript, and skill contracts stabilize. Before `1.0.0`, a
 contract change may ship in a minor release and is called out explicitly below.
 
+## [Unreleased]
+
+### Added
+
+- Frame-accurate embedded video: local `<video>` elements are preloaded, paused,
+  and seeked from the composition frame, with `data-frameyard-start`,
+  `data-frameyard-trim`, `data-frameyard-duration`, and
+  `data-frameyard-volume` attributes.
+- Automatic mixing of unmuted embedded-video audio into the offline FFmpeg
+  timeline, mirrored in preview. `muted` or `data-frameyard-audio="off"` keeps a
+  video visual-only.
+- Deterministic WebGL capture for WebGL 1 and WebGL 2 canvases. Production
+  sessions pin SwiftShader so pixels do not vary with the host GPU.
+- Media-settle step between `seek()` and capture for embedded video decode and
+  browser paint.
+
 ## [0.2.0] - 2026-10-29
 
 ### Added

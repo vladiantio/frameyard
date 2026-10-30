@@ -6,6 +6,7 @@ export interface CompositionSession {
   readonly metadata: CompositionMetadata;
   readonly props: Props;
   readonly audioClips: ResolvedAudioClip[];
+  readonly embeddedAudioClips: ResolvedAudioClip[];
   readonly transcriptClips: ResolvedTranscriptClip[];
   seek(frame: number): Promise<void>;
   capture(): Promise<Buffer>;
@@ -17,12 +18,14 @@ interface BrowserLoadResult {
   metadata: CompositionMetadata;
   props: Props;
   audioClips: ResolvedAudioClip[];
+  embeddedAudioClips: ResolvedAudioClip[];
   transcriptClips: ResolvedTranscriptClip[];
 }
 
 interface PreviewApi {
   load(entry: string, props?: unknown): Promise<BrowserLoadResult>;
   seek(frame: number): void;
+  settle(): Promise<void>;
 }
 
 interface CaptureScreenshotResult {
@@ -38,6 +41,10 @@ export const BROWSER_ARGS: string[] = [
   "--disable-backgrounding-occluded-windows",
   "--disable-renderer-backgrounding",
   "--disable-dev-shm-usage",
+  // WebGL frames must not vary with the host GPU. SwiftShader is the pinned
+  // software rasterizer shipped with the Playwright Chromium build.
+  "--use-angle=swiftshader",
+  "--enable-unsafe-swiftshader",
 ];
 
 type BrowserContextOptions = Parameters<Browser["newContext"]>[0];
@@ -179,14 +186,16 @@ export async function openCompositionSession(options: {
       metadata: loaded.metadata,
       props: loaded.props,
       audioClips: loaded.audioClips,
+      embeddedAudioClips: loaded.embeddedAudioClips,
       transcriptClips: loaded.transcriptClips,
 
       async seek(frame: number): Promise<void> {
         assertHealthy();
         try {
-          await activePage.evaluate((targetFrame) => {
+          await activePage.evaluate(async (targetFrame) => {
             const api = (window as unknown as Record<string, unknown>).__frameyardPreview as PreviewApi;
             api.seek(targetFrame);
+            await api.settle();
           }, frame);
         } catch (error) {
           throw browserCommandError(error);

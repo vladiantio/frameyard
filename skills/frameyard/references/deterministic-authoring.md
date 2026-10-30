@@ -73,19 +73,47 @@ import { random } from "frameyard/runtime";
 const x = random("star:17:x") * width;
 ```
 
-## CSS and Canvas
+## Canvas and WebGL
 
 CSS `@keyframes` and the Web Animations API are paused and seeked by the runtime inside the composition container. They are valid animation drivers. CSS transitions are diagnosed as non-deterministic and should not be used.
 
-Canvas 2D must be redrawn from the current frame:
+Canvas 2D and WebGL must be redrawn from the current frame:
 
 ```js
 update({ frame }) {
   context.clearRect(0, 0, canvas.width, canvas.height);
   context.fillStyle = frame % 2 === 0 ? "#101820" : "#203040";
   context.fillRect(0, 0, canvas.width, canvas.height);
+
+  gl.clearColor(frame % 2 === 0 ? 0.1 : 0.2, 0.1, 0.13, 1);
+  gl.clear(gl.COLOR_BUFFER_BIT);
 }
 ```
+
+Do not preserve and accumulate WebGL drawing across frames unless that accumulation is itself deterministic. Production sessions use software WebGL so output does not depend on the host GPU.
+
+## Embedded video
+
+Place local `<video>` elements in `mount()` and let the runtime seek them:
+
+```html
+<video
+  src="assets/clip.webm"
+  data-frameyard-start="30"
+  data-frameyard-trim="0.5"
+  data-frameyard-duration="4"
+  data-frameyard-volume="0.8"
+></video>
+```
+
+- `data-frameyard-start` is the composition frame where the source starts. Default `0`.
+- `data-frameyard-trim` is seconds trimmed from the source start. Default `0`.
+- `data-frameyard-duration` optionally limits how many source seconds are used.
+- `data-frameyard-volume` sets embedded-audio volume from `0` to `1`. Default `1`.
+
+Do not call `play()`, `pause()`, or set `currentTime` in `update()`. Create video elements and set the `data-frameyard-*` attributes in `mount()`. Videos must be in the composition container's light DOM; shadow roots are not scanned. The runtime pauses every video, loads the complete local file during the loading phase, and seeks it after each `update()` before capture. Video sources must be local, seekable project files; live streams, remote URLs, and videos added or changed during `update()` are not supported.
+
+An unmuted video's audio is extracted and mixed into the output timeline. Set `muted` or `data-frameyard-audio="off"` for a silent visual asset. The same start, trim, duration, and volume attributes place its audio.
 
 ## Loading assets
 

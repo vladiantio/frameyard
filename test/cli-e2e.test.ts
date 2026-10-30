@@ -55,6 +55,71 @@ export default defineComposition({
 });
 `;
 
+const mediaComposition = String.raw`
+import { defineComposition } from "frameyard";
+
+let video;
+let gl;
+
+export default defineComposition({
+  width: 160,
+  height: 90,
+  fps: 10,
+  durationInFrames: 12,
+  defaultProps: { declaredTone: true },
+  audio: ({ props }) => (props.declaredTone ? [{ src: "assets/tone.wav", startFrame: 0, volume: 0.25 }] : []),
+  mount({ container }) {
+    container.innerHTML =
+      '<style>video,canvas{position:absolute;top:0;width:80px;height:90px}video{left:0}canvas{left:80px}</style>' +
+      '<video id="clip" src="assets/clip.webm" data-frameyard-start="2" data-frameyard-trim="0.1" data-frameyard-duration="0.6" data-frameyard-volume="0.5"></video>' +
+      '<canvas id="gl" width="80" height="90"></canvas>';
+    video = container.querySelector("#clip");
+    const canvas = container.querySelector("#gl");
+    gl = canvas.getContext("webgl2") ?? canvas.getContext("webgl");
+  },
+  update({ frame }) {
+    const red = frame >= 6;
+    gl.clearColor(red ? 1 : 0, 0, red ? 0 : 1, 1);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    video.dataset.frame = String(frame);
+  },
+});
+`;
+
+const webglComposition = String.raw`
+let gl;
+
+export default {
+  width: 160,
+  height: 90,
+  fps: 10,
+  durationInFrames: 6,
+  mount({ container }) {
+    container.innerHTML = '<canvas id="gl" width="160" height="90"></canvas>';
+    const canvas = container.querySelector("#gl");
+    gl = canvas.getContext("webgl2") ?? canvas.getContext("webgl");
+  },
+  update({ frame }) {
+    const blue = frame < 3;
+    gl.clearColor(blue ? 0 : 1, 0, blue ? 1 : 0, 1);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+  },
+};
+`;
+
+const missingVideoComposition = String.raw`
+export default {
+  width: 160,
+  height: 90,
+  fps: 10,
+  durationInFrames: 2,
+  mount({ container }) {
+    container.innerHTML = '<video src="assets/missing.webm"></video>';
+  },
+  update() {},
+};
+`;
+
 let root: string;
 
 function toneWav(seconds = 0.6): Buffer {
@@ -118,15 +183,56 @@ async function decodedVideoHash(filePath: string): Promise<string> {
   return match[1] as string;
 }
 
+async function pngPixel(filePath: string, x: number, y: number): Promise<number[]> {
+  const { stdout } = await new Promise<{ stdout: Buffer }>((resolve, reject) => {
+    execFile(
+      "ffmpeg",
+      ["-v", "error", "-i", filePath, "-vf", `crop=1:1:${x}:${y}`, "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
+      { encoding: "buffer", maxBuffer: 1024 },
+      (error, output) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        resolve({ stdout: output });
+      },
+    );
+  });
+  return Array.from(stdout.subarray(0, 3));
+}
+
+async function audioMeanVolume(filePath: string): Promise<number> {
+  const { stderr } = await exec("ffmpeg", [
+    "-hide_banner",
+    "-i",
+    filePath,
+    "-map",
+    "0:a:0",
+    "-af",
+    "volumedetect",
+    "-f",
+    "null",
+    "-",
+  ]);
+  const match = /mean_volume:\s*(-?[\d.]+) dB/.exec(stderr);
+  if (!match) {
+    throw new Error(`FFmpeg did not report a mean volume for ${filePath}.`);
+  }
+  return Number(match[1]);
+}
+
 beforeAll(async () => {
   root = await mkdtemp(path.join(tmpdir(), "frameyard-cli-"));
   await mkdir(path.join(root, "compositions"), { recursive: true });
   await mkdir(path.join(root, "assets"), { recursive: true });
   await writeFile(
     path.join(root, "video.config.js"),
-    `export default { compositions: { demo: "./compositions/demo.js", broken: "./compositions/broken.js", throwing: "./compositions/throwing.js" } };\n`,
+    `export default { compositions: { demo: "./compositions/demo.js", media: "./compositions/media.js", webgl: "./compositions/webgl.js", "missing-video": "./compositions/missing-video.js", broken: "./compositions/broken.js", throwing: "./compositions/throwing.js" } };\n`,
   );
   await writeFile(path.join(root, "compositions", "demo.js"), composition);
+  await writeFile(path.join(root, "compositions", "media.js"), mediaComposition);
+  await writeFile(path.join(root, "compositions", "webgl.js"), webglComposition);
+  await writeFile(path.join(root, "compositions", "missing-video.js"), missingVideoComposition);
   await writeFile(
     path.join(root, "compositions", "broken.js"),
     `export default {
@@ -155,7 +261,40 @@ beforeAll(async () => {
 `,
   );
   await writeFile(path.join(root, "assets", "tone.wav"), toneWav());
+  await exec("ffmpeg", [
+    "-hide_banner",
+    "-loglevel",
+    "error",
+    "-y",
+    "-f",
+    "lavfi",
+    "-i",
+    "color=c=red:s=64x64:r=10:d=0.5",
+    "-f",
+    "lavfi",
+    "-i",
+    "color=c=lime:s=64x64:r=10:d=0.5",
+    "-f",
+    "lavfi",
+    "-i",
+    "sine=frequency=440:sample_rate=48000:duration=1",
+    "-filter_complex",
+    "[0:v][1:v]concat=n=2:v=1:a=0,format=yuv420p[v]",
+    "-map",
+    "[v]",
+    "-map",
+    "2:a",
+    "-c:v",
+    "libvpx-vp9",
+    "-b:v",
+    "200k",
+    "-c:a",
+    "libopus",
+    "-shortest",
+    path.join(root, "assets", "clip.webm"),
+  ]);
   await writeFile(path.join(root, "props.json"), JSON.stringify({ label: "CLI" }));
+  await writeFile(path.join(root, "embedded-props.json"), JSON.stringify({ declaredTone: false }));
   await writeFile(path.join(root, "bad-props.json"), JSON.stringify({ label: 42 }));
 });
 
@@ -211,6 +350,19 @@ describe("CLI end-to-end", () => {
     expect(String((json.error as Record<string, unknown>).message)).toContain("assets/missing.wav");
   });
 
+  it("fails check when an embedded video is missing", async () => {
+    const result = await run(["check", "missing-video", "--project", root, "--json"], root);
+
+    expect(result.code).not.toBe(0);
+    const json = JSON.parse(result.stdout) as Record<string, unknown>;
+    expect(json).toMatchObject({
+      ok: false,
+      command: "check",
+      error: { code: "ASSET_NOT_FOUND" },
+    });
+    expect(String((json.error as Record<string, unknown>).message)).toContain("assets/missing.webm");
+  });
+
   it("returns a JSON error envelope for usage failures", async () => {
     const result = await run(["render", "--json"], root);
 
@@ -255,6 +407,137 @@ describe("CLI end-to-end", () => {
     const probe = await ffprobe(path.join(root, "still-a.png"));
     const stream = (probe.streams as Array<Record<string, unknown>>)[0];
     expect(stream).toMatchObject({ width: 160, height: 90 });
+  });
+
+  it("captures embedded video and WebGL stills deterministically", async () => {
+    const first = await run(
+      ["still", "media", "--frame", "3", "--out", "media-3a.png", "--project", root, "--json"],
+      root,
+    );
+    const second = await run(
+      ["still", "media", "--frame", "3", "--out", "media-3b.png", "--project", root, "--json"],
+      root,
+    );
+    const later = await run(
+      ["still", "media", "--frame", "7", "--out", "media-7.png", "--project", root, "--json"],
+      root,
+    );
+
+    expect(first.code).toBe(0);
+    expect(second.code).toBe(0);
+    expect(later.code).toBe(0);
+
+    const [a, b, c] = await Promise.all([
+      readFile(path.join(root, "media-3a.png")),
+      readFile(path.join(root, "media-3b.png")),
+      readFile(path.join(root, "media-7.png")),
+    ]);
+    expect(createHash("sha256").update(a).digest("hex")).toBe(createHash("sha256").update(b).digest("hex"));
+    expect(createHash("sha256").update(a).digest("hex")).not.toBe(createHash("sha256").update(c).digest("hex"));
+
+    const earlyVideo = await pngPixel(path.join(root, "media-3a.png"), 10, 10);
+    const earlyWebGl = await pngPixel(path.join(root, "media-3a.png"), 100, 10);
+    expect(earlyVideo[0]).toBeGreaterThan(180);
+    expect(earlyVideo[1]).toBeLessThan(60);
+    expect(earlyWebGl[2]).toBeGreaterThan(200);
+    expect(earlyWebGl[0]).toBeLessThan(20);
+
+    const lateVideo = await pngPixel(path.join(root, "media-7.png"), 10, 10);
+    const lateWebGl = await pngPixel(path.join(root, "media-7.png"), 100, 10);
+    expect(lateVideo[1]).toBeGreaterThan(180);
+    expect(lateVideo[0]).toBeLessThan(60);
+    expect(lateWebGl[0]).toBeGreaterThan(200);
+    expect(lateWebGl[2]).toBeLessThan(20);
+  });
+
+  it("captures WebGL-only compositions deterministically", async () => {
+    const first = await run(
+      ["still", "webgl", "--frame", "1", "--out", "webgl-1a.png", "--project", root, "--json"],
+      root,
+    );
+    const second = await run(
+      ["still", "webgl", "--frame", "1", "--out", "webgl-1b.png", "--project", root, "--json"],
+      root,
+    );
+    const later = await run(
+      ["still", "webgl", "--frame", "4", "--out", "webgl-4.png", "--project", root, "--json"],
+      root,
+    );
+
+    expect(first.code).toBe(0);
+    expect(second.code).toBe(0);
+    expect(later.code).toBe(0);
+
+    const [a, b] = await Promise.all([
+      readFile(path.join(root, "webgl-1a.png")),
+      readFile(path.join(root, "webgl-1b.png")),
+    ]);
+    expect(createHash("sha256").update(a).digest("hex")).toBe(createHash("sha256").update(b).digest("hex"));
+
+    const early = await pngPixel(path.join(root, "webgl-1a.png"), 10, 10);
+    expect(early[2]).toBeGreaterThan(200);
+    expect(early[0]).toBeLessThan(20);
+
+    const late = await pngPixel(path.join(root, "webgl-4.png"), 10, 10);
+    expect(late[0]).toBeGreaterThan(200);
+    expect(late[2]).toBeLessThan(20);
+  });
+
+  it("checks and renders embedded video audio with the declared timeline", async () => {
+    const check = await run(["check", "media", "--project", root, "--json"], root);
+    expect(check.code).toBe(0);
+    const checked = JSON.parse(check.stdout) as Record<string, unknown>;
+    expect(checked).toMatchObject({ ok: true, command: "check", composition: "media", framesChecked: 12 });
+    const audio = checked.audio as { clips: number; warnings: string[]; details: Array<Record<string, unknown>> };
+    expect(audio.clips).toBe(2);
+    expect(audio.warnings).toEqual([]);
+    expect(audio.details.map((clip) => clip.src)).toEqual(["assets/tone.wav", "assets/clip.webm"]);
+
+    const sequential = await run(
+      ["render", "media", "--out", "media-sequential.mp4", "--concurrency", "1", "--project", root, "--json"],
+      root,
+    );
+    const parallel = await run(
+      ["render", "media", "--out", "media-parallel.mp4", "--concurrency", "2", "--project", root, "--json"],
+      root,
+    );
+
+    expect(sequential.code).toBe(0);
+    expect(parallel.code).toBe(0);
+    const rendered = JSON.parse(sequential.stdout) as Record<string, unknown>;
+    expect(rendered).toMatchObject({
+      ok: true,
+      command: "render",
+      composition: "media",
+      fps: 10,
+      durationInFrames: 12,
+      framesRendered: 12,
+    });
+    expect(rendered.audio).toMatchObject({ clips: 2, warnings: [] });
+
+    const probe = await ffprobe(path.join(root, "media-sequential.mp4"), ["-count_frames"]);
+    const streams = probe.streams as Array<Record<string, unknown>>;
+    const video = streams.find((stream) => stream.codec_type === "video");
+    const audioStream = streams.find((stream) => stream.codec_type === "audio");
+    expect(video).toMatchObject({ codec_name: "h264", width: 160, height: 90, nb_read_frames: "12" });
+    expect(audioStream).toMatchObject({ codec_name: "aac", channels: 2 });
+    expect(Number((probe.format as Record<string, unknown>).duration)).toBeCloseTo(1.2, 1);
+
+    expect(await decodedVideoHash(path.join(root, "media-parallel.mp4"))).toBe(
+      await decodedVideoHash(path.join(root, "media-sequential.mp4")),
+    );
+
+    const embeddedOnly = await run(
+      ["render", "media", "--props", "embedded-props.json", "--out", "media-embedded.mp4", "--project", root, "--json"],
+      root,
+    );
+    expect(embeddedOnly.code).toBe(0);
+    const embeddedJson = JSON.parse(embeddedOnly.stdout) as Record<string, unknown>;
+    expect(embeddedJson.audio).toMatchObject({ clips: 1, warnings: [] });
+    const embeddedProbe = await ffprobe(path.join(root, "media-embedded.mp4"));
+    const embeddedStreams = embeddedProbe.streams as Array<Record<string, unknown>>;
+    expect(embeddedStreams.find((stream) => stream.codec_type === "audio")).toMatchObject({ codec_name: "aac" });
+    expect(await audioMeanVolume(path.join(root, "media-embedded.mp4"))).toBeGreaterThan(-40);
   });
 
   it("renders an MP4 with the declared frames and an audio stream", async () => {

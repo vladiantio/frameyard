@@ -10,6 +10,7 @@ import {
 } from "../contracts.js";
 import { FrameyardError, isFrameyardError } from "../errors.js";
 import { frameToMilliseconds } from "./clock.js";
+import { describeMediaAudio, prepareMedia, releaseMedia, settleMedia } from "./media.js";
 
 export { frameToMilliseconds, frameToSeconds } from "./clock.js";
 export { random } from "./random.js";
@@ -27,9 +28,12 @@ export interface CompositionRuntime<P extends Props = Props> {
   readonly composition: Composition<P>;
   readonly props: Readonly<P>;
   readonly audioClips: readonly ResolvedAudioClip[];
+  readonly embeddedAudioClips: readonly ResolvedAudioClip[];
   readonly transcriptClips: readonly ResolvedTranscriptClip[];
   readonly frame: number;
   seek(frame: number): void;
+  /** Waits for embedded media decode and browser paint after a seek. */
+  settle(): Promise<void>;
   dispose(): Promise<void>;
 }
 
@@ -221,6 +225,16 @@ async function disposeAfterFailure<P extends Props>(composition: Composition<P>)
   }
 }
 
+function clearContainer(container: HTMLElement): void {
+  releaseMedia(container);
+  container.replaceChildren();
+}
+
+async function discardRuntime<P extends Props>(composition: Composition<P>, container: HTMLElement): Promise<void> {
+  await disposeAfterFailure(composition);
+  clearContainer(container);
+}
+
 async function waitForMountedAssets(container: HTMLElement): Promise<void> {
   await document.fonts.ready;
 
@@ -276,6 +290,7 @@ export async function createCompositionRuntime<P extends Props = Props>(
   const { container } = options;
   const diagnostics = options.diagnostics;
   let warnedTransition = false;
+  let embeddedAudioClips: readonly ResolvedAudioClip[] = Object.freeze([]);
 
   const warnTransition = (): void => {
     if (!diagnostics || warnedTransition) {
@@ -294,21 +309,24 @@ export async function createCompositionRuntime<P extends Props = Props>(
   try {
     await withDiagnosticsAsync("Composition mount()", diagnostics, () => composition.mount({ container, props }));
   } catch (error) {
-    await disposeAfterFailure(composition);
-    container.replaceChildren();
+    await discardRuntime(composition, container);
     throw wrapCompositionError("mount", null, error);
   }
 
   try {
     await waitForMountedAssets(container);
+    await prepareMedia(container);
   } catch (error) {
-    await disposeAfterFailure(composition);
-    container.replaceChildren();
+    await discardRuntime(composition, container);
     throw error;
   }
 
+  embeddedAudioClips = describeMediaAudio(container);
   let frame = 0;
   let disposed = false;
+  let settleLoop: Promise<void> | null = null;
+  let settleWaiters: Array<{ resolve: () => void; reject: (error: unknown) => void }> = [];
+  let settleFrame: number | null = null;
 
   function seek(targetFrame: number): void {
     if (disposed) {
@@ -339,11 +357,66 @@ export async function createCompositionRuntime<P extends Props = Props>(
     frame = targetFrame;
   }
 
+  function settle(): Promise<void> {
+    if (disposed) {
+      return Promise.reject(new FrameyardError("COMPOSITION_ERROR", "Cannot settle a disposed composition runtime."));
+    }
+    const targetFrame = frame;
+    const promise = new Promise<void>((resolve, reject) => {
+      settleWaiters.push({ resolve, reject });
+    });
+    settleFrame = targetFrame;
+    settleLoop ??= runSettleLoop();
+    return promise;
+  }
+
+  async function runSettleLoop(): Promise<void> {
+    try {
+      while (settleWaiters.length > 0) {
+        const waiters = settleWaiters;
+        settleWaiters = [];
+        const targetFrame = settleFrame ?? frame;
+        settleFrame = null;
+
+        if (disposed) {
+          const error = new FrameyardError("COMPOSITION_ERROR", "Cannot settle a disposed composition runtime.");
+          for (const waiter of waiters) {
+            waiter.reject(error);
+          }
+          continue;
+        }
+
+        try {
+          await settleMedia(container, targetFrame, composition.fps);
+          if (disposed) {
+            const error = new FrameyardError("COMPOSITION_ERROR", "Cannot settle a disposed composition runtime.");
+            for (const waiter of waiters) {
+              waiter.reject(error);
+            }
+          } else {
+            for (const waiter of waiters) {
+              waiter.resolve();
+            }
+          }
+        } catch (error) {
+          for (const waiter of waiters) {
+            waiter.reject(error);
+          }
+        }
+      }
+    } finally {
+      settleLoop = null;
+      if (settleWaiters.length > 0) {
+        settleLoop = runSettleLoop();
+      }
+    }
+  }
+
   try {
     seek(0);
+    await settleMedia(container, 0, composition.fps);
   } catch (error) {
-    await disposeAfterFailure(composition);
-    container.replaceChildren();
+    await discardRuntime(composition, container);
     throw error;
   }
 
@@ -351,16 +424,23 @@ export async function createCompositionRuntime<P extends Props = Props>(
     composition,
     props,
     audioClips,
+    embeddedAudioClips,
     transcriptClips,
     get frame() {
       return frame;
     },
     seek,
+    settle,
     async dispose() {
       if (disposed) {
         return;
       }
       disposed = true;
+      const stopped = new FrameyardError("COMPOSITION_ERROR", "Cannot settle a disposed composition runtime.");
+      for (const waiter of settleWaiters) {
+        waiter.reject(stopped);
+      }
+      settleWaiters = [];
       try {
         if (composition.dispose) {
           const result = composition.dispose();
@@ -369,10 +449,10 @@ export async function createCompositionRuntime<P extends Props = Props>(
           }
         }
       } catch (error) {
-        container.replaceChildren();
+        clearContainer(container);
         throw wrapCompositionError("dispose", null, error);
       }
-      container.replaceChildren();
+      clearContainer(container);
     },
   });
 }

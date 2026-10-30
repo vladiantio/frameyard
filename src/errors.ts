@@ -9,6 +9,8 @@ export type FrameyardErrorCode =
   | "PROPS_INVALID"
   | "FRAME_OUT_OF_RANGE"
   | "AUDIO_INVALID"
+  | "MEDIA_INVALID"
+  | "MEDIA_SEEK_FAILED"
   | "ASSET_NOT_FOUND"
   | "OUTPUT_EXISTS"
   | "OUTPUT_FAILED"

@@ -64,6 +64,18 @@ _Avoid_: Real-time playback
 The phase before frame production when required data and assets become available.
 _Avoid_: Per-frame fetching
 
+**Embedded media**:
+A local video file placed in a composition whose presentation time is derived from the composition frame, with optional frame offset and source trim.
+_Avoid_: Live stream, video track
+
+**Media settle**:
+The asynchronous step after a seek that waits for embedded video decode and browser paint before a frame is captured or checked.
+_Avoid_: Playback, buffering
+
+**WebGL canvas**:
+A canvas redrawn from the current frame through WebGL, captured by the same screenshot path as DOM and Canvas 2D content.
+_Avoid_: GPU animation, live render
+
 ### Audio
 
 **Audio clip**:

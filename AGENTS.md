@@ -51,7 +51,7 @@ A full 30-second demo render is sequential by default; pass `--concurrency <n>` 
 | --- | --- |
 | `src/contracts.ts` | Shared composition, metadata, props, audio, and transcript requirement contract |
 | `src/transcript.ts` | Canonical transcript validation and SRT/VTT formatting (browser-safe) |
-| `src/runtime/` | Browser-only lifecycle, frame clock, deterministic randomness, diagnostics |
+| `src/runtime/` | Browser-only lifecycle, frame clock, deterministic randomness, diagnostics, embedded media settling |
 | `src/preview/` | Browser preview client: loading, scrubbing, playback, audio sync |
 | `src/server/` | Node preview/static server and injected import map |
 | `src/renderer/` | Node Chromium session, audio/transcript inspection, FFmpeg pipeline |
@@ -64,7 +64,7 @@ A full 30-second demo render is sequential by default; pass `--concurrency <n>` 
 | `examples/demo/` | 30-second reference composition |
 | `test/` | Public-seam tests |
 
-Per-frame path: `src/renderer/index.ts` loop (`seek` → `capture` → `writeFrame`) → `browser.ts` `seek()`/`capture()` (CDP `Page.captureScreenshot`) → `ffmpeg.ts` `writeFrame()` (stdin pipe) → `finish()`. With `--concurrency <n>`, independent sessions capture assigned frames concurrently and an ordered writer still feeds the single encoder in timeline order.
+Per-frame path: `src/renderer/index.ts` loop (`seek` → `settle` → `capture` → `writeFrame`) → `browser.ts` `seek()`/`capture()` (CDP `Page.captureScreenshot`) → `ffmpeg.ts` `writeFrame()` (stdin pipe) → `finish()`. `seek()` runs `update()` and seeks CSS/Web Animations synchronously; `settle()` waits for embedded video decode and browser paint. With `--concurrency <n>`, independent sessions capture assigned frames concurrently and an ordered writer still feeds the single encoder in timeline order.
 
 `src/contracts.ts`, `src/transcript.ts`, and `src/runtime/` ship to the browser. Keep them free of `node:` imports. Node-only code belongs in `src/project.ts`, `src/server/`, `src/renderer/`, `src/assets/`, `src/doctor.ts`, `src/scaffold.ts`, or `src/cli.ts`.
 
@@ -77,6 +77,8 @@ Per-frame path: `src/renderer/index.ts` loop (`seek` → `capture` → `writeFra
 - `mount()` may await loading work; `dispose()` releases resources.
 - Animation drivers are `update()` plus runtime-seeked CSS/Web Animations. `Math.random()`, `Date.now()`, `performance.now()`, timers, and independent `requestAnimationFrame` loops are not animation inputs. Use `random("stable:key")` from `frameyard/runtime`.
 - The runtime seeks CSS animations and the Web Animations API inside the composition container. CSS transitions are diagnosed as non-deterministic in preview.
+- Embedded `<video>` elements are local, preloaded, paused, and seeked from the frame clock after `update()`. Create them and their `data-frameyard-*` attributes in `mount()` in the container's light DOM; `update()` must not play, pause, seek, add, or re-source them. `settle()` is the asynchronous boundary before capture.
+- WebGL canvases must be redrawn from the current frame. Production sessions pin SwiftShader so WebGL pixels do not depend on the host GPU.
 - The preview and production renderer must use the same composition bundle, runtime, and server. Production differs only in driving the clock explicitly and capturing frames.
 - Optional parallel rendering may distribute frames across independent browser sessions, but frames must be encoded in timeline order and must be pixel-equivalent to a sequential render. The default remains one session.
 - Verify determinism at the capture boundary: compare captured PNG pixels or `still` output, not MP4 hashes. Encoded bytes are not a reproducibility guarantee; see `docs/v0.1-design.md` §3.
@@ -91,6 +93,7 @@ Per-frame path: `src/renderer/index.ts` loop (`seek` → `capture` → `writeFra
 - Composition props are plain JSON, deep-frozen, and merged shallowly over `defaultProps`.
 - Composition functions are invoked on a frozen definition. Keep mutable state in module-scope variables, not on `this`.
 - Audio clips use composition frames for placement and seconds for source trimming. Audio is mixed offline with FFmpeg; no time-stretching or automatic duration changes.
+- Embedded videos use `data-frameyard-start` (frames), `data-frameyard-trim` (seconds), optional `data-frameyard-duration` (seconds), and optional `data-frameyard-volume` (0-1). Unmuted videos contribute audio to the offline mix; `muted` or `data-frameyard-audio="off"` opts out.
 - Transcript requirements are project-relative canonical JSON. `words: true` requires measured word timings; never interpolate segment timings.
 - Compositions are trusted local developer code. Do not claim sandboxing or untrusted execution.
 
@@ -116,15 +119,15 @@ Per-frame path: `src/renderer/index.ts` loop (`seek` → `capture` → `writeFra
 
 ### Scope
 
-The current implementation still excludes built-in subtitle rendering, automatic caption burn-in, qwentts.cpp voice cloning/VoiceDesign, long-text chunking/streaming, automatic model downloads or environment repair, frame caches, general image sequences, plugin APIs, and hosted/agent-only runtimes.
+The current implementation still excludes built-in subtitle rendering, automatic caption burn-in, qwentts.cpp voice cloning/VoiceDesign, long-text chunking/streaming, automatic model downloads or environment repair, frame caches, general image sequences, live or remote video streams, plugin APIs, and hosted/agent-only runtimes.
 
 ## Change map
 
 - **Contracts, props, metadata, audio, transcripts** → `src/contracts.ts`, `src/transcript.ts`, `src/index.ts`; extend `test/contracts.test.ts` and `test/transcript.test.ts`.
-- **Runtime seeking, randomness, diagnostics, transcript requirements** → `src/runtime/`; extend `test/preview-runtime.test.ts` through real Chromium.
+- **Runtime seeking, randomness, diagnostics, transcript requirements, embedded media** → `src/runtime/`; extend `test/preview-runtime.test.ts` through real Chromium.
 - **Preview behavior/UI** → `src/preview/main.ts`, `src/server/preview-html.ts`; extend the preview browser test.
 - **Server routes, static serving, import map** → `src/server/server.ts`; extend `test/project-server.test.ts`.
-- **Chromium capture, audio/transcript inspection, FFmpeg encoding** → `src/renderer/`; extend `test/cli-e2e.test.ts` and verify artifacts with FFprobe.
+- **Chromium capture, embedded media audio, audio/transcript inspection, FFmpeg encoding** → `src/renderer/`; extend `test/cli-e2e.test.ts` and verify artifacts with FFprobe.
 - **TTS, transcription, provenance, executable resolution** → `src/assets/`; extend `test/assets-e2e.test.ts` with fake executables.
 - **Doctor checks** → `src/doctor.ts`, `src/cli.ts`; extend `test/assets-e2e.test.ts`.
 - **CLI flags, result schemas, exit behavior** → `src/cli.ts`; extend `test/cli-e2e.test.ts`.
@@ -143,8 +146,8 @@ Test at public seams, not private helpers:
 - `test/transcript.test.ts`: canonical transcript validation, word requirements, SRT/VTT formatting.
 - `test/random.test.ts`: frame time and deterministic randomness.
 - `test/project-server.test.ts`: config loading, static routes, import map, ranges, traversal rejection.
-- `test/preview-runtime.test.ts`: real Chromium loading, props, seeking, CSS animation, Canvas, determinism, diagnostics, preview UI, transcript declarations.
-- `test/cli-e2e.test.ts`: real CLI with Chromium and FFmpeg, JSON envelopes, missing assets, deterministic stills, MP4/audio output, overwrite behavior, `dev`, `init`.
+- `test/preview-runtime.test.ts`: real Chromium loading, props, seeking, CSS animation, Canvas, WebGL, embedded video, determinism, diagnostics, preview UI, transcript declarations.
+- `test/cli-e2e.test.ts`: real CLI with Chromium and FFmpeg, JSON envelopes, missing assets, deterministic stills, embedded video/WebGL capture and audio, MP4/audio output, overwrite behavior, `dev`, `init`.
 - `test/assets-e2e.test.ts`: `tts`/`transcribe`/`doctor` with fake upstream executables, normalization, word timings, exports, manifests, cancellation, transcript validation.
 - `test/agent-workflow.test.ts`: source preservation, check/still/render reporting, and failure reporting through the CLI.
 - `test/real-integrations.test.ts`: opt-in real-model checks enabled by `FRAMEYARD_REAL_INTEGRATIONS=1` and explicit model paths.

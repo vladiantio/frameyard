@@ -17,7 +17,7 @@ This project produces deterministic, parameterized video with Frameyard. Follow 
 ## Agent workflow
 
 1. Read \`video.config.js\`, the composition source, and the props file before changing behavior.
-2. Author the composition or props with native HTML, CSS, SVG, Canvas 2D, and JavaScript. Do not add a bundling step.
+2. Author the composition or props with native HTML, CSS, SVG, Canvas 2D, WebGL, embedded video, and JavaScript. Do not add a bundling step.
 3. Validate every frame: \`npx frameyard check <id> --json\`. Use \`--props <file>\` to validate a specific props file.
 4. Inspect a representative frame: \`npx frameyard still <id> --frame <n> --out <file.png> --json\`, then view the PNG when the host supports images. State explicitly when visual inspection is not possible.
 5. Render: \`npx frameyard render <id> --props <file> --out <file.mp4> [--concurrency <n>] --json\`.
@@ -47,11 +47,13 @@ npx frameyard render hello --props props/hello.json --out hello.mp4 --json
 - Never use \`Math.random()\`, \`Date.now()\`, \`performance.now()\`, timers, independent \`requestAnimationFrame()\` loops, CSS transitions, or state left from a previously visited frame as animation inputs.
 - CSS \`@keyframes\` and the Web Animations API are valid; the runtime seeks them.
 - Load remote data, fonts, and images during \`mount()\` or before the first frame. Network requests are blocked during capture; a \`fetch()\` from \`update()\` is a bug.
-- Redraw Canvas 2D from the current frame.
+- Redraw Canvas 2D and WebGL from the current frame. Production pins software WebGL for reproducible pixels.
+- Embedded video must use a local project file in the composition container's light DOM and be created, with its \`data-frameyard-*\` attributes, in \`mount()\`. Let the runtime seek it; do not call \`play()\`, \`pause()\`, or set \`currentTime\` in \`update()\`. Use \`data-frameyard-start\` (frames), \`data-frameyard-trim\` (seconds), optional \`data-frameyard-duration\` (seconds), and optional \`data-frameyard-volume\` (0-1).
 
 ## Audio and transcripts
 
 - Audio clips are placed by composition frames and trimmed by seconds. Frameyard does not time-stretch audio or change composition duration to fit it.
+- An unmuted embedded video contributes its audio track to the same mix; use \`muted\` or \`data-frameyard-audio="off"\` for a visual-only video.
 - Produce speech with \`npx frameyard tts\` and transcripts with \`npx frameyard transcribe\`; never call \`qwen-tts\` or \`whisper-cli\` directly, and never run inference inside \`mount()\` or \`update()\`.
 - Do not overwrite or regenerate generated assets without explicit approval.
 - \`words: true\` requires measured word timings; never interpolate segment timings.

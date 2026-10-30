@@ -12,6 +12,9 @@ export interface AudioAsset {
   timelineEndSeconds: number;
 }
 
+/** A timeline clip that may legitimately have no audio stream, such as an embedded video. */
+export type InspectAudioClip = ResolvedAudioClip & { allowSilent?: boolean };
+
 export interface AudioInspection {
   assets: AudioAsset[];
   clips: Array<{
@@ -34,7 +37,7 @@ function contains(root: string, candidate: string): boolean {
 /** Resolves local audio files, probes durations, and reports timeline overruns. */
 export async function inspectTimelineAudio(options: {
   projectRoot: string;
-  clips: readonly ResolvedAudioClip[];
+  clips: readonly InspectAudioClip[];
   fps: number;
   durationInFrames: number;
   signal?: AbortSignal;
@@ -68,6 +71,10 @@ export async function inspectTimelineAudio(options: {
 
     const probe = await probeMedia(absolutePath, { signal: options.signal });
     if (!probe.streams.some((stream) => stream.codec_type === "audio")) {
+      if (clip.allowSilent) {
+        warnings.push(`Embedded media ${clipIndex + 1} (${clip.src}) has no audio stream; its audio was not mixed.`);
+        continue;
+      }
       throw new FrameyardError("AUDIO_INVALID", `Audio clip ${clipIndex + 1} source has no audio stream: ${clip.src}`);
     }
 

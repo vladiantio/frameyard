@@ -11,12 +11,14 @@ interface PreviewLoadResult {
   metadata: CompositionMetadata;
   props: Props;
   audioClips: ResolvedAudioClip[];
+  embeddedAudioClips: ResolvedAudioClip[];
   transcriptClips: ResolvedTranscriptClip[];
 }
 
 interface PreviewApi {
   load(entry: string, props?: unknown): Promise<PreviewLoadResult>;
   seek(frame: number): void;
+  settle(): Promise<void>;
   dispose(): Promise<void>;
 }
 
@@ -61,6 +63,7 @@ const volumeSlider = byId<HTMLInputElement>("volume");
 let runtime: CompositionRuntime | null = null;
 let metadata: CompositionMetadata | null = null;
 let audioClips: readonly ResolvedAudioClip[] = [];
+let embeddedAudioClips: readonly ResolvedAudioClip[] = [];
 let audioEntries: AudioEntry[] = [];
 let currentFrame = 0;
 let playing = false;
@@ -165,7 +168,7 @@ function buildAudio(): void {
     return;
   }
 
-  for (const clip of audioClips) {
+  for (const clip of [...audioClips, ...embeddedAudioClips]) {
     const element = new Audio();
     element.preload = "auto";
     element.src = assetUrl(clip.src);
@@ -231,7 +234,7 @@ function stopPlayback(): void {
   stopAudio();
 }
 
-function renderFrame(frame: number): void {
+function renderFrame(frame: number, options: { settle?: boolean } = {}): void {
   if (!runtime || !metadata) {
     throw new FrameyardError("COMPOSITION_ERROR", "No composition is loaded.");
   }
@@ -248,6 +251,17 @@ function renderFrame(frame: number): void {
   clearError();
   updateTransport();
   syncAudio();
+
+  if (options.settle !== false) {
+    const active = runtime;
+    void active.settle().catch((error) => {
+      if (runtime !== active) {
+        return;
+      }
+      stopPlayback();
+      showError(error);
+    });
+  }
 }
 
 function playbackLoop(): void {
@@ -314,6 +328,7 @@ async function teardown(): Promise<void> {
   }
   metadata = null;
   audioClips = [];
+  embeddedAudioClips = [];
   currentFrame = 0;
   updateMeta();
   updateTransport();
@@ -373,6 +388,7 @@ async function loadNow(entry: string, propOverrides?: unknown): Promise<PreviewL
 
   runtime = active;
   audioClips = active.audioClips;
+  embeddedAudioClips = active.embeddedAudioClips;
   currentFrame = 0;
   buildAudio();
   updateTransport();
@@ -390,6 +406,7 @@ async function loadNow(entry: string, propOverrides?: unknown): Promise<PreviewL
     metadata: loadedMetadata,
     props: active.props as Props,
     audioClips: [...audioClips],
+    embeddedAudioClips: [...embeddedAudioClips],
     transcriptClips: [...active.transcriptClips],
   };
 }
@@ -418,11 +435,21 @@ const api: PreviewApi = {
   },
   seek(frame: number) {
     try {
-      renderFrame(frame);
+      renderFrame(frame, { settle: false });
       if (playing) {
         playStartFrame = frame;
         playStartClock = performance.now();
       }
+    } catch (error) {
+      throw browserCommandError(error);
+    }
+  },
+  async settle(): Promise<void> {
+    try {
+      if (!runtime) {
+        throw new FrameyardError("COMPOSITION_ERROR", "No composition is loaded.");
+      }
+      await runtime.settle();
     } catch (error) {
       throw browserCommandError(error);
     }

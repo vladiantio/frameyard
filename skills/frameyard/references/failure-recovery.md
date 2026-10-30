@@ -16,6 +16,8 @@ Do not claim success after a nonzero exit. Fix the cause, rerun `check`, and onl
 | `PROPS_INVALID` | Props are not JSON or fail `validateProps()` | Fix the props file or validator. |
 | `FRAME_OUT_OF_RANGE` | Frame is outside `0..durationInFrames - 1` | Choose a valid frame. |
 | `AUDIO_INVALID` | Bad clip or unreadable/unsupported audio | Use a local project-relative file with a decodable audio stream. |
+| `MEDIA_INVALID` | Embedded video has invalid attributes, is remote, or cannot be decoded | Use a local seekable video file and valid `data-frameyard-*` values. |
+| `MEDIA_SEEK_FAILED` | Embedded video did not reach the requested frame time | Re-encode the source with a regular keyframe interval or remove the bad source. |
 | `ASSET_NOT_FOUND` | Required file is missing or unreadable | Restore the asset, model, or text file. |
 | `OUTPUT_EXISTS` | Output exists and replacement was not approved | Reuse it, choose another path, or pass `--overwrite`/`--force` with permission. |
 | `OUTPUT_FAILED` | An output or manifest could not be written atomically | Check directory permissions and free space; rerun. |
@@ -38,6 +40,7 @@ Do not claim success after a nonzero exit. Fix the cause, rerun `check`, and onl
 - Existing outputs are replaced only with `--overwrite` (renders/stills) or `--force` (generated assets).
 - Cancellation terminates the child inference process and cleans temporary work.
 - `check` validates every frame and declared transcripts without encoding.
+- `check`, `still`, and `render` seek embedded videos and wait for decode before evaluating or capturing a frame.
 - `doctor` inspects but never repairs, downloads, or modifies the environment.
 
 ## When visual inspection is impossible

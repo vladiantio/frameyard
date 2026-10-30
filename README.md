@@ -2,7 +2,7 @@
 
 Frameyard is a local-first framework for building short, parameterized videos with HTML, CSS, and JavaScript and rendering them deterministically.
 
-The v0.1 design is implemented: composition contracts, browser runtime and preview, `init`, `dev`, `check`, `still`, `render`, `tts`, `transcribe`, `doctor`, deterministic Chromium capture, FFmpeg output, provenance manifests, transcript validation, and the official agent skill.
+The v0.1 design is implemented: composition contracts, browser runtime and preview, `init`, `dev`, `check`, `still`, `render`, `tts`, `transcribe`, `doctor`, deterministic Chromium capture, embedded video and WebGL, FFmpeg output, provenance manifests, transcript validation, and the official agent skill.
 
 ## Requirements
 
@@ -102,6 +102,33 @@ The only animation inputs are the integer frame and immutable props. Metadata (`
 
 Use `random("stable:key")` instead of `Math.random()`. The runtime pauses CSS animations and the Web Animations API inside the composition container and seeks them to the current frame. Independent `requestAnimationFrame` loops, timers, transitions, and wall-clock reads are not deterministic animation drivers.
 
+## Embedded video and WebGL
+
+Embedded videos are frame-seeked by the runtime. Place a `<video>` element in `mount()` and describe its place on the composition timeline with data attributes:
+
+```html
+<video
+  src="assets/clip.webm"
+  data-frameyard-start="30"
+  data-frameyard-trim="0.5"
+  data-frameyard-duration="4"
+  data-frameyard-volume="0.8"
+></video>
+```
+
+| Attribute | Meaning | Default |
+| --- | --- | --- |
+| `data-frameyard-start` | Composition frame where the source starts | `0` |
+| `data-frameyard-trim` | Seconds trimmed from the source start | `0` |
+| `data-frameyard-duration` | Optional seconds of source to use | rest of source |
+| `data-frameyard-volume` | Embedded audio volume from `0` to `1` | `1` |
+
+The runtime pauses every video and seeks it to the frame-derived source time. Do not call `play()`, `pause()`, or set `currentTime` in `update()`. Create video elements and set these attributes in `mount()`: a video added or changed during `update()` cannot be prepared without network access and is rejected. Videos must be in the composition container's light DOM; shadow roots are not scanned. Video sources are project-relative local files; live streams, remote URLs, and sources that cannot be seeked are not supported. The runtime loads the complete file during the loading phase, so frame production performs no media network requests.
+
+An unmuted `<video>` also contributes its soundtrack to the same timeline as declarative `audio` clips. Frameyard extracts that track with FFmpeg for production and mirrors it in preview, while keeping the video element itself silent. Set `muted` or `data-frameyard-audio="off"` to use a video as a visual-only asset. The attributes above also control where its audio enters the mix.
+
+WebGL 1 and WebGL 2 canvases are captured through the normal frame path. Draw the complete frame from `update()` and do not depend on the previous frame's drawing buffer; clear or redraw the scene each time. Production sessions pin software WebGL (SwiftShader) so rendered pixels do not vary with the host GPU.
+
 ## Audio timeline
 
 Audio clips are declarative:
@@ -118,7 +145,7 @@ audio: [
 ];
 ```
 
-Preview synchronizes the timeline in the browser. Production mixes the same clips offline with FFmpeg. `check` reports clip durations and warnings when a clip extends beyond the composition. Frameyard never time-stretches audio or changes composition duration to fit it.
+Preview synchronizes the timeline in the browser. Production mixes the same clips offline with FFmpeg. Unmuted embedded videos contribute their audio tracks to this mix unless they opt out. `check` reports clip durations and warnings when a clip extends beyond the composition. Frameyard never time-stretches audio or changes composition duration to fit it.
 
 ## Transcripts
 

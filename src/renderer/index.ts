@@ -6,7 +6,7 @@ import type { CompositionMetadata } from "../contracts.js";
 import { FrameyardError, isFrameyardError } from "../errors.js";
 import type { Project } from "../project.js";
 import { startPreviewServer } from "../server/server.js";
-import { inspectTimelineAudio, type AudioInspection } from "./audio.js";
+import { inspectTimelineAudio, type AudioInspection, type InspectAudioClip } from "./audio.js";
 import { openCompositionSession, type CompositionSession } from "./browser.js";
 import { assertFfmpegCapabilities, mixAudioTimeline, startVideoEncoder } from "./ffmpeg.js";
 import { inspectTranscriptClips, type TranscriptInspection } from "./transcripts.js";
@@ -100,6 +100,10 @@ function compositionEntry(project: Project, id: string): string {
     );
   }
   return composition.entry;
+}
+
+function timelineAudioClips(session: CompositionSession): InspectAudioClip[] {
+  return [...session.audioClips, ...session.embeddedAudioClips.map((clip) => ({ ...clip, allowSilent: true }))];
 }
 
 function throwIfAborted(signal: AbortSignal | undefined): void {
@@ -316,7 +320,7 @@ export async function checkComposition(options: SessionOptions): Promise<CheckRe
     const total = session.metadata.durationInFrames;
     const audio = await inspectTimelineAudio({
       projectRoot: options.project.root,
-      clips: session.audioClips,
+      clips: timelineAudioClips(session),
       fps: session.metadata.fps,
       durationInFrames: total,
       signal: options.signal,
@@ -446,7 +450,7 @@ export async function renderComposition(
       const total = durationInFrames;
       const audio = await inspectTimelineAudio({
         projectRoot: options.project.root,
-        clips: session.audioClips,
+        clips: timelineAudioClips(session),
         fps,
         durationInFrames,
         signal: options.signal,

@@ -17,7 +17,7 @@ Use Frameyard's public project format and CLI. Do not introduce an agent-only ru
 
 ## Workflow
 
-1. **Author** the composition with HTML, CSS, SVG, Canvas 2D, and native JavaScript ES modules. Keep `width`, `height`, `fps`, and `durationInFrames` fixed. Read [deterministic authoring](references/deterministic-authoring.md).
+1. **Author** the composition with HTML, CSS, SVG, Canvas 2D, WebGL, embedded video, and native JavaScript ES modules. Keep `width`, `height`, `fps`, and `durationInFrames` fixed. Read [deterministic authoring](references/deterministic-authoring.md).
 2. **Provide props** as JSON. Validate domain-specific requirements with `validateProps()`.
 3. **Produce optional assets** with `npx frameyard tts` and `npx frameyard transcribe`, never with the upstream executables. Read [audio assets](references/audio-assets.md). Do not overwrite or regenerate existing generated assets without permission.
 4. **Validate** with `npx frameyard check <id> --json`. It evaluates every frame, checks audio and declared transcripts, and does not encode.
@@ -43,6 +43,8 @@ Never claim success when `check` fails, a still is missing, a render exits nonze
 - Never use `Date.now()`, `performance.now()`, timers, independent `requestAnimationFrame` loops, or CSS transitions as animation inputs.
 - Finish remote data, fonts, and image loading during `mount()` or before the first frame. Network requests are blocked during frame capture.
 - Keep `update({ frame, props })` synchronous and seek-safe. Do not carry state between frames.
+- Let the runtime seek embedded `<video>` elements. Do not play, pause, or set `currentTime` in `update()`; use the `data-frameyard-*` attributes described in [deterministic authoring](references/deterministic-authoring.md).
+- Redraw WebGL canvases from the current frame. Production pins software WebGL; do not depend on GPU-specific results or the previous frame's drawing buffer.
 - Do not run model inference inside `mount()`, `update()`, or frame production.
 
 ## Subtitle and karaoke rule

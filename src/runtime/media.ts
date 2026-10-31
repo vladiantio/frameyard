@@ -18,6 +18,14 @@ interface PreparedMedia {
 
 const MEDIA_TIMEOUT_MS = 30_000;
 const TIME_EPSILON = 0.0005;
+/**
+ * WebM stores frame timestamps in milliseconds, so a 30fps source has frames
+ * at 0.033, 0.067, ... while a 30fps composition seeks to 0.033333, 0.066666,
+ * ... Chromium selects the frame at or before currentTime, so every third
+ * composition frame would show the previous source frame. Seek just past the
+ * rounded timestamp so the intended frame is selected.
+ */
+const MEDIA_SEEK_BIAS_SECONDS = 0.001;
 const preparedMedia = new WeakMap<HTMLVideoElement, PreparedMedia>();
 const preparedStates = new Set<PreparedMedia>();
 const pendingPreparation = new WeakMap<HTMLVideoElement, Promise<PreparedMedia>>();
@@ -228,7 +236,7 @@ function seekTarget(video: HTMLVideoElement, spec: MediaSpec, frame: number, fps
       : Math.min(spec.trimDuration, Math.max(0, localSeconds));
   const target = spec.trimStart + usedSeconds;
   const duration = Number.isFinite(video.duration) ? Math.max(0, video.duration) : target;
-  return Math.min(target, Math.max(0, duration - TIME_EPSILON));
+  return Math.min(target + MEDIA_SEEK_BIAS_SECONDS, Math.max(0, duration - TIME_EPSILON));
 }
 
 async function seekVideo(video: HTMLVideoElement, frame: number, fps: number): Promise<void> {
@@ -250,7 +258,7 @@ async function seekVideo(video: HTMLVideoElement, frame: number, fps: number): P
   if (video.seeking) {
     await waitForEvent(video, "seeked", "Embedded video could not finish an earlier seek.", "MEDIA_SEEK_FAILED");
   }
-  if (!video.seeking && Math.abs(video.currentTime - target) < TIME_EPSILON) {
+  if (!video.seeking && Math.abs(video.currentTime - target) < TIME_EPSILON + MEDIA_SEEK_BIAS_SECONDS) {
     return;
   }
 

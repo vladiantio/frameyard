@@ -1,0 +1,362 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <script type="application/json" data-fy="props">
+      {
+        "kicker": "Frameyard / Clip Study 001",
+        "title": "Moving",
+        "titleAccent": "Image",
+        "subtitle": "A local clip, loaded once and seeked twice from the composition clock.",
+        "detail": "Detail / second pass",
+        "accent": "#ffc37a"
+      }
+    </script>
+    <style>
+      @keyframes fade-in {
+        from {
+          opacity: 0;
+        }
+        to {
+          opacity: 1;
+        }
+      }
+      @keyframes rise {
+        from {
+          opacity: 0;
+          transform: translateY(42px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+      @keyframes draw {
+        from {
+          opacity: 0;
+          transform: scaleX(0);
+        }
+        to {
+          opacity: 1;
+          transform: scaleX(1);
+        }
+      }
+      @keyframes outro-fade {
+        from {
+          opacity: 0;
+        }
+        to {
+          opacity: 1;
+        }
+      }
+      html,
+      body,
+      fy-composition {
+        background: #04080b;
+      }
+      #scene {
+        position: relative;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        isolation: isolate;
+        background: #04080b;
+        color: #eef4f1;
+        font-family: Inter, "Helvetica Neue", ui-sans-serif, system-ui, sans-serif;
+      }
+      #hero {
+        position: absolute;
+        inset: 0;
+        display: block;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        transform: scale(calc(1 + var(--fy-progress) * 0.035));
+        transform-origin: center;
+      }
+      #scrim {
+        position: absolute;
+        inset: 0;
+        background:
+          linear-gradient(
+            90deg,
+            rgba(4, 8, 11, 0.94) 0%,
+            rgba(4, 8, 11, 0.8) 24%,
+            rgba(4, 8, 11, 0.24) 52%,
+            rgba(4, 8, 11, 0) 74%
+          ),
+          linear-gradient(0deg, rgba(4, 8, 11, 0.9) 0%, rgba(4, 8, 11, 0) 34%);
+      }
+      #vignette {
+        position: absolute;
+        inset: 0;
+        background: radial-gradient(ellipse at 62% 44%, transparent 42%, rgba(0, 0, 0, 0.3) 100%);
+        pointer-events: none;
+      }
+      #frame-border {
+        position: absolute;
+        inset: 36px;
+        border: 1px solid rgba(238, 244, 241, 0.16);
+        pointer-events: none;
+      }
+      #header {
+        position: absolute;
+        top: 80px;
+        left: 148px;
+        right: 148px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 32px;
+        animation: fade-in 1s linear both;
+      }
+      #kicker {
+        display: flex;
+        align-items: center;
+        gap: 15px;
+        font:
+          600 14px/1 ui-monospace,
+          monospace;
+        letter-spacing: 0.24em;
+        text-transform: uppercase;
+        color: var(--fy-prop-accent);
+      }
+      #kicker::before {
+        content: "";
+        width: 8px;
+        height: 8px;
+        background: var(--fy-prop-accent);
+        box-shadow: 0 0 16px var(--fy-prop-accent);
+      }
+      #format {
+        font:
+          500 12px/1 ui-monospace,
+          monospace;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: #8b999c;
+      }
+      #copy {
+        position: absolute;
+        top: 278px;
+        left: 148px;
+        width: 860px;
+      }
+      #title {
+        margin: 0;
+        font-size: 174px;
+        line-height: 0.84;
+        letter-spacing: -0.064em;
+        font-weight: 660;
+      }
+      #title span,
+      #title em {
+        display: block;
+        animation: rise 1s cubic-bezier(0.215, 0.61, 0.355, 1) both;
+      }
+      #title em {
+        margin-top: 0.06em;
+        font-family: "Iowan Old Style", "Palatino Linotype", Georgia, ui-serif, serif;
+        font-style: italic;
+        font-weight: 400;
+        letter-spacing: -0.035em;
+        color: var(--fy-prop-accent);
+      }
+      #subtitle {
+        width: 720px;
+        margin: 38px 0 0;
+        font-size: 29px;
+        line-height: 1.5;
+        font-weight: 420;
+        color: #a6b3b6;
+        animation: rise 1s cubic-bezier(0.215, 0.61, 0.355, 1) both;
+      }
+      #footer {
+        position: absolute;
+        left: 148px;
+        right: 148px;
+        bottom: 70px;
+        contain: layout paint style;
+        animation: fade-in 1s linear both;
+      }
+      #rule {
+        position: relative;
+        height: 1px;
+        background: rgba(238, 244, 241, 0.16);
+        transform-origin: left center;
+        animation: draw 1s cubic-bezier(0.215, 0.61, 0.355, 1) both;
+      }
+      #progress {
+        position: absolute;
+        inset: 0 auto 0 0;
+        width: calc(var(--fy-progress) * 100%);
+        background: var(--fy-prop-accent);
+        box-shadow: 0 0 14px var(--fy-prop-accent);
+      }
+      #footer-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 24px;
+        margin-top: 18px;
+        font:
+          500 12px/1 ui-monospace,
+          monospace;
+        letter-spacing: 0.14em;
+        color: #879598;
+        text-transform: uppercase;
+      }
+      #footer-row strong {
+        color: #edf5f2;
+        font-weight: 600;
+      }
+      #footer-row .accent {
+        color: var(--fy-prop-accent);
+      }
+      #frame-counter {
+        display: inline-block;
+        min-width: 3ch;
+        text-align: right;
+      }
+      #frame-counter::after {
+        counter-reset: fy-frame var(--fy-frame);
+        content: counter(fy-frame);
+      }
+      #detail {
+        position: absolute;
+        right: 148px;
+        bottom: 154px;
+        width: 440px;
+      }
+      #detail-bar {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 24px;
+        margin-bottom: 10px;
+        contain: layout paint style;
+        font:
+          600 11px/1 ui-monospace,
+          monospace;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+      }
+      #detail-bar > span:first-child {
+        color: var(--fy-prop-accent);
+      }
+      #detail-time {
+        color: #98a5a6;
+        font-weight: 500;
+      }
+      #detail-window {
+        position: relative;
+        width: 440px;
+        height: 248px;
+        overflow: hidden;
+        border: 1px solid rgba(255, 195, 122, 0.65);
+        background: #000;
+        box-shadow: 0 24px 90px rgba(0, 0, 0, 0.55);
+      }
+      #detail-clip {
+        display: block;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        object-position: 68% 50%;
+        transform: scale(1.3);
+      }
+      #detail-tint {
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(0deg, rgba(4, 8, 11, 0.28) 0%, rgba(4, 8, 11, 0) 45%);
+        pointer-events: none;
+      }
+      #outro-fade {
+        position: absolute;
+        inset: 0;
+        background: #04080b;
+        pointer-events: none;
+        opacity: 0;
+        animation: outro-fade 1s linear both;
+      }
+    </style>
+  </head>
+  <body>
+    <fy-composition width="1920" height="1080" fps="30" duration-in-frames="360">
+      <div id="scene">
+        <video
+          id="hero"
+          src="assets/clip.webm"
+          data-fy-start="0"
+          data-fy-trim="0"
+          data-fy-duration="12"
+          data-fy-volume="0.85"
+        ></video>
+        <div id="scrim"></div>
+        <div id="vignette"></div>
+        <div id="frame-border"></div>
+
+        <header id="header" data-fy-anim-start="8" data-fy-anim-duration="28">
+          <div id="kicker" data-fy-text="kicker"></div>
+          <div id="format">Embedded video / VP9 + Opus / 30 FPS</div>
+        </header>
+
+        <div id="copy">
+          <h1 id="title">
+            <span
+              data-fy-text="title"
+              data-fy-anim-start="14"
+              data-fy-anim-duration="44"
+              data-fy-anim-easing="cubic-bezier(0.215, 0.61, 0.355, 1)"
+            ></span>
+            <em
+              data-fy-text="titleAccent"
+              data-fy-anim-start="26"
+              data-fy-anim-duration="44"
+              data-fy-anim-easing="cubic-bezier(0.215, 0.61, 0.355, 1)"
+            ></em>
+          </h1>
+          <p
+            id="subtitle"
+            data-fy-text="subtitle"
+            data-fy-anim-start="40"
+            data-fy-anim-duration="40"
+            data-fy-anim-easing="cubic-bezier(0.215, 0.61, 0.355, 1)"
+          ></p>
+        </div>
+
+        <div id="detail">
+          <div id="detail-bar">
+            <span data-fy-text="detail"></span>
+            <span id="detail-time">SRC 5.8–10.8 S</span>
+          </div>
+          <div id="detail-window">
+            <video
+              id="detail-clip"
+              src="assets/clip.webm"
+              data-fy-start="120"
+              data-fy-trim="5.8"
+              data-fy-duration="5"
+              data-fy-audio="off"
+            ></video>
+            <div id="detail-tint"></div>
+          </div>
+        </div>
+
+        <div id="footer" data-fy-anim-start="46" data-fy-anim-duration="30">
+          <div id="rule" data-fy-anim-start="52" data-fy-anim-duration="50">
+            <div id="progress"></div>
+          </div>
+          <div id="footer-row">
+            <span>Hero / SRC <strong>0.0–12.0 S</strong></span>
+            <span>Frame <strong id="frame-counter"></strong> / 359</span>
+            <span class="accent">Frame-seeked</span>
+            <span>12.00 S · 30 FPS</span>
+          </div>
+        </div>
+
+        <div id="outro-fade" data-fy-anim-start="329" data-fy-anim-duration="30"></div>
+      </div>
+    </fy-composition>
+  </body>
+</html>

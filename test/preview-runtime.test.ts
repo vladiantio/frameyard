@@ -9,6 +9,10 @@ import { startPreviewServer, type PreviewServer } from "../src/server/server.ts"
 
 const exec = promisify(execFile);
 
+// The host seeks 1ms past the frame time so Chromium selects the frame with a
+// millisecond-rounded timestamp instead of the previous one.
+const MEDIA_SEEK_BIAS_SECONDS = 0.001;
+
 const demoHtml = String.raw`<!doctype html>
 <html>
   <head>
@@ -385,14 +389,14 @@ describe("browser preview runtime", () => {
 
     const atTwo = await readFrame(2);
     expect(atTwo).toMatchObject({ paused: true, muted: true, videoFrame: "2", webglPixel: "0,0,255,255" });
-    expect(atTwo.currentTime).toBeCloseTo(0.3, 3);
+    expect(atTwo.currentTime).toBeCloseTo(0.3 + MEDIA_SEEK_BIAS_SECONDS, 3);
     expect(atTwo.videoPixel.slice(0, 3)).toEqual([expect.any(Number), expect.any(Number), expect.any(Number)]);
     expect(atTwo.videoPixel[0]).toBeGreaterThan(180);
     expect(atTwo.videoPixel[1]).toBeLessThan(60);
 
     const atEight = await readFrame(8);
     expect(atEight).toMatchObject({ videoFrame: "8", webglPixel: "255,0,0,255" });
-    expect(atEight.currentTime).toBeCloseTo(0.7, 3);
+    expect(atEight.currentTime).toBeCloseTo(0.7 + MEDIA_SEEK_BIAS_SECONDS, 3);
     expect(atEight.videoPixel[1]).toBeGreaterThan(180);
     expect(atEight.videoPixel[0]).toBeLessThan(60);
 
@@ -425,11 +429,11 @@ describe("browser preview runtime", () => {
       scrubber.value = "8";
       scrubber.dispatchEvent(new Event("input", { bubbles: true }));
     });
-    await page.waitForFunction(() => {
+    await page.waitForFunction((expected) => {
       const stage = document.querySelector("#stage-frame") as HTMLIFrameElement | null;
       const video = stage?.contentDocument?.querySelector("#clip") as HTMLVideoElement | null;
-      return video?.dataset.frame === "8" && Math.abs(video.currentTime - 0.7) < 0.01;
-    });
+      return video?.dataset.frame === "8" && Math.abs(video.currentTime - expected) < 0.01;
+    }, 0.7 + MEDIA_SEEK_BIAS_SECONDS);
 
     expect(pageErrors).toEqual([]);
     await context.close();

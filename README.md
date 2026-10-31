@@ -41,7 +41,7 @@ npx frameyard render hello --props props/hello.json --out hello.mp4
 npx frameyard still hello --frame 42 --out hello-frame.png
 ```
 
-The 30-second reference composition lives in [`examples/demo`](./examples/demo), and a focused WebGL shader example lives in [`examples/webgl`](./examples/webgl). Each README has the commands for running it from a repository checkout.
+The 30-second reference composition lives in [`examples/demo`](./examples/demo), a focused WebGL shader example lives in [`examples/webgl`](./examples/webgl), and a two-pass embedded-video example with WebM and MP4 sources lives in [`examples/video`](./examples/video). Each README has the commands for running it from a repository checkout.
 
 ## Project format
 
@@ -174,7 +174,9 @@ Embedded videos are declared in the composition document and frame-seeked by the
 
 The runtime pauses every video and seeks it to the frame-derived source time. Do not call `play()`, `pause()`, or set `currentTime` in a controller. Videos must be in the composition document's light DOM; shadow roots are not scanned. Video sources are local project-relative files; live streams, remote URLs, and sources that cannot be seeked are not supported. The runtime loads the complete file during the loading phase, so frame production performs no media network requests.
 
-An unmuted `<video>` also contributes its soundtrack to the same timeline as declarative audio clips. Frameyard extracts that track with FFmpeg for production and mirrors it in preview, while keeping the video element itself silent. Set `muted` or `data-fy-audio="off"` to use a video as a visual-only asset.
+An unmuted `<video>` also contributes its soundtrack to the same timeline as declarative audio clips. Frameyard extracts that track with FFmpeg for production and mirrors it in preview, while keeping the video element itself silent. Set `muted` or `data-fy-audio="off"` to use a video as a visual-only asset. See [`examples/video`](./examples/video) for the same composition driven by a VP9/Opus WebM clip and an H.264/AAC MP4 clip.
+
+Fade the overlay layers, not a full-scene ancestor of a video. Chromium can reuse the load frame in interactive preview after a large seek when an ancestor animates opacity. Production captures keep the composition hidden until the first seek, so stills resolve to the requested frame.
 
 WebGL 1 and WebGL 2 canvases are captured through the normal frame path. Draw the complete frame from the controller's `update()` and do not depend on the previous frame's drawing buffer; clear or redraw the scene each time. Production sessions pin software WebGL (SwiftShader) so rendered pixels do not vary with the host GPU. See [`examples/webgl`](./examples/webgl) for a complete shader example.
 
@@ -364,6 +366,7 @@ See the [design baseline](./docs/v0.1-design.md) for the full product contract, 
 - `skills/`: official host-neutral agent skill
 - `examples/demo/`: the 30-second reference composition
 - `examples/webgl/`: the focused WebGL shader example
+- `examples/video/`: the two-pass embedded-video example with WebM and MP4 sources
 - `bench/fixtures/`: controlled HTML compositions for the render benchmark
 - `scripts/`: benchmark, release checks, versioning, and git-hook installation
 - `docs/adr/`: architecture decision records

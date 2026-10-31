@@ -206,6 +206,10 @@ export async function openCompositionSession(options: {
           const api = (window as unknown as Record<string, unknown>).__fy as HostSessionApi;
           await api.ready;
           await api.load({ props });
+          // A video painted at the load frame can stay cached in the compositor
+          // when an ancestor animates opacity. Keep the composition hidden until
+          // the first seek so the first visible paint is the requested frame.
+          document.querySelector("fy-composition")?.setAttribute("data-fy-pending", "");
           return {
             metadata: api.metadata,
             props: api.props,
@@ -267,6 +271,7 @@ export async function openCompositionSession(options: {
 
     assertHealthy();
 
+    let firstSeek = true;
     const session: CompositionSession = {
       entry: options.entry,
       controller: options.info.controller
@@ -282,14 +287,34 @@ export async function openCompositionSession(options: {
 
       async seek(frame: number): Promise<void> {
         assertHealthy();
+        const reveal = firstSeek;
+        firstSeek = false;
         try {
-          await activePage.evaluate(async (targetFrame) => {
-            const api = (window as unknown as Record<string, unknown>).__fy as HostSessionApi;
-            api.seek(targetFrame);
-            await api.settle();
-          }, frame);
+          await activePage.evaluate(
+            async ({ targetFrame, reveal }) => {
+              const api = (window as unknown as Record<string, unknown>).__fy as HostSessionApi;
+              try {
+                api.seek(targetFrame);
+                await api.settle();
+              } finally {
+                if (reveal) {
+                  document.querySelector("fy-composition")?.removeAttribute("data-fy-pending");
+                }
+              }
+            },
+            { targetFrame: frame, reveal },
+          );
         } catch (error) {
           throw browserCommandError(error);
+        }
+        if (reveal) {
+          // Let the first visible paint happen before the caller captures.
+          await activePage.evaluate(
+            () =>
+              new Promise<void>((resolve) => {
+                requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+              }),
+          );
         }
         assertHealthy();
       },

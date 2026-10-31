@@ -27,6 +27,7 @@ pnpm check                             # scripts, lint, format, typechecks, full
 pnpm test                              # builds first, then runs the full suite
 pnpm vitest run test/contracts.test.ts # one test file
 pnpm bench                             # seek/capture/encode/full-render timings
+pnpm compare-stills a.png b.png        # exact decoded-pixel diff; exits nonzero on any difference
 ```
 
 `pnpm install` installs the local git hooks: pre-commit runs `pnpm check:static` and the unit tests; pre-push runs the full suite. `pnpm check` is the single entry point CI, the release workflow, and local runs share; add new checks to `package.json`, not to the workflow files. Lint and formatting use `oxlint` and `oxfmt`; configuration lives in `.oxlintrc.json` and `.oxfmtrc.json`.
@@ -43,7 +44,7 @@ node dist/cli.js render demo --project examples/demo --props examples/demo/props
 node dist/cli.js doctor
 ```
 
-Documentation command examples: runnable examples in `README.md`, `skills/frameyard/`, the `init` scaffold, and `init --json` `next` use `npx frameyard`; repository-internal commands (this file, `examples/demo/README.md`, and README's `Development` section) use `node dist/cli.js` after `pnpm build`. Command reference tables and `--help` usage lines keep the bare `frameyard` name. `test/docs.test.ts` enforces the user-facing rule, including the generated scaffold markdown in `src/scaffold.ts`.
+Documentation command examples: runnable examples in `README.md`, `skills/frameyard/`, the `init` scaffold, and `init --json` `next` use `npx frameyard`; repository-internal commands (this file, `examples/*/README.md`, and README's `Development` section) use `node dist/cli.js` after `pnpm build`. Command reference tables and `--help` usage lines keep the bare `frameyard` name. `test/docs.test.ts` enforces the user-facing rule, including the generated scaffold markdown in `src/scaffold.ts`; `test/examples.test.ts` enforces the example README rule.
 
 A full 30-second demo render is sequential by default; pass `--concurrency <n>` (1-16) to use multiple browser sessions. Run `pnpm bench` for current timings on the reference machine. The test fixtures render tiny compositions. TTS and transcription tests use fake `qwen-tts` and `whisper-cli` executables; real-model tests are opt-in.
 
@@ -83,6 +84,7 @@ A full 30-second demo render is sequential by default; pass `--concurrency <n>` 
 | `skills/frameyard/` | Official host-neutral agent skill and references |
 | `examples/demo/` | 30-second reference HTML composition and external controller |
 | `examples/webgl/` | Focused WebGL shader example with an external controller |
+| `examples/video/` | Two-pass embedded-video example with WebM and MP4 sources |
 | `test/` | Public-seam tests |
 
 Per-frame path: `src/renderer/browser.ts` `openCompositionSession` navigates to the composition document, waits for `window.__fy`, calls `load`, then `seek`/`settle`/capture. `src/runtime/host.ts` applies bindings, imports the controller, mounts it, prepares media, sets frame-state variables, calls `update`, seeks animations, and settles media. `src/renderer/index.ts` merges static and runtime diagnostics into the result.
@@ -157,13 +159,13 @@ Per-frame path: `src/renderer/browser.ts` `openCompositionSession` navigates to 
 - **Host runtime** → `src/runtime/host.ts`, `src/runtime/media.ts`, `src/runtime/diagnostics.ts`; extend `test/host-runtime.test.ts`.
 - **Preview** → `src/preview/main.ts`, `src/server/preview-html.ts`; extend the HTML iframe case in `test/preview-runtime.test.ts`.
 - **Server routes, host injection, inline controller, `project.json`** → `src/server/server.ts`, `src/server/composition-html.ts`; extend `test/project-server.test.ts`, `test/server-html.test.ts`.
-- **Chromium capture, audio/transcript inspection, FFmpeg** → `src/renderer/`; extend `test/cli-e2e.test.ts` and verify artifacts with FFprobe.
+- **Chromium capture, audio/transcript inspection, FFmpeg** → `src/renderer/`; extend `test/cli-e2e.test.ts`, `test/video-determinism.test.ts`, and verify artifacts with FFprobe.
 - **Static validation integration and result schemas** → `src/renderer/index.ts`, `src/cli.ts`; extend `test/cli-e2e.test.ts`, `test/agent-workflow.test.ts`.
 - **TTS, transcription, provenance, executable resolution** → `src/assets/`; extend `test/assets-e2e.test.ts` with fake executables.
 - **Doctor checks** → `src/doctor.ts`, `src/cli.ts`; extend `test/assets-e2e.test.ts`.
 - **Init scaffold content** → `src/scaffold.ts` (HTML composition, config, props, README, agent guide, and `next`); keep the agent guide aligned with `skills/frameyard/`; extend `test/scaffold.test.ts`, `test/docs.test.ts`, and the `init` case. When the scaffold file set changes, update `README.md`, `docs/v0.1-design.md` §6, and the scaffold README/agent guide.
 - **Agent skill contract** → `skills/frameyard/`, `package.json`; extend `test/skill.test.ts`.
-- **Reference behavior** → `examples/demo/` and `examples/webgl/`; keep their README commands working.
+- **Reference behavior** → `examples/demo/`, `examples/webgl/`, and `examples/video/`; keep their README commands working. Extend `test/examples.test.ts` when the example set or entry layout changes.
 - **Performance benchmarks** → `scripts/bench-render.mjs`, `bench/fixtures/`, `bench/README.md`; keep `pnpm bench` representative of the production capture path.
 - **Lint and formatting** → `.oxlintrc.json`, `.oxfmtrc.json`, `package.json`, `.githooks/pre-commit`, and CI/release workflows; run `pnpm check:static`.
 - **Release checks and versioning** → `scripts/set-version.mjs`, `scripts/verify-release.mjs`, `scripts/retag-release.mjs`, `RELEASING.md`, `.github/workflows/release.yml`; run `pnpm verify-release` after tagging.
@@ -180,6 +182,8 @@ Test at public seams, not private helpers:
 - `test/project-server.test.ts`: config loading, static routes, import map, ranges, traversal rejection.
 - `test/preview-runtime.test.ts`: HTML iframe preview, props, seeking, CSS animation, Canvas, WebGL, embedded video, determinism, diagnostics.
 - `test/cli-e2e.test.ts`: real CLI with Chromium and FFmpeg, JSON envelopes, missing assets, deterministic stills across concurrent sessions, embedded video/WebGL capture and audio, MP4/audio output, overwrite behavior, HTML check/still/render, static diagnostics, `dev`, `init`.
+- `test/video-determinism.test.ts`: a full-scene opacity animation over embedded video captures the requested frame, and consecutive composition frames map to consecutive source frames.
+- `test/examples.test.ts`: example README commands use the repository CLI, and each bundled example captures a still.
 - `test/assets-e2e.test.ts`: `tts`/`transcribe`/`doctor` with fake upstream executables, normalization, word timings, exports, manifests, cancellation, transcript validation.
 - `test/agent-workflow.test.ts`: source preservation, check/still/render reporting, failure reporting through the CLI.
 - `test/real-integrations.test.ts`: opt-in real-model checks enabled by `FRAMEYARD_REAL_INTEGRATIONS=1` and explicit model paths.
@@ -193,7 +197,7 @@ Prefer one failing public-behavior test, then the minimal implementation. Use re
 ## Before finishing
 
 - `pnpm check` passes (script syntax, lint, formatting, typechecks, then the full suite).
-- If capture, encoding, or audio changed, render a small fixture and verify the artifact with FFprobe; render `examples/demo` when its composition changed.
+- If capture, encoding, or audio changed, render a small fixture and verify the artifact with FFprobe; render the example whose composition changed.
 - If public behavior changed, update `README.md` and, for contract changes, the design baseline or an ADR.
 - Confirm failures still exit nonzero and leave no published partial output.
 
@@ -210,4 +214,6 @@ Prefer one failing public-behavior test, then the minimal implementation. Use re
 - **`project.json` is derived from explicit config**, not scanning. New `.html` compositions must be listed in `video.config.js`.
 - **Path containment** is lexical throughout the server, project loader, and media resolver. The preview server binds loopback by default; treat project roots as trusted.
 - **Media/transcript paths** resolve from the project root. Controller `src` and ordinary HTML asset URLs resolve from the composition document.
+- **Full-scene fades over video**: Chromium can reuse the load frame in interactive preview after a large seek. Fade overlay layers instead. Capture sessions keep the composition hidden until the first seek, and `test/video-determinism.test.ts` covers that path.
+- **Pixel diffs**: use `pnpm compare-stills` for decoded-pixel checks; ImageMagick `compare` can report color-profile noise on identical PNGs.
 - **Inline controllers** are served through `<composition>?__fy-controller`; a literal `</script>` in inline source must be escaped. Exactly one controller is allowed.

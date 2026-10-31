@@ -61,6 +61,7 @@
     "format": "oxfmt",
     "format:check": "oxfmt --check",
     "check:static": "pnpm check:scripts && pnpm lint && pnpm format:check && pnpm typecheck && pnpm typecheck:test && pnpm typecheck:browser",
+    "compare-stills": "node scripts/compare-stills.mjs",
     "check": "pnpm check:static && pnpm test",
     "test": "pnpm build && vitest run",
     "test:unit": "vitest run test/contracts.test.ts test/docs.test.ts test/random.test.ts test/release.test.ts test/scaffold.test.ts test/transcript.test.ts",

@@ -9,6 +9,10 @@ import { startPreviewServer, type PreviewServer } from "../src/server/server.ts"
 
 const exec = promisify(execFile);
 
+// The host seeks 1ms past the frame time so Chromium selects the frame with a
+// millisecond-rounded timestamp instead of the previous one.
+const MEDIA_SEEK_BIAS_SECONDS = 0.001;
+
 let root: string;
 let server: PreviewServer;
 let browser: Browser;
@@ -510,7 +514,7 @@ describe("browser composition host", () => {
     });
     expect(video.paused).toBe(true);
     expect(video.muted).toBe(true);
-    expect(video.currentTime).toBeCloseTo(0.3, 3);
+    expect(video.currentTime).toBeCloseTo(0.3 + MEDIA_SEEK_BIAS_SECONDS, 3);
     await mediaPage.close();
   });
 

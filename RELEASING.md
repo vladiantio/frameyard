@@ -12,9 +12,9 @@ Frameyard stays on `0.x` until its public contracts stabilize. See
 | Change | Version |
 | --- | --- |
 | Bug fix, documentation, internal refactor | Patch: `0.1.1` |
-| New feature or capability | Minor: `0.4.0` |
-| Breaking change to composition, props, config, CLI, JSON results, transcripts, manifests, or the skill contract | Minor: `0.4.0`, called out in the changelog |
-| Release candidate or preview | Prerelease: `0.4.0-next.1`, published under the `next` dist-tag |
+| New feature or capability | Minor: `0.5.0` |
+| Breaking change to composition, props, config, CLI, JSON results, transcripts, manifests, or the skill contract | Minor: `0.5.0`, called out in the changelog |
+| Release candidate or preview | Prerelease: `0.5.0-next.1`, published under the `next` dist-tag |
 
 - Never move or reuse a published version.
 - The annotated tag must be exactly `v` plus the `package.json` version.
@@ -84,7 +84,7 @@ OIDC token with `id-token: write` and publishes with provenance.
 2. Choose the version and update all version locations:
 
    ```sh
-   pnpm set-version 0.4.0
+   pnpm set-version 0.5.0
    pnpm set-version --check
    ```
 
@@ -112,8 +112,8 @@ OIDC token with `id-token: write` and publishes with provenance.
 
    ```sh
    git add package.json src/version.ts skills/frameyard/SKILL.md CHANGELOG.md
-   git commit -m "chore(release): v0.4.0"
-   git tag -a v0.4.0 -m "frameyard v0.4.0"
+   git commit -m "chore(release): v0.5.0"
+   git tag -a v0.5.0 -m "frameyard v0.5.0"
    ```
 
 6. Verify the release before pushing:
@@ -145,7 +145,7 @@ OIDC token with `id-token: write` and publishes with provenance.
 8. Verify the published result:
 
    ```sh
-   npm view frameyard@0.4.0 version dist.tarball dist.attestations
+   npm view frameyard@0.5.0 version dist.tarball dist.attestations
    npm view frameyard dist-tags
    ```
 
@@ -157,7 +157,7 @@ OIDC token with `id-token: write` and publishes with provenance.
 
    ```sh
    for _ in $(seq 1 30); do
-     npm view frameyard@0.4.0 version && break
+     npm view frameyard@0.5.0 version && break
      sleep 10
    done
    npm view frameyard time --json
@@ -168,18 +168,18 @@ OIDC token with `id-token: write` and publishes with provenance.
    prerelease state:
 
    ```sh
-   gh release view v0.4.0 --json tagName,isPrerelease,isDraft,url,publishedAt
+   gh release view v0.5.0 --json tagName,isPrerelease,isDraft,url,publishedAt
    ```
 
 ## Prereleases
 
-Use a prerelease version such as `0.4.0-next.1`. The release workflow detects
+Use a prerelease version such as `0.5.0-next.1`. The release workflow detects
 the `-` in the version, publishes under the `next` dist-tag instead of
 `latest`, and marks the GitHub Release as a prerelease. Promote it only after
 validation:
 
 ```sh
-npm dist-tag add frameyard@0.4.0 latest
+npm dist-tag add frameyard@0.5.0 latest
 ```
 
 ## Failure handling
@@ -190,8 +190,8 @@ npm dist-tag add frameyard@0.4.0 latest
 
   ```sh
   git push origin main
-  pnpm retag-release 0.4.0 --dry-run
-  pnpm retag-release 0.4.0 --yes
+  pnpm retag-release 0.5.0 --dry-run
+  pnpm retag-release 0.5.0 --yes
   ```
 
   Do not push with `--follow-tags` here; it re-sends the old tag and starts a
@@ -203,7 +203,7 @@ npm dist-tag add frameyard@0.4.0 latest
 - **npm publish succeeded, GitHub Release failed:** create the release manually:
 
   ```sh
-  gh release create v0.4.0 --generate-notes --verify-tag
+  gh release create v0.5.0 --generate-notes --verify-tag
   ```
 
   For a prerelease, add `--prerelease --latest=false`.
@@ -212,7 +212,7 @@ npm dist-tag add frameyard@0.4.0 latest
   publish a patch:
 
   ```sh
-  npm deprecate frameyard@0.4.0 "Superseded by 0.2.1"
+  npm deprecate frameyard@0.5.0 "Superseded by 0.2.1"
   ```
 
   Move the `latest` dist-tag if a previous version should remain current:
@@ -238,7 +238,7 @@ the pushed tag object and peeled commit, and restores the ruleset.
 1. Confirm the version is unpublished:
 
    ```sh
-   npm view frameyard@0.4.0 version
+   npm view frameyard@0.5.0 version
    ```
 
    It must fail with `E404`. If it prints a version, stop: never move a
@@ -256,7 +256,7 @@ the pushed tag object and peeled commit, and restores the ruleset.
 3. Inspect the plan:
 
    ```sh
-   pnpm retag-release 0.4.0 --dry-run
+   pnpm retag-release 0.5.0 --dry-run
    ```
 
    The script fetches `origin/main` and requires `HEAD` to be on it. It also
@@ -269,7 +269,7 @@ the pushed tag object and peeled commit, and restores the ruleset.
 4. Apply the plan:
 
    ```sh
-   pnpm retag-release 0.4.0 --yes
+   pnpm retag-release 0.5.0 --yes
    ```
 
 5. Watch the new run:

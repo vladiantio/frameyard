@@ -8,13 +8,47 @@ Frameyard uses `0.x` versions until the composition, configuration, CLI,
 JSON-result, transcript, and skill contracts stabilize. Before `1.0.0`, a
 contract change may ship in a minor release and is called out explicitly below.
 
-## [Unreleased]
+## [0.5.0] - 2026-10-31
+
+### Added
+
+- `examples/webgl/` demonstrates a frame-seeked WebGL shader driven by an
+  external controller.
+- `examples/video/` demonstrates two-pass embedded video with the same
+  composition rendered from WebM and MP4 sources, plus a script that
+  regenerates both clips with FFmpeg.
+- `test/examples.test.ts` captures a still from every bundled example.
+- `pnpm compare-stills <a.png> <b.png>` reports an exact decoded-pixel diff and
+  exits nonzero on any difference, for checking determinism at the capture
+  boundary.
+- The benchmark adds WebGL and embedded-video fixtures, `--concurrency`, and
+  bench-only `--browser-arg`/`--no-browser-arg` A/B runs. `bench/README.md`
+  documents the measurement recipe.
 
 ### Changed
 
 - `render` no longer requires `--out`. The default output is
   `out/<composition-id>.mp4` inside the project root, and scaffolded projects
   ignore `out/` in `.gitignore`.
+- Production capture composites frames in software while WebGL remains on
+  SwiftShader, and opens and closes parallel browser sessions concurrently.
+  Sequential and `--concurrency 4` renders are substantially faster; capture
+  timing and pixels can change for existing projects. Determinism remains at
+  the capture boundary for the same pinned runtime and inputs. See
+  [ADR 0009](./docs/adr/0009-composite-production-frames-in-software.md).
+- Static validation, the composition host, and preview share one browser-safe
+  composition descriptor for metadata, props, controller, animation, media, and
+  transcript declarations. This is an internal refactor with no authoring
+  contract change.
+
+### Fixed
+
+- Embedded video seeks 1 ms past the frame time so millisecond-rounded WebM
+  timestamps select the intended source frame.
+- Capture sessions stay hidden until the first seek, so an animated ancestor
+  cannot leave the load frame on screen in the captured still.
+
+[0.5.0]: https://github.com/vladiantio/frameyard/compare/v0.4.0...v0.5.0
 
 ## [0.4.0] - 2026-10-30
 

@@ -8,6 +8,14 @@ Frameyard uses `0.x` versions until the composition, configuration, CLI,
 JSON-result, transcript, and skill contracts stabilize. Before `1.0.0`, a
 contract change may ship in a minor release and is called out explicitly below.
 
+## [Unreleased]
+
+### Changed
+
+- `render` no longer requires `--out`. The default output is
+  `out/<composition-id>.mp4` inside the project root, and scaffolded projects
+  ignore `out/` in `.gitignore`.
+
 ## [0.4.0] - 2026-10-30
 
 ### Breaking

@@ -118,7 +118,7 @@ Static validation diagnostics include source locations. Runtime diagnostics may 
   "composition": "hello",
   "entry": "compositions/hello.html",
   "controller": { "kind": "inline" },
-  "path": "/absolute/path/hello.mp4",
+  "path": "/absolute/path/out/hello.mp4",
   "width": 1920,
   "height": 1080,
   "fps": 30,
@@ -134,7 +134,7 @@ Static validation diagnostics include source locations. Runtime diagnostics may 
 }
 ```
 
-A successful render means the final path exists and was published atomically. A nonzero exit means no new partial video was published. `concurrency` is the number of browser sessions actually used; it is capped by `durationInFrames` and by the CLI maximum of 16.
+A successful render means the final path exists and was published atomically. A nonzero exit means no new partial video was published. Without `--out`, the final path is `out/<composition-id>.mp4` inside the project root. `concurrency` is the number of browser sessions actually used; it is capped by `durationInFrames` and by the CLI maximum of 16.
 
 ## tts
 

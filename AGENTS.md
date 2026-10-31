@@ -40,9 +40,11 @@ Reference project:
 node dist/cli.js check demo --project examples/demo
 node dist/cli.js dev --project examples/demo
 node dist/cli.js still demo --frame 240 --project examples/demo --out still.png
-node dist/cli.js render demo --project examples/demo --props examples/demo/props/demo.json --out demo.mp4
+node dist/cli.js render demo --project examples/demo --props examples/demo/props/demo.json
 node dist/cli.js doctor
 ```
+
+`render` defaults to `out/<composition-id>.mp4` inside the project root; pass `--out` for another path. The repository and scaffold ignore `out/`.
 
 Documentation command examples: runnable examples in `README.md`, `skills/frameyard/`, the `init` scaffold, and `init --json` `next` use `npx frameyard`; repository-internal commands (this file, `examples/*/README.md`, and README's `Development` section) use `node dist/cli.js` after `pnpm build`. Command reference tables and `--help` usage lines keep the bare `frameyard` name. `test/docs.test.ts` enforces the user-facing rule, including the generated scaffold markdown in `src/scaffold.ts`; `test/examples.test.ts` enforces the example README rule.
 

@@ -18,7 +18,7 @@ From the repository root:
 pnpm build
 node dist/cli.js check demo --project examples/demo
 node dist/cli.js still demo --frame 240 --project examples/demo --out demo-still.png
-node dist/cli.js render demo --project examples/demo --props examples/demo/props/demo.json --out demo.mp4
+node dist/cli.js render demo --project examples/demo --props examples/demo/props/demo.json
 ```
 
 Start the interactive preview with:

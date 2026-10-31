@@ -20,7 +20,7 @@ From the repository root:
 pnpm build
 node dist/cli.js check webgl --project examples/webgl
 node dist/cli.js still webgl --frame 210 --project examples/webgl --out webgl-still.png
-node dist/cli.js render webgl --project examples/webgl --props examples/webgl/props/webgl.json --out webgl.mp4
+node dist/cli.js render webgl --project examples/webgl --props examples/webgl/props/webgl.json
 ```
 
 Start the interactive preview with:

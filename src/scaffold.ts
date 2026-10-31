@@ -9,6 +9,7 @@ This project produces deterministic, parameterized video with Frameyard. Follow 
 - \`video.config.js\` explicitly maps composition IDs to \`.html\` composition documents. There is no directory scanning; a new composition is invisible until it is listed.
 - \`compositions/\` contains HTML/CSS compositions. An optional controller lives beside the document as a \`.controller.js\` module; import \`frameyard/runtime\` for \`random("stable:key")\` and other browser APIs.
 - \`props/\` contains JSON props, merged shallowly over the composition's \`data-fy="props"\` defaults and deep-frozen.
+- \`out/\` contains rendered MP4s and is gitignored. \`render\` writes \`out/<composition-id>.mp4\` by default.
 - \`assets/\` (create it when needed) contains audio, images, fonts, and generated assets.
 - \`package.json\` pins the CLI version in \`dev\`, \`check\`, \`render\`, and \`still\` scripts. Run \`dev\` with \`npm run dev\` or \`pnpm dev\`; for the others, pass the composition id: \`npm run check -- hello\` (npm) or \`pnpm check hello\` (pnpm).
 
@@ -98,7 +99,7 @@ export default {
 2. Author the composition with native HTML, CSS, SVG, Canvas 2D, WebGL, embedded video, and an optional controller. Do not add a bundling step.
 3. Validate every frame: \`npx frameyard check <id> --json\`. Static validation runs before Chromium and reports stable diagnostic codes with source locations. Use \`--props <file>\` to validate a specific props file.
 4. Inspect a representative frame: \`npx frameyard still <id> --frame <n> --out <file.png> --json\`, then view the PNG when the host supports images. State explicitly when visual inspection is not possible.
-5. Render: \`npx frameyard render <id> --props <file> --out <file.mp4> [--concurrency <n>] --json\`.
+5. Render: \`npx frameyard render <id> --props <file> [--concurrency <n>] --json\`. The video is written to \`out/<id>.mp4\` unless \`--out\` is passed.
 6. Report the composition, controller, props, validation result, diagnostics, still path and inspection status, video path, and any failure. Never claim success when \`check\` fails, a still is missing, or a render exits nonzero.
 
 ## Commands
@@ -108,11 +109,12 @@ npx frameyard dev
 npx frameyard doctor --json
 npx frameyard check hello --json
 npx frameyard still hello --frame 42 --out hello-42.png --json
-npx frameyard render hello --props props/hello.json --out hello.mp4 --json
+npx frameyard render hello --props props/hello.json --json
 \`\`\`
 
 - Use \`--json\` for non-interactive commands. Parse stdout as the structured result; treat stderr as progress and diagnostics.
 - Use \`--project <dir>\` when running outside the project root.
+- \`render\` writes to \`out/<id>.mp4\` in the project unless \`--out\` is passed. \`out/\` is gitignored.
 - Use \`--concurrency <n>\` for faster local rendering when useful; the default is \`1\` and the maximum is \`16\`. It changes capture scheduling only, not composition behavior or output frame order.
 - \`still\` and \`render\` replace existing outputs only with \`--overwrite\`. Generated assets are replaced only with \`--force\`, and only with user approval.
 
@@ -138,20 +140,23 @@ Validate and render:
 \`\`\`sh
 npx frameyard doctor
 npx frameyard check hello
-npx frameyard render hello --props props/hello.json --out hello.mp4
+npx frameyard render hello --props props/hello.json
 \`\`\`
+
+The video is written to \`out/hello.mp4\` in the project. Pass \`--out <file.mp4>\` to choose another path.
 
 Or run the pinned scripts from \`package.json\`:
 
 \`\`\`sh
 npm run dev
 npm run check -- hello
-npm run render -- hello --props props/hello.json --out hello.mp4
+npm run render -- hello --props props/hello.json
 npm run still -- hello --frame 42 --out hello-42.png
 \`\`\`
 `;
 
 const SCAFFOLD_TEMPLATES: Record<string, string> = {
+  ".gitignore": "out/\n",
   "video.config.js": `export default {\n  compositions: {\n    hello: "./compositions/hello.html",\n  },\n};\n`,
   "props/hello.json": `${JSON.stringify({ title: "Hello, Frameyard", accent: "#b8f36b" }, null, 2)}\n`,
   "AGENTS.md": AGENTS_GUIDE,
@@ -272,5 +277,5 @@ export const SCAFFOLD_NEXT = [
   "npx frameyard doctor",
   "npx frameyard dev",
   "npx frameyard check hello",
-  "npx frameyard render hello --out hello.mp4",
+  "npx frameyard render hello",
 ];

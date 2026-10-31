@@ -418,7 +418,8 @@ describe("CLI end-to-end", () => {
     expect(pixel[1]).toBeGreaterThan(40);
     expect(pixel[2]).toBeLessThan(40);
 
-    const render = await run(["render", "html", "--out", "html.mp4", "--project", root, "--json"], root);
+    await mkdir(path.join(root, "nested"), { recursive: true });
+    const render = await run(["render", "html", "--project", root, "--json"], path.join(root, "nested"));
     expect(render.code).toBe(0);
     const rendered = JSON.parse(render.stdout) as Record<string, unknown>;
     expect(rendered).toMatchObject({
@@ -427,11 +428,12 @@ describe("CLI end-to-end", () => {
       composition: "html",
       entry: "compositions/html.html",
       controller: { kind: "inline" },
+      path: path.join(root, "out", "html.mp4"),
       framesRendered: 6,
       audio: { clips: 1 },
       diagnostics: [],
     });
-    const probe = await ffprobe(path.join(root, "html.mp4"), ["-count_frames"]);
+    const probe = await ffprobe(path.join(root, "out", "html.mp4"), ["-count_frames"]);
     const streams = probe.streams as Array<Record<string, unknown>>;
     expect(streams.find((stream) => stream.codec_type === "video")).toMatchObject({
       codec_name: "h264",
@@ -906,16 +908,18 @@ describe("CLI end-to-end", () => {
     expect(init.code).toBe(0);
     const json = JSON.parse(init.stdout) as Record<string, unknown>;
     expect(json).toMatchObject({ ok: true, command: "init" });
+    expect(json.files).toContain(".gitignore");
     expect(json.files).toContain("AGENTS.md");
     expect(json.files).toContain("package.json");
     expect(json.next).toEqual([
       "npx frameyard doctor",
       "npx frameyard dev",
       "npx frameyard check hello",
-      "npx frameyard render hello --out hello.mp4",
+      "npx frameyard render hello",
     ]);
     expect((await stat(path.join(target, "video.config.js"))).isFile()).toBe(true);
     expect((await stat(path.join(target, "compositions", "hello.html"))).isFile()).toBe(true);
+    expect(await readFile(path.join(target, ".gitignore"), "utf8")).toBe("out/\n");
 
     const manifest = JSON.parse(await readFile(path.join(target, "package.json"), "utf8"));
     expect(manifest).toEqual({
@@ -944,7 +948,7 @@ describe("CLI end-to-end", () => {
       "npx frameyard doctor --json",
       "npx frameyard check hello --json",
       "npx frameyard still hello --frame 42 --out hello-42.png --json",
-      "npx frameyard render hello --props props/hello.json --out hello.mp4 --json",
+      "npx frameyard render hello --props props/hello.json --json",
     ]) {
       expect(agents).toContain(command);
     }
@@ -955,7 +959,7 @@ describe("CLI end-to-end", () => {
       "npx frameyard dev",
       "npx frameyard doctor",
       "npx frameyard check hello",
-      "npx frameyard render hello --props props/hello.json --out hello.mp4",
+      "npx frameyard render hello --props props/hello.json",
     ]) {
       expect(readme).toContain(command);
     }

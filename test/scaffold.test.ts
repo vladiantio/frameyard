@@ -27,4 +27,8 @@ describe("scaffold files", () => {
     expect(manifest("---").name).toBe("frameyard-project");
     expect(manifest("").name).toBe("frameyard-project");
   });
+
+  it("ignores render output in generated projects", () => {
+    expect(scaffoldFiles("my-video")[".gitignore"]).toBe("out/\n");
+  });
 });

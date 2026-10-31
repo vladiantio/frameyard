@@ -28,7 +28,7 @@ npx frameyard dev
 
 `dev` prints a local preview URL. Select a composition, edit its JSON props, scrub frames, and play the composition with its audio timeline.
 
-The scaffold includes an `AGENTS.md` guide for coding agents working in the project, covering the HTML authoring rules and the `check`, `still`, and `render` workflow. It also includes a `package.json` with `dev`, `check`, `render`, and `still` scripts pinned to the scaffolding CLI version, so `pnpm dev` or `npm run dev` works without a global install.
+The scaffold includes an `AGENTS.md` guide for coding agents working in the project, covering the HTML authoring rules and the `check`, `still`, and `render` workflow. It also includes a `package.json` with `dev`, `check`, `render`, and `still` scripts pinned to the scaffolding CLI version, so `pnpm dev` or `npm run dev` works without a global install, and a `.gitignore` that ignores `out/`.
 
 `npx frameyard` resolves the latest published version. Pin it with `npx frameyard@<version>`, or install the package locally, when a project needs a fixed CLI version.
 
@@ -37,9 +37,11 @@ Validate and render:
 ```sh
 npx frameyard doctor
 npx frameyard check hello
-npx frameyard render hello --props props/hello.json --out hello.mp4
+npx frameyard render hello --props props/hello.json
 npx frameyard still hello --frame 42 --out hello-frame.png
 ```
+
+`render` writes the video to `out/hello.mp4` in the project by default; pass `--out <file.mp4>` to choose another path. The scaffold's `.gitignore` ignores `out/`.
 
 The 30-second reference composition lives in [`examples/demo`](./examples/demo), a focused WebGL shader example lives in [`examples/webgl`](./examples/webgl), and a two-pass embedded-video example with WebM and MP4 sources lives in [`examples/video`](./examples/video). Each README has the commands for running it from a repository checkout.
 
@@ -218,12 +220,12 @@ Transcript paths resolve from the project root. `words` requires actual measured
 | `frameyard dev [--port <port>]` | Start the preview server |
 | `frameyard check <id> [--props <file>]` | Run static validation, then evaluate every frame without capture |
 | `frameyard still <id> --frame <n>` | Capture one PNG through the production path |
-| `frameyard render <id> --out <video.mp4>` | Capture frames with Chromium and encode with FFmpeg, optionally in parallel |
+| `frameyard render <id> [--out <video.mp4>]` | Capture frames with Chromium and encode with FFmpeg, optionally in parallel; defaults to `out/<id>.mp4` in the project |
 | `frameyard tts ...` | Produce one frozen 24 kHz mono WAV with local qwentts.cpp |
 | `frameyard transcribe ...` | Produce canonical transcript JSON with optional word timings and SRT/VTT exports |
 | `frameyard doctor` | Inspect core requirements, optional integrations, and manifest integrity |
 
-Common options: `--project <dir>`, `--json`, `--help`, and `--version`. `still` and `render` accept `--overwrite`; `render` also accepts `--concurrency <n>` (1-16); `tts` and `transcribe` accept `--force`. `init` takes the target directory as a positional argument. Output paths are relative to the current working directory.
+Common options: `--project <dir>`, `--json`, `--help`, and `--version`. `still` and `render` accept `--overwrite`; `render` also accepts `--concurrency <n>` (1-16); `tts` and `transcribe` accept `--force`. `init` takes the target directory as a positional argument. Explicit output paths passed with `--out` are relative to the current working directory; `render` defaults to `out/<id>.mp4` inside the project root.
 
 A render fails immediately on an uncaught error, unhandled rejection, missing required asset, or invalid composition output. It writes to a temporary file and publishes only after FFmpeg succeeds. Existing outputs are not replaced unless `--overwrite` is supplied.
 

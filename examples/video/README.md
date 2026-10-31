@@ -50,8 +50,8 @@ node dist/cli.js check video --project examples/video
 node dist/cli.js check video-mp4 --project examples/video
 node dist/cli.js still video --frame 210 --project examples/video --out video-still.png
 node dist/cli.js still video-mp4 --frame 210 --project examples/video --out video-mp4-still.png
-node dist/cli.js render video --project examples/video --props examples/video/props/video.json --out video.mp4
-node dist/cli.js render video-mp4 --project examples/video --props examples/video/props/video.json --out video-mp4.mp4
+node dist/cli.js render video --project examples/video --props examples/video/props/video.json
+node dist/cli.js render video-mp4 --project examples/video --props examples/video/props/video.json
 ```
 
 Start the interactive preview with:

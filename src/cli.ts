@@ -193,9 +193,6 @@ function validateArgs(parsed: ParsedArgs): void {
   if (parsed.command === "still" && !parsed.flags.has("frame")) {
     usage('"still" requires --frame <n>.');
   }
-  if (parsed.command === "render" && !parsed.flags.has("out")) {
-    usage('"render" requires --out <video.mp4>.');
-  }
   if (parsed.command === "render" && parsed.flags.has("concurrency")) {
     validateRenderConcurrency(Number(parsed.flags.get("concurrency")));
   }
@@ -246,7 +243,7 @@ Usage:
   frameyard dev [--port <port>] [--project <dir>]
   frameyard check <composition-id> [--props <file>] [--project <dir>] [--json]
   frameyard still <composition-id> --frame <n> [--out <file.png>] [--props <file>] [--project <dir>] [--json]
-  frameyard render <composition-id> --out <video.mp4> [--props <file>] [--project <dir>] [--concurrency <n>] [--overwrite] [--json]
+  frameyard render <composition-id> [--out <video.mp4>] [--props <file>] [--project <dir>] [--concurrency <n>] [--overwrite] [--json]
   frameyard tts --speaker <name> --talker-model <gguf> --codec-model <gguf> --out <file.wav> [--text-file <file>] [--style <text>] [--language <lang>] [--device <name>] [--executable <path>] [--manifest <file>] [--force] [--json]
   frameyard transcribe <source> --model <gguf> --out <file.json> [--words] [--export srt,vtt] [--language <lang>] [--executable <path>] [--manifest <file>] [--force] [--json]
   frameyard doctor [--qwen-tts <path>] [--whisper-cli <path>] [--talker-model <gguf>] [--codec-model <gguf>] [--model <gguf>] [--manifest <file>] [--project <dir>] [--json]
@@ -254,7 +251,7 @@ Usage:
 Options:
   --project <dir>        Use a project other than the current directory.
   --props <file>         JSON props merged over composition defaults.
-  --out <file>           Output path for still, render, tts, or transcribe.
+  --out <file>           Output path for still, render, tts, or transcribe. Render defaults to out/<composition-id>.mp4 in the project.
   --frame <n>            Frame to capture for still.
   --concurrency <n>      Parallel browser sessions for render, 1-${MAX_RENDER_CONCURRENCY} (default: 1).
   --overwrite            Replace an existing still or render output.
@@ -301,7 +298,7 @@ function printCommandHelp(command: string): void {
       return;
     case "render":
       process.stdout.write(
-        `Usage: frameyard render <composition-id> --out <video.mp4> [--props <file>] [--project <dir>] [--concurrency <n>] [--overwrite] [--json]\nRender a complete MP4 with H.264 video and AAC audio. Concurrency is 1-${MAX_RENDER_CONCURRENCY} (default: 1).\n`,
+        `Usage: frameyard render <composition-id> [--out <video.mp4>] [--props <file>] [--project <dir>] [--concurrency <n>] [--overwrite] [--json]\nRender a complete MP4 with H.264 video and AAC audio. The default output is out/<composition-id>.mp4 in the project. Concurrency is 1-${MAX_RENDER_CONCURRENCY} (default: 1).\n`,
       );
       return;
     case "tts":
@@ -618,11 +615,11 @@ async function runRender(parsed: ParsedArgs, signal: AbortSignal): Promise<numbe
   const project = await projectFromFlag(parsed.flags);
   const props = await readPropsFile(parsed.flags);
   const compositionId = parsed.positionals[0] as string;
-  const outValue = parsed.flags.get("out");
-  if (typeof outValue !== "string") {
-    usage("--out requires a file path.");
-  }
-  const outPath = path.resolve(process.cwd(), outValue);
+  const outValue = flagString(parsed.flags, "out");
+  const outPath =
+    outValue === undefined
+      ? path.join(project.root, "out", `${compositionId}.mp4`)
+      : path.resolve(process.cwd(), outValue);
   const json = parsed.flags.has("json") === true;
   const concurrencyValue = parsed.flags.get("concurrency");
   const concurrency = validateRenderConcurrency(

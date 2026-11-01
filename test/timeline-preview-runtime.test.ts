@@ -193,6 +193,27 @@ describe("timeline preview runtime", () => {
         }),
       ).toBe("normal");
 
+      await page.locator("#step-forward").click();
+      await waitForFrame(page, 1);
+      expect(await page.locator("#frame").textContent()).toBe("1");
+
+      await page.keyboard.press("ArrowRight");
+      await waitForFrame(page, 2);
+
+      await page.locator("#step-back").click();
+      await waitForFrame(page, 1);
+
+      await page.keyboard.press("ArrowLeft");
+      await waitForFrame(page, 0);
+
+      await page.locator("#jump-forward").click();
+      await waitForFrame(page, 9);
+      expect(await page.locator("#frame").textContent()).toBe("9");
+
+      await page.keyboard.press("Shift+ArrowLeft");
+      await waitForFrame(page, 0);
+      expect(await page.locator("#frame").textContent()).toBe("0");
+
       await page.locator("#scrub").evaluate((element) => {
         const input = element as HTMLInputElement;
         input.value = "5";

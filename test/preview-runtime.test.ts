@@ -457,6 +457,38 @@ describe("browser preview runtime", () => {
     expect(await page.locator("#duration").textContent()).toBe("19");
     expect(await page.locator("#props").inputValue()).toContain('"label": "Hello"');
     expect(await page.locator("#play").isEnabled()).toBe(true);
+    expect(await page.locator("#step-back").isEnabled()).toBe(true);
+    expect(await page.locator("#step-forward").isEnabled()).toBe(true);
+    expect(await page.locator("#jump-back").isEnabled()).toBe(true);
+    expect(await page.locator("#jump-forward").isEnabled()).toBe(true);
+
+    await page.locator("#step-forward").click();
+    await page.waitForFunction(() => {
+      const stage = document.querySelector("#stage-frame") as HTMLIFrameElement | null;
+      return stage?.contentDocument?.querySelector("#box")?.getAttribute("data-frame") === "1";
+    });
+    expect(await page.locator("#frame").textContent()).toBe("1");
+
+    await page.keyboard.press("ArrowLeft");
+    await page.waitForFunction(() => {
+      const stage = document.querySelector("#stage-frame") as HTMLIFrameElement | null;
+      return stage?.contentDocument?.querySelector("#box")?.getAttribute("data-frame") === "0";
+    });
+    expect(await page.locator("#frame").textContent()).toBe("0");
+
+    await page.locator("#jump-forward").click();
+    await page.waitForFunction(() => {
+      const stage = document.querySelector("#stage-frame") as HTMLIFrameElement | null;
+      return stage?.contentDocument?.querySelector("#box")?.getAttribute("data-frame") === "10";
+    });
+    expect(await page.locator("#frame").textContent()).toBe("10");
+
+    await page.keyboard.press("Shift+ArrowLeft");
+    await page.waitForFunction(() => {
+      const stage = document.querySelector("#stage-frame") as HTMLIFrameElement | null;
+      return stage?.contentDocument?.querySelector("#box")?.getAttribute("data-frame") === "0";
+    });
+    expect(await page.locator("#frame").textContent()).toBe("0");
 
     await page.evaluate(() => {
       const scrubber = document.querySelector("#scrub") as HTMLInputElement;

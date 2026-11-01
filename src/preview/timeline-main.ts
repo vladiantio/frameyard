@@ -187,6 +187,10 @@ async function main(): Promise<void> {
   const meta = byId<HTMLDivElement>("meta");
   const title = byId<HTMLSpanElement>("title");
   const playButton = byId<HTMLButtonElement>("play-button");
+  const jumpBackButton = byId<HTMLButtonElement>("jump-back");
+  const stepBackButton = byId<HTMLButtonElement>("step-back");
+  const stepForwardButton = byId<HTMLButtonElement>("step-forward");
+  const jumpForwardButton = byId<HTMLButtonElement>("jump-forward");
   const scrubber = byId<HTMLInputElement>("scrub");
   const frameLabel = byId<HTMLElement>("frame");
   const durationLabel = byId<HTMLElement>("duration");
@@ -202,6 +206,7 @@ async function main(): Promise<void> {
   });
   const { playheads } = renderTracks(data);
   const fps = data.format.fps;
+  const framesPerSecond = Math.max(1, Math.round(fps));
   const duration = data.durationInFrames;
   let currentFrame = 0;
   let playing = false;
@@ -209,6 +214,7 @@ async function main(): Promise<void> {
   let playStartFrame = 0;
   let playStartClock = 0;
   let seeking = false;
+  let pendingFrame: number | null = null;
   let masterVolume = Number(volumeSlider.value) || 0.8;
   let muted = false;
 
@@ -255,21 +261,38 @@ async function main(): Promise<void> {
 
   const renderFrame = async (target: number): Promise<void> => {
     if (seeking) {
+      const next = clampFrame(target, duration);
+      if (next !== currentFrame) {
+        currentFrame = next;
+        pendingFrame = next;
+        updateUi();
+      }
       return;
     }
     seeking = true;
-    currentFrame = clampFrame(target, duration);
+    const requested = clampFrame(target, duration);
+    currentFrame = requested;
     updateUi();
+    let failed = false;
     try {
-      await host.seek(currentFrame);
+      await host.seek(requested);
     } catch (error) {
+      failed = true;
       playing = false;
+      pendingFrame = null;
       updateAudio(true);
       showError(error);
     } finally {
       seeking = false;
     }
     updateAudio(!playing);
+    if (!failed && pendingFrame !== null) {
+      const next = pendingFrame;
+      pendingFrame = null;
+      if (next !== requested) {
+        await renderFrame(next);
+      }
+    }
   };
 
   const stopPlayback = (): void => {
@@ -319,7 +342,46 @@ async function main(): Promise<void> {
     }
   };
 
+  const stepFrame = (delta: number): void => {
+    stopPlayback();
+    const target = clampFrame(currentFrame + delta, duration);
+    if (target !== currentFrame) {
+      void renderFrame(target);
+    }
+  };
+
+  const isTextEntry = (target: EventTarget | null): boolean => {
+    if (!(target instanceof HTMLElement)) {
+      return false;
+    }
+    return (
+      target.isContentEditable ||
+      target.tagName === "INPUT" ||
+      target.tagName === "TEXTAREA" ||
+      target.tagName === "SELECT"
+    );
+  };
+
+  const handleTransportKey = (event: KeyboardEvent): void => {
+    if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || isTextEntry(event.target)) {
+      return;
+    }
+    const frames = event.shiftKey ? framesPerSecond : 1;
+    if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      stepFrame(-frames);
+    } else if (event.key === "ArrowRight") {
+      event.preventDefault();
+      stepFrame(frames);
+    }
+  };
+
   playButton.addEventListener("click", () => setPlaying(!playing));
+  stepBackButton.addEventListener("click", () => stepFrame(-1));
+  stepForwardButton.addEventListener("click", () => stepFrame(1));
+  jumpBackButton.addEventListener("click", () => stepFrame(-framesPerSecond));
+  jumpForwardButton.addEventListener("click", () => stepFrame(framesPerSecond));
+  window.addEventListener("keydown", handleTransportKey);
   scrubber.addEventListener("input", () => {
     stopPlayback();
     void renderFrame(Number(scrubber.value));

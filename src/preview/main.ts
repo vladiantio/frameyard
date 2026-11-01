@@ -70,7 +70,11 @@ const formatButton = byId<HTMLButtonElement>("format");
 const compositionSelect = byId<HTMLSelectElement>("composition");
 const timelineSelect = byId<HTMLSelectElement>("timeline");
 const metaLabel = byId<HTMLDivElement>("meta");
+const jumpBackButton = byId<HTMLButtonElement>("jump-back");
+const stepBackButton = byId<HTMLButtonElement>("step-back");
 const playButton = byId<HTMLButtonElement>("play");
+const stepForwardButton = byId<HTMLButtonElement>("step-forward");
+const jumpForwardButton = byId<HTMLButtonElement>("jump-forward");
 const scrubber = byId<HTMLInputElement>("scrub");
 const frameLabel = byId<HTMLSpanElement>("frame");
 const durationLabel = byId<HTMLSpanElement>("duration");
@@ -132,6 +136,15 @@ function updateTransport(): void {
   clockLabel.textContent = `${(currentFrame / metadata.fps).toFixed(2)}s`;
   scrubber.max = String(metadata.durationInFrames - 1);
   scrubber.value = String(currentFrame);
+}
+
+function setTransportEnabled(enabled: boolean): void {
+  playButton.disabled = !enabled;
+  stepBackButton.disabled = !enabled;
+  stepForwardButton.disabled = !enabled;
+  jumpBackButton.disabled = !enabled;
+  jumpForwardButton.disabled = !enabled;
+  scrubber.disabled = !enabled;
 }
 
 function fitStage(): void {
@@ -327,11 +340,56 @@ function setPlaying(value: boolean): void {
   }
 }
 
+function framesPerSecond(): number {
+  return Math.max(1, Math.round(metadata?.fps ?? 1));
+}
+
+function stepFrame(delta: number): void {
+  if (!hostFrame || !metadata) {
+    return;
+  }
+  stopPlayback();
+  const target = Math.max(0, Math.min(metadata.durationInFrames - 1, currentFrame + delta));
+  if (target === currentFrame) {
+    return;
+  }
+  try {
+    renderFrame(target);
+  } catch (error) {
+    showError(error);
+  }
+}
+
+function isTextEntry(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+  return (
+    target.isContentEditable ||
+    target.tagName === "INPUT" ||
+    target.tagName === "TEXTAREA" ||
+    target.tagName === "SELECT"
+  );
+}
+
+function handleTransportKey(event: KeyboardEvent): void {
+  if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || isTextEntry(event.target)) {
+    return;
+  }
+  const frames = event.shiftKey ? framesPerSecond() : 1;
+  if (event.key === "ArrowLeft") {
+    event.preventDefault();
+    stepFrame(-frames);
+  } else if (event.key === "ArrowRight") {
+    event.preventDefault();
+    stepFrame(frames);
+  }
+}
+
 async function teardown(): Promise<void> {
   stopPlayback();
   releaseAudio();
-  playButton.disabled = true;
-  scrubber.disabled = true;
+  setTransportEnabled(false);
 
   if (hostFrame) {
     const active = hostFrame;
@@ -560,16 +618,13 @@ function browserCommandError(error: unknown): Error {
 const api: PreviewApi = {
   load(entry: string, propOverrides?: unknown): Promise<LoadedHostState> {
     return enqueue(async () => {
-      playButton.disabled = true;
-      scrubber.disabled = true;
+      setTransportEnabled(false);
       try {
         return await loadNow(entry, propOverrides);
       } catch (error) {
         throw browserCommandError(error);
       } finally {
-        const ready = hostFrame !== null;
-        playButton.disabled = !ready;
-        scrubber.disabled = !ready;
+        setTransportEnabled(hostFrame !== null);
       }
     });
   },
@@ -613,7 +668,7 @@ const api: PreviewApi = {
 window.__frameyardPreview = api;
 
 async function initPreview(): Promise<void> {
-  playButton.disabled = true;
+  setTransportEnabled(false);
   const response = await fetch("/__frameyard/project.json", { cache: "no-store" });
   if (!response.ok) {
     throw new FrameyardError("CONFIG_INVALID", `Could not load project.json (${response.status}).`);
@@ -687,8 +742,12 @@ async function initPreview(): Promise<void> {
   compositionSelect.value = firstId;
   document.title = `${firstId} — Frameyard Preview`;
 
-  scrubber.disabled = true;
   playButton.addEventListener("click", () => setPlaying(!playing));
+  stepBackButton.addEventListener("click", () => stepFrame(-1));
+  stepForwardButton.addEventListener("click", () => stepFrame(1));
+  jumpBackButton.addEventListener("click", () => stepFrame(-framesPerSecond()));
+  jumpForwardButton.addEventListener("click", () => stepFrame(framesPerSecond()));
+  window.addEventListener("keydown", handleTransportKey);
   scrubber.addEventListener("input", () => {
     stopPlayback();
     try {

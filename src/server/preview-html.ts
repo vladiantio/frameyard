@@ -182,6 +182,15 @@ export function renderPreviewHtml(): string {
     width: 34px; height: 34px; padding: 0; border-radius: 50%;
     background: var(--text); color: var(--bg); font-size: 12px; font-weight: 800;
   }
+  .step {
+    width: 30px; height: 30px; padding: 0; border-radius: 6px;
+    color: var(--muted); font-size: 18px; line-height: 1;
+  }
+  .jump {
+    height: 30px; padding: 0 8px; border-radius: 6px;
+    color: var(--muted); font: 10px var(--mono);
+  }
+  .step:hover:not(:disabled), .jump:hover:not(:disabled) { color: var(--text); }
   .scrub { flex: 1; accent-color: var(--accent); }
   .readout { display: flex; align-items: baseline; gap: 5px; font-family: var(--mono); font-size: 11px; white-space: nowrap; }
   .readout .dim { color: #5c6875; }
@@ -221,7 +230,11 @@ export function renderPreviewHtml(): string {
     </div>
   </main>
   <footer class="transport">
+    <button id="jump-back" class="jump" type="button" aria-label="Back one second" aria-keyshortcuts="Shift+ArrowLeft" title="Back one second (Shift+←)">&#8722;1s</button>
+    <button id="step-back" class="step" type="button" aria-label="Previous frame" aria-keyshortcuts="ArrowLeft" title="Previous frame (←)">&#8249;</button>
     <button id="play" class="play" type="button" aria-label="Play">&#9654;</button>
+    <button id="step-forward" class="step" type="button" aria-label="Next frame" aria-keyshortcuts="ArrowRight" title="Next frame (→)">&#8250;</button>
+    <button id="jump-forward" class="jump" type="button" aria-label="Forward one second" aria-keyshortcuts="Shift+ArrowRight" title="Forward one second (Shift+→)">+1s</button>
     <input id="scrub" class="scrub" type="range" min="0" max="0" value="0" step="1" aria-label="Frame" />
     <div class="readout">
       <span id="frame">0</span><span class="dim">/</span><span id="duration">0</span><span class="dim">f</span>

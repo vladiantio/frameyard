@@ -172,6 +172,15 @@ export function renderTimelinePreviewHtml(timelineId: string, options: { embed?:
         border-radius: 6px; padding: 8px 12px; cursor: pointer;
       }
       button:hover { border-color: #3a4654; }
+      .step {
+        width: 32px; height: 32px; padding: 0; border-radius: 6px;
+        color: var(--muted); font-size: 18px; line-height: 1;
+      }
+      .jump {
+        height: 32px; padding: 0 8px; border-radius: 6px;
+        color: var(--muted); font: 10px var(--mono);
+      }
+      .step:hover:not(:disabled), .jump:hover:not(:disabled) { color: var(--text); }
       .play {
         width: 38px; height: 38px; border-radius: 50%; border: 0;
         background: var(--accent); color: var(--accent-ink);
@@ -204,7 +213,11 @@ export function renderTimelinePreviewHtml(timelineId: string, options: { embed?:
         <div id="diagnostics" hidden></div>
       </section>
       <footer>
+        <button id="jump-back" class="jump" type="button" aria-label="Back one second" aria-keyshortcuts="Shift+ArrowLeft" title="Back one second (Shift+←)">&#8722;1s</button>
+        <button id="step-back" class="step" type="button" aria-label="Previous frame" aria-keyshortcuts="ArrowLeft" title="Previous frame (←)">&#8249;</button>
         <button id="play-button" class="play" type="button" aria-label="Play">&#9654;</button>
+        <button id="step-forward" class="step" type="button" aria-label="Next frame" aria-keyshortcuts="ArrowRight" title="Next frame (→)">&#8250;</button>
+        <button id="jump-forward" class="jump" type="button" aria-label="Forward one second" aria-keyshortcuts="Shift+ArrowRight" title="Forward one second (Shift+→)">+1s</button>
         <input id="scrub" class="scrub" type="range" min="0" max="0" value="0" step="1" aria-label="Timeline frame">
         <div class="readout"><b id="frame">0</b> / <span id="duration">0</span> f <span id="clock">0.00s</span></div>
         <label class="audio"><input id="mute" type="checkbox"> mute <input id="volume" type="range" min="0" max="1" step="0.01" value="0.8" aria-label="Audio volume"></label>

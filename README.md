@@ -26,7 +26,7 @@ cd my-video
 npx frameyard dev
 ```
 
-`dev` prints a local preview URL. Preview a composition with JSON props editing, or open the timeline for a program monitor, read-only tracks and clips, scrubbing, playback, and diagnostics.
+`dev` prints a local preview URL. Preview a composition with JSON props editing, or open the timeline for a program monitor, read-only tracks and clips, scrubbing, playback, frame-by-frame stepping, one-second jumps, and diagnostics.
 
 The scaffold includes an `AGENTS.md` guide for coding agents working in the project, covering the HTML authoring rules and the `check`, `still`, and `render` workflow. It also includes a `package.json` with `dev`, `check`, `render`, and `still` scripts pinned to the scaffolding CLI version, so `pnpm dev` or `npm run dev` works without a global install, and a `.gitignore` that ignores `out/`.
 

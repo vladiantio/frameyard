@@ -454,7 +454,7 @@ node dist/cli.js doctor
 
 These commands use the local build; `npx frameyard` runs the published package.
 
-`pnpm check` runs the script syntax checks, lint, formatting checks, typechecks, and the full suite. `pnpm install` installs the repository's git hooks; pre-commit runs `pnpm check:static` and the unit tests, and pre-push runs the full suite. CI runs the same `pnpm check` on Linux with Node 22 and 24.
+`pnpm check` runs the script syntax checks, lint, formatting checks, typechecks, and the full suite. `pnpm install` installs the repository's git hooks; pre-commit runs `pnpm check:static` and the unit tests, and pre-push runs the full suite. CI runs the same `pnpm check` on Linux with Node 22 and 24. For preview-only UI work, `pnpm check:preview` runs the static checks and the preview tests without the full suite; it does not replace `pnpm check` in CI or before pushing.
 
 CI uses fake `qwen-tts` and `whisper-cli` executables. Real-model tests are opt-in:
 

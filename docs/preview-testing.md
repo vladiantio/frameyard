@@ -34,6 +34,14 @@ expose the same seek/settle contract the renderer uses.
 - The same helper exports `openEmbeddedTimeline`, `loadTimeline`, and
   `seekTimeline`.
 
+## Verification
+
+For preview-only UI changes, run `pnpm check:preview`. It runs the static checks
+and then builds before running `test/preview-runtime.test.ts`,
+`test/timeline-preview.test.ts`, and `test/timeline-preview-runtime.test.ts`.
+Use the full `pnpm check` when the change reaches shared contracts, the runtime,
+the renderer, or the CLI, and before pushing or publishing.
+
 ## Notes
 
 - Preview iframes and the composition stage pin `color-scheme: light` to match

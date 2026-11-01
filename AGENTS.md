@@ -26,13 +26,15 @@ pnpm lint                              # oxlint
 pnpm format:check                      # oxfmt --check
 pnpm format                            # rewrite formatting with oxfmt
 pnpm check                             # scripts, lint, format, typechecks, full suite
+pnpm check:preview                     # static checks, then build + preview tests
 pnpm test                              # builds first, then runs the full suite
+pnpm test:preview                      # builds first, then runs the preview test files
 pnpm vitest run test/contracts.test.ts # one test file
 pnpm bench                             # seek/capture/encode/full-render timings
 pnpm compare-stills a.png b.png        # exact decoded-pixel diff; exits nonzero on any difference
 ```
 
-`pnpm install` installs the local git hooks: pre-commit runs `pnpm check:static` and the unit tests; pre-push runs the full suite. `pnpm check` is the single entry point CI, the release workflow, and local runs share; add new checks to `package.json`, not to the workflow files. Lint and formatting use `oxlint` and `oxfmt`; configuration lives in `.oxlintrc.json` and `.oxfmtrc.json`.
+`pnpm install` installs the local git hooks: pre-commit runs `pnpm check:static` and the unit tests; pre-push runs the full suite. `pnpm check` remains the single entry point CI and the release workflow share; `pnpm check:preview` is a local subset for preview-only UI work, not a CI replacement. Add new checks to `package.json`, not to the workflow files. Lint and formatting use `oxlint` and `oxfmt`; configuration lives in `.oxlintrc.json` and `.oxfmtrc.json`.
 
 Releases are tag-driven. Read `RELEASING.md` before publishing. `pnpm set-version <version>` updates the package, runtime, and skill versions together; `pnpm set-version --check` verifies they agree; `pnpm retag-release <version>` recovers an unpublished tag after a failed release.
 
@@ -231,11 +233,14 @@ Test at public seams, not private helpers:
 - `test/release.test.ts`: CI, release workflow, and pre-commit hook share `pnpm check`; release metadata verification.
 - `test/scaffold.test.ts`: scaffold file generation, package manifest, project-name normalization.
 
-Prefer one failing public-behavior test, then the minimal implementation. Every behavior named in a commit message needs a test that fails without the change. Use real Chromium and FFmpeg for production-path behavior; mock only external model executables. Run `pnpm test` before finishing. Browser/CLI tests are intentionally sequential (`fileParallelism: false`).
+Prefer one failing public-behavior test, then the minimal implementation. Every behavior named in a commit message needs a test that fails without the change. Use real Chromium and FFmpeg for production-path behavior; mock only external model executables. Run the verification command scoped by `Before finishing`. Browser/CLI tests are intentionally sequential (`fileParallelism: false`).
 
 ## Before finishing
 
-- `pnpm check` passes (script syntax, lint, formatting, typechecks, then the full suite).
+- Verify proportionally to the change:
+  - Preview-only UI (`src/preview/`, `src/server/preview-html.ts`, `src/server/timeline-preview-*.ts`, and their tests): run `pnpm check:preview` (static checks plus the preview test files). Do not run the full `pnpm check` unless the change also reaches shared code.
+  - Anything else, including contracts, runtime, renderer, CLI, timelines, determinism, release configuration, or docs consumed by those: run `pnpm check`.
+  - Before pushing or publishing, `pnpm check` must pass regardless; the pre-push hook runs the full suite.
 - If capture, encoding, or audio changed, render a small fixture and verify the artifact with FFprobe; render the example whose composition changed.
 - If public behavior changed, update `README.md` and, for contract changes, the design baseline or an ADR.
 - If the output format or container changed, grep the docs for the old format noun (`final MP4`, `partial MP4`) before finishing.

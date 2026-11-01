@@ -573,6 +573,42 @@ describe("browser preview runtime", () => {
     await context.close();
   });
 
+  it("switches compositions from the selector", async () => {
+    const context = await browser.newContext({ viewport: { width: 900, height: 700 } });
+    const page = await context.newPage();
+
+    await page.goto(new URL("/__frameyard/?composition=html", server.url).href);
+    await page.waitForFunction(() => {
+      const frame = document.querySelector("#stage-frame") as HTMLIFrameElement | null;
+      return (
+        frame?.getAttribute("src")?.includes("html.html") === true &&
+        Boolean(frame.contentDocument?.querySelector("#title"))
+      );
+    });
+
+    await page.selectOption("#composition", "demo");
+    await page.waitForFunction(() => {
+      const frame = document.querySelector("#stage-frame") as HTMLIFrameElement | null;
+      return (
+        frame?.getAttribute("src")?.includes("demo.html") === true &&
+        Boolean(frame.contentDocument?.querySelector("#label"))
+      );
+    });
+    expect(await page.locator("#stage-frame").getAttribute("src")).toContain("demo.html");
+
+    await page.selectOption("#composition", "html");
+    await page.waitForFunction(() => {
+      const frame = document.querySelector("#stage-frame") as HTMLIFrameElement | null;
+      return (
+        frame?.getAttribute("src")?.includes("html.html") === true &&
+        Boolean(frame.contentDocument?.querySelector("#title"))
+      );
+    });
+    expect(await page.locator("#stage-frame").getAttribute("src")).toContain("html.html");
+
+    await context.close();
+  }, 60_000);
+
   it("warns about forbidden clocks and randomness in preview mode", async () => {
     const context = await browser.newContext({ viewport: { width: 900, height: 700 } });
     const page = await context.newPage();

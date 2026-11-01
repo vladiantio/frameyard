@@ -772,7 +772,6 @@ async function initPreview(): Promise<void> {
     if (!composition) {
       return;
     }
-    selectedEntry = composition.entry;
     document.title = `${id} — Frameyard Preview`;
     void api.load(composition.entry).catch(showError);
   });

@@ -153,7 +153,7 @@ export function renderPreviewHtml(): string {
       repeating-conic-gradient(#0d1014 0% 25%, #0b0d10 0% 50%) 50% / 24px 24px;
   }
   .stage-wrap { position: relative; flex: 0 0 auto; }
-  .stage-frame { position: absolute; top: 0; left: 0; border: 0; transform-origin: top left; background: #000; }
+  .stage-frame { position: absolute; top: 0; left: 0; border: 0; transform-origin: top left; background: #000; color-scheme: normal; }
   .diagnostics {
     border: 1px solid var(--line);
     background: var(--panel-2);

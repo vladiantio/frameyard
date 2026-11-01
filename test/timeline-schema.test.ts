@@ -197,6 +197,47 @@ describe("timeline schema", () => {
     }
   });
 
+  it("accepts an explicit transform box", () => {
+    const value = validTimeline();
+    ((value.clips as Record<string, unknown>[])[2]!.transform as Record<string, unknown>) = {
+      fit: "cover",
+      width: 80,
+      height: 45,
+      x: 10,
+      y: -20,
+      rotation: 5,
+      opacity: 0.8,
+    };
+
+    const parsed = parseTimelineDocument(value);
+
+    expect(parsed.diagnostics).toEqual([]);
+    expect(parsed.timeline?.clips[2]?.transform).toEqual({
+      fit: "cover",
+      x: 10,
+      y: -20,
+      width: 80,
+      height: 45,
+      scale: 1,
+      rotation: 5,
+      opacity: 0.8,
+    });
+  });
+
+  it("rejects incomplete, invalid, or ambiguous transform boxes", () => {
+    for (const transform of [
+      { width: 80 },
+      { height: 45 },
+      { width: 0, height: 45 },
+      { width: 80, height: 45.5 },
+      { width: 80, height: 45, scale: 0.5 },
+    ]) {
+      const value = validTimeline();
+      ((value.clips as Record<string, unknown>[])[2]!.transform as Record<string, unknown>) = transform;
+      expect(codes(value), JSON.stringify(transform)).toContain("TIMELINE_CLIP_INVALID");
+    }
+  });
+
   it("rejects invalid transform and audio values", () => {
     const transform = validTimeline();
     ((transform.clips as Record<string, unknown>[])[2]!.transform as Record<string, unknown>).opacity = 1.5;

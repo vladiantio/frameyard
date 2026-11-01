@@ -56,11 +56,32 @@ beforeAll(async () => {
     )}\n`,
   );
   await writeFile(
+    path.join(root, "timelines", "sized.json"),
+    `${JSON.stringify(
+      {
+        version: 1,
+        tracks: [{ id: "v1", kind: "video" }],
+        clips: [
+          {
+            id: "intro",
+            track: "v1",
+            source: { kind: "composition", id: "intro" },
+            start: 0,
+            duration: 10,
+            transform: { fit: "cover", width: 160, height: 60, x: 0, y: 0 },
+          },
+        ],
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  await writeFile(
     path.join(root, "video.config.js"),
     `export default {
       format: { width: 320, height: 180, fps: 10 },
       compositions: { intro: "./compositions/intro.html" },
-      timelines: { main: "./timelines/main.json" },
+      timelines: { main: "./timelines/main.json", sized: "./timelines/sized.json" },
     };\n`,
   );
   server = await startPreviewServer({ projectRoot: root, port: 0 });
@@ -114,6 +135,46 @@ describe("timeline preview runtime", () => {
     }
   }, 60_000);
 
+  it("sizes and clips a layer into an explicit transform box", async () => {
+    const page = await browser.newPage({ viewport: { width: 640, height: 360 } });
+    try {
+      await page.goto(new URL("/__frameyard/timeline/sized?__fy-embed=1", server.url).href, {
+        waitUntil: "domcontentloaded",
+      });
+      await page.waitForFunction(() => Boolean((window as Window & { __fyTimeline?: unknown }).__fyTimeline));
+      await page.evaluate(async () => {
+        const api = (
+          window as Window & {
+            __fyTimeline?: {
+              ready: Promise<void>;
+              load(): Promise<void>;
+              seek(frame: number): Promise<void>;
+            };
+          }
+        ).__fyTimeline;
+        if (!api) {
+          throw new Error("Missing embedded timeline host.");
+        }
+        await api.ready;
+        await api.load();
+        await api.seek(0);
+      });
+
+      await waitForFrame(page, 0);
+      const wrapper = page.locator(".timeline-layer").first();
+      const frame = page.locator(".timeline-layer iframe").first();
+      const wrapperBox = await wrapper.boundingBox();
+      const frameBox = await frame.boundingBox();
+      expect(wrapperBox?.width).toBeCloseTo(160, 5);
+      expect(wrapperBox?.height).toBeCloseTo(60, 5);
+      expect(frameBox?.width).toBeCloseTo(160, 5);
+      expect(frameBox?.height).toBeCloseTo(90, 5);
+      expect(await wrapper.evaluate((element) => getComputedStyle(element).overflow)).toBe("hidden");
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+
   it("renders the timeline UI and scrubs the host", async () => {
     const page = await browser.newPage({ viewport: { width: 1000, height: 700 } });
     try {
@@ -125,6 +186,12 @@ describe("timeline preview runtime", () => {
 
       expect(await page.locator(".track").count()).toBe(1);
       expect(await page.locator(".clip").count()).toBe(1);
+      expect(
+        await page.evaluate(() => {
+          const frame = document.querySelector(".timeline-layer iframe") as HTMLIFrameElement | null;
+          return frame ? getComputedStyle(frame).colorScheme : null;
+        }),
+      ).toBe("normal");
 
       await page.locator("#scrub").evaluate((element) => {
         const input = element as HTMLInputElement;

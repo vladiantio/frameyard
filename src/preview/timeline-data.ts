@@ -6,6 +6,8 @@ export interface TimelinePreviewTransform {
   fit: TimelinePreviewFit;
   x: number;
   y: number;
+  width?: number;
+  height?: number;
   scale: number;
   rotation: number;
   opacity: number;

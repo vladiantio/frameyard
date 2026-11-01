@@ -50,7 +50,7 @@ export default {
       "source": { "kind": "image", "src": "assets/logo.png" },
       "start": 30,
       "duration": 60,
-      "transform": { "fit": "contain", "x": 640, "y": -320, "scale": 0.25, "rotation": 0, "opacity": 0.9 }
+      "transform": { "fit": "contain", "width": 480, "height": 270, "x": 640, "y": -320, "rotation": 0, "opacity": 0.9 }
     },
     {
       "id": "music",
@@ -95,8 +95,9 @@ Media paths resolve from the project root. No remote URLs.
 Visual clips accept a static transform:
 
 - `fit`: `contain`, `cover`, or `stretch`.
+- `width`, `height`: optional clip box in output pixels. Both are required together and cannot be combined with `scale`. `fit` applies inside the box, and `x`/`y` offset the box center. Without them, the project frame is the box.
 - `x`, `y`: pixel offsets from the centered fitted result.
-- `scale`: multiplier after fit.
+- `scale`: multiplier after fitting to the project frame; an alternative to `width`/`height`.
 - `rotation`: degrees around the center.
 - `opacity`: 0–1.
 

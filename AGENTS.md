@@ -97,7 +97,7 @@ A full 30-second demo timeline render is segmented and uses 8 workers by default
 | `skills/frameyard/` | Official host-neutral agent skill and references |
 | `examples/demo/` | 30-second reference HTML composition, external controller, and timeline |
 | `examples/webgl/` | Focused WebGL shader example with an external controller |
-| `examples/video/` | Two-pass embedded-video example with WebM and MP4 sources |
+| `examples/video/` | Embedded-video compositions (WebM and MP4) and WebM/MP4 timelines with video clips under a transparent HTML overlay |
 | `test/` | Public-seam tests |
 
 Per-frame path: `src/renderer/browser.ts` `openCompositionSession` navigates to the composition document, waits for `window.__fy`, calls `load`, then `seek`/`settle`/capture. `src/runtime/host.ts` applies bindings, imports the controller, mounts it, prepares media, sets frame-state variables, calls `update`, seeks animations, and settles media. `src/renderer/index.ts` merges static and runtime diagnostics into the result.
@@ -197,7 +197,7 @@ Timeline path: `src/timeline/resolve.ts` resolves the JSON and references; `src/
 - **Doctor checks** → `src/doctor.ts`, `src/cli.ts`; extend `test/assets-e2e.test.ts`.
 - **Init scaffold content** → `src/scaffold.ts` (project format, composition, timeline, config, props, README, agent guide, and `next`); keep the agent guide aligned with `skills/frameyard/`; extend `test/scaffold.test.ts`, `test/docs.test.ts`, and the `init` case. When the scaffold file set changes, update `README.md`, `docs/v0.1-design.md` §6, and the scaffold README/agent guide.
 - **Agent skill contract** → `skills/frameyard/`, `package.json`; extend `test/skill.test.ts`.
-- **Reference behavior** → `examples/demo/`, `examples/webgl/`, and `examples/video/`; keep their README commands working. The demo now includes a timeline wrapping its composition. Extend `test/examples.test.ts` when the example set or entry layout changes.
+- **Reference behavior** → `examples/demo/`, `examples/webgl/`, and `examples/video/`; keep their README commands working. The demo includes a timeline wrapping its composition; the video example includes WebM and MP4 timelines with video clips under a transparent overlay composition. Extend `test/examples.test.ts` when the example set or entry layout changes.
 - **Performance benchmarks** → `scripts/bench-render.mjs`, `bench/fixtures/`, `bench/README.md`; keep `pnpm bench` representative of the composition capture path. Timeline benchmark scripts are temporary measurement tools; the production projection is in ADR 0012.
 - **Lint and formatting** → `.oxlintrc.json`, `.oxfmtrc.json`, `package.json`, `.githooks/pre-commit`, and CI/release workflows; run `pnpm check:static`.
 - **Release checks and versioning** → `scripts/set-version.mjs`, `scripts/verify-release.mjs`, `scripts/retag-release.mjs`, `RELEASING.md`, `.github/workflows/release.yml`; run `pnpm verify-release` after tagging.

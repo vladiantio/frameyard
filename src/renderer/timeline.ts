@@ -556,6 +556,9 @@ async function processTimelineSegment(options: {
       fit: transform.fit,
       x: transform.x,
       y: transform.y,
+      ...(transform.width !== undefined && transform.height !== undefined
+        ? { width: transform.width, height: transform.height }
+        : {}),
       scale: transform.scale,
       rotation: transform.rotation,
       opacity: transform.opacity,
@@ -927,6 +930,9 @@ async function renderResolvedTimelineFrame(options: {
       fit: transform.fit,
       x: transform.x,
       y: transform.y,
+      ...(transform.width !== undefined && transform.height !== undefined
+        ? { width: transform.width, height: transform.height }
+        : {}),
       scale: transform.scale,
       rotation: transform.rotation,
       opacity: transform.opacity,

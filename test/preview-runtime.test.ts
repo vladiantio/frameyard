@@ -502,6 +502,12 @@ describe("browser preview runtime", () => {
 
     const frame = page.frameLocator("#stage-frame");
     expect(await page.locator("#composition").inputValue()).toBe("html");
+    expect(
+      await page.evaluate(() => {
+        const element = document.querySelector("#stage-frame") as HTMLIFrameElement | null;
+        return element ? getComputedStyle(element).colorScheme : null;
+      }),
+    ).toBe("normal");
     expect(await page.locator("#meta").textContent()).toContain("200×100");
     expect(await page.locator("#duration").textContent()).toBe("19");
     expect(await page.locator("#props").inputValue()).toContain('"title": "HTML"');

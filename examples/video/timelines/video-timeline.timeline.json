@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "name": "Video on a track, HTML overlay on top",
+  "tracks": [
+    { "id": "v1", "kind": "video", "name": "Hero video" },
+    { "id": "v2", "kind": "video", "name": "Detail video" },
+    { "id": "v3", "kind": "video", "name": "HTML overlay" }
+  ],
+  "clips": [
+    {
+      "id": "hero",
+      "track": "v1",
+      "source": { "kind": "video", "src": "assets/clip.webm" },
+      "start": 0,
+      "audio": { "gain": 0.85 }
+    },
+    {
+      "id": "detail",
+      "track": "v2",
+      "source": { "kind": "video", "src": "assets/clip.webm" },
+      "start": 120,
+      "sourceIn": 174,
+      "duration": 150,
+      "transform": {
+        "fit": "cover",
+        "width": 440,
+        "height": 248,
+        "x": 592,
+        "y": 262,
+        "rotation": 0,
+        "opacity": 1
+      },
+      "audio": { "muted": true }
+    },
+    {
+      "id": "overlay",
+      "track": "v3",
+      "source": { "kind": "composition", "id": "video-overlay" },
+      "start": 0,
+      "duration": 360,
+      "props": { "format": "VP9 + Opus / 30 FPS" }
+    }
+  ]
+}

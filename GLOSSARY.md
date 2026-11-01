@@ -131,11 +131,11 @@ The optional color behind all layers of a timeline; it is transparent by default
 _Avoid_: Canvas, backdrop
 
 **Fit policy**:
-How a clip source's natural frame is scaled into the project format: contained, covering, or stretched.
+How a clip source's natural frame is fitted into the project frame or an explicit clip box: contained, covering, or stretched.
 _Avoid_: Resize mode, object-fit
 
 **Clip transform**:
-The static position, scale, rotation, and opacity applied to a visual clip.
+The static size, position, rotation, and opacity applied to a visual clip. Size is either an explicit `width`/`height` box or a `scale` multiplier.
 _Avoid_: Effect, animation
 
 **Nested timeline**:

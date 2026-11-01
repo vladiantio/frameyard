@@ -65,23 +65,32 @@ function sourceSize(source: TimelinePreviewSource, data: TimelinePreviewData): {
   };
 }
 
+function clipBox(
+  transform: TimelinePreviewTransform,
+  stage: { width: number; height: number },
+): { width: number; height: number } {
+  if (transform.width !== undefined && transform.height !== undefined) {
+    return { width: transform.width, height: transform.height };
+  }
+  return { width: stage.width, height: stage.height };
+}
+
 function fitScale(
   transform: TimelinePreviewTransform,
   source: { width: number; height: number },
-  stage: { width: number; height: number },
+  box: { width: number; height: number },
 ): { x: number; y: number } {
   if (transform.fit === "stretch") {
     return {
-      x: (stage.width / source.width) * transform.scale,
-      y: (stage.height / source.height) * transform.scale,
+      x: box.width / source.width,
+      y: box.height / source.height,
     };
   }
   const contain = transform.fit === "contain";
   const raw = contain
-    ? Math.min(stage.width / source.width, stage.height / source.height)
-    : Math.max(stage.width / source.width, stage.height / source.height);
-  const scale = raw * transform.scale;
-  return { x: scale, y: scale };
+    ? Math.min(box.width / source.width, box.height / source.height)
+    : Math.max(box.width / source.width, box.height / source.height);
+  return { x: raw, y: raw };
 }
 
 function waitFor<T>(predicate: () => T | undefined, timeout = 30_000): Promise<T> {
@@ -196,14 +205,25 @@ export function createTimelineHost(
 
     const source = clip.source;
     const size = sourceSize(source, data);
+    const box = clipBox(clip.transform, stageSize);
+    const fit = fitScale(clip.transform, size, box);
+    const scale = clip.transform.width === undefined ? clip.transform.scale : 1;
     const wrapper = document.createElement("div");
     wrapper.className = "timeline-layer";
-    wrapper.style.width = `${size.width}px`;
-    wrapper.style.height = `${size.height}px`;
+    wrapper.style.width = `${box.width}px`;
+    wrapper.style.height = `${box.height}px`;
+    wrapper.style.overflow = "hidden";
     wrapper.style.display = "none";
     wrapper.style.opacity = String(clip.transform.opacity);
-    const scale = fitScale(clip.transform, size, stageSize);
-    wrapper.style.transform = `translate(-50%, -50%) translate(${clip.transform.x}px, ${clip.transform.y}px) rotate(${clip.transform.rotation}deg) scale(${scale.x}, ${scale.y})`;
+    wrapper.style.transform = `translate(-50%, -50%) translate(${clip.transform.x}px, ${clip.transform.y}px) rotate(${clip.transform.rotation}deg) scale(${scale})`;
+
+    const place = (element: HTMLElement): void => {
+      element.style.position = "absolute";
+      element.style.left = "50%";
+      element.style.top = "50%";
+      element.style.transformOrigin = "center";
+      element.style.transform = `translate(-50%, -50%) scale(${fit.x}, ${fit.y})`;
+    };
 
     let element: HTMLIFrameElement | HTMLVideoElement | HTMLImageElement;
     let load: Promise<void>;
@@ -216,7 +236,12 @@ export function createTimelineHost(
       frame.style.width = `${size.width}px`;
       frame.style.height = `${size.height}px`;
       frame.style.border = "0";
+      // The preview pages are dark. Without this, Chromium gives an iframe that
+      // inherits the dark color scheme a white base behind transparent
+      // compositions.
+      frame.style.colorScheme = "normal";
       frame.title = `${source.kind} ${source.id}`;
+      place(frame);
       wrapper.append(frame);
       stage.append(wrapper);
       element = frame;
@@ -250,6 +275,7 @@ export function createTimelineHost(
       video.muted = true;
       video.playsInline = true;
       video.preload = "auto";
+      place(video);
       wrapper.append(video);
       stage.append(wrapper);
       element = video;
@@ -262,6 +288,7 @@ export function createTimelineHost(
       image.style.width = `${size.width}px`;
       image.style.height = `${size.height}px`;
       image.alt = "";
+      place(image);
       wrapper.append(image);
       stage.append(wrapper);
       element = image;

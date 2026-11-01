@@ -273,6 +273,261 @@ describe("timeline rendering media and alpha", () => {
     });
   }, 120_000);
 
+  it("fits a clip into an explicit transform box", async () => {
+    const root = await customRoot();
+    await writeFile(
+      path.join(root, "compositions", "base.html"),
+      `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <style>html, body { margin: 0; width: 100%; height: 100%; background: #e23b3b; }</style>
+  </head>
+  <body>
+    <fy-composition width="320" height="180" fps="10" duration-in-frames="10"></fy-composition>
+  </body>
+</html>
+`,
+    );
+    await exec("ffmpeg", [
+      "-y",
+      "-v",
+      "error",
+      "-f",
+      "lavfi",
+      "-i",
+      "color=c=#b8f36b:s=100x50:d=1",
+      "-frames:v",
+      "1",
+      path.join(root, "assets", "green.png"),
+    ]);
+    await writeFile(
+      path.join(root, "timelines", "main.json"),
+      `${JSON.stringify(
+        {
+          version: 1,
+          tracks: [
+            { id: "v1", kind: "video" },
+            { id: "v2", kind: "video" },
+          ],
+          clips: [
+            {
+              id: "base",
+              track: "v1",
+              source: { kind: "composition", id: "base" },
+              start: 0,
+              duration: 1,
+            },
+            {
+              id: "green",
+              track: "v2",
+              source: { kind: "image", src: "assets/green.png" },
+              start: 0,
+              duration: 1,
+              transform: { fit: "cover", width: 80, height: 60, x: 0, y: 0 },
+            },
+          ],
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    await writeFile(
+      path.join(root, "video.config.js"),
+      `export default {
+        format: { width: 320, height: 180, fps: 10 },
+        compositions: { base: "./compositions/base.html" },
+        timelines: { main: "./timelines/main.json" },
+      };\n`,
+    );
+    const stillPath = path.join(root, "out", "box.png");
+    const project = await loadProject(root);
+
+    const result = await captureTimelineStill({ project, timelineId: "main", frame: 0, outPath: stillPath });
+
+    expect(result.diagnostics.filter((diagnostic) => diagnostic.severity === "error")).toEqual([]);
+    const inside = await mediaPixel(stillPath, 160, 90);
+    expect(inside[1]).toBeGreaterThan(inside[0] + 40);
+    const nearEdge = await mediaPixel(stillPath, 122, 90);
+    expect(nearEdge[1]).toBeGreaterThan(nearEdge[0] + 40);
+    const outside = await mediaPixel(stillPath, 118, 90);
+    expect(outside[0]).toBeGreaterThan(outside[1] + 40);
+    const above = await mediaPixel(stillPath, 160, 58);
+    expect(above[0]).toBeGreaterThan(above[1] + 40);
+  }, 120_000);
+
+  it.each([
+    {
+      name: "WebM",
+      extension: "webm",
+      codec: ["-c:v", "libvpx-vp9", "-lossless", "1", "-g", "60", "-an"],
+    },
+    {
+      name: "MP4",
+      extension: "mp4",
+      codec: ["-c:v", "libx264", "-qp", "0", "-pix_fmt", "yuv420p", "-an"],
+    },
+  ])(
+    "keeps $name video frames aligned through overlay compositing",
+    async ({ extension, codec }) => {
+      const root = await customRoot();
+      await exec("ffmpeg", [
+        "-y",
+        "-v",
+        "error",
+        "-f",
+        "lavfi",
+        "-i",
+        "nullsrc=s=64x36:r=30:d=2,geq=lum='16+219*abs(sin(PI*N/2))':cb=128:cr=128,format=yuv420p",
+        ...codec,
+        path.join(root, "assets", `flash.${extension}`),
+      ]);
+      await writeFile(
+        path.join(root, "timelines", "main.json"),
+        `${JSON.stringify(
+          {
+            version: 1,
+            tracks: [{ id: "v1", kind: "video" }],
+            clips: [
+              {
+                id: "flash",
+                track: "v1",
+                source: { kind: "video", src: `assets/flash.${extension}` },
+                start: 0,
+                duration: 60,
+                audio: { muted: true },
+              },
+            ],
+          },
+          null,
+          2,
+        )}\n`,
+      );
+      await writeFile(
+        path.join(root, "video.config.js"),
+        `export default {
+        format: { width: 64, height: 36, fps: 30 },
+        timelines: { main: "./timelines/main.json" },
+      };\n`,
+      );
+      const outPath = path.join(root, "out", "main.mp4");
+      const project = await loadProject(root);
+
+      const result = await renderTimeline({ project, timelineId: "main", outPath, workers: 1 });
+
+      expect(result.framesRendered).toBe(60);
+      const { stdout } = await exec(
+        "ffmpeg",
+        ["-v", "error", "-i", outPath, "-vf", "format=gray,crop=1:1:32:18", "-f", "rawvideo", "-"],
+        { encoding: "buffer", maxBuffer: 4096 },
+      );
+      const pixels = [...(stdout as unknown as Buffer)];
+      expect(pixels).toHaveLength(60);
+      for (const [frame, value] of pixels.entries()) {
+        expect(value > 128, `frame ${frame} luminance ${value}`).toBe(frame % 2 === 1);
+      }
+    },
+    120_000,
+  );
+
+  it("keeps composition frames aligned through overlay compositing", async () => {
+    const root = await customRoot();
+    await writeFile(
+      path.join(root, "compositions", "barcode.html"),
+      `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <style>
+      html, body { margin: 0; width: 100%; height: 100%; background: #808080; }
+      .bar { position: absolute; top: 20px; width: 30px; height: 80px; background: #000; }
+    </style>
+  </head>
+  <body>
+    <fy-composition width="320" height="180" fps="30" duration-in-frames="60">
+      <div class="bar" style="left: 25px"></div>
+      <div class="bar" style="left: 55px"></div>
+      <div class="bar" style="left: 85px"></div>
+      <div class="bar" style="left: 115px"></div>
+      <div class="bar" style="left: 145px"></div>
+      <div class="bar" style="left: 175px"></div>
+      <div class="bar" style="left: 205px"></div>
+      <div class="bar" style="left: 235px"></div>
+      <div class="bar" style="left: 265px"></div>
+    </fy-composition>
+    <script type="text/fy-controller">
+let bars = [];
+export default {
+  mount({ root }) {
+    bars = [...root.querySelectorAll(".bar")];
+  },
+  update({ frame }) {
+    bars.forEach((bar, index) => {
+      bar.style.background = ((frame >> index) & 1) === 1 ? "#ffffff" : "#000000";
+    });
+  },
+};
+    </script>
+  </body>
+</html>
+`,
+    );
+    await writeFile(
+      path.join(root, "timelines", "main.json"),
+      `${JSON.stringify(
+        {
+          version: 1,
+          tracks: [{ id: "v1", kind: "video" }],
+          clips: [
+            {
+              id: "barcode",
+              track: "v1",
+              source: { kind: "composition", id: "barcode" },
+              start: 0,
+              duration: 60,
+            },
+          ],
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    await writeFile(
+      path.join(root, "video.config.js"),
+      `export default {
+        format: { width: 320, height: 180, fps: 30 },
+        compositions: { barcode: "./compositions/barcode.html" },
+        timelines: { main: "./timelines/main.json" },
+      };\n`,
+    );
+    const outPath = path.join(root, "out", "main.mp4");
+    const project = await loadProject(root);
+
+    const result = await renderTimeline({ project, timelineId: "main", outPath, workers: 1 });
+
+    expect(result.framesRendered).toBe(60);
+    const { stdout } = await exec(
+      "ffmpeg",
+      ["-v", "error", "-i", outPath, "-vf", "format=gray,crop=270:80:25:20", "-f", "rawvideo", "-"],
+      { encoding: "buffer", maxBuffer: 8 * 1024 * 1024 },
+    );
+    const buffer = stdout as unknown as Buffer;
+    const frameBytes = 270 * 80;
+    expect(buffer.length).toBe(60 * frameBytes);
+    for (let frame = 0; frame < 60; frame += 1) {
+      let value = 0;
+      for (let bit = 0; bit < 9; bit += 1) {
+        const x = bit * 30 + 15;
+        const y = 40;
+        const sample = buffer[frame * frameBytes + y * 270 + x] ?? 0;
+        if (sample > 128) {
+          value |= 1 << bit;
+        }
+      }
+      expect(value, `frame ${frame}`).toBe(frame);
+    }
+  }, 120_000);
+
   it("includes audio declared inside a composition clip", async () => {
     const root = await customRoot();
     await copyFile(

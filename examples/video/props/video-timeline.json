@@ -1,0 +1,10 @@
+{
+  "overlay": {
+    "kicker": "Frameyard / Timeline Overlay 001",
+    "title": "Track",
+    "titleAccent": "Overlay",
+    "subtitle": "One clip on v1, a second pass on v2, and this HTML layer on v3.",
+    "detail": "Detail / second pass",
+    "accent": "#8fe6c8"
+  }
+}

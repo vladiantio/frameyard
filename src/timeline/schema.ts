@@ -40,6 +40,9 @@ export interface TimelineTransform {
   fit: FitPolicy;
   x: number;
   y: number;
+  /** Optional explicit clip box in output pixels. Requires height and excludes scale. */
+  width?: number;
+  height?: number;
   scale: number;
   rotation: number;
   opacity: number;
@@ -148,7 +151,7 @@ function parseTransform(
     return defaults;
   }
 
-  for (const key of unknownKeys(value, ["fit", "x", "y", "scale", "rotation", "opacity"])) {
+  for (const key of unknownKeys(value, ["fit", "x", "y", "width", "height", "scale", "rotation", "opacity"])) {
     add("TIMELINE_CLIP_INVALID", `Unknown clip transform field "${key}".`, jsonPath(path, key));
   }
 
@@ -164,6 +167,39 @@ function parseTransform(
       transform.fit = value.fit;
     }
   }
+
+  const width = value.width;
+  const height = value.height;
+  if ((width === undefined) !== (height === undefined)) {
+    add(
+      "TIMELINE_CLIP_INVALID",
+      "Clip transform.width and transform.height must be provided together.",
+      jsonPath(path, width === undefined ? "width" : "height"),
+    );
+  }
+  for (const [key, field] of [
+    ["width", width],
+    ["height", height],
+  ] as const) {
+    if (field === undefined) {
+      continue;
+    }
+    if (!isInteger(field) || field <= 0) {
+      add("TIMELINE_CLIP_INVALID", `Clip transform.${key} must be a positive integer.`, jsonPath(path, key));
+    }
+  }
+  if (width !== undefined && height !== undefined && value.scale !== undefined) {
+    add(
+      "TIMELINE_CLIP_INVALID",
+      "Clip transform.scale cannot be combined with transform.width and transform.height.",
+      jsonPath(path, "scale"),
+    );
+  }
+  if (isInteger(width) && width > 0 && isInteger(height) && height > 0) {
+    transform.width = width;
+    transform.height = height;
+  }
+
   for (const key of ["x", "y", "scale", "rotation", "opacity"] as const) {
     const field = value[key];
     if (field === undefined) {

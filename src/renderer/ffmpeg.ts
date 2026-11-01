@@ -435,6 +435,9 @@ export interface TimelineCompositeLayer {
   path: string;
   sourceWidth: number;
   sourceHeight: number;
+  /** Explicit clip box. Both fields are set together; otherwise the stage is the box. */
+  width?: number;
+  height?: number;
   fit: "contain" | "cover" | "stretch";
   x: number;
   y: number;
@@ -471,7 +474,9 @@ function ffmpegBackgroundColor(value: string): string {
   return "black";
 }
 
-function fitFilter(layer: TimelineCompositeLayer, width: number, height: number): string {
+function fitFilter(layer: TimelineCompositeLayer, stageWidth: number, stageHeight: number): string {
+  const width = layer.width ?? stageWidth;
+  const height = layer.height ?? stageHeight;
   const sourceWidth = Math.max(1, layer.sourceWidth);
   const sourceHeight = Math.max(1, layer.sourceHeight);
   if (layer.fit === "cover") {
@@ -486,8 +491,15 @@ function fitFilter(layer: TimelineCompositeLayer, width: number, height: number)
   return `scale=${fittedWidth}:${fittedHeight},pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=black@0`;
 }
 
-function layerFilter(layer: TimelineCompositeLayer, width: number, height: number): string {
-  const filters = [fitFilter(layer, width, height), "format=rgba"];
+function layerFilter(layer: TimelineCompositeLayer, stageWidth: number, stageHeight: number, fps: number): string {
+  const filters = [
+    // Matroska and WebM timestamps can be quantized to milliseconds. Normalize
+    // every timed layer to the project frame rate before overlay framesync so
+    // it does not duplicate or drop frames. Still images are already static.
+    ...(layer.kind === "image" ? [] : [`fps=${formatNumber(fps)}`]),
+    fitFilter(layer, stageWidth, stageHeight),
+    "format=rgba",
+  ];
   if (layer.scale !== 1) {
     filters.push(`scale=iw*${formatNumber(layer.scale)}:ih*${formatNumber(layer.scale)}`);
   }
@@ -585,7 +597,9 @@ export async function compositeTimelineSegment(options: {
 
     inputIndex += 1;
     includedIndex += 1;
-    filters.push(`[${inputIndex}:v]${layerFilter(layer, options.width, options.height)}[l${includedIndex}]`);
+    filters.push(
+      `[${inputIndex}:v]${layerFilter(layer, options.width, options.height, options.fps)}[l${includedIndex}]`,
+    );
     filters.push(
       `[${current}][l${includedIndex}]overlay=x=(main_w-overlay_w)/2+${formatNumber(layer.x)}:y=(main_h-overlay_h)/2+${formatNumber(layer.y)}:format=auto[b${includedIndex}]`,
     );
@@ -703,7 +717,9 @@ export async function compositeTimelineFrame(options: {
 
     inputIndex += 1;
     includedIndex += 1;
-    filters.push(`[${inputIndex}:v]${layerFilter(layer, options.width, options.height)}[l${includedIndex}]`);
+    filters.push(
+      `[${inputIndex}:v]${layerFilter(layer, options.width, options.height, options.fps)}[l${includedIndex}]`,
+    );
     filters.push(
       `[${current}][l${includedIndex}]overlay=x=(main_w-overlay_w)/2+${formatNumber(layer.x)}:y=(main_h-overlay_h)/2+${formatNumber(layer.y)}:format=auto[b${includedIndex}]`,
     );

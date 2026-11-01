@@ -15,6 +15,8 @@ const examples = [
   { project: "webgl", id: "webgl", frame: 210 },
   { project: "video", id: "video", frame: 210 },
   { project: "video", id: "video-mp4", frame: 210 },
+  { project: "video", id: "video-timeline", frame: 210, timeline: true },
+  { project: "video", id: "video-timeline-mp4", frame: 210, timeline: true },
 ];
 
 let temp: string;
@@ -83,7 +85,7 @@ describe("bundled examples", () => {
     }
   });
 
-  it.each(examples)("captures a still from the $id example", async ({ project, id, frame }) => {
+  it.each(examples)("captures a still from the $id example", async ({ project, id, frame, timeline }) => {
     const out = path.join(temp, `${id}.png`);
     const result = await run([
       "still",
@@ -102,12 +104,18 @@ describe("bundled examples", () => {
       ok?: boolean;
       command?: string;
       composition?: string;
+      timeline?: string;
       frame?: number;
       width?: number;
       height?: number;
       diagnostics?: Array<{ severity: string }>;
     };
-    expect(json).toMatchObject({ ok: true, command: "still", composition: id, frame });
+    expect(json).toMatchObject({
+      ok: true,
+      command: "still",
+      ...(timeline === true ? { timeline: id } : { composition: id }),
+      frame,
+    });
     expect(json.width).toBeGreaterThan(0);
     expect(json.height).toBeGreaterThan(0);
     expect((json.diagnostics ?? []).filter((diagnostic) => diagnostic.severity === "error")).toEqual([]);

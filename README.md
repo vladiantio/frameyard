@@ -43,7 +43,7 @@ npx frameyard still main --frame 42 --out main-frame.png
 
 The scaffold wraps its composition in `timelines/main.timeline.json`. `render` writes the video to `out/main.mp4` in the project by default; pass `--out <file.mp4>` to choose another path. The composition remains renderable on its own with `npx frameyard render hello --props props/hello.json`. The scaffold's `.gitignore` ignores `out/`.
 
-The 30-second reference composition lives in [`examples/demo`](./examples/demo), a focused WebGL shader example lives in [`examples/webgl`](./examples/webgl), and a two-pass embedded-video example with WebM and MP4 sources lives in [`examples/video`](./examples/video). Each README has the commands for running it from a repository checkout.
+The 30-second reference composition lives in [`examples/demo`](./examples/demo), a focused WebGL shader example lives in [`examples/webgl`](./examples/webgl), and the video example in [`examples/video`](./examples/video) includes two embedded-video compositions plus WebM and MP4 timelines that place the clips on tracks under a transparent HTML overlay. Each README has the commands for running it from a repository checkout.
 
 ## Project format
 
@@ -119,7 +119,7 @@ A timeline is a JSON document that places composition and media clips on video a
       "source": { "kind": "image", "src": "assets/logo.png" },
       "start": 30,
       "duration": 60,
-      "transform": { "fit": "contain", "x": 640, "y": -320, "scale": 0.25, "rotation": 0, "opacity": 0.9 }
+      "transform": { "fit": "contain", "width": 480, "height": 270, "x": 640, "y": -320, "rotation": 0, "opacity": 0.9 }
     },
     {
       "id": "music",
@@ -136,7 +136,7 @@ A timeline is a JSON document that places composition and media clips on video a
 - Sources are `composition` + `id`, `timeline` + `id`, or `video`/`image`/`audio` + project-relative `src`.
 - `start`, `sourceIn`, and `duration` use timeline frames. Omitted durations use the rest of the source; image clips require a duration.
 - Composition clips can fix `props`, trim the source range, and repeat the same composition with different settings.
-- Visual clips support static `fit`, `x`, `y`, `scale`, `rotation`, and `opacity`. No keyframes, transitions, or effects in 0.6.
+- Visual clips support static `fit`, `width`/`height` (an explicit box), `x`, `y`, `scale`, `rotation`, and `opacity`. `fit` applies inside the box; `width` and `height` go together and are mutually exclusive with `scale`. No keyframes, transitions, or effects in 0.6.
 - Video, composition, and nested-timeline clips contribute audio automatically unless muted. Timeline audio clips live on audio tracks.
 - A composition used in a timeline must match the project fps; different sizes are fitted by the clip. Clips on one track cannot overlap.
 - Nested timelines are rendered as groups, so the parent clip's opacity and transform apply to the whole nested result.
@@ -433,7 +433,7 @@ See the [design baseline](./docs/v0.1-design.md) for the full product contract, 
 - `skills/`: official host-neutral agent skill
 - `examples/demo/`: the 30-second reference composition
 - `examples/webgl/`: the focused WebGL shader example
-- `examples/video/`: the two-pass embedded-video example with WebM and MP4 sources
+- `examples/video/`: embedded-video compositions and WebM/MP4 timelines with video clips under a transparent HTML overlay
 - `bench/fixtures/`: controlled HTML compositions for the render benchmark
 - `scripts/`: benchmark, release checks, versioning, and git-hook installation
 - `docs/adr/`: architecture decision records

@@ -16,6 +16,7 @@ import {
 } from "./assets/integrations.js";
 import { runChild } from "./assets/process.js";
 import { hashFile, readManifest } from "./assets/provenance.js";
+import { probeVideoEncoder, type VideoEncoderName } from "./renderer/ffmpeg.js";
 
 export type DoctorStatus = "ok" | "error";
 
@@ -466,6 +467,75 @@ async function inspectModel(
   }
 }
 
+const VIDEO_ENCODERS: readonly VideoEncoderName[] = [
+  "libx264",
+  "libx265",
+  "libvpx-vp9",
+  "h264_nvenc",
+  "hevc_nvenc",
+  "h264_qsv",
+  "hevc_qsv",
+];
+
+function checkOpusEncoder(listing: string): DoctorCheck {
+  const available = /(^|\s)libopus(\s|$)/m.test(listing);
+  return {
+    name: "ffmpeg-opus-encoder",
+    required: false,
+    status: available ? "ok" : "error",
+    detail: available
+      ? "libopus is available for VP9/WebM audio."
+      : "libopus is missing; VP9/WebM renders cannot encode Opus audio.",
+  };
+}
+
+function encoderDetail(encoder: VideoEncoderName, detail: string | undefined): string {
+  if (detail === undefined) {
+    return encoder;
+  }
+  const line = detail.replace(/^\[[^\]]*\]\s*/, "").trim();
+  const trimmed = line.length > 160 ? `${line.slice(0, 157)}...` : line;
+  return trimmed.length === 0 ? encoder : `${encoder} (${trimmed})`;
+}
+
+/**
+ * Reports which video encoders can actually open. `ffmpeg -encoders` lists
+ * encoders that an old driver or a missing device can still reject, so each
+ * candidate is proven with a one-frame encode. The check is optional: a
+ * missing hardware encoder does not make the default software path unhealthy.
+ */
+async function checkVideoEncoders(signal?: AbortSignal): Promise<DoctorCheck> {
+  const available: VideoEncoderName[] = [];
+  const unavailable: string[] = [];
+  for (const encoder of VIDEO_ENCODERS) {
+    if (signal?.aborted) {
+      throw new FrameyardError("CANCELLED", "Operation cancelled.");
+    }
+    const probe = await probeVideoEncoder(encoder, signal);
+    if (probe.available) {
+      available.push(encoder);
+    } else {
+      unavailable.push(encoderDetail(encoder, probe.detail));
+    }
+  }
+
+  if (unavailable.length === 0) {
+    return {
+      name: "ffmpeg-video-encoders",
+      required: false,
+      status: "ok",
+      detail: `${available.join(", ")} are available.`,
+    };
+  }
+
+  return {
+    name: "ffmpeg-video-encoders",
+    required: false,
+    status: "error",
+    detail: `Unavailable: ${unavailable.join("; ")}. Available: ${available.length === 0 ? "none" : available.join(", ")}.`,
+  };
+}
+
 /** Inspects core requirements, optional integrations, and manifest integrity. */
 export async function runDoctor(options: {
   projectRoot: string;
@@ -508,6 +578,18 @@ export async function runDoctor(options: {
       status: "error",
       detail: "FFmpeg is unavailable, so libx264 and AAC could not be inspected.",
     });
+    checks.push({
+      name: "ffmpeg-opus-encoder",
+      required: false,
+      status: "error",
+      detail: "FFmpeg is unavailable, so libopus could not be inspected.",
+    });
+    checks.push({
+      name: "ffmpeg-video-encoders",
+      required: false,
+      status: "error",
+      detail: "FFmpeg is unavailable, so video encoders could not be probed.",
+    });
   } else {
     const version = firstLine(ffmpegVersion.stdout || ffmpegVersion.stderr);
     checks.push({ name: "ffmpeg", required: true, status: "ok", detail: version });
@@ -531,7 +613,9 @@ export async function runDoctor(options: {
         detail:
           missing.length === 0 ? "libx264 and aac are available." : `Missing required encoders: ${missing.join(", ")}.`,
       });
+      checks.push(checkOpusEncoder(listing));
     }
+    checks.push(await checkVideoEncoders(options.signal));
   }
 
   const ffprobe = await probeCommand("ffprobe", ["-hide_banner", "-version"], {

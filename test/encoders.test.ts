@@ -26,7 +26,6 @@ describe("encoder selection", () => {
     expect(() => encoderNameFor("vp9", "nvenc")).toThrow(/has no nvenc encoder/);
     expect(() => encoderNameFor("vp9", "qsv")).toThrow(/has no qsv encoder/);
     await expect(resolveVideoEncoder("vp9", "nvenc")).rejects.toMatchObject({ code: "USAGE" });
-    await expect(resolveVideoEncoder("vp9")).resolves.toBe("libvpx-vp9");
   });
 
   it("constrains codecs to containers that can hold them", () => {

@@ -890,8 +890,21 @@ describe("doctor", () => {
     const checks = json.checks as Array<Record<string, unknown>>;
     expect(checks.filter((check) => check.required).every((check) => check.status === "ok")).toBe(true);
     expect(checks.map((check) => check.name)).toEqual(
-      expect.arrayContaining(["node", "ffmpeg", "ffmpeg-encoders", "ffprobe", "chromium", "manifest"]),
+      expect.arrayContaining([
+        "node",
+        "ffmpeg",
+        "ffmpeg-encoders",
+        "ffmpeg-opus-encoder",
+        "ffmpeg-video-encoders",
+        "ffprobe",
+        "chromium",
+        "manifest",
+      ]),
     );
+    expect(checks.find((check) => check.name === "ffmpeg-opus-encoder")).toMatchObject({ required: false });
+    const videoEncoders = checks.find((check) => check.name === "ffmpeg-video-encoders");
+    expect(videoEncoders).toMatchObject({ required: false });
+    expect(String(videoEncoders?.detail)).toContain("libx264");
   });
 
   it("exits nonzero when required tools are missing", async () => {

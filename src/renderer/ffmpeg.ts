@@ -233,11 +233,10 @@ export function containerMuxFlags(container: VideoContainer): string[] {
  * An encoder can be listed by `ffmpeg -encoders` and still fail to open (old
  * drivers, missing devices), so `auto` proves it with a one-frame encode.
  */
-async function encoderAvailable(encoder: VideoEncoderName, signal?: AbortSignal): Promise<boolean> {
-  const cached = probedEncoders.get(encoder);
-  if (cached !== undefined) {
-    return cached;
-  }
+export async function probeVideoEncoder(
+  encoder: VideoEncoderName,
+  signal?: AbortSignal,
+): Promise<{ available: boolean; detail?: string }> {
   try {
     await runCaptured(
       "ffmpeg",
@@ -266,11 +265,29 @@ async function encoderAvailable(encoder: VideoEncoderName, signal?: AbortSignal)
     if (signal?.aborted) {
       throw error;
     }
-    probedEncoders.set(encoder, false);
-    return false;
+    return { available: false, detail: encoderFailureDetail(error) };
   }
-  probedEncoders.set(encoder, true);
-  return true;
+  return { available: true };
+}
+
+/** Collapses a failed probe into the first useful stderr line. */
+function encoderFailureDetail(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  const line = message
+    .split(/\r?\n/)
+    .map((part) => part.trim())
+    .find((part) => part.length > 0 && !/^ffmpeg exited with code \d+:?$/.test(part));
+  return line ?? message;
+}
+
+async function encoderAvailable(encoder: VideoEncoderName, signal?: AbortSignal): Promise<boolean> {
+  const cached = probedEncoders.get(encoder);
+  if (cached !== undefined) {
+    return cached;
+  }
+  const probe = await probeVideoEncoder(encoder, signal);
+  probedEncoders.set(encoder, probe.available);
+  return probe.available;
 }
 
 /** Resolves a codec and CLI encoder choice to the FFmpeg encoder that will run. */

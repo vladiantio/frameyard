@@ -195,9 +195,19 @@ function toneWav(seconds = 0.6): Buffer {
   return buffer;
 }
 
-async function run(args: string[], cwd = process.cwd()): Promise<{ code: number; stdout: string; stderr: string }> {
+async function run(
+  args: string[],
+  cwd = process.cwd(),
+  options: { pinEncoder?: boolean } = {},
+): Promise<{ code: number; stdout: string; stderr: string }> {
+  // The CLI default probes the host GPU. Pin software encoding so the suite
+  // exercises the same path on every machine; opt out only to test the default.
+  const pinned =
+    options.pinEncoder === false || args[0] !== "render" || args.includes("--encoder")
+      ? args
+      : [...args, "--encoder", "software"];
   try {
-    const { stdout, stderr } = await exec(process.execPath, [cli, ...args], {
+    const { stdout, stderr } = await exec(process.execPath, [cli, ...pinned], {
       cwd,
       maxBuffer: 10 * 1024 * 1024,
     });
@@ -747,6 +757,17 @@ describe("CLI end-to-end", () => {
     expect(video).toMatchObject({ codec_name: "h264", width: 160, height: 90, nb_read_frames: "6" });
     expect(audio).toMatchObject({ codec_name: "aac", channels: 2 });
     expect(Number((probe.format as Record<string, unknown>).duration)).toBeCloseTo(0.6, 1);
+  });
+
+  it("reports the resolved encoder when --encoder is omitted", async () => {
+    const result = await run(["render", "demo", "--out", "default-encoder.mp4", "--project", root, "--json"], root, {
+      pinEncoder: false,
+    });
+
+    expect(result.code).toBe(0);
+    const json = JSON.parse(result.stdout) as Record<string, unknown>;
+    expect(json).toMatchObject({ ok: true, command: "render", framesRendered: 6 });
+    expect(["libx264", "h264_nvenc", "h264_qsv"]).toContain(json.encoder);
   });
 
   it("rejects an invalid render concurrency", async () => {

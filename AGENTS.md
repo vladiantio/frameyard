@@ -213,18 +213,21 @@ Test at public seams, not private helpers:
 - `test/static-validation.test.ts`: HTML metadata, defaults, bindings, scripts, controllers, media, transcripts, source locations, diagnostics.
 - `test/server-html.test.ts`: `.html` entries, host injection, virtual inline controller, static error pages, `project.json` diagnostics.
 - `test/host-runtime.test.ts`: host bindings, repeat/if/class, animation scheduling, frame variables, inline/external controllers, props validation, load atomicity, dispose, diagnostics, auto mode, media settle.
+- `test/random.test.ts`: frame/time conversion and stateless keyed deterministic randomness.
 - `test/project-server.test.ts`: config loading, static routes, import map, ranges, traversal rejection.
+- `test/timeline-config.test.ts`: `video.config.js` timeline entries, format requirements, timeline-only projects, and duplicate or missing entries.
 - `test/preview-runtime.test.ts`: HTML iframe preview, props, seeking, transport keys, CSS animation, Canvas, WebGL, embedded video, determinism, diagnostics.
 - `test/timeline-preview-runtime.test.ts`: timeline preview UI and embedding, scrubbing, frame/one-second stepping, seek coalescing, keyboard forwarding, layer sizing, and video frame presentation.
 - `test/timeline-render.test.ts`: segmented rendering, transform boxes, alpha compositing, media/audio, nested timelines, and per-frame barcode mapping for video, composition, and nested-timeline layers.
-- `test/cli-e2e.test.ts`: real CLI with Chromium and FFmpeg, JSON envelopes, missing assets, deterministic stills across concurrent sessions, embedded video/WebGL capture and audio, MP4/audio output, overwrite behavior, HTML check/still/render, static diagnostics, `dev`, `init`.
+- `test/encoders.test.ts`: codec and container matrix, encoder name mapping, encoder arguments, HEVC tags, and NVENC session limits.
+- `test/cli-e2e.test.ts`: real CLI with Chromium and FFmpeg, JSON envelopes, missing assets, deterministic stills across concurrent sessions, embedded video/WebGL capture and audio, container/codec/audio output, overwrite behavior, HTML check/still/render, static diagnostics, `dev`, `init`.
 - `test/video-determinism.test.ts`: a full-scene opacity animation over embedded video captures the requested frame, and consecutive composition frames map to consecutive source frames.
 - `test/examples.test.ts`: example README commands use the repository CLI, and each bundled example captures a still.
 - `test/assets-e2e.test.ts`: `tts`/`transcribe`/`doctor` with fake upstream executables, normalization, word timings, exports, manifests, cancellation, transcript validation.
 - `test/agent-workflow.test.ts`: source preservation, check/still/render reporting, failure reporting through the CLI.
 - `test/real-integrations.test.ts`: opt-in real-model checks enabled by `FRAMEYARD_REAL_INTEGRATIONS=1` and explicit model paths.
 - `test/skill.test.ts`: skill layout discovery, frontmatter name, single skill, contents, API version, package inclusion, thin wrapper.
-- `test/docs.test.ts`: user-facing command examples use `npx frameyard`; scaffold markdown commands and package scripts are real.
+- `test/docs.test.ts`: user-facing command examples use `npx frameyard`; scaffold markdown commands and package scripts are real; every test file is listed in this section.
 - `test/release.test.ts`: CI, release workflow, and pre-commit hook share `pnpm check`; release metadata verification.
 - `test/scaffold.test.ts`: scaffold file generation, package manifest, project-name normalization.
 
@@ -235,6 +238,7 @@ Prefer one failing public-behavior test, then the minimal implementation. Every 
 - `pnpm check` passes (script syntax, lint, formatting, typechecks, then the full suite).
 - If capture, encoding, or audio changed, render a small fixture and verify the artifact with FFprobe; render the example whose composition changed.
 - If public behavior changed, update `README.md` and, for contract changes, the design baseline or an ADR.
+- If the output format or container changed, grep the docs for the old format noun (`final MP4`, `partial MP4`) before finishing.
 - Confirm failures still exit nonzero and leave no published partial output.
 
 ## Gotchas

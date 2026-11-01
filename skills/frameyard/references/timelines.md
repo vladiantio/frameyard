@@ -109,7 +109,7 @@ No keyframes or animated transforms in 0.6.
 - Timeline audio clips live on audio tracks. Audio tracks support `gain` and `muted`.
 - `audio.gain` on a clip is 0–1 and multiplies the source audio.
 - There are no linked A/V pairs. For a J/L cut, mute the visual clip and add an audio clip with a different `sourceIn`.
-- Audio is mixed once for the whole timeline and muxed into the final MP4.
+- Audio is mixed once for the whole timeline and muxed into the final output.
 
 ## Nested timelines
 
@@ -138,5 +138,5 @@ npx frameyard render main --props props/main.json --workers 8 --scratch /path/to
 - Composition frames are captured with Chromium; transparent compositions preserve alpha.
 - Timeline production captures active composition and nested-timeline clips to lossless FFV1, composites segments with FFmpeg, concatenates the ordered segments, and mixes audio once.
 - Preview composites in Chromium; production composites with FFmpeg. Small scaling, alpha, and video color differences are expected. Parity is guaranteed at clip capture, not at final encoded pixels.
-- Final MP4 bytes are not a reproducibility guarantee.
+- Final output bytes are not a reproducibility guarantee.
 - Long timelines are segmented and bounded. The reference target and measured worst cases are documented in `docs/adr/0012-render-timelines-with-segmented-lossless-clip-intermediates.md`.

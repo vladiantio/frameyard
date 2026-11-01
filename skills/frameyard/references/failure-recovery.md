@@ -57,7 +57,7 @@ Do not claim success after a nonzero exit. Fix the cause, rerun `check`, and onl
 
 ## Behavior to rely on
 
-- A failed render writes to a temporary file and does not publish a partial MP4.
+- A failed render writes to a temporary file and does not publish a partial output.
 - Failed TTS/transcription operations leave no artifact and no manifest entry.
 - Existing outputs are replaced only with `--overwrite` (renders/stills) or `--force` (generated assets).
 - Cancellation terminates the child inference process and cleans temporary work.

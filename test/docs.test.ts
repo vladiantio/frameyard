@@ -155,6 +155,13 @@ describe("documentation command examples", () => {
     expect(offenders).toEqual([]);
   });
 
+  it("lists every test file in the agent guide", async () => {
+    const files = (await readdir("test")).filter((name) => name.endsWith(".test.ts"));
+    const guide = await readFile("AGENTS.md", "utf8");
+    const missing = files.filter((name) => !guide.includes(`test/${name}`));
+    expect(missing).toEqual([]);
+  });
+
   it("documents every timeline transform field in the skill reference", async () => {
     const parsed = parseTimelineDocument({
       version: 1,

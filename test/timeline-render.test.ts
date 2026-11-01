@@ -13,6 +13,14 @@ const exec = promisify(execFile);
 const repoRoot = path.resolve(new URL("..", import.meta.url).pathname);
 const roots: string[] = [];
 
+/**
+ * Pins software encoding so segmented-render tests do not depend on the host
+ * GPU. Pass `encoder` explicitly to exercise `auto` or a hardware encoder.
+ */
+function renderTimelineForTest(options: Parameters<typeof renderTimeline>[0]) {
+  return renderTimeline({ encoder: "software", ...options });
+}
+
 const compositionHtml = `<!doctype html>
 <html>
   <head>
@@ -154,7 +162,7 @@ describe("timeline rendering", () => {
     const { root, outPath } = await createProject();
     const project = await loadProject(root);
 
-    const result = await renderTimeline({
+    const result = await renderTimelineForTest({
       project,
       timelineId: "main",
       outPath,
@@ -188,7 +196,7 @@ describe("timeline rendering", () => {
     const { root, outPath } = await createProject();
     const project = await loadProject(root);
 
-    const result = await renderTimeline({
+    const result = await renderTimelineForTest({
       project,
       timelineId: "main",
       outPath,
@@ -218,7 +226,7 @@ describe("timeline rendering", () => {
     const project = await loadProject(root);
 
     const mkvPath = path.join(root, "out", "main.mkv");
-    const mkv = await renderTimeline({
+    const mkv = await renderTimelineForTest({
       project,
       timelineId: "main",
       outPath: mkvPath,
@@ -236,13 +244,15 @@ describe("timeline rendering", () => {
     expect(mkvProbe.streams.find((stream) => stream.codec_type === "audio")).toMatchObject({ codec_name: "aac" });
 
     const webmPath = path.join(root, "out", "main.webm");
-    const webm = await renderTimeline({
+    const webm = await renderTimelineForTest({
       project,
       timelineId: "main",
       outPath: webmPath,
       workers: 2,
       container: "webm",
-      encoder: "software",
+      // VP9 has no hardware encoder in the matrix, so `auto` must fall back to
+      // the software encoder on every host.
+      encoder: "auto",
     });
     expect(webm).toMatchObject({ codec: "vp9", container: "webm", encoder: "libvpx-vp9" });
     const webmProbe = await probe(webmPath);
@@ -322,7 +332,7 @@ describe("timeline rendering media and alpha", () => {
     const outPath = path.join(root, "out", "main.mp4");
     const project = await loadProject(root);
 
-    const result = await renderTimeline({ project, timelineId: "main", outPath, workers: 2 });
+    const result = await renderTimelineForTest({ project, timelineId: "main", outPath, workers: 2 });
 
     expect(result.durationInFrames).toBe(10);
     expect(result.segments).toBe(2);
@@ -475,7 +485,7 @@ describe("timeline rendering media and alpha", () => {
       const outPath = path.join(root, "out", "main.mp4");
       const project = await loadProject(root);
 
-      const result = await renderTimeline({ project, timelineId: "main", outPath, workers: 1 });
+      const result = await renderTimelineForTest({ project, timelineId: "main", outPath, workers: 1 });
 
       expect(result.framesRendered).toBe(60);
       const { stdout } = await exec(
@@ -526,7 +536,7 @@ describe("timeline rendering media and alpha", () => {
     const outPath = path.join(root, "out", "main.mp4");
     const project = await loadProject(root);
 
-    const result = await renderTimeline({ project, timelineId: "main", outPath, workers: 1 });
+    const result = await renderTimelineForTest({ project, timelineId: "main", outPath, workers: 1 });
 
     expect(result.framesRendered).toBe(BARCODE.frames);
     const { stdout } = await exec(
@@ -591,7 +601,7 @@ describe("timeline rendering media and alpha", () => {
     const outPath = path.join(root, "out", "main.mp4");
     const project = await loadProject(root);
 
-    const result = await renderTimeline({ project, timelineId: "main", outPath, workers: 1 });
+    const result = await renderTimelineForTest({ project, timelineId: "main", outPath, workers: 1 });
 
     expect(result.audio.clips).toBe(1);
     expect(result.durationInFrames).toBe(10);
@@ -681,7 +691,7 @@ describe("timeline rendering media and alpha", () => {
     const outPath = path.join(root, "out", "main.mp4");
     const project = await loadProject(root);
 
-    await renderTimeline({ project, timelineId: "main", outPath, workers: 2 });
+    await renderTimelineForTest({ project, timelineId: "main", outPath, workers: 2 });
 
     const [red, green, blue] = await mediaPixel(outPath);
     expect(red).toBeGreaterThan(120);
@@ -776,7 +786,7 @@ describe("nested timeline rendering", () => {
     const outPath = path.join(root, "out", "main.mp4");
     const project = await loadProject(root);
 
-    const result = await renderTimeline({ project, timelineId: "main", outPath, workers: 2 });
+    const result = await renderTimelineForTest({ project, timelineId: "main", outPath, workers: 2 });
 
     expect(result.audio.clips).toBe(1);
     const streams = (await probe(outPath)).streams;
@@ -862,7 +872,7 @@ describe("nested timeline rendering", () => {
     const outPath = path.join(root, "out", "main.mp4");
     const project = await loadProject(root);
 
-    const result = await renderTimeline({ project, timelineId: "main", outPath, workers: 1 });
+    const result = await renderTimelineForTest({ project, timelineId: "main", outPath, workers: 1 });
 
     expect(result.framesRendered).toBe(BARCODE.frames);
     const { stdout } = await exec(

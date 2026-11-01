@@ -193,7 +193,7 @@ A successful render means the final path exists and was published atomically. A 
 
 ## doctor
 
-Doctor reports findings rather than throwing for environment problems. `ok: true` means the inspection completed; `healthy` says whether required checks, manifest integrity, explicitly supplied models, and integration compatibility passed.
+Doctor reports findings rather than throwing for environment problems. `ok: true` means the inspection completed; `healthy` says whether required checks, manifest integrity, explicitly supplied models, and integration compatibility passed. `ffmpeg-opus-encoder` and `ffmpeg-video-encoders` are optional: the video check probes each supported encoder with a one-frame encode and lists any that FFmpeg advertises but cannot open (an old driver, for example), and neither check affects `healthy`.
 
 ```json
 {
@@ -204,6 +204,8 @@ Doctor reports findings rather than throwing for environment problems. `ok: true
     { "name": "node", "required": true, "status": "ok", "detail": "v22.12.0" },
     { "name": "ffmpeg", "required": true, "status": "ok", "detail": "ffmpeg version ..." },
     { "name": "ffmpeg-encoders", "required": true, "status": "ok", "detail": "libx264 and aac are available." },
+    { "name": "ffmpeg-opus-encoder", "required": false, "status": "ok", "detail": "libopus is available for VP9/WebM audio." },
+    { "name": "ffmpeg-video-encoders", "required": false, "status": "error", "detail": "Unavailable: h264_nvenc (Driver does not support the required nvenc API version); hevc_nvenc (Driver does not support the required nvenc API version). Available: libx264, libx265, libvpx-vp9, h264_qsv, hevc_qsv." },
     { "name": "ffprobe", "required": true, "status": "ok", "detail": "ffprobe version ..." },
     { "name": "chromium", "required": true, "status": "ok", "detail": "/path/to/chrome" },
     { "name": "manifest", "required": false, "status": "ok", "detail": "2 artifacts verified." }

@@ -68,6 +68,7 @@ const propsEditor = byId<HTMLTextAreaElement>("props");
 const applyButton = byId<HTMLButtonElement>("apply");
 const formatButton = byId<HTMLButtonElement>("format");
 const compositionSelect = byId<HTMLSelectElement>("composition");
+const timelineSelect = byId<HTMLSelectElement>("timeline");
 const metaLabel = byId<HTMLDivElement>("meta");
 const playButton = byId<HTMLButtonElement>("play");
 const scrubber = byId<HTMLInputElement>("scrub");
@@ -625,9 +626,36 @@ async function initPreview(): Promise<void> {
       controller?: unknown;
       diagnostics?: unknown;
     }>;
+    timelines?: Array<{ id?: unknown; entry?: unknown }>;
   };
+
+  const timelineIds = (data.timelines ?? [])
+    .map((item) => item.id)
+    .filter((id): id is string => typeof id === "string");
+  timelineSelect.replaceChildren();
+  const openTimeline = document.createElement("option");
+  openTimeline.value = "";
+  openTimeline.textContent = timelineIds.length > 0 ? "Open timeline…" : "No timelines";
+  timelineSelect.append(openTimeline);
+  for (const id of timelineIds) {
+    const option = document.createElement("option");
+    option.value = id;
+    option.textContent = id;
+    timelineSelect.append(option);
+  }
+  timelineSelect.disabled = timelineIds.length === 0;
+  timelineSelect.addEventListener("change", () => {
+    if (timelineSelect.value) {
+      window.location.href = `/__frameyard/timeline/${encodeURIComponent(timelineSelect.value)}`;
+    }
+  });
+
   if (!Array.isArray(data.compositions) || data.compositions.length === 0) {
-    throw new FrameyardError("CONFIG_INVALID", "The project has no compositions.");
+    if (timelineIds.length > 0) {
+      window.location.replace(`/__frameyard/timeline/${encodeURIComponent(timelineIds[0] as string)}`);
+      return;
+    }
+    throw new FrameyardError("CONFIG_INVALID", "The project has no compositions or timelines.");
   }
 
   compositionSelect.replaceChildren();

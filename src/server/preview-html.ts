@@ -196,6 +196,7 @@ export function renderPreviewHtml(): string {
   <header class="topbar">
     <div class="brand"><span class="mark"></span>frameyard <span class="tag">preview</span></div>
     <label class="comp">Composition <select id="composition"></select></label>
+    <label class="comp">Timeline <select id="timeline"></select></label>
     <div id="meta" class="meta"></div>
   </header>
   <aside id="panel" class="panel">

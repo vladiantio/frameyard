@@ -64,6 +64,18 @@ export interface CompositionDiagnosticDetails {
   value?: string;
   suggestion?: string;
   frame?: number;
+  timeline?: string;
+  track?: string;
+  clip?: string;
+  /** JSON Pointer-like path such as `$.clips[2].duration`. */
+  jsonPath?: string;
+  composition?: string;
+  nestedTimeline?: string;
+  media?: string;
+  timelineFrame?: number;
+  sourceFrame?: number;
+  /** Clip IDs from outermost to innermost for diagnostics inside nested timelines. */
+  nesting?: string[];
   controller?: {
     kind: "inline" | "external";
     line?: number;

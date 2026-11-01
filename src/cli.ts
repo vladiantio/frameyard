@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { access, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { isPlainObject } from "./contracts.js";
 import { FrameyardError, isFrameyardError, type FrameyardDiagnostic } from "./errors.js";
 import { loadProject, resolveProjectRoot, type Project } from "./project.js";
 import {
@@ -11,6 +12,7 @@ import {
   validateRenderConcurrency,
   type ProgressEvent,
 } from "./renderer/index.js";
+import { MAX_TIMELINE_WORKERS, captureTimelineStill, checkTimeline, renderTimeline } from "./renderer/timeline.js";
 import { startPreviewServer } from "./server/server.js";
 import { scaffoldFiles, SCAFFOLD_NEXT } from "./scaffold.js";
 import { VERSION } from "./version.js";
@@ -27,6 +29,8 @@ const VALUE_FLAGS = new Set([
   "frame",
   "port",
   "concurrency",
+  "workers",
+  "scratch",
   "text-file",
   "speaker",
   "talker-model",
@@ -134,7 +138,7 @@ function allowedFlags(command: string): Set<string> {
     case "still":
       return new Set([...common, "props", "out", "frame", "overwrite"]);
     case "render":
-      return new Set([...common, "props", "out", "overwrite", "concurrency"]);
+      return new Set([...common, "props", "out", "overwrite", "concurrency", "workers", "scratch"]);
     case "tts":
       return new Set([
         ...common,
@@ -187,7 +191,15 @@ function validateArgs(parsed: ParsedArgs): void {
       usage(`"${parsed.command}" accepts at most 1 positional argument.`);
     }
   } else if (parsed.positionals.length !== 1) {
-    usage(`"${parsed.command}" requires a ${parsed.command === "transcribe" ? "source path" : "composition id"}.`);
+    usage(
+      `"${parsed.command}" requires a ${
+        parsed.command === "transcribe"
+          ? "source path"
+          : parsed.command === "render"
+            ? "composition or timeline id"
+            : "composition id"
+      }.`,
+    );
   }
 
   if (parsed.command === "still" && !parsed.flags.has("frame")) {
@@ -243,17 +255,19 @@ Usage:
   frameyard dev [--port <port>] [--project <dir>]
   frameyard check <composition-id> [--props <file>] [--project <dir>] [--json]
   frameyard still <composition-id> --frame <n> [--out <file.png>] [--props <file>] [--project <dir>] [--json]
-  frameyard render <composition-id> [--out <video.mp4>] [--props <file>] [--project <dir>] [--concurrency <n>] [--overwrite] [--json]
+  frameyard render <composition-or-timeline-id> [--out <video.mp4>] [--props <file>] [--project <dir>] [--concurrency <n>] [--workers <n>] [--scratch <dir>] [--overwrite] [--json]
   frameyard tts --speaker <name> --talker-model <gguf> --codec-model <gguf> --out <file.wav> [--text-file <file>] [--style <text>] [--language <lang>] [--device <name>] [--executable <path>] [--manifest <file>] [--force] [--json]
   frameyard transcribe <source> --model <gguf> --out <file.json> [--words] [--export srt,vtt] [--language <lang>] [--executable <path>] [--manifest <file>] [--force] [--json]
   frameyard doctor [--qwen-tts <path>] [--whisper-cli <path>] [--talker-model <gguf>] [--codec-model <gguf>] [--model <gguf>] [--manifest <file>] [--project <dir>] [--json]
 
 Options:
   --project <dir>        Use a project other than the current directory.
-  --props <file>         JSON props merged over composition defaults.
-  --out <file>           Output path for still, render, tts, or transcribe. Render defaults to out/<composition-id>.mp4 in the project.
+  --props <file>         Composition props, or a { "<clip-id>": {...} } override map for a timeline.
+  --out <file>           Output path for still, render, tts, or transcribe. Render defaults to out/<id>.mp4 in the project.
   --frame <n>            Frame to capture for still.
-  --concurrency <n>      Parallel browser sessions for render, 1-${MAX_RENDER_CONCURRENCY} (default: 1).
+  --concurrency <n>      Parallel browser sessions for composition render, 1-${MAX_RENDER_CONCURRENCY} (default: 1).
+  --workers <n>          Parallel segment workers for timeline render, 1-${MAX_TIMELINE_WORKERS} (default: 8).
+  --scratch <dir>        Scratch directory for timeline intermediates (default: system temp).
   --overwrite            Replace an existing still or render output.
   --force                Replace existing generated assets and manifest entries.
   --text-file <file>     Text to synthesize. Reads stdin when omitted.
@@ -298,7 +312,7 @@ function printCommandHelp(command: string): void {
       return;
     case "render":
       process.stdout.write(
-        `Usage: frameyard render <composition-id> [--out <video.mp4>] [--props <file>] [--project <dir>] [--concurrency <n>] [--overwrite] [--json]\nRender a complete MP4 with H.264 video and AAC audio. The default output is out/<composition-id>.mp4 in the project. Concurrency is 1-${MAX_RENDER_CONCURRENCY} (default: 1).\n`,
+        `Usage: frameyard render <composition-or-timeline-id> [--out <video.mp4>] [--props <file>] [--project <dir>] [--concurrency <n>] [--workers <n>] [--scratch <dir>] [--overwrite] [--json]\nRender a complete MP4 with H.264 video and AAC audio. The default output is out/<id>.mp4 in the project. Composition concurrency is 1-${MAX_RENDER_CONCURRENCY}; timeline workers are 1-${MAX_TIMELINE_WORKERS}.\n`,
       );
       return;
     case "tts":
@@ -535,9 +549,39 @@ async function runDev(parsed: ParsedArgs): Promise<number> {
 async function runCheck(parsed: ParsedArgs, signal: AbortSignal): Promise<number> {
   const project = await projectFromFlag(parsed.flags);
   const props = await readPropsFile(parsed.flags);
-  const compositionId = parsed.positionals[0] as string;
+  const targetId = parsed.positionals[0] as string;
   const json = parsed.flags.has("json") === true;
 
+  if (project.timelines.has(targetId)) {
+    if (props !== undefined && !isPlainObject(props)) {
+      usage("Timeline --props must be a JSON object keyed by composition clip id.");
+    }
+    const result = await checkTimeline({
+      project,
+      timelineId: targetId,
+      ...(props !== undefined ? { propsOverrides: props as Record<string, unknown> } : {}),
+      signal,
+      onProgress: progressPrinter("Checking"),
+    });
+
+    printDiagnostics(result.diagnostics);
+    if (json) {
+      printJson({ ok: true, command: "check", ...result });
+    } else {
+      process.stdout.write(
+        `✓ timeline ${targetId}: ${result.framesChecked} frames, ${result.format.width}×${result.format.height} @ ${result.format.fps} fps (${formatDuration(result.durationInFrames / result.format.fps)}), ${result.tracks} track${result.tracks === 1 ? "" : "s"}, ${result.clips} clip${result.clips === 1 ? "" : "s"}\n`,
+      );
+      process.stdout.write(`  audio: ${result.audio.clips} clip${result.audio.clips === 1 ? "" : "s"}\n`);
+      if (result.transcripts.clips > 0) {
+        process.stdout.write(
+          `  transcripts: ${result.transcripts.clips} asset${result.transcripts.clips === 1 ? "" : "s"}\n`,
+        );
+      }
+    }
+    return 0;
+  }
+
+  const compositionId = targetId;
   const result = await checkComposition({
     project,
     compositionId,
@@ -577,7 +621,7 @@ async function runCheck(parsed: ParsedArgs, signal: AbortSignal): Promise<number
 async function runStill(parsed: ParsedArgs, signal: AbortSignal): Promise<number> {
   const project = await projectFromFlag(parsed.flags);
   const props = await readPropsFile(parsed.flags);
-  const compositionId = parsed.positionals[0] as string;
+  const targetId = parsed.positionals[0] as string;
   const frame = Number(parsed.flags.get("frame"));
   if (!Number.isInteger(frame) || frame < 0) {
     usage("--frame must be a non-negative integer.");
@@ -586,10 +630,36 @@ async function runStill(parsed: ParsedArgs, signal: AbortSignal): Promise<number
   const outValue = parsed.flags.get("out");
   const outPath = path.resolve(
     process.cwd(),
-    typeof outValue === "string" ? outValue : `still-${compositionId}-${frame}.png`,
+    typeof outValue === "string" ? outValue : `still-${targetId}-${frame}.png`,
   );
   const json = parsed.flags.has("json") === true;
 
+  if (project.timelines.has(targetId)) {
+    if (props !== undefined && !isPlainObject(props)) {
+      usage("Timeline --props must be a JSON object keyed by composition clip id.");
+    }
+    const result = await captureTimelineStill({
+      project,
+      timelineId: targetId,
+      frame,
+      outPath,
+      ...(props !== undefined ? { propsOverrides: props as Record<string, unknown> } : {}),
+      overwrite: parsed.flags.has("overwrite") === true,
+      signal,
+    });
+
+    printDiagnostics(result.diagnostics);
+    if (json) {
+      printJson({ ok: true, command: "still", ...result });
+    } else {
+      process.stdout.write(
+        `Wrote frame ${result.frame} of timeline ${targetId} to ${result.path} (${result.width}×${result.height})\n`,
+      );
+    }
+    return 0;
+  }
+
+  const compositionId = targetId;
   const result = await captureStill({
     project,
     compositionId,
@@ -614,13 +684,58 @@ async function runStill(parsed: ParsedArgs, signal: AbortSignal): Promise<number
 async function runRender(parsed: ParsedArgs, signal: AbortSignal): Promise<number> {
   const project = await projectFromFlag(parsed.flags);
   const props = await readPropsFile(parsed.flags);
-  const compositionId = parsed.positionals[0] as string;
+  const targetId = parsed.positionals[0] as string;
   const outValue = flagString(parsed.flags, "out");
   const outPath =
-    outValue === undefined
-      ? path.join(project.root, "out", `${compositionId}.mp4`)
-      : path.resolve(process.cwd(), outValue);
+    outValue === undefined ? path.join(project.root, "out", `${targetId}.mp4`) : path.resolve(process.cwd(), outValue);
   const json = parsed.flags.has("json") === true;
+
+  if (project.timelines.has(targetId)) {
+    if (parsed.flags.has("concurrency")) {
+      usage("--concurrency is only valid for composition renders; use --workers for timelines.");
+    }
+    const workersValue = flagString(parsed.flags, "workers");
+    const workers = workersValue === undefined ? undefined : Number(workersValue);
+    if (workers !== undefined && (!Number.isInteger(workers) || workers < 1)) {
+      usage("--workers must be a positive integer.");
+    }
+    if (workers !== undefined && workers > MAX_TIMELINE_WORKERS) {
+      usage(`--workers must be at most ${MAX_TIMELINE_WORKERS}.`);
+    }
+    if (props !== undefined && !isPlainObject(props)) {
+      usage("Timeline --props must be a JSON object keyed by composition clip id.");
+    }
+    const scratchValue = flagString(parsed.flags, "scratch");
+    const scratchDir = scratchValue === undefined ? undefined : path.resolve(process.cwd(), scratchValue);
+
+    const result = await renderTimeline({
+      project,
+      timelineId: targetId,
+      outPath,
+      ...(workers !== undefined ? { workers } : {}),
+      ...(scratchDir !== undefined ? { scratchDir } : {}),
+      ...(props !== undefined ? { propsOverrides: props as Record<string, unknown> } : {}),
+      overwrite: parsed.flags.has("overwrite") === true,
+      signal,
+      onProgress: progressPrinter("Rendering"),
+    });
+
+    printDiagnostics(result.diagnostics);
+    if (json) {
+      printJson({ ok: true, command: "render", ...result });
+    } else {
+      process.stdout.write(
+        `Rendered timeline ${targetId} to ${result.path} (${result.framesRendered} frames, ${formatDuration(result.durationSeconds)}, ${result.audio.clips} audio clip${result.audio.clips === 1 ? "" : "s"}, ${result.workers} workers)\n`,
+      );
+    }
+    return 0;
+  }
+
+  if (parsed.flags.has("workers") || parsed.flags.has("scratch")) {
+    usage("--workers and --scratch are only valid for timeline renders.");
+  }
+
+  const compositionId = targetId;
   const concurrencyValue = parsed.flags.get("concurrency");
   const concurrency = validateRenderConcurrency(
     typeof concurrencyValue === "string" ? Number(concurrencyValue) : undefined,

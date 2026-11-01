@@ -1,6 +1,6 @@
 # Composite production frames in software
 
-**Status:** Accepted
+**Status:** Accepted. Extended by [ADR-0011](./0011-compose-timeline-frames-in-a-live-browser-host.md): timeline frames use the same software-composited capture path.
 **Date:** 2026-10-30
 
 Production Chromium sessions keep ANGLE pinned to SwiftShader for WebGL but add

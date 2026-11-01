@@ -33,6 +33,56 @@ node scripts/bench-render.mjs --project examples/demo --concurrency 4 --frames 2
 `pnpm bench --fixtures --quick` also works; use the direct `node` form when
 passing `--browser-arg` values that start with `--`.
 
+## Timeline benchmarks
+
+The timeline benchmarks are measurement tools, not production commands. They
+default to generated directories under `out/bench/timeline/` (gitignored) and
+accept explicit paths for larger disks. Run `node <script> --help` for the
+shared options.
+
+Common options:
+
+- `--work <dir>`: base directory for generated projects and outputs.
+- `--project <dir>`: existing generated project.
+- `--source-project <dir>`: project to copy or reuse.
+- `--output <dir>`: artifacts (stills, segments, final MP4, result JSON).
+- `--scratch <dir>`: intermediate segments and frames. Defaults to `--output`.
+- `--workers <n>`: segment concurrency for the representative benchmark.
+
+Run the chain in order:
+
+```sh
+# 1. Generate the spike project and frame comparisons.
+node bench/timeline-spike.mjs
+
+# 2. Measure a 10-second lossless segment (FFV1 + FFmpeg composite).
+node bench/timeline-lossless-segment.mjs
+
+# 3. Build the 60-second three-layer project and measure it.
+node bench/timeline-60s.mjs
+
+# 4. Measure the continuous 50/50 stress case.
+node bench/timeline-5050-60s.mjs
+
+# 5. Measure the representative 50/50, 60/30/10 case.
+node bench/timeline-representative-60s.mjs --workers 4
+```
+
+Point long runs at a larger disk without editing source:
+
+```sh
+node bench/timeline-representative-60s.mjs \
+  --project out/bench/timeline/60s/project \
+  --output /path/to/bench-output \
+  --scratch /path/to/bench-scratch \
+  --workers 4
+```
+
+The scripts use the built modules under `dist/`; run `pnpm build` after changing
+source. Results are written to `<output>/result.json`. The full 60-minute
+production gate is a separate CLI render; use a composition-heavy timeline and
+`node dist/cli.js render <id> --workers <n> --scratch <dir>`.
+
 ## Browser-flag experiments
 
 `--browser-arg <flag>` adds a Chromium flag for one benchmark run, and

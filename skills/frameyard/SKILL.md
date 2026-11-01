@@ -1,7 +1,7 @@
 ---
 name: frameyard
-description: Create, validate, inspect, and render deterministic Frameyard videos authored with HTML, CSS, and an optional JavaScript controller. Use when a user asks to build or operate a Frameyard project, produce parameterized video, add a local TTS or transcription asset through Frameyard's wrappers, or diagnose a Frameyard render. Do not use for general-purpose media generation outside a Frameyard project.
-frameyard-api-version: 0.5.0
+description: Create, validate, inspect, and render deterministic Frameyard videos authored with HTML compositions and JSON timelines. Use when a user asks to build or operate a Frameyard project, produce parameterized video, assemble clips into a timeline, add a local TTS or transcription asset through Frameyard's wrappers, or diagnose a Frameyard render. Do not use for general-purpose media generation outside a Frameyard project.
+frameyard-api-version: 0.6.0
 ---
 
 # Frameyard
@@ -11,19 +11,20 @@ Use Frameyard's public project format and CLI. Do not introduce an agent-only ru
 ## First decisions
 
 1. Find the project: look for `video.config.js` from the working directory upward, or run `npx frameyard init <directory>` to scaffold one.
-2. Read the composition entry points listed in `video.config.js`. They are `.html` documents; there is no directory scanning.
-3. Read the composition HTML, its optional controller, and the props file before changing behavior.
+2. Read the `format`, `compositions`, and `timelines` maps in `video.config.js`. Entries are explicit `.html` and `.json` documents; there is no directory scanning.
+3. Read the timeline JSON, the referenced composition HTML, its optional controller, and the props files before changing behavior.
 4. If the task needs speech or transcription, confirm that inference is requested or explicitly approved before producing assets.
 
 ## Workflow
 
-1. **Author** the composition as a full HTML document with one `<fy-composition>` root. Put metadata, default props, markup, CSS animation, bindings, audio, and transcripts in the document. Use an optional controller for Canvas 2D, WebGL, karaoke, or per-frame computation CSS cannot express. Read [deterministic authoring](references/deterministic-authoring.md), [bindings](references/bindings.md), and [controllers](references/controllers.md).
-2. **Provide props** as JSON. Validate domain-specific requirements with a controller's `validateProps()`.
-3. **Produce optional assets** with `npx frameyard tts` and `npx frameyard transcribe`, never with the upstream executables. Read [audio assets](references/audio-assets.md). Do not overwrite or regenerate existing generated assets without permission.
-4. **Validate** with `npx frameyard check <id> --json`. Static validation runs before Chromium; then every frame is evaluated. Read the structured `diagnostics` array. Read [diagnostics](references/diagnostics.md) and [common mistakes](references/common-mistakes.md).
-5. **Inspect** representative frames with `npx frameyard still <id> --frame <n> --out <file.png> --json`. View the PNGs when the host supports image viewing. If visual inspection is impossible, say so explicitly.
-6. **Render** with `npx frameyard render <id> [--out <file.mp4>] [--props <file>] [--concurrency <n>] --json`. The default output is `out/<id>.mp4` in the project root.
-7. **Report** the project path, composition entry, controller, props, generated assets, provenance manifest, validation results, diagnostics, still paths and inspection status, final video path, and any failures.
+1. **Author compositions** as full HTML documents with one `<fy-composition>` root. Put metadata, default props, markup, CSS animation, bindings, audio, and transcripts in the document. Use an optional controller for Canvas 2D, WebGL, karaoke, or per-frame computation CSS cannot express. Read [deterministic authoring](references/deterministic-authoring.md), [bindings](references/bindings.md), and [controllers](references/controllers.md).
+2. **Assemble the timeline** in JSON: project format, video/audio tracks, composition, media, and nested-timeline clips, source ranges, static transforms, and audio. Read [timelines](references/timelines.md).
+3. **Provide props** as JSON. Composition props merge over defaults; timeline render props are a map keyed by composition clip ID. Validate domain-specific requirements with a controller's `validateProps()`.
+4. **Produce optional assets** with `npx frameyard tts` and `npx frameyard transcribe`, never with the upstream executables. Read [audio assets](references/audio-assets.md). Do not overwrite or regenerate existing generated assets without permission.
+5. **Validate** with `npx frameyard check <id> --json`, where `<id>` is a timeline or composition. Static validation runs before Chromium; then every frame is evaluated. Read the structured `diagnostics` array. Read [diagnostics](references/diagnostics.md) and [common mistakes](references/common-mistakes.md).
+6. **Inspect** representative frames with `npx frameyard still <id> --frame <n> --out <file.png> --json`. View the PNGs when the host supports image viewing. If visual inspection is impossible, say so explicitly.
+7. **Render** with `npx frameyard render <id> [--out <file.mp4>] [--props <file>] --json`. Composition renders accept `--concurrency <n>`; timeline renders accept `--workers <n>` and `--scratch <dir>`. The default output is `out/<id>.mp4` in the project root.
+8. **Report** the project path, timeline and composition entries, controller, props, generated assets, provenance manifest, validation results, diagnostics, still paths and inspection status, final video path, and any failures.
 
 Never claim success when `check` fails, a still is missing, a render exits nonzero, or visual inspection was skipped. A partial or unpublished render is not a successful result.
 
@@ -33,13 +34,15 @@ Never claim success when `check` fails, a still is missing, a render exits nonze
 - Keep the current output files unless the user explicitly approves replacement. Use `--force` only with that approval.
 - Use `--project <dir>` when not running from the project root.
 - `render` writes to `out/<id>.mp4` in the project root unless `--out` is passed. Explicit `--out` paths are relative to the current working directory.
-- Use `--concurrency <n>` only when faster local rendering is useful; the default is `1` and the maximum is `16`. It changes capture scheduling only, not composition behavior or output frame order.
+- Use `--concurrency <n>` only for composition renders; the default is `1` and the maximum is `16`. Use `--workers <n>` for timeline renders; the default is `8`. Timeline renders also accept `--scratch <dir>` for FFV1 intermediates.
+- For a timeline, `--props` is a JSON object keyed by top-level composition clip ID. For a composition, it is the props object.
 - Use `npx frameyard doctor --json` before reporting an environment problem. It inspects without repairing or downloading.
 - Read [JSON results](references/json-results.md) for result and error shapes, and [failure recovery](references/failure-recovery.md) for actionable error codes.
 
 ## Authoring rules
 
 - A composition is a full HTML document with one `<fy-composition width height fps duration-in-frames>` root and a `data-fy="props"` default-props block.
+- A timeline is a versioned JSON document with explicit tracks and clips. Sources are composition IDs, nested timeline IDs, or local video/image/audio paths. Timeline frames, sourceIn, and duration are integer frames. No remote URLs.
 - Bindings are explicit: `data-fy-text`, `data-fy-attr-*`, `data-fy-class-*`, `data-fy-if`, and `data-fy-repeat` on `<template>`. Primitive top-level props are also `--fy-prop-<name>` CSS variables.
 - CSS `@keyframes` and the Web Animations API are seeked from the frame clock. `data-fy-anim-start`, `data-fy-anim-duration`, and `data-fy-anim-easing` schedule one animation per element in frames.
 - Frame-state variables on `:root`: `--fy-frame`, `--fy-time`, `--fy-progress`, `--fy-fps`, `--fy-duration`, and `--fy-duration-frames`.
@@ -50,7 +53,7 @@ Never claim success when `check` fails, a still is missing, a render exits nonze
 
 ## Determinism guardrails
 
-- A frame may depend only on its integer `frame`, immutable `props`, and assets loaded before frame production.
+- A composition frame may depend only on its integer `frame`, immutable `props`, and assets loaded before frame production. A timeline frame derives from its active clips and the same composition rules.
 - Use `random("stable:key")` from `frameyard/runtime`; never use `Math.random()`.
 - Never use `Date.now()`, `performance.now()`, timers, independent `requestAnimationFrame` loops, or CSS transitions as animation inputs.
 - Finish remote data, fonts, and image loading during the loading phase. Network requests are blocked during frame capture.
@@ -80,6 +83,7 @@ When the CLI version differs from `frameyard-api-version`, pin it with `npx fram
 
 ## References
 
+- [Timelines](references/timelines.md)
 - [Deterministic HTML authoring](references/deterministic-authoring.md)
 - [Bindings](references/bindings.md)
 - [Controllers](references/controllers.md)

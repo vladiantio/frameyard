@@ -8,6 +8,8 @@ import { FrameyardError } from "../errors.js";
 import { validateHtmlComposition } from "../html/validate.js";
 import { loadProject, type Project, type ProjectComposition } from "../project.js";
 import { injectCompositionHost } from "./composition-html.js";
+import { buildTimelinePreviewData } from "./timeline-preview-data.js";
+import { renderTimelinePreviewHtml } from "./timeline-preview-html.js";
 import { renderPreviewHtml } from "./preview-html.js";
 
 export interface PreviewServer {
@@ -237,7 +239,11 @@ function publicController(
   return controller.kind === "inline" ? { kind: "inline" } : { kind: "external", src: controller.src ?? "" };
 }
 
-async function buildProjectJson(project: Project): Promise<{ compositions: unknown[] }> {
+async function buildProjectJson(project: Project): Promise<{
+  format: unknown;
+  compositions: unknown[];
+  timelines: unknown[];
+}> {
   const compositions: unknown[] = [];
   for (const composition of project.compositions.values()) {
     const result = await validateHtmlComposition({ projectRoot: project.root, entry: composition.entry });
@@ -250,7 +256,12 @@ async function buildProjectJson(project: Project): Promise<{ compositions: unkno
       diagnostics: result.diagnostics,
     });
   }
-  return { compositions };
+  const timelines = [...project.timelines.values()].map((timeline) => ({
+    id: timeline.id,
+    entry: timeline.entry,
+    kind: "timeline",
+  }));
+  return { format: project.format ?? null, compositions, timelines };
 }
 
 function findCompositionForPath(project: Project, pathname: string): ProjectComposition | undefined {
@@ -305,6 +316,42 @@ export async function startPreviewServer(options: PreviewServerOptions): Promise
 
       if (pathname === "/__frameyard/project.json") {
         sendJson(response, 200, await buildProjectJson(project));
+        return;
+      }
+
+      const timelineDataMatch = /^\/__frameyard\/timeline\/(.+)\.json$/.exec(pathname);
+      if (timelineDataMatch) {
+        try {
+          sendJson(response, 200, await buildTimelinePreviewData(project, timelineDataMatch[1] as string));
+        } catch (error) {
+          if (error instanceof FrameyardError) {
+            sendJson(response, 500, {
+              ok: false,
+              command: "timeline-preview",
+              error: {
+                code: error.code,
+                message: error.message,
+                ...(error.details !== undefined ? { details: error.details } : {}),
+              },
+              ...(error.diagnostics !== undefined ? { diagnostics: error.diagnostics } : {}),
+            });
+          } else {
+            throw error;
+          }
+        }
+        return;
+      }
+
+      const timelineMatch = /^\/__frameyard\/timeline\/([^/]+)$/.exec(pathname);
+      if (timelineMatch) {
+        sendHtml(
+          response,
+          200,
+          renderTimelinePreviewHtml(timelineMatch[1] as string, {
+            embed: url.searchParams.has("__fy-embed"),
+          }),
+          request.method === "HEAD",
+        );
         return;
       }
 

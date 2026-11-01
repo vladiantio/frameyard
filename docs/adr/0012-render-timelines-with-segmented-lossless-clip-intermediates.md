@@ -1,0 +1,31 @@
+# Render timelines with segmented lossless clip intermediates
+
+**Status:** Accepted
+**Date:** 2026-10-31
+
+Timeline rendering will be segmented and parallel. For each segment, Chromium renders the active composition and nested-timeline clips to lossless FFV1 intermediates; FFmpeg decodes media, applies the clip's fit and static transform, composites the segment, encodes H.264, and the ordered segments are concatenated without re-encoding. Audio is mixed once for the whole timeline and muxed at the end. Preview remains a live Chromium timeline host with a bounded pool of active clips; parity is guaranteed at clip capture, not at the final composite.
+
+The production target is a representative 60-minute 1920×1080 30 fps timeline with up to three active layers, a roughly 50/50 composition/media split by layer-seconds, 60% one layer, 30% two layers, and 10% three layers. The measured 10-second segment (two compositions, video, image) captured in 10.7 s, produced 35.2 MB of FFV1, and composited plus encoded in 6.1 s. A continuous three-layer composition-heavy 60-second gate took 52.4 s, and a continuous 50/50 full-frame video-overlay gate took 58.5 s; both extrapolate to about 1× real time and are documented as worst-case behavior, not the target workload. The representative 60-second gate — 50/50 layer-seconds, 60/30/10 occupancy, eight segments, four workers, and a 1080p video fast path — took 29.39 s and produced exactly 1800 frames at 30 fps, extrapolating to about 29.4 minutes for 60 minutes. The full 60-minute gate (2026-11-01) rendered a composition-only stress timeline of 108,000 frames, 120 composition clips, 360 segments, and four workers in 2,120.9 s (35.35 minutes). The output was exactly 108,000 frames / 3,600.000 s at 1920×1080, 30 fps, with scratch cleaned. That gate is stricter than the 50/50 target mix because every second is an HTML composition capture; it exceeds 30 minutes by 18%. The target is therefore met for the representative 50/50 workload, with little margin, while composition-heavy timelines run at roughly 1.7× real time.
+
+The 1.8 TB USB HDD provides enough scratch capacity; a raw-frame cache would be roughly 670–900 GB, which does not fit, which is why the design uses compressed lossless FFV1 rather than raw frames or PNG sequences.
+
+## Considered Options
+
+- **Live browser host (ADR 0011).** Rejected: deterministic and pixel-exact, but 138.8 ms per 1920×1080 frame with four layers versus 33.6 ms for a direct composition capture. It does not meet the long-timeline target.
+- **Skia + FFmpeg streaming compositor.** Rejected for 0.6: it avoids intermediates and preserves capture pixels, but adds a large compositor dependency and a custom frame pipeline. The FFmpeg + FFV1 path already meets the target without it. Skia remains an option if future effects or blend modes outgrow FFmpeg filters.
+- **FFmpeg streaming through pipes.** Rejected: avoids intermediates and dependencies, but requires a fragile cross-platform multi-pipe/filter-graph coordination for a variable set of active layers.
+- **Pre-render every clip for the whole timeline.** Rejected: for 60 minutes the intermediates can be tens to hundreds of gigabytes and the write/read time alone can exceed the render budget. Segmentation bounds peak scratch and lets workers run in parallel.
+- **Lossy intermediates.** Rejected as the default: an extra lossy encode breaks pixel parity at clip capture. FFV1 keeps the captured frames exact; only the final H.264 encode is lossy, as it already is for composition renders.
+
+## Consequences
+
+- Composition and nested-timeline clips are captured with Chromium; media clips are decoded directly by FFmpeg. The timeline compositor is FFmpeg, not the browser.
+- Composition clips that are transparent must be captured with a transparent browser background (`Emulation.setDefaultBackgroundColorOverride` with alpha 0); otherwise the top-level canvas produces a white background. FFV1 uses a pixel format that preserves alpha.
+- Segments are bounded by active-layer changes or a maximum duration (10 s in the benchmark) so each segment has a fixed filter graph; segments are encoded with identical settings and concatenated with `-c copy`.
+- Full-frame video clips with no transform or opacity that already match the project format and whose segment boundaries fall on source keyframes may be stream-copied instead of re-encoded. Other media is scaled/transformed/re-encoded. The representative gate's 29.4-minute projection includes this fast path and excludes any source-transcode time.
+- Timeline workers are bounded (8 by default on the reference machine) and scratch is configurable and cleaned on success and failure. A 60-minute render should not depend on the system `/tmp` tmpfs.
+- Nested timelines are rendered recursively to segment intermediates and treated as one layer, so parent opacity and transform apply to the grouped result. Cycles are rejected statically.
+- Audio is mixed globally rather than per segment, avoiding boundary clicks and keeping clip trims/gains exact.
+- `check` and `still` use the clip capture + timeline composite path for the requested frame; the long-form render path is not used to produce a single still.
+- Preview uses a live Chromium timeline host with a small active-clip pool. Scaling, alpha, and video color conversion may differ from the final FFmpeg composite; the reproducibility guarantee is at clip capture.
+- The 60-second, three-layer, audio-enabled benchmark is the gate before production implementation. A continuous three-layer composition-heavy run measured 52.4 s for 60 s, and a continuous 50/50 full-frame video-overlay run measured 58.5 s; both are about 1× real time and are documented as worst-case. The representative 50/50, 60/30/10 occupancy gate measured 29.39 s for 60 s with four workers and a 1080p media fast path, extrapolating to about 29.4 minutes for 60 minutes with exact 1800-frame output. The full 60-minute, composition-only gate completed in 35.35 minutes with exact 108,000-frame output; composition-heavy performance remains above the 30-minute target. If stricter composition-heavy performance is required, the next levers are a faster lossless intermediate codec, persistent capture sessions, and encoder preset/thread tuning.

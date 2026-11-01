@@ -1,6 +1,6 @@
 # Make HTML documents the composition unit
 
-**Status:** Accepted
+**Status:** Accepted. Amended by [ADR-0010](./0010-make-timelines-the-render-unit.md): HTML documents remain the composition unit, but compositions become clip sources inside JSON timelines.
 **Date:** 2026-10-30
 
 Frameyard compositions will be declarative HTML documents rather than JavaScript modules. A composition declares its metadata, default props, bindings, animation schedule, audio, and transcripts in HTML and CSS, while an optional inline or external controller handles Canvas 2D, WebGL, karaoke, and per-frame computation the declarative layer cannot express. This replaces the imperative `mount → update → dispose` authoring contract with an HTML-first model that is easier for humans and agents to read, edit, and inspect, while preserving frame-and-props determinism and preview/render parity through the same injected host runtime.

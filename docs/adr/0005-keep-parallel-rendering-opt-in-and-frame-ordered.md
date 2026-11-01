@@ -1,3 +1,5 @@
 # Keep parallel rendering opt-in and frame-ordered
 
+**Amended by [ADR-0010](./0010-make-timelines-the-render-unit.md).** Parallel capture remains composition-only in 0.6; timeline rendering is sequential until the live timeline host proves safe to duplicate.
+
 Frameyard will offer parallel frame capture as an explicit `render --concurrency <n>` option, defaulting to one browser session and limiting `n` to 16 to bound browser processes and buffered PNG memory. Each worker loads the same composition, props, and preview server in an independent session; workers seek and capture assigned frames while one ordered writer feeds a single FFmpeg encoder. Bounded lookahead limits buffered PNGs, failures stop further frame work and abort publication, and no partial output is published. This keeps sequential rendering as the predictable default and preserves the determinism contract at the capture boundary: concurrency changes scheduling only, never frame order or visual state. The cost is additional CPU and memory proportional to the requested session count.

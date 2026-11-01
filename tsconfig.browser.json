@@ -11,6 +11,7 @@
     "src/composition/**/*.ts",
     "src/runtime/**/*.ts",
     "src/preview/**/*.ts",
+    "src/timeline/schema.ts",
     "src/index.ts",
     "src/version.ts",
     "src/contracts.ts",

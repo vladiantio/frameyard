@@ -8,6 +8,53 @@ Frameyard uses `0.x` versions until the composition, configuration, CLI,
 JSON-result, transcript, and skill contracts stabilize. Before `1.0.0`, a
 contract change may ship in a minor release and is called out explicitly below.
 
+## [0.6.0] - 2026-11-01
+
+### Added
+
+- JSON timelines with project-fixed format, video/audio tracks, composition,
+  media, and nested-timeline clips, source ranges, per-clip props, static
+  transforms, audio settings, and derived or overridden duration.
+- Timeline validation: strict schema, references, composition static
+  validation, media probing, frame-rate checks, source bounds, overlaps,
+  nested cycles, and structured diagnostics.
+- Segmented timeline rendering: Chromium captures composition and
+  nested-timeline clips to alpha-preserving FFV1 intermediates; FFmpeg
+  composites and encodes segments; segments are concatenated in order; audio
+  is mixed once and muxed.
+- Transparent composition capture and nested timeline groups with recursive
+  visual, still, check, and audio handling.
+- Timeline preview in `dev`: composition and timeline selectors, program
+  monitor, read-only tracks and clips, playhead, playback, audio controls, and
+  diagnostics.
+- `render`, `check`, and `still` accept timeline IDs alongside composition
+  IDs. Timeline renders add `--workers` and `--scratch`; timeline `--props`
+  is a map keyed by composition clip ID.
+- `video.config.js` supports an optional project `format` and explicit
+  `timelines` map. `project.json` publishes `format` and `timelines`.
+- Timeline-first `init` scaffold with a composition clip, timeline override
+  props, and `main` commands.
+- Official skill reference for timelines, clips, tracks, nested timelines,
+  props overrides, commands, preview, and determinism.
+- Timeline config, schema, resolution, planning, rendering, preview, and
+  runtime preview tests.
+
+### Changed
+
+- `render` defaults to `out/<id>.mp4` for timelines and compositions.
+- `check` and `still` use timeline clip capture and composite behavior for
+  timeline targets.
+- Timeline audio mixing pads short inputs to the full timeline duration.
+- The design baseline, glossary, and architecture decision records describe
+  timelines as the render unit and compositions as clip sources.
+
+### Fixed
+
+- Composition audio, embedded video audio, and nested timeline audio are
+  trimmed and shifted by clip source ranges and groups.
+
+[0.6.0]: https://github.com/vladiantio/frameyard/compare/v0.5.0...v0.6.0
+
 ## [0.5.0] - 2026-10-31
 
 ### Added

@@ -914,8 +914,8 @@ describe("CLI end-to-end", () => {
     expect(json.next).toEqual([
       "npx frameyard doctor",
       "npx frameyard dev",
-      "npx frameyard check hello",
-      "npx frameyard render hello",
+      "npx frameyard check main",
+      "npx frameyard render main",
     ]);
     expect((await stat(path.join(target, "video.config.js"))).isFile()).toBe(true);
     expect((await stat(path.join(target, "compositions", "hello.html"))).isFile()).toBe(true);
@@ -946,9 +946,9 @@ describe("CLI end-to-end", () => {
     expect(agents).toContain("npx skills add vladiantio/frameyard");
     for (const command of [
       "npx frameyard doctor --json",
-      "npx frameyard check hello --json",
-      "npx frameyard still hello --frame 42 --out hello-42.png --json",
-      "npx frameyard render hello --props props/hello.json --json",
+      "npx frameyard check main --json",
+      "npx frameyard still main --frame 42 --out main-42.png --json",
+      "npx frameyard render main --props props/main.json --workers 8 --scratch /path/to/scratch --json",
     ]) {
       expect(agents).toContain(command);
     }
@@ -958,8 +958,8 @@ describe("CLI end-to-end", () => {
     for (const command of [
       "npx frameyard dev",
       "npx frameyard doctor",
-      "npx frameyard check hello",
-      "npx frameyard render hello --props props/hello.json",
+      "npx frameyard check main",
+      "npx frameyard render main --props props/main.json",
     ]) {
       expect(readme).toContain(command);
     }

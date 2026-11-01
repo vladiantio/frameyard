@@ -1,21 +1,25 @@
 # Frameyard
 
-Frameyard is a local-first framework for creating short, parameterized videos with HTML, CSS, and JavaScript. Its domain separates reusable compositions from the fixed inputs and deterministic renders that turn them into videos.
+Frameyard is a local-first framework for creating short, parameterized videos with HTML, CSS, and JavaScript. Its domain separates reusable compositions from the timelines that assemble them into a video, and from the fixed inputs and deterministic renders that turn those timelines into output.
 
 ## Language
 
 ### Authoring
 
 **Project**:
-A collection of related compositions and the assets and configuration they share.
+A collection of related compositions, timelines, and the assets and configuration they share.
 _Avoid_: Video, render
 
+**Project format**:
+The fixed width, height, and frame rate shared by every timeline in a project.
+_Avoid_: Composition metadata, render options
+
 **Composition**:
-A uniquely identified, reusable video definition with fixed dimensions, frame rate, duration in frames, and content parameterized by props.
+A uniquely identified, reusable video source with fixed dimensions, frame rate, duration in frames, and content parameterized by props.
 _Avoid_: Scene, template, video
 
 **Composition metadata**:
-The fixed dimensions, frame rate, and duration in frames that define a composition's output contract.
+The fixed dimensions, frame rate, and duration in frames that define a composition's source contract.
 _Avoid_: Render options, props
 
 **Composition descriptor**:
@@ -38,6 +42,10 @@ _Avoid_: Build, release
 A composition whose source is an HTML document.
 _Avoid_: HTML template, page
 
+**Transparent composition**:
+A composition that does not paint a background, so a timeline clip can reveal the layers below it.
+_Avoid_: Alpha composition, overlay
+
 **Composition controller**:
 An optional JavaScript controller, either inline in the composition document or in an external module, that performs per-frame computation an HTML composition's declarative HTML and CSS cannot express.
 _Avoid_: Composition module, plugin
@@ -55,25 +63,113 @@ An HTML attribute that maps a prop into text, an attribute, a class, or element 
 _Avoid_: Template expression, interpolation
 
 **Props**:
-The immutable, JSON-serializable inputs supplied to a composition for one render.
+The immutable, JSON-serializable inputs supplied to a composition for one load; a timeline clip can fix the props for its instance of the composition.
 _Avoid_: Options, settings, mutable state
 
 **Asset**:
-A local file required by a composition, whether static or generated.
+A local file required by a composition or timeline, whether static or generated.
 _Avoid_: Resource, media file
+
+**Timeline**:
+A top-level edit that assembles tracks and clips into one video under the project format, with a duration derived from its clips or explicitly overridden.
+_Avoid_: Sequence, composition, project
+
+**Timeline document**:
+The project-local JSON document that declares a timeline's tracks, clips, optional duration, and background.
+_Avoid_: Composition, config
+
+**Track**:
+An ordered layer in a timeline. Video tracks composite; audio tracks mix.
+_Avoid_: Channel, lane
+
+**Video track**:
+A track whose clips contribute visual layers, ordered from bottom to top.
+_Avoid_: Visual lane
+
+**Audio track**:
+A track whose clips are audio-only and contribute additively to the timeline audio mix.
+_Avoid_: Soundtrack
+
+**Clip**:
+A placement of a clip source on a track, with a timeline start, source in-point, duration, and presentation settings.
+_Avoid_: Segment, item, block
+
+**Clip source**:
+The composition, nested timeline, or local media asset that a clip presents.
+_Avoid_: Media, asset
+
+**Composition clip**:
+A clip whose source is a composition, with fixed props for that instance.
+_Avoid_: Composition instance, nested composition
+
+**Media clip**:
+A clip whose source is a local video, image, or audio asset.
+_Avoid_: Asset clip, raw clip
+
+**Nested timeline clip**:
+A clip whose source is another timeline.
+_Avoid_: Nested sequence, compound clip
+
+**Source in-point**:
+The first source frame a clip uses.
+_Avoid_: Trim start, offset
+
+**Timeline frame**:
+An integer-addressed position on a timeline's master frame grid.
+_Avoid_: Composition frame, timestamp
+
+**Composition frame**:
+An integer-addressed position within a composition; the frame a controller receives.
+_Avoid_: Timeline frame
+
+**Timeline duration**:
+The number of timeline frames a timeline produces, derived from its clips or explicitly overridden.
+_Avoid_: Composition duration, length
+
+**Timeline background**:
+The optional color behind all layers of a timeline; it is transparent by default and the final video composites it over black.
+_Avoid_: Canvas, backdrop
+
+**Fit policy**:
+How a clip source's natural frame is scaled into the project format: contained, covering, or stretched.
+_Avoid_: Resize mode, object-fit
+
+**Clip transform**:
+The static position, scale, rotation, and opacity applied to a visual clip.
+_Avoid_: Effect, animation
+
+**Nested timeline**:
+A timeline used as a clip source inside another timeline.
+_Avoid_: Compound composition
 
 ### Deterministic execution
 
 **Frame**:
-An integer-addressed position on a composition's timeline.
+An integer-addressed position on a timeline or composition frame range; use timeline frame or composition frame when the distinction matters.
 _Avoid_: Timestamp, animation tick
 
+**Active clip**:
+A clip whose timeline range contains the current timeline frame.
+_Avoid_: Visible clip
+
+**Clip capture**:
+The pixel frames a composition produces for a timeline clip before the timeline compositor combines layers.
+_Avoid_: Screenshot, render
+
+**Timeline composite**:
+The deterministic combination of a timeline's layers into output frames.
+_Avoid_: Browser composite, preview
+
+**Render segment**:
+A bounded span of a timeline that is rendered and encoded independently, then joined in timeline order.
+_Avoid_: Chunk, part
+
 **Deterministic execution**:
-The rule that a composition's visual state at any frame depends only on that frame, its props, and pre-loaded data and assets.
+The rule that a timeline frame's visual state depends only on that timeline frame, its clip sources and their props, and pre-loaded data and assets; a composition frame depends only on its composition frame, props, and pre-loaded data and assets.
 _Avoid_: Playback-driven animation
 
 **Frame clock**:
-The single source of animation time, derived from the current frame and the composition's frame rate.
+The single source of animation time within a composition, derived from its composition frame and frame rate; the preview host or the production segment renderer drives it by seeking each active composition clip.
 _Avoid_: Wall clock, playback timer
 
 **Frame-state variable**:
@@ -81,7 +177,7 @@ A CSS custom property whose value is derived from the current composition frame.
 _Avoid_: Animation variable, clock variable
 
 **Seek safety**:
-The property that any frame can be produced correctly without depending on previously produced frames.
+The property that any timeline frame can be produced correctly without depending on previously produced timeline frames, by seeking each active clip to its source frame.
 _Avoid_: History-dependent updates
 
 **Deterministic randomness**:
@@ -89,15 +185,15 @@ Random values derived statelessly from a key so they do not depend on call order
 _Avoid_: Unseeded randomness
 
 **Frame production**:
-The phase in which the runtime produces the visual state of a requested frame, without network access or model inference.
+The phase in which the runtime produces the visual state of a requested timeline frame, without network access or model inference.
 _Avoid_: Real-time playback
 
 **Loading phase**:
-The phase before frame production when required data and assets become available.
+The phase before frame production when all clip sources, compositions, media, data, and assets become available.
 _Avoid_: Per-frame fetching
 
 **Embedded media**:
-A local video file placed in a composition whose presentation time is derived from the composition frame, with optional frame offset and source trim.
+A local video file placed inside a composition whose presentation time is derived from the composition frame, with optional frame offset and source trim.
 _Avoid_: Live stream, video track
 
 **Media settle**:
@@ -110,13 +206,21 @@ _Avoid_: GPU animation, live render
 
 ### Audio
 
-**Audio clip**:
-An audio source placed on a composition's timeline with a start frame, source trim, and volume.
-_Avoid_: Audio track
+**Composition audio clip**:
+An audio source declared inside a composition and placed by composition frames; it joins the timeline mix when the composition is used as a clip.
+_Avoid_: Audio clip, audio track
+
+**Timeline audio clip**:
+An audio-only clip placed on a timeline audio track.
+_Avoid_: Audio clip, soundtrack
 
 **Audio mix**:
-The single offline mix of a composition's audio clips for one render.
+The single offline mix of a timeline's audible clips for one render.
 _Avoid_: Soundtrack, audio track, final cut
+
+**Embedded audio**:
+The audio track of an embedded video, contributed to the mix unless the video or clip is muted.
+_Avoid_: Live audio
 
 ### Rendering
 
@@ -124,28 +228,52 @@ _Avoid_: Soundtrack, audio track, final cut
 The injected runtime that loads an HTML composition, applies its bindings, and exposes its frame clock to preview and render.
 _Avoid_: Preview runtime, render runtime
 
+**Timeline host**:
+The preview runtime that loads a timeline, drives a bounded pool of active clip sources, and exposes the timeline frame clock to the preview.
+_Avoid_: Timeline runtime, production renderer, editor
+
+**Timeline renderer**:
+The Node-side segmented renderer that captures composition clips, composites and encodes timeline segments, and joins them into one video.
+_Avoid_: Timeline host, browser renderer
+
 **Preview**:
-An interactive, frame-accurate inspection of a composition using the same composition behavior as a render.
+An interactive, frame-accurate inspection of a timeline or composition using the same behavior as a render, including a program monitor and a read-only timeline view.
 _Avoid_: Visual editor
 
+**Playhead**:
+The current timeline frame in preview.
+_Avoid_: Cursor, scrubber
+
+**Program monitor**:
+The preview surface that shows the timeline at the playhead.
+_Avoid_: Stage, canvas
+
 **Check**:
-A validation operation that first runs static composition validation, then loads a composition and evaluates every frame without capturing or encoding.
+A validation operation that first runs static validation, then loads a timeline or composition and evaluates every frame without capturing or encoding.
 _Avoid_: Test render, dry run
 
 **Static composition validation**:
 The Node-side validation of a composition document's metadata, bindings, controller declaration, scripts, and asset references before browser frame production.
 _Avoid_: Lint, preflight
 
+**Static timeline validation**:
+The Node-side validation of a timeline document's tracks, clips, references, nested timelines, media, and referenced compositions before browser frame production.
+_Avoid_: Lint, preflight
+
 **Composition diagnostic**:
 A structured error or warning about a composition's source, metadata, bindings, controller, assets, or frame production, with a stable code and optional source location.
 _Avoid_: Log message, error string
 
+**Timeline diagnostic**:
+A structured error or warning about a timeline's source, tracks, clips, references, media, or frame production, with a stable code and optional source location.
+_Avoid_: Log message, error string
+
 **Render**:
-The production of one complete video from a composition and a fixed set of props.
+The production of one complete video from a timeline or a standalone composition with fixed inputs.
 _Avoid_: Recording, export
 
 **Render concurrency**:
-The optional number of independent browser sessions used to seek and capture frames during a render. Frames are still encoded in timeline order, and concurrency must not change visual state.
+The optional number of independent browser sessions used to seek and capture frames during a composition render; timeline rendering is sequential in 0.6. Frames are still encoded in timeline order, and concurrency must not change visual state.
 _Avoid_: Parallel composition, out-of-order output
 
 **Video**:
@@ -153,11 +281,11 @@ The finished audiovisual output of a successful render.
 _Avoid_: Composition, project
 
 **Still**:
-A single frame captured as a PNG through the production rendering path for debugging.
+A single frame captured as a PNG through the production rendering path for a timeline or composition.
 _Avoid_: Frame export, image sequence
 
 **Reproducibility**:
-The guarantee that, for the same composition revision, props, assets, and frame under a pinned runtime/browser environment, the visual state is identical. It does not imply identical encoded bytes, even on the same machine; encoded output depends on the encoder and its runtime.
+The guarantee that, for the same timeline or composition revision, props, assets, and frame under a pinned runtime/browser environment, the visual state is identical. It does not imply identical encoded bytes, even on the same machine; encoded output depends on the encoder and its runtime.
 _Avoid_: Bit-for-bit encoding equality
 
 ### Agent operation
@@ -173,7 +301,7 @@ _Avoid_: Agent runtime, MCP server
 ### Local asset production
 
 **Generated asset**:
-A frozen local input produced by speech synthesis or transcription before a composition is loaded or rendered.
+A frozen local input produced by speech synthesis or transcription before a timeline or composition is loaded or rendered.
 _Avoid_: Per-frame generation
 
 **Provenance manifest**:

@@ -1,8 +1,8 @@
 # Frameyard
 
-Frameyard is a local-first framework for building short, parameterized videos with HTML, CSS, and an optional JavaScript controller, and rendering them deterministically.
+Frameyard is a local-first framework for building parameterized videos with HTML, CSS, and an optional JavaScript controller, assembling them into timelines, and rendering them deterministically.
 
-The 0.4 design is implemented: HTML composition documents, declarative bindings, CSS animation scheduling, frame-state variables, inline and external controllers, the composition host, static validation with structured diagnostics, iframe preview, direct render/check/still sessions, audio and transcripts, deterministic Chromium capture, FFmpeg output, and the official agent skill.
+The 0.6 design is implemented: HTML composition documents, JSON timelines with tracks and clips, nested timelines, declarative bindings, CSS animation scheduling, frame-state variables, inline and external controllers, composition and timeline hosts, static validation with structured diagnostics, an interactive preview with a read-only timeline, direct composition rendering, segmented lossless timeline rendering, audio and transcripts, deterministic Chromium capture, FFmpeg output, and the official agent skill.
 
 ## Requirements
 
@@ -26,7 +26,7 @@ cd my-video
 npx frameyard dev
 ```
 
-`dev` prints a local preview URL. Select a composition, edit its JSON props, scrub frames, and play the composition with its audio timeline.
+`dev` prints a local preview URL. Preview a composition with JSON props editing, or open the timeline for a program monitor, read-only tracks and clips, scrubbing, playback, and diagnostics.
 
 The scaffold includes an `AGENTS.md` guide for coding agents working in the project, covering the HTML authoring rules and the `check`, `still`, and `render` workflow. It also includes a `package.json` with `dev`, `check`, `render`, and `still` scripts pinned to the scaffolding CLI version, so `pnpm dev` or `npm run dev` works without a global install, and a `.gitignore` that ignores `out/`.
 
@@ -36,23 +36,27 @@ Validate and render:
 
 ```sh
 npx frameyard doctor
-npx frameyard check hello
-npx frameyard render hello --props props/hello.json
-npx frameyard still hello --frame 42 --out hello-frame.png
+npx frameyard check main
+npx frameyard render main --props props/main.json --workers 8 --scratch /path/to/scratch
+npx frameyard still main --frame 42 --out main-frame.png
 ```
 
-`render` writes the video to `out/hello.mp4` in the project by default; pass `--out <file.mp4>` to choose another path. The scaffold's `.gitignore` ignores `out/`.
+The scaffold wraps its composition in `timelines/main.timeline.json`. `render` writes the video to `out/main.mp4` in the project by default; pass `--out <file.mp4>` to choose another path. The composition remains renderable on its own with `npx frameyard render hello --props props/hello.json`. The scaffold's `.gitignore` ignores `out/`.
 
 The 30-second reference composition lives in [`examples/demo`](./examples/demo), a focused WebGL shader example lives in [`examples/webgl`](./examples/webgl), and a two-pass embedded-video example with WebM and MP4 sources lives in [`examples/video`](./examples/video). Each README has the commands for running it from a repository checkout.
 
 ## Project format
 
-A project is ordinary HTML, CSS, assets, and optional native JavaScript controller modules. `video.config.js` explicitly lists composition entry points; there is no directory scanning:
+A project is ordinary HTML, CSS, JSON timelines, assets, and optional native JavaScript controller modules. `video.config.js` explicitly lists the project format, composition entry points, and timeline entry points; there is no directory scanning:
 
 ```js
 export default {
+  format: { width: 1920, height: 1080, fps: 30 },
   compositions: {
     hello: "./compositions/hello.html",
+  },
+  timelines: {
+    main: "./timelines/main.timeline.json",
   },
 };
 ```
@@ -88,6 +92,54 @@ A composition is a full HTML document with one `<fy-composition>` root. Metadata
 ```
 
 `width`, `height`, `fps`, and `duration-in-frames` are fixed. Props are JSON-serializable, deep-frozen, and merged shallowly over the `data-fy="props"` defaults. They cannot change metadata.
+
+### Timeline
+
+A timeline is a JSON document that places composition and media clips on video and audio tracks. It inherits the project format and derives its duration from the latest clip end unless it declares `durationInFrames`:
+
+```json
+{
+  "version": 1,
+  "tracks": [
+    { "id": "v1", "kind": "video" },
+    { "id": "v2", "kind": "video" },
+    { "id": "a1", "kind": "audio" }
+  ],
+  "clips": [
+    {
+      "id": "hello",
+      "track": "v1",
+      "source": { "kind": "composition", "id": "hello" },
+      "start": 0,
+      "duration": 150
+    },
+    {
+      "id": "logo",
+      "track": "v2",
+      "source": { "kind": "image", "src": "assets/logo.png" },
+      "start": 30,
+      "duration": 60,
+      "transform": { "fit": "contain", "x": 640, "y": -320, "scale": 0.25, "rotation": 0, "opacity": 0.9 }
+    },
+    {
+      "id": "music",
+      "track": "a1",
+      "source": { "kind": "audio", "src": "assets/music.wav" },
+      "start": 0,
+      "duration": 150,
+      "audio": { "gain": 0.5 }
+    }
+  ]
+}
+```
+
+- Sources are `composition` + `id`, `timeline` + `id`, or `video`/`image`/`audio` + project-relative `src`.
+- `start`, `sourceIn`, and `duration` use timeline frames. Omitted durations use the rest of the source; image clips require a duration.
+- Composition clips can fix `props`, trim the source range, and repeat the same composition with different settings.
+- Visual clips support static `fit`, `x`, `y`, `scale`, `rotation`, and `opacity`. No keyframes, transitions, or effects in 0.6.
+- Video, composition, and nested-timeline clips contribute audio automatically unless muted. Timeline audio clips live on audio tracks.
+- A composition used in a timeline must match the project fps; different sizes are fitted by the clip. Clips on one track cannot overlap.
+- Nested timelines are rendered as groups, so the parent clip's opacity and transform apply to the whole nested result.
 
 ### Bindings
 
@@ -216,16 +268,16 @@ Transcript paths resolve from the project root. `words` requires actual measured
 
 | Command | Purpose |
 | --- | --- |
-| `frameyard init [directory]` | Scaffold a minimal HTML project, including an `AGENTS.md` agent guide and pinned `package.json` scripts |
-| `frameyard dev [--port <port>]` | Start the preview server |
-| `frameyard check <id> [--props <file>]` | Run static validation, then evaluate every frame without capture |
-| `frameyard still <id> --frame <n>` | Capture one PNG through the production path |
-| `frameyard render <id> [--out <video.mp4>]` | Capture frames with Chromium and encode with FFmpeg, optionally in parallel; defaults to `out/<id>.mp4` in the project |
+| `frameyard init [directory]` | Scaffold a timeline-first HTML/JSON project with an `AGENTS.md` guide and pinned scripts |
+| `frameyard dev [--port <port>]` | Start the preview server; preview compositions or open a timeline |
+| `frameyard check <id> [--props <file>]` | Run static validation, then evaluate every frame of a composition or timeline without capture |
+| `frameyard still <id> --frame <n>` | Capture one PNG through the production path for a composition or timeline |
+| `frameyard render <id> [--out <video.mp4>]` | Render a composition directly, or a timeline through the segmented lossless pipeline; defaults to `out/<id>.mp4` |
 | `frameyard tts ...` | Produce one frozen 24 kHz mono WAV with local qwentts.cpp |
 | `frameyard transcribe ...` | Produce canonical transcript JSON with optional word timings and SRT/VTT exports |
 | `frameyard doctor` | Inspect core requirements, optional integrations, and manifest integrity |
 
-Common options: `--project <dir>`, `--json`, `--help`, and `--version`. `still` and `render` accept `--overwrite`; `render` also accepts `--concurrency <n>` (1-16); `tts` and `transcribe` accept `--force`. `init` takes the target directory as a positional argument. Explicit output paths passed with `--out` are relative to the current working directory; `render` defaults to `out/<id>.mp4` inside the project root.
+Common options: `--project <dir>`, `--json`, `--help`, and `--version`. `still` and `render` accept `--overwrite`. Composition renders accept `--concurrency <n>` (1-16); timeline renders accept `--workers <n>` (1-16) and `--scratch <dir>`. For a timeline, `--props` is a JSON object keyed by composition clip id; for a composition, it is the props object. `tts` and `transcribe` accept `--force`. `init` takes the target directory as a positional argument. Explicit output paths passed with `--out` are relative to the current working directory; `render` defaults to `out/<id>.mp4` inside the project root.
 
 A render fails immediately on an uncaught error, unhandled rejection, missing required asset, or invalid composition output. It writes to a temporary file and publishes only after FFmpeg succeeds. Existing outputs are not replaced unless `--overwrite` is supplied.
 
@@ -317,26 +369,39 @@ The optional host-neutral agent skill lives in [`skills/frameyard/`](./skills/fr
 
 ## Rendering and reproducibility
 
-Production rendering:
+Production rendering has two targets.
 
-1. Runs static composition validation and resolves metadata before launching Chromium.
-2. Navigates directly to the composition document with the composition host.
-3. Launches one pinned Chromium session, or several independent sessions when `--concurrency` is greater than 1.
-4. Seeks explicitly to each frame, calls the controller, seeks CSS/WAAPI animations, and waits for embedded media decode and browser paint.
-5. Captures the viewport through the Chrome DevTools Protocol.
-6. Pipes PNG frames in timeline order and the offline audio mix to FFmpeg.
-7. Encodes H.264 video with `yuv420p` and AAC audio into an MP4.
+A composition renders directly:
 
-Rendering is sequential by default. Pass `--concurrency <n>` (1-16) to seek and capture frames with up to `n` independent browser sessions; the effective value is capped by the composition's frame count. Captured frames are always encoded in timeline order, so parallel and sequential renders of the same inputs produce equivalent visual frames. Concurrency only changes scheduling: it does not change composition behavior or the determinism contract. Parallel rendering uses more CPU and memory, so choose a value appropriate for the machine.
+1. Static composition validation resolves metadata before launching Chromium.
+2. Chromium navigates to the composition document with the composition host.
+3. One session, or several when `--concurrency` is greater than 1, seeks every frame, calls the controller, seeks CSS/WAAPI animations, and waits for embedded media decode and paint.
+4. The viewport is captured through the Chrome DevTools Protocol, piped to FFmpeg, and encoded as H.264/AAC.
 
-For the same composition revision, props, assets, frame, and pinned runtime/browser environment, the visual state is identical. Encoded bytes are not a reproducibility guarantee, even on the same machine; they depend on the FFmpeg build, encoder threading, and runtime environment.
+A timeline renders through segments:
 
-For a repeatable local measurement of seek, capture, encode, and full-render time, run `pnpm bench`. See `bench/README.md` for the measurement recipe and browser-flag experiments. The demo and the controlled fixtures under `bench/fixtures/` are the reference workloads.
+1. Static timeline validation resolves references, media, nested timelines, durations, props, audio, and overlaps.
+2. The timeline is split at active-layer changes and a maximum segment duration.
+3. In parallel workers, Chromium captures active composition and nested-timeline clips to alpha-preserving FFV1 intermediates.
+4. FFmpeg applies fit, static transforms, opacity, video/image decoding, and audio mixing, and encodes each segment as H.264.
+5. Segments are concatenated in timeline order without re-encoding and the global audio mix is muxed into the final MP4.
+
+Composition concurrency changes scheduling only. Timeline workers process independent segments; output order and captured composition frames remain deterministic. `check` and `still` use the same clip capture and composite path as their target.
+
+For the same composition or timeline revision, props, assets, segment plan, frame, and pinned runtime/browser/FFmpeg environment, the captured composition frames and deterministic composite are identical. Encoded bytes are not a reproducibility guarantee, even on the same machine; they depend on the FFmpeg build, encoder threading, and runtime environment. Preview composites in Chromium while timeline production composites with FFmpeg, so small differences in scaling, alpha, and video color conversion are expected; parity is guaranteed at clip capture.
+
+For a repeatable local measurement of seek, capture, encode, and full-render time, run `pnpm bench`. See `bench/README.md` for the measurement recipe. Timeline performance is tracked separately with the long-form benchmarks; the representative target and worst-case measurements are in [ADR 0012](./docs/adr/0012-render-timelines-with-segmented-lossless-clip-intermediates.md).
 
 ## Current limits
 
 Deferred from this implementation slice:
 
+- Timeline transitions, effects, keyframes, blend modes, masks, and audio fades
+- Full visual timeline editing, drag-and-drop, trim handles, and undo/redo
+- Timeline-level variables and prop overrides inside nested timelines
+- Per-timeline formats and frame-rate conversion/retiming
+- Persistent clip caches; timeline scratch intermediates are cleaned after a render
+- Hardware encoders, GPU compositing, and non-H.264 final output
 - Built-in subtitle rendering, automatic caption burn-in, and declarative karaoke elements
 - Nested `data-fy-repeat` scopes and a general template language
 - Declarative JSON Schema validation
@@ -344,11 +409,11 @@ Deferred from this implementation slice:
 - `qwentts.cpp` reference-audio voice cloning and VoiceDesign
 - Automatic long-text chunking, streaming synthesis, and alternative generated-audio formats
 - Automatic upstream builds, model downloads, environment repair, and hosted rendering
-- Frame caches, batch still capture, and general image-sequence output
+- Batch still capture and general image-sequence output
 - React or other UI-framework adapters, plugin APIs, and agent-only runtimes
 - TypeScript transpilation for project compositions and npm dependency optimization
 
-See the [design baseline](./docs/v0.1-design.md) for the full product contract, [ADR 0007](./docs/adr/0007-make-html-documents-the-composition-unit.md) for the HTML authoring decision, and the [domain glossary](./GLOSSARY.md) for terminology.
+See the [design baseline](./docs/v0.1-design.md) for the full product contract, [ADR 0007](./docs/adr/0007-make-html-documents-the-composition-unit.md) for the HTML authoring decision, [ADR 0010](./docs/adr/0010-make-timelines-the-render-unit.md) for timelines, [ADR 0012](./docs/adr/0012-render-timelines-with-segmented-lossless-clip-intermediates.md) for segmented rendering, and the [domain glossary](./GLOSSARY.md) for terminology.
 
 ## Repository layout
 

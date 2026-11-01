@@ -130,6 +130,8 @@ export async function openCompositionSession(options: {
   props?: unknown;
   info: CompositionSourceInfo;
   staticDiagnostics: readonly CompositionDiagnostic[];
+  /** Captures the document over a transparent browser background. */
+  transparentBackground?: boolean;
 }): Promise<CompositionSession> {
   let browser: Browser;
   try {
@@ -156,6 +158,13 @@ export async function openCompositionSession(options: {
     });
     page = await context.newPage();
     page.setDefaultTimeout(60_000);
+
+    cdp = await context.newCDPSession(page);
+    if (options.transparentBackground) {
+      await cdp.send("Emulation.setDefaultBackgroundColorOverride", {
+        color: { r: 0, g: 0, b: 0, a: 0 },
+      });
+    }
 
     const pageErrors: string[] = [];
     page.on("pageerror", (error) => {
@@ -259,7 +268,6 @@ export async function openCompositionSession(options: {
     // Loading is complete. Frame production must not depend on new network data.
     await page.route("**/*", (route) => route.abort("blockedbyclient"));
 
-    cdp = await context.newCDPSession(page);
     const activePage = page as Page;
     const activeCdp = cdp as CDPSession;
 

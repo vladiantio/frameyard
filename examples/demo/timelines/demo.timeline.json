@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "tracks": [{ "id": "v1", "kind": "video" }],
+  "clips": [
+    {
+      "id": "demo",
+      "track": "v1",
+      "source": { "kind": "composition", "id": "demo" },
+      "start": 0
+    }
+  ]
+}

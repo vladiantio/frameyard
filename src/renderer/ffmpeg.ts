@@ -1,4 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { writeFile } from "node:fs/promises";
 import { FrameyardError } from "../errors.js";
 
 const STDERR_LIMIT = 16 * 1024;
@@ -208,6 +209,7 @@ export async function mixAudioTimeline(options: {
       `volume=${formatNumber(clip.volume)}`,
       "aresample=48000",
       "aformat=sample_fmts=fltp:channel_layouts=stereo",
+      "apad",
     ];
     if (delayMs > 0) {
       chain.push(`adelay=${delayMs}|${delayMs}`);
@@ -426,4 +428,304 @@ export async function startVideoEncoder(options: {
 
     abort,
   };
+}
+
+export interface TimelineCompositeLayer {
+  kind: "composition" | "timeline" | "video" | "image";
+  path: string;
+  sourceWidth: number;
+  sourceHeight: number;
+  fit: "contain" | "cover" | "stretch";
+  x: number;
+  y: number;
+  scale: number;
+  rotation: number;
+  opacity: number;
+  /** Absolute source frame at the segment start, for video inputs. */
+  sourceStartFrame?: number;
+}
+
+function ffmpegBackgroundColor(value: string): string {
+  if (value === "transparent") {
+    return "black@0.0";
+  }
+  if (value === "black") {
+    return "black";
+  }
+  const short = /^#([0-9a-f])([0-9a-f])([0-9a-f])$/i.exec(value);
+  if (short) {
+    return `0x${short[1]}${short[1]}${short[2]}${short[2]}${short[3]}${short[3]}`;
+  }
+  const long = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(value);
+  if (long) {
+    return `0x${long[1]}${long[2]}${long[3]}`;
+  }
+  const withAlpha = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(value);
+  if (withAlpha) {
+    const alpha = Number.parseInt(withAlpha[4] as string, 16) / 255;
+    return `0x${withAlpha[1]}${withAlpha[2]}${withAlpha[3]}@${alpha.toFixed(3)}`;
+  }
+  if (/^[a-zA-Z]+$/.test(value)) {
+    return value;
+  }
+  return "black";
+}
+
+function fitFilter(layer: TimelineCompositeLayer, width: number, height: number): string {
+  const sourceWidth = Math.max(1, layer.sourceWidth);
+  const sourceHeight = Math.max(1, layer.sourceHeight);
+  if (layer.fit === "cover") {
+    return `scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height}`;
+  }
+  if (layer.fit === "stretch") {
+    return `scale=${width}:${height}`;
+  }
+  const scale = Math.min(width / sourceWidth, height / sourceHeight);
+  const fittedWidth = Math.max(1, Math.round(sourceWidth * scale));
+  const fittedHeight = Math.max(1, Math.round(sourceHeight * scale));
+  return `scale=${fittedWidth}:${fittedHeight},pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=black@0`;
+}
+
+function layerFilter(layer: TimelineCompositeLayer, width: number, height: number): string {
+  const filters = [fitFilter(layer, width, height), "format=rgba"];
+  if (layer.scale !== 1) {
+    filters.push(`scale=iw*${formatNumber(layer.scale)}:ih*${formatNumber(layer.scale)}`);
+  }
+  if (layer.rotation !== 0) {
+    filters.push(`rotate=angle=${formatNumber(layer.rotation)}*PI/180:fillcolor=black@0`);
+  }
+  if (layer.opacity < 1) {
+    filters.push(`colorchannelmixer=aa=${formatNumber(layer.opacity)}`);
+  }
+  return filters.join(",");
+}
+
+/** Encode a numbered PNG sequence into a lossless alpha-preserving FFV1 file. */
+export async function encodePngSequenceToFfv1(options: {
+  pattern: string;
+  outputPath: string;
+  fps: number;
+  signal?: AbortSignal;
+}): Promise<void> {
+  await runCaptured(
+    "ffmpeg",
+    [
+      "-y",
+      "-v",
+      "error",
+      "-framerate",
+      formatNumber(options.fps),
+      "-i",
+      options.pattern,
+      "-c:v",
+      "ffv1",
+      "-level",
+      "3",
+      "-pix_fmt",
+      "bgra",
+      options.outputPath,
+    ],
+    { signal: options.signal },
+  );
+}
+
+/** Composites one timeline segment into H.264 or an alpha-preserving FFV1 file. */
+export async function compositeTimelineSegment(options: {
+  outputPath: string;
+  width: number;
+  height: number;
+  fps: number;
+  frames: number;
+  /** CSS color, "black", or "transparent" for nested timelines. */
+  background: string;
+  layers: readonly TimelineCompositeLayer[];
+  codec: "h264" | "ffv1";
+  signal?: AbortSignal;
+}): Promise<void> {
+  const durationSeconds = options.frames / options.fps;
+  const args = [
+    "-y",
+    "-v",
+    "error",
+    "-f",
+    "lavfi",
+    "-i",
+    `color=c=${ffmpegBackgroundColor(options.background)}:s=${options.width}x${options.height}:r=${formatNumber(options.fps)}:d=${formatNumber(durationSeconds)}`,
+  ];
+  const filters = [
+    options.background === "transparent" ? "[0:v]format=rgba,colorchannelmixer=aa=0[base0]" : "[0:v]format=rgba[base0]",
+  ];
+  let current = "base0";
+  let inputIndex = 0;
+  let includedIndex = 0;
+
+  for (const layer of options.layers) {
+    if (layer.opacity <= 0 || layer.scale <= 0) {
+      continue;
+    }
+
+    if (layer.kind === "video") {
+      const startSeconds = (layer.sourceStartFrame ?? 0) / options.fps;
+      args.push("-ss", formatNumber(startSeconds), "-t", formatNumber(durationSeconds), "-i", layer.path, "-an");
+    } else if (layer.kind === "image") {
+      args.push(
+        "-loop",
+        "1",
+        "-framerate",
+        formatNumber(options.fps),
+        "-t",
+        formatNumber(durationSeconds),
+        "-i",
+        layer.path,
+        "-an",
+      );
+    } else {
+      args.push("-i", layer.path);
+    }
+
+    inputIndex += 1;
+    includedIndex += 1;
+    filters.push(`[${inputIndex}:v]${layerFilter(layer, options.width, options.height)}[l${includedIndex}]`);
+    filters.push(
+      `[${current}][l${includedIndex}]overlay=x=(main_w-overlay_w)/2+${formatNumber(layer.x)}:y=(main_h-overlay_h)/2+${formatNumber(layer.y)}:format=auto[b${includedIndex}]`,
+    );
+    current = `b${includedIndex}`;
+  }
+
+  filters.push(`[${current}]format=${options.codec === "ffv1" ? "bgra" : "yuv420p"}[out]`);
+  args.push(
+    "-filter_complex",
+    filters.join(";"),
+    "-map",
+    "[out]",
+    "-frames:v",
+    String(options.frames),
+    "-r",
+    formatNumber(options.fps),
+    "-an",
+  );
+  if (options.codec === "ffv1") {
+    args.push("-c:v", "ffv1", "-level", "3", "-pix_fmt", "bgra");
+  } else {
+    args.push("-c:v", "libx264", "-preset", "medium", "-crf", "20", "-pix_fmt", "yuv420p");
+  }
+  args.push(options.outputPath);
+
+  await runCaptured("ffmpeg", args, { signal: options.signal });
+}
+
+/** Concatenates encoded timeline segments without re-encoding. */
+export async function concatTimelineSegments(options: {
+  segmentPaths: readonly string[];
+  listPath: string;
+  outputPath: string;
+  signal?: AbortSignal;
+}): Promise<void> {
+  const list = options.segmentPaths.map((segmentPath) => `file '${segmentPath.replaceAll("'", "'\\''")}'`).join("\n");
+  await writeFile(options.listPath, `${list}\n`);
+  await runCaptured(
+    "ffmpeg",
+    ["-y", "-v", "error", "-f", "concat", "-safe", "0", "-i", options.listPath, "-c", "copy", options.outputPath],
+    { signal: options.signal },
+  );
+}
+
+/** Muxes a mixed WAV into an already encoded video without re-encoding video. */
+export async function muxVideoWithAudio(options: {
+  videoPath: string;
+  audioPath: string;
+  outputPath: string;
+  signal?: AbortSignal;
+}): Promise<void> {
+  await runCaptured(
+    "ffmpeg",
+    [
+      "-y",
+      "-v",
+      "error",
+      "-i",
+      options.videoPath,
+      "-i",
+      options.audioPath,
+      "-map",
+      "0:v:0",
+      "-map",
+      "1:a:0",
+      "-c:v",
+      "copy",
+      "-c:a",
+      "aac",
+      "-b:a",
+      "192k",
+      "-shortest",
+      options.outputPath,
+    ],
+    { signal: options.signal },
+  );
+}
+
+/** Composites one timeline frame to a PNG without encoding a segment. */
+export async function compositeTimelineFrame(options: {
+  outputPath: string;
+  width: number;
+  height: number;
+  fps: number;
+  background: string;
+  layers: readonly TimelineCompositeLayer[];
+  signal?: AbortSignal;
+}): Promise<void> {
+  const args = [
+    "-y",
+    "-v",
+    "error",
+    "-f",
+    "lavfi",
+    "-i",
+    `color=c=${ffmpegBackgroundColor(options.background)}:s=${options.width}x${options.height}:r=${formatNumber(options.fps)}:d=${formatNumber(1 / options.fps)}`,
+  ];
+  const filters = [
+    options.background === "transparent" ? "[0:v]format=rgba,colorchannelmixer=aa=0[base0]" : "[0:v]format=rgba[base0]",
+  ];
+  let current = "base0";
+  let inputIndex = 0;
+  let includedIndex = 0;
+
+  for (const layer of options.layers) {
+    if (layer.opacity <= 0 || layer.scale <= 0) {
+      continue;
+    }
+
+    if (layer.kind === "video") {
+      args.push("-ss", formatNumber((layer.sourceStartFrame ?? 0) / options.fps), "-i", layer.path, "-an");
+    } else {
+      args.push("-i", layer.path);
+    }
+
+    inputIndex += 1;
+    includedIndex += 1;
+    filters.push(`[${inputIndex}:v]${layerFilter(layer, options.width, options.height)}[l${includedIndex}]`);
+    filters.push(
+      `[${current}][l${includedIndex}]overlay=x=(main_w-overlay_w)/2+${formatNumber(layer.x)}:y=(main_h-overlay_h)/2+${formatNumber(layer.y)}:format=auto[b${includedIndex}]`,
+    );
+    current = `b${includedIndex}`;
+  }
+
+  filters.push(`[${current}]format=rgba[out]`);
+  args.push(
+    "-filter_complex",
+    filters.join(";"),
+    "-map",
+    "[out]",
+    "-frames:v",
+    "1",
+    "-update",
+    "1",
+    "-c:v",
+    "png",
+    "-pix_fmt",
+    "rgba",
+    options.outputPath,
+  );
+
+  await runCaptured("ffmpeg", args, { signal: options.signal });
 }

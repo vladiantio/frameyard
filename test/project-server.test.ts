@@ -155,6 +155,7 @@ describe("preview server", () => {
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({
+      format: null,
       compositions: [
         {
           id: "alpha",
@@ -165,6 +166,7 @@ describe("preview server", () => {
           diagnostics: [],
         },
       ],
+      timelines: [],
     });
   });
 

@@ -5,6 +5,13 @@ import { FrameyardError } from "./errors.js";
 import { isPlainObject } from "./contracts.js";
 
 export type CompositionKind = "html";
+export type TimelineKind = "timeline";
+
+export interface ProjectFormat {
+  width: number;
+  height: number;
+  fps: number;
+}
 
 export interface ProjectComposition {
   id: string;
@@ -14,13 +21,23 @@ export interface ProjectComposition {
   kind: CompositionKind;
 }
 
+export interface ProjectTimeline {
+  id: string;
+  /** Forward-slash relative path from the project root, without a leading "./". */
+  entry: string;
+  absoluteEntry: string;
+  kind: TimelineKind;
+}
+
 export interface Project {
   root: string;
   configPath: string;
+  format?: ProjectFormat;
   compositions: Map<string, ProjectComposition>;
+  timelines: Map<string, ProjectTimeline>;
 }
 
-const COMPOSITION_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+const PROJECT_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
 async function isFile(filePath: string): Promise<boolean> {
   try {
@@ -57,7 +74,52 @@ export async function resolveProjectRoot(start = process.cwd()): Promise<string>
   }
 }
 
-/** Loads video.config.js and validates its explicitly listed composition entries. */
+function normalizeFormat(value: unknown): ProjectFormat {
+  if (!isPlainObject(value)) {
+    throw new FrameyardError("CONFIG_INVALID", "video.config.js format must be an object with width, height, and fps.");
+  }
+
+  const { width, height, fps } = value;
+  if (!Number.isInteger(width) || (width as number) <= 0) {
+    throw new FrameyardError("CONFIG_INVALID", "video.config.js format.width must be a positive integer.");
+  }
+  if (!Number.isInteger(height) || (height as number) <= 0) {
+    throw new FrameyardError("CONFIG_INVALID", "video.config.js format.height must be a positive integer.");
+  }
+  if (typeof fps !== "number" || !Number.isFinite(fps) || fps <= 0) {
+    throw new FrameyardError("CONFIG_INVALID", "video.config.js format.fps must be a positive number.");
+  }
+
+  return { width: width as number, height: height as number, fps };
+}
+
+function entryPath(
+  root: string,
+  id: string,
+  entryValue: unknown,
+  extension: string,
+): { entry: string; absoluteEntry: string } {
+  if (typeof entryValue !== "string" || entryValue.length === 0) {
+    throw new FrameyardError("CONFIG_INVALID", `Entry "${id}" must be a non-empty string.`);
+  }
+
+  const entry = entryValue.replaceAll("\\", "/");
+  if (entry.startsWith("/") || /^[A-Za-z]:/.test(entry)) {
+    throw new FrameyardError("CONFIG_INVALID", `Entry "${id}" must be relative to the project root.`);
+  }
+
+  const absoluteEntry = path.resolve(root, entry);
+  if (absoluteEntry !== root && !absoluteEntry.startsWith(root + path.sep)) {
+    throw new FrameyardError("CONFIG_INVALID", `Entry "${id}" escapes the project root: ${entryValue}`);
+  }
+  if (path.extname(absoluteEntry).toLowerCase() !== extension) {
+    throw new FrameyardError("CONFIG_INVALID", `Entry "${id}" must be a ${extension} file: ${entryValue}`);
+  }
+
+  return { entry: path.relative(root, absoluteEntry).split(path.sep).join("/"), absoluteEntry };
+}
+
+/** Loads video.config.js and validates its explicit composition and timeline entries. */
 export async function loadProject(projectRoot: string): Promise<Project> {
   const root = path.resolve(projectRoot);
   const configPath = path.join(root, "video.config.js");
@@ -84,48 +146,78 @@ export async function loadProject(projectRoot: string): Promise<Project> {
     throw new FrameyardError("CONFIG_INVALID", "video.config.js must default-export a configuration object.");
   }
 
-  const entries = config.compositions;
-  if (!isPlainObject(entries)) {
+  const rawCompositions = config.compositions;
+  const rawTimelines = config.timelines;
+  if (rawCompositions === undefined && rawTimelines === undefined) {
+    throw new FrameyardError("CONFIG_INVALID", "video.config.js must contain a compositions or timelines object.");
+  }
+  if (rawCompositions !== undefined && !isPlainObject(rawCompositions)) {
     throw new FrameyardError("CONFIG_INVALID", "video.config.js must contain a compositions object.");
   }
+  if (rawTimelines !== undefined && !isPlainObject(rawTimelines)) {
+    throw new FrameyardError("CONFIG_INVALID", "video.config.js timelines must be an object.");
+  }
 
+  const format = config.format === undefined ? undefined : normalizeFormat(config.format);
   const compositions = new Map<string, ProjectComposition>();
+  const timelines = new Map<string, ProjectTimeline>();
+  const ids = new Set<string>();
 
-  for (const [id, rawEntry] of Object.entries(entries)) {
-    if (!COMPOSITION_ID.test(id)) {
+  for (const [id, rawEntry] of Object.entries(rawCompositions ?? {})) {
+    if (!PROJECT_ID.test(id)) {
       throw new FrameyardError(
         "CONFIG_INVALID",
         `Invalid composition id "${id}". Use letters, digits, dots, underscores, or hyphens, starting with a letter or digit.`,
       );
     }
-    if (typeof rawEntry !== "string" || rawEntry.length === 0) {
-      throw new FrameyardError("CONFIG_INVALID", `Composition "${id}" entry must be a non-empty string.`);
+    if (ids.has(id)) {
+      throw new FrameyardError("CONFIG_INVALID", `Project id "${id}" is used by more than one entry.`);
     }
 
-    const entry = rawEntry.replaceAll("\\", "/");
-    if (entry.startsWith("/") || /^[A-Za-z]:/.test(entry)) {
-      throw new FrameyardError("CONFIG_INVALID", `Composition "${id}" entry must be relative to the project root.`);
+    const location = entryPath(root, id, rawEntry, ".html");
+    if (!(await isFile(location.absoluteEntry))) {
+      throw new FrameyardError("CONFIG_INVALID", `Composition "${id}" entry does not exist: ${String(rawEntry)}`);
     }
 
-    const absoluteEntry = path.resolve(root, entry);
-    if (absoluteEntry !== root && !absoluteEntry.startsWith(root + path.sep)) {
-      throw new FrameyardError("CONFIG_INVALID", `Composition "${id}" entry escapes the project root: ${rawEntry}`);
-    }
-    if (!(await isFile(absoluteEntry))) {
-      throw new FrameyardError("CONFIG_INVALID", `Composition "${id}" entry does not exist: ${rawEntry}`);
-    }
-
-    if (path.extname(absoluteEntry).toLowerCase() !== ".html") {
-      throw new FrameyardError("CONFIG_INVALID", `Composition "${id}" entry must be an .html file: ${rawEntry}`);
-    }
-
-    compositions.set(id, {
-      id,
-      entry: path.relative(root, absoluteEntry).split(path.sep).join("/"),
-      absoluteEntry,
-      kind: "html",
-    });
+    ids.add(id);
+    compositions.set(id, { id, ...location, kind: "html" });
   }
 
-  return { root, configPath, compositions };
+  for (const [id, rawEntry] of Object.entries(rawTimelines ?? {})) {
+    if (!PROJECT_ID.test(id)) {
+      throw new FrameyardError(
+        "CONFIG_INVALID",
+        `Invalid timeline id "${id}". Use letters, digits, dots, underscores, or hyphens, starting with a letter or digit.`,
+      );
+    }
+    if (ids.has(id)) {
+      throw new FrameyardError("CONFIG_INVALID", `Project id "${id}" is used by more than one entry.`);
+    }
+
+    const location = entryPath(root, id, rawEntry, ".json");
+    if (!(await isFile(location.absoluteEntry))) {
+      throw new FrameyardError("CONFIG_INVALID", `Timeline "${id}" entry does not exist: ${String(rawEntry)}`);
+    }
+
+    ids.add(id);
+    timelines.set(id, { id, ...location, kind: "timeline" });
+  }
+
+  if (compositions.size === 0 && timelines.size === 0) {
+    throw new FrameyardError("CONFIG_INVALID", "video.config.js must list at least one composition or timeline.");
+  }
+  if (timelines.size > 0 && !format) {
+    throw new FrameyardError(
+      "CONFIG_INVALID",
+      "video.config.js must declare format { width, height, fps } when it lists timelines.",
+    );
+  }
+
+  return {
+    root,
+    configPath,
+    ...(format ? { format } : {}),
+    compositions,
+    timelines,
+  };
 }

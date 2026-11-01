@@ -32,3 +32,19 @@ export type {
   TranscriptSource,
   WordTiming,
 } from "./transcript.js";
+export { parseTimelineDocument } from "./timeline/schema.js";
+export type {
+  FitPolicy,
+  ParseTimelineResult,
+  TimelineClip,
+  TimelineClipAudio,
+  TimelineDocument,
+  TimelineSource,
+  TimelineSourceComposition,
+  TimelineSourceMedia,
+  TimelineSourceTimeline,
+  TimelineSourceKind,
+  TimelineTrack,
+  TimelineTrackKind,
+  TimelineTransform,
+} from "./timeline/schema.js";

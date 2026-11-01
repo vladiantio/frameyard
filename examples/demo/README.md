@@ -10,14 +10,21 @@ A 30-second, 1920×1080 HTML composition that exercises the current core:
 - frame-state CSS variables for the progress bar
 
 The composition lives in `compositions/demo.html`; the optional controller is
-`compositions/demo.controller.js`.
+`compositions/demo.controller.js`. `timelines/demo.timeline.json` wraps the
+composition as a clip in a 1920×1080, 30 fps timeline.
 
 From the repository root:
 
 ```sh
 pnpm build
-node dist/cli.js check demo --project examples/demo
-node dist/cli.js still demo --frame 240 --project examples/demo --out demo-still.png
+node dist/cli.js check demo-timeline --project examples/demo
+node dist/cli.js still demo-timeline --frame 240 --project examples/demo --out demo-still.png
+node dist/cli.js render demo-timeline --project examples/demo --props examples/demo/props/demo.json
+```
+
+The composition remains renderable on its own:
+
+```sh
 node dist/cli.js render demo --project examples/demo --props examples/demo/props/demo.json
 ```
 

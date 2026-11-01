@@ -6,12 +6,13 @@ This project produces deterministic, parameterized video with Frameyard. Follow 
 
 ## Project layout
 
-- \`video.config.js\` explicitly maps composition IDs to \`.html\` composition documents. There is no directory scanning; a new composition is invisible until it is listed.
+- \`video.config.js\` explicitly maps project IDs to sources. There is no directory scanning. It declares the project \`format\`, \`compositions\`, and \`timelines\`.
 - \`compositions/\` contains HTML/CSS compositions. An optional controller lives beside the document as a \`.controller.js\` module; import \`frameyard/runtime\` for \`random("stable:key")\` and other browser APIs.
-- \`props/\` contains JSON props, merged shallowly over the composition's \`data-fy="props"\` defaults and deep-frozen.
-- \`out/\` contains rendered MP4s and is gitignored. \`render\` writes \`out/<composition-id>.mp4\` by default.
+- \`timelines/\` contains JSON timeline documents that assemble composition and media clips into one video.
+- \`props/hello.json\` contains composition props; \`props/main.json\` contains timeline clip overrides keyed by composition clip ID.
+- \`out/\` contains rendered MP4s and is gitignored. \`render\` writes \`out/<id>.mp4\` by default.
 - \`assets/\` (create it when needed) contains audio, images, fonts, and generated assets.
-- \`package.json\` pins the CLI version in \`dev\`, \`check\`, \`render\`, and \`still\` scripts. Run \`dev\` with \`npm run dev\` or \`pnpm dev\`; for the others, pass the composition id: \`npm run check -- hello\` (npm) or \`pnpm check hello\` (pnpm).
+- \`package.json\` pins the CLI version in \`dev\`, \`check\`, \`render\`, and \`still\` scripts. Run \`dev\` with \`npm run dev\` or \`pnpm dev\`; for the others, pass the timeline or composition id: \`npm run check -- main\` (npm) or \`pnpm check main\` (pnpm).
 
 \`width\`, \`height\`, \`fps\`, and \`duration-in-frames\` are fixed on \`<fy-composition>\`. Do not derive them from props.
 
@@ -31,6 +32,44 @@ This project produces deterministic, parameterized video with Frameyard. Follow 
   </body>
 </html>
 \`\`\`
+
+## Timeline skeleton
+
+\`timelines/main.timeline.json\` assembles clips in the project format:
+
+\`\`\`json
+{
+  "version": 1,
+  "tracks": [
+    { "id": "v1", "kind": "video" },
+    { "id": "a1", "kind": "audio" }
+  ],
+  "clips": [
+    {
+      "id": "hello",
+      "track": "v1",
+      "source": { "kind": "composition", "id": "hello" },
+      "start": 0
+    },
+    {
+      "id": "music",
+      "track": "a1",
+      "source": { "kind": "audio", "src": "assets/music.wav" },
+      "start": 0,
+      "duration": 150,
+      "audio": { "gain": 0.6 }
+    }
+  ]
+}
+\`\`\`
+
+- \`source.kind\` is \`composition\` (with \`id\`), \`timeline\` (with \`id\`), or \`video\`, \`image\`, \`audio\` (with a project-relative \`src\`).
+- \`start\`, \`sourceIn\`, and \`duration\` use timeline frames. Omitted durations use the rest of the source; image clips require a duration.
+- Composition clips may declare \`props\`; the same composition can appear multiple times with different props, trims, and transforms.
+- Visual clips support static \`transform\` values: \`fit\` (\`contain\`, \`cover\`, \`stretch\`), \`x\`, \`y\`, \`scale\`, \`rotation\`, and \`opacity\`.
+- Video and audio clips are muted with \`audio.muted\`; \`audio.gain\` is 0-1. Composition audio is included automatically.
+- Tracks composite from bottom to top. Clips on the same track cannot overlap. No transitions or keyframes in 0.6.
+- Project \`format\` fixes width, height, and fps for every timeline. Composition fps must match the project; different composition sizes are fitted by the clip.
 
 ## Bindings
 
@@ -75,7 +114,7 @@ export default {
 
 ## Determinism rules
 
-- A frame may depend only on its integer \`frame\`, immutable \`props\`, and assets loaded before frame production.
+- A composition frame may depend only on its integer \`frame\`, immutable \`props\`, and assets loaded before frame production. A timeline frame is derived from its active clips and the same composition rules.
 - Never use \`Math.random()\`, \`Date.now()\`, \`performance.now()\`, timers, independent \`requestAnimationFrame()\` loops, CSS transitions, or state left from a previously visited frame as animation inputs.
 - Use \`random("stable:key")\` from \`frameyard/runtime\` for randomness.
 - Load remote data, fonts, and images before frame production. Network requests are blocked during capture; a \`fetch()\` from \`update()\` is a bug.
@@ -85,7 +124,9 @@ export default {
 
 ## Audio and transcripts
 
-- Audio clips are \`<audio>\` elements placed by composition frames and trimmed by seconds. Frameyard does not time-stretch audio or change composition duration to fit it.
+- Composition audio clips are \`<audio>\` elements placed by composition frames and trimmed by seconds. Timeline audio clips use frames and are placed on audio tracks.
+- Visual clips contribute their audio automatically unless muted; there are no linked A/V pairs. For a J/L cut, mute the video and add a separate audio clip with a different sourceIn.
+- Frameyard does not time-stretch audio or change timeline duration to fit it.
 - An unmuted embedded video contributes its audio track to the same mix; use \`muted\` or \`data-fy-audio="off"\` for a visual-only video.
 - Declare required transcripts with \`<fy-transcript src="assets/voice.transcript.json" words></fy-transcript>\`.
 - Produce speech with \`npx frameyard tts\` and transcripts with \`npx frameyard transcribe\`; never call \`qwen-tts\` or \`whisper-cli\` directly, and never run inference inside a controller.
@@ -95,27 +136,29 @@ export default {
 
 ## Agent workflow
 
-1. Read \`video.config.js\`, the composition HTML, the optional controller, and the props file before changing behavior.
-2. Author the composition with native HTML, CSS, SVG, Canvas 2D, WebGL, embedded video, and an optional controller. Do not add a bundling step.
-3. Validate every frame: \`npx frameyard check <id> --json\`. Static validation runs before Chromium and reports stable diagnostic codes with source locations. Use \`--props <file>\` to validate a specific props file.
-4. Inspect a representative frame: \`npx frameyard still <id> --frame <n> --out <file.png> --json\`, then view the PNG when the host supports images. State explicitly when visual inspection is not possible.
-5. Render: \`npx frameyard render <id> --props <file> [--concurrency <n>] --json\`. The video is written to \`out/<id>.mp4\` unless \`--out\` is passed.
-6. Report the composition, controller, props, validation result, diagnostics, still path and inspection status, video path, and any failure. Never claim success when \`check\` fails, a still is missing, or a render exits nonzero.
+1. Read \`video.config.js\`, the timeline document, the referenced composition HTML, the optional controller, and the props files before changing behavior.
+2. Author compositions with native HTML, CSS, SVG, Canvas 2D, WebGL, embedded video, and an optional controller. Arrange composition and media clips in the timeline JSON. Do not add a bundling step.
+3. Validate every frame: \`npx frameyard check main --json\`. Static validation runs before Chromium and reports stable diagnostic codes with source locations. Use \`--props <file>\` for composition props or a timeline clip override map.
+4. Inspect a representative frame: \`npx frameyard still main --frame <n> --out <file.png> --json\`, then view the PNG when the host supports images. State explicitly when visual inspection is not possible.
+5. Render: \`npx frameyard render main --props props/main.json [--workers <n>] [--scratch <dir>] --json\`. The video is written to \`out/main.mp4\` unless \`--out\` is passed.
+6. Report the timeline, composition sources, props, validation result, diagnostics, still path and inspection status, video path, and any failure. Never claim success when \`check\` fails, a still is missing, or a render exits nonzero.
 
 ## Commands
 
 \`\`\`sh
 npx frameyard dev
 npx frameyard doctor --json
+npx frameyard check main --json
+npx frameyard still main --frame 42 --out main-42.png --json
+npx frameyard render main --props props/main.json --workers 8 --scratch /path/to/scratch --json
 npx frameyard check hello --json
-npx frameyard still hello --frame 42 --out hello-42.png --json
 npx frameyard render hello --props props/hello.json --json
 \`\`\`
 
 - Use \`--json\` for non-interactive commands. Parse stdout as the structured result; treat stderr as progress and diagnostics.
 - Use \`--project <dir>\` when running outside the project root.
 - \`render\` writes to \`out/<id>.mp4\` in the project unless \`--out\` is passed. \`out/\` is gitignored.
-- Use \`--concurrency <n>\` for faster local rendering when useful; the default is \`1\` and the maximum is \`16\`. It changes capture scheduling only, not composition behavior or output frame order.
+- Use \`--concurrency <n>\` for composition renders (1-16). Use \`--workers <n>\` for timeline renders (1-16); the default is 8. Timeline renders also accept \`--scratch <dir>\` for FFV1 intermediates.
 - \`still\` and \`render\` replace existing outputs only with \`--overwrite\`. Generated assets are replaced only with \`--force\`, and only with user approval.
 
 The official \`frameyard\` agent skill contains the full host-neutral contract. Install it with \`npx skills add vladiantio/frameyard\` or see the \`skills/frameyard/\` directory in the \`frameyard\` npm package. This file is the project-local summary.
@@ -127,7 +170,7 @@ const PROJECT_README = `# My Frameyard project
 
 Coding agents should read \`AGENTS.md\` for the project rules and the check, still, and render workflow.
 
-The composition is a plain HTML document at \`compositions/hello.html\`. Its metadata, default props, markup, CSS animation, and bindings live in that one file.
+The reusable composition is a plain HTML document at \`compositions/hello.html\`. The edit is \`timelines/main.timeline.json\`, which places that composition as a clip in the project format. The project format is fixed in \`video.config.js\`.
 
 Start the preview:
 
@@ -135,30 +178,56 @@ Start the preview:
 npx frameyard dev
 \`\`\`
 
-Validate and render:
+The preview lists the timeline next to the compositions. Open the timeline to scrub it and inspect the program monitor.
+
+Validate and render the timeline:
 
 \`\`\`sh
 npx frameyard doctor
+npx frameyard check main
+npx frameyard render main --props props/main.json
+\`\`\`
+
+\`props/main.json\` maps composition clip IDs to props overrides. The video is written to \`out/main.mp4\` in the project. Pass \`--out <file.mp4>\` to choose another path. Timelines with heavy composition work accept \`--workers <n>\` and \`--scratch <dir>\`.
+
+The composition can still be previewed and rendered on its own:
+
+\`\`\`sh
 npx frameyard check hello
 npx frameyard render hello --props props/hello.json
 \`\`\`
-
-The video is written to \`out/hello.mp4\` in the project. Pass \`--out <file.mp4>\` to choose another path.
 
 Or run the pinned scripts from \`package.json\`:
 
 \`\`\`sh
 npm run dev
-npm run check -- hello
-npm run render -- hello --props props/hello.json
-npm run still -- hello --frame 42 --out hello-42.png
+npm run check -- main
+npm run render -- main --props props/main.json
+npm run still -- main --frame 42 --out main-42.png
 \`\`\`
 `;
 
 const SCAFFOLD_TEMPLATES: Record<string, string> = {
   ".gitignore": "out/\n",
-  "video.config.js": `export default {\n  compositions: {\n    hello: "./compositions/hello.html",\n  },\n};\n`,
+  "video.config.js": `export default {\n  format: { width: 1280, height: 720, fps: 30 },\n  compositions: {\n    hello: "./compositions/hello.html",\n  },\n  timelines: {\n    main: "./timelines/main.timeline.json",\n  },\n};\n`,
   "props/hello.json": `${JSON.stringify({ title: "Hello, Frameyard", accent: "#b8f36b" }, null, 2)}\n`,
+  "props/main.json": `${JSON.stringify({ hello: { title: "Hello, Frameyard", accent: "#b8f36b" } }, null, 2)}\n`,
+  "timelines/main.timeline.json": `${JSON.stringify(
+    {
+      version: 1,
+      tracks: [{ id: "v1", kind: "video" }],
+      clips: [
+        {
+          id: "hello",
+          track: "v1",
+          source: { kind: "composition", id: "hello" },
+          start: 0,
+        },
+      ],
+    },
+    null,
+    2,
+  )}\n`,
   "AGENTS.md": AGENTS_GUIDE,
   "README.md": PROJECT_README,
   "compositions/hello.html": `<!doctype html>
@@ -276,6 +345,6 @@ export function scaffoldFiles(projectName: string): Record<string, string> {
 export const SCAFFOLD_NEXT = [
   "npx frameyard doctor",
   "npx frameyard dev",
-  "npx frameyard check hello",
-  "npx frameyard render hello",
+  "npx frameyard check main",
+  "npx frameyard render main",
 ];

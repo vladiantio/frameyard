@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { loadProject } from "../src/project.ts";
 import { captureTimelineStill, checkTimeline, renderTimeline } from "../src/renderer/timeline.ts";
 import { BARCODE, barcodeCompositionHtml, barcodeCropFilter, decodeBarcodeFrames } from "./helpers/frame-probe.ts";
+import { mediaPixel } from "./helpers/media.ts";
 
 const exec = promisify(execFile);
 const repoRoot = path.resolve(new URL("..", import.meta.url).pathname);
@@ -177,30 +178,6 @@ async function customRoot(): Promise<string> {
   await mkdir(path.join(root, "timelines"), { recursive: true });
   await mkdir(path.join(root, "assets"), { recursive: true });
   return root;
-}
-
-async function mediaPixel(framePath: string, x = 10, y = 10): Promise<[number, number, number]> {
-  const { stdout } = await exec(
-    "ffmpeg",
-    [
-      "-v",
-      "error",
-      "-i",
-      framePath,
-      "-vf",
-      `format=rgb24,crop=1:1:${x}:${y}`,
-      "-frames:v",
-      "1",
-      "-f",
-      "rawvideo",
-      "-pix_fmt",
-      "rgb24",
-      "-",
-    ],
-    { encoding: "buffer", maxBuffer: 1024 },
-  );
-  const buffer = stdout as unknown as Buffer;
-  return [buffer[0] ?? 0, buffer[1] ?? 0, buffer[2] ?? 0];
 }
 
 describe("timeline rendering media and alpha", () => {

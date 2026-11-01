@@ -36,6 +36,9 @@ expose the same seek/settle contract the renderer uses.
 
 ## Notes
 
+- Preview iframes and the composition stage pin `color-scheme: light` to match
+  the production capture context. A dark inherited scheme makes Chromium paint a
+  white base behind transparent compositions.
 - A running `dev` server keeps the `dist/` modules it loaded. Restart it after
   `pnpm build`.
 - The timeline preview host is not the production compositor; compare pixels at

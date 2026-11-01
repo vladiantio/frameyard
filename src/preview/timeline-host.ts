@@ -246,10 +246,10 @@ export function createTimelineHost(
       frame.style.width = `${size.width}px`;
       frame.style.height = `${size.height}px`;
       frame.style.border = "0";
-      // The preview pages are dark. Without this, Chromium gives an iframe that
-      // inherits the dark color scheme a white base behind transparent
-      // compositions.
-      frame.style.colorScheme = "normal";
+      // The preview pages are dark. Pin the iframe to light, matching the
+      // production capture context, so Chromium does not paint a white base
+      // behind transparent compositions.
+      frame.style.colorScheme = "light";
       frame.title = `${source.kind} ${source.id}`;
       place(frame);
       wrapper.append(frame);

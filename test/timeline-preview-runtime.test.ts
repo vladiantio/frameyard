@@ -7,6 +7,7 @@ import { chromium, type Browser } from "playwright";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { startPreviewServer, type PreviewServer } from "../src/server/server.ts";
 import { loadTimeline, openEmbeddedTimeline, seekTimeline, waitForFrame } from "./helpers/preview.ts";
+import { mediaPixel } from "./helpers/media.ts";
 
 const exec = promisify(execFile);
 
@@ -154,30 +155,6 @@ afterAll(async () => {
   await rm(root, { recursive: true, force: true });
 });
 
-async function mediaPixel(file: string, x: number, y: number): Promise<[number, number, number]> {
-  const { stdout } = await exec(
-    "ffmpeg",
-    [
-      "-v",
-      "error",
-      "-i",
-      file,
-      "-vf",
-      `format=rgb24,crop=1:1:${x}:${y}`,
-      "-frames:v",
-      "1",
-      "-f",
-      "rawvideo",
-      "-pix_fmt",
-      "rgb24",
-      "-",
-    ],
-    { encoding: "buffer", maxBuffer: 1024 },
-  );
-  const buffer = stdout as unknown as Buffer;
-  return [buffer[0] ?? 0, buffer[1] ?? 0, buffer[2] ?? 0];
-}
-
 describe("timeline preview runtime", () => {
   it("serves the embedded timeline host and seeks composition layers", async () => {
     const page = await browser.newPage({ viewport: { width: 640, height: 360 } });
@@ -279,7 +256,7 @@ describe("timeline preview runtime", () => {
           const frame = document.querySelector(".timeline-layer iframe") as HTMLIFrameElement | null;
           return frame ? getComputedStyle(frame).colorScheme : null;
         }),
-      ).toBe("normal");
+      ).toBe("light");
 
       await page.locator("#step-forward").click();
       await waitForFrame(page, 1);

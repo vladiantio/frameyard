@@ -6,6 +6,7 @@ import { promisify } from "node:util";
 import { chromium, type Browser } from "playwright";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { startPreviewServer, type PreviewServer } from "../src/server/server.ts";
+import { mediaPixel } from "./helpers/media.ts";
 
 const exec = promisify(execFile);
 
@@ -578,7 +579,23 @@ describe("browser preview runtime", () => {
         const element = document.querySelector("#stage-frame") as HTMLIFrameElement | null;
         return element ? getComputedStyle(element).colorScheme : null;
       }),
-    ).toBe("normal");
+    ).toBe("light");
+    const stageFrame = page.locator("#stage-frame");
+    const stageBox = await stageFrame.boundingBox();
+    if (stageBox === null) {
+      throw new Error("Missing preview stage frame.");
+    }
+    const stageImage = path.join(root, "preview-stage.png");
+    await writeFile(stageImage, await page.screenshot({ clip: stageBox }));
+    const [stageRed, stageGreen, stageBlue] = await mediaPixel(
+      stageImage,
+      Math.floor(stageBox.width * 0.9),
+      Math.floor(stageBox.height * 0.9),
+    );
+    expect(
+      stageRed + stageGreen + stageBlue,
+      "a transparent composition must show the black stage, not a white iframe base",
+    ).toBeLessThan(200);
     expect(await page.locator("#meta").textContent()).toContain("200×100");
     expect(await page.locator("#duration").textContent()).toBe("19");
     expect(await page.locator("#props").inputValue()).toContain('"title": "HTML"');

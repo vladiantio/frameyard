@@ -1,6 +1,7 @@
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { parseTimelineDocument } from "../src/index.ts";
 import { scaffoldFiles, SCAFFOLD_NEXT } from "../src/scaffold.ts";
 import { VERSION } from "../src/version.ts";
 
@@ -152,6 +153,42 @@ describe("documentation command examples", () => {
     }
 
     expect(offenders).toEqual([]);
+  });
+
+  it("documents every timeline transform field in the skill reference", async () => {
+    const parsed = parseTimelineDocument({
+      version: 1,
+      tracks: [{ id: "v1", kind: "video" }],
+      clips: [
+        {
+          id: "clip",
+          track: "v1",
+          source: { kind: "image", src: "assets/clip.png" },
+          start: 0,
+          duration: 1,
+          transform: {
+            fit: "cover",
+            width: 80,
+            height: 45,
+            x: 0,
+            y: 0,
+            rotation: 0,
+            opacity: 1,
+          },
+        },
+      ],
+    });
+
+    expect(parsed.diagnostics).toEqual([]);
+    const transform = parsed.timeline?.clips[0]?.transform;
+    if (transform === undefined) throw new Error("expected a normalized transform");
+
+    const skill = await readFile("skills/frameyard/references/timelines.md", "utf8");
+    for (const field of Object.keys(transform)) {
+      expect(skill, `skills/frameyard/references/timelines.md must document transform.${field}`).toContain(
+        `\`${field}\``,
+      );
+    }
   });
 
   it("keeps a published example in the README and skill", async () => {

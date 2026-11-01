@@ -123,7 +123,7 @@ Timeline path: `src/timeline/resolve.ts` resolves the JSON and references; `src/
 - A timeline is a versioned JSON document listed explicitly in `video.config.js`. `format` fixes width, height, and fps for every timeline; composition and timeline IDs share one namespace.
 - Tracks are `video` or `audio`. Video tracks composite bottom-to-top; audio tracks mix. Clips on one track cannot overlap. No transitions or keyframes in 0.6.
 - Clip sources are composition ID, nested timeline ID, or a project-relative video/image/audio path. `start`, `sourceIn`, and `duration` are project frames; image clips require a duration.
-- Composition clips can fix `props` and trim the source range. Visual clips support static `fit`, `x`, `y`, `scale`, `rotation`, and `opacity`. Composition fps must match the project.
+- Composition clips can fix `props` and trim the source range. Visual clips support a static transform; see `skills/frameyard/references/timelines.md` for the fields. Composition fps must match the project.
 - Visual clips contribute audio automatically unless muted. Timeline audio clips live on audio tracks. Nested timelines are groups and include their audio.
 - The timeline renderer is segmented: Chromium captures composition/nested ranges to alpha-preserving FFV1, FFmpeg composites and encodes segments in parallel, segments are concatenated in order, and audio is mixed once. Scratch is bounded and cleaned.
 
@@ -186,8 +186,8 @@ Timeline path: `src/timeline/resolve.ts` resolves the JSON and references; `src/
 - **Composition document reading** → `src/composition/`, `src/html/document-adapter.ts`; extend `test/composition-document.test.ts`, `test/static-validation.test.ts`.
 - **HTML parsing and static validation** → `src/html/parse.ts`, `src/html/validate.ts`; extend `test/static-validation.test.ts`, `test/server-html.test.ts`.
 - **Host runtime** → `src/runtime/host.ts`, `src/runtime/media.ts`, `src/runtime/diagnostics.ts`; extend `test/host-runtime.test.ts`.
-- **Timeline schema and resolution** → `src/timeline/schema.ts`, `src/timeline/resolve.ts`, `src/timeline/plan.ts`; extend `test/timeline-schema.test.ts`, `test/timeline-resolve.test.ts`, `test/timeline-plan.test.ts`.
-- **Timeline rendering** → `src/renderer/timeline.ts`, `src/renderer/ffmpeg.ts`, `src/renderer/browser.ts`; extend `test/timeline-render.test.ts`, and verify artifacts with FFprobe.
+- **Timeline schema and resolution** → `src/timeline/schema.ts`, `src/timeline/resolve.ts`, `src/timeline/plan.ts`; extend `test/timeline-schema.test.ts`, `test/timeline-resolve.test.ts`, `test/timeline-plan.test.ts`. Document contract fields in `skills/frameyard/references/timelines.md`; other docs link to it.
+- **Timeline rendering** → `src/renderer/timeline.ts`, `src/renderer/ffmpeg.ts`, `src/renderer/browser.ts`; extend `test/timeline-render.test.ts` with per-frame mapping coverage for every affected layer kind (video, composition, nested timeline), and verify artifacts with FFprobe.
 - **Preview** → `src/preview/main.ts`, `src/server/preview-html.ts`; extend the HTML iframe case in `test/preview-runtime.test.ts`.
 - **Timeline preview** → `src/preview/timeline-main.ts`, `src/preview/timeline-host.ts`, `src/preview/timeline-data.ts`, `src/server/timeline-preview-*.ts`; extend `test/timeline-preview.test.ts`, `test/timeline-preview-runtime.test.ts`.
 - **Server routes, host injection, inline controller, `project.json`, timeline preview/data** → `src/server/server.ts`, `src/server/composition-html.ts`; extend `test/project-server.test.ts`, `test/server-html.test.ts`, `test/timeline-preview.test.ts`.
@@ -214,6 +214,7 @@ Test at public seams, not private helpers:
 - `test/project-server.test.ts`: config loading, static routes, import map, ranges, traversal rejection.
 - `test/preview-runtime.test.ts`: HTML iframe preview, props, seeking, transport keys, CSS animation, Canvas, WebGL, embedded video, determinism, diagnostics.
 - `test/timeline-preview-runtime.test.ts`: timeline preview UI and embedding, scrubbing, frame/one-second stepping, seek coalescing, keyboard forwarding, layer sizing.
+- `test/timeline-render.test.ts`: segmented rendering, transform boxes, alpha compositing, media/audio, nested timelines, and per-frame barcode mapping for video, composition, and nested-timeline layers.
 - `test/cli-e2e.test.ts`: real CLI with Chromium and FFmpeg, JSON envelopes, missing assets, deterministic stills across concurrent sessions, embedded video/WebGL capture and audio, MP4/audio output, overwrite behavior, HTML check/still/render, static diagnostics, `dev`, `init`.
 - `test/video-determinism.test.ts`: a full-scene opacity animation over embedded video captures the requested frame, and consecutive composition frames map to consecutive source frames.
 - `test/examples.test.ts`: example README commands use the repository CLI, and each bundled example captures a still.
@@ -236,7 +237,7 @@ Prefer one failing public-behavior test, then the minimal implementation. Every 
 
 ## Gotchas
 
-- **Rebuild before browser work**: the server serves `/__frameyard/framework/*` from `dist/`.
+- **Rebuild before browser work**: the server serves `/__frameyard/framework/*` from `dist/`, and a running `dev` keeps the `dist/` modules it loaded. Restart `dev` after a rebuild.
 - **Iframe preview**: the parent owns preview audio/playback. Props apply reuses the host; composition changes reload the iframe with a unique `__fy-load` token. Cross-realm props are cloned into the iframe realm before `load`.
 - **Transport keys cross the stage iframe**: the preview stage is an iframe, so parent `keydown` listeners do not see keys while it has focus. The composition preview attaches the transport handler to `stageFrame.contentDocument`; the timeline host forwards layer `keydown` events via `setKeyHandler`. Keep both paths wired when adding shortcuts.
 - **Host load**: validates props before disposing, restores the pristine DOM snapshot, re-applies bindings, remounts the controller, and prepares media. `seek`/`settle` before a successful load reject `COMPOSITION_NOT_READY`; `dispose` during a load rejects `COMPOSITION_DISPOSED`.

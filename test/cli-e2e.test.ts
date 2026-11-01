@@ -214,7 +214,7 @@ async function ffprobe(filePath: string, args: string[] = []): Promise<Record<st
     "error",
     ...args,
     "-show_entries",
-    "format=duration:stream=codec_type,codec_name,width,height,channels,nb_read_frames,r_frame_rate",
+    "format=duration,format_name:stream=codec_type,codec_name,codec_tag_string,width,height,channels,nb_read_frames,r_frame_rate",
     "-of",
     "json",
     filePath,
@@ -419,7 +419,10 @@ describe("CLI end-to-end", () => {
     expect(pixel[2]).toBeLessThan(40);
 
     await mkdir(path.join(root, "nested"), { recursive: true });
-    const render = await run(["render", "html", "--project", root, "--json"], path.join(root, "nested"));
+    const render = await run(
+      ["render", "html", "--encoder", "software", "--project", root, "--json"],
+      path.join(root, "nested"),
+    );
     expect(render.code).toBe(0);
     const rendered = JSON.parse(render.stdout) as Record<string, unknown>;
     expect(rendered).toMatchObject({
@@ -430,6 +433,7 @@ describe("CLI end-to-end", () => {
       controller: { kind: "inline" },
       path: path.join(root, "out", "html.mp4"),
       framesRendered: 6,
+      encoder: "libx264",
       audio: { clips: 1 },
       diagnostics: [],
     });
@@ -761,6 +765,165 @@ describe("CLI end-to-end", () => {
       });
       expect(String((json.error as Record<string, unknown>).message)).toContain("--concurrency");
     }
+  });
+
+  it("rejects an unknown render encoder", async () => {
+    for (const value of ["vaapi", "libx264"]) {
+      const result = await run(
+        ["render", "demo", "--out", "invalid.mp4", "--encoder", value, "--project", root, "--json"],
+        root,
+      );
+
+      expect(result.code).toBe(2);
+      const json = JSON.parse(result.stdout) as Record<string, unknown>;
+      expect(json).toMatchObject({
+        ok: false,
+        command: "render",
+        error: { code: "USAGE" },
+      });
+      expect(String((json.error as Record<string, unknown>).message)).toContain("--encoder");
+    }
+  });
+
+  it("rejects an unknown render codec and a codec/encoder mismatch", async () => {
+    const unknown = await run(
+      ["render", "demo", "--out", "invalid.mp4", "--codec", "av1", "--project", root, "--json"],
+      root,
+    );
+    expect(unknown.code).toBe(2);
+    const unknownJson = JSON.parse(unknown.stdout) as Record<string, unknown>;
+    expect(unknownJson).toMatchObject({ ok: false, command: "render", error: { code: "USAGE" } });
+    expect(String((unknownJson.error as Record<string, unknown>).message)).toContain("--codec");
+
+    const mismatch = await run(
+      [
+        "render",
+        "demo",
+        "--out",
+        "invalid.mp4",
+        "--codec",
+        "vp9",
+        "--container",
+        "mkv",
+        "--encoder",
+        "nvenc",
+        "--project",
+        root,
+        "--json",
+      ],
+      root,
+    );
+    expect(mismatch.code).toBe(2);
+    const mismatchJson = JSON.parse(mismatch.stdout) as Record<string, unknown>;
+    expect(mismatchJson).toMatchObject({ ok: false, command: "render", error: { code: "USAGE" } });
+    expect(String((mismatchJson.error as Record<string, unknown>).message)).toContain("has no nvenc encoder");
+  });
+
+  it("renders HEVC with the hvc1 sample entry", async () => {
+    const result = await run(
+      ["render", "demo", "--codec", "hevc", "--encoder", "software", "--out", "hevc.mp4", "--project", root, "--json"],
+      root,
+    );
+
+    expect(result.code).toBe(0);
+    const json = JSON.parse(result.stdout) as Record<string, unknown>;
+    expect(json).toMatchObject({
+      ok: true,
+      command: "render",
+      composition: "demo",
+      codec: "hevc",
+      encoder: "libx265",
+      framesRendered: 6,
+    });
+
+    const probe = await ffprobe(path.join(root, "hevc.mp4"), ["-count_frames"]);
+    const video = (probe.streams as Array<Record<string, unknown>>).find((stream) => stream.codec_type === "video");
+    expect(video).toMatchObject({ codec_name: "hevc", codec_tag_string: "hvc1", nb_read_frames: "6" });
+  });
+
+  it("renders MOV and WebM containers with matching codecs", async () => {
+    const mov = await run(
+      [
+        "render",
+        "demo",
+        "--container",
+        "mov",
+        "--encoder",
+        "software",
+        "--out",
+        "demo.mov",
+        "--project",
+        root,
+        "--json",
+      ],
+      root,
+    );
+    expect(mov.code).toBe(0);
+    expect(JSON.parse(mov.stdout)).toMatchObject({
+      ok: true,
+      codec: "h264",
+      container: "mov",
+      encoder: "libx264",
+    });
+    const movProbe = await ffprobe(path.join(root, "demo.mov"), ["-count_frames"]);
+    expect(String((movProbe.format as Record<string, unknown>).format_name)).toContain("mov");
+    expect(
+      (movProbe.streams as Array<Record<string, unknown>>).find((stream) => stream.codec_type === "video"),
+    ).toMatchObject({ codec_name: "h264", nb_read_frames: "6" });
+
+    const webm = await run(
+      [
+        "render",
+        "demo",
+        "--container",
+        "webm",
+        "--encoder",
+        "software",
+        "--out",
+        "demo.webm",
+        "--project",
+        root,
+        "--json",
+      ],
+      root,
+    );
+    expect(webm.code).toBe(0);
+    expect(JSON.parse(webm.stdout)).toMatchObject({
+      ok: true,
+      codec: "vp9",
+      container: "webm",
+      encoder: "libvpx-vp9",
+    });
+    const webmProbe = await ffprobe(path.join(root, "demo.webm"), ["-count_frames"]);
+    expect(String((webmProbe.format as Record<string, unknown>).format_name)).toContain("webm");
+    const streams = webmProbe.streams as Array<Record<string, unknown>>;
+    expect(streams.find((stream) => stream.codec_type === "video")).toMatchObject({
+      codec_name: "vp9",
+      nb_read_frames: "6",
+    });
+    expect(streams.find((stream) => stream.codec_type === "audio")).toMatchObject({ codec_name: "opus" });
+  });
+
+  it("rejects containers that cannot hold the codec or the output extension", async () => {
+    for (const args of [
+      ["--container", "avi"],
+      ["--container", "mp4", "--codec", "vp9"],
+      ["--container", "webm", "--codec", "hevc"],
+    ]) {
+      const result = await run(["render", "demo", "--out", "invalid.mp4", ...args, "--project", root, "--json"], root);
+      expect(result.code).toBe(2);
+      const json = JSON.parse(result.stdout) as Record<string, unknown>;
+      expect(json).toMatchObject({ ok: false, command: "render", error: { code: "USAGE" } });
+    }
+
+    const extension = await run(
+      ["render", "demo", "--container", "mkv", "--out", "wrong.mp4", "--project", root, "--json"],
+      root,
+    );
+    expect(extension.code).toBe(2);
+    const extensionJson = JSON.parse(extension.stdout) as Record<string, unknown>;
+    expect(extensionJson).toMatchObject({ ok: false, command: "render", error: { code: "USAGE" } });
+    expect(String((extensionJson.error as Record<string, unknown>).message)).toContain(".mkv");
   });
 
   it("renders identical frames with parallel capture sessions", async () => {

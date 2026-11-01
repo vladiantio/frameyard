@@ -50,6 +50,38 @@ const TOTAL_FRAMES = 1800;
 const MAX_CONCURRENT_SEGMENTS = options.workers ?? Number(process.env.WORKERS ?? 8);
 const VIDEO_1080 = options.video1080 || process.env.VIDEO_1080 === "1";
 const COPY_VIDEO = options.copyVideo || process.env.COPY_VIDEO === "1";
+// Encoder A/B switch. Segment captures, FFV1 intermediates, and audio stay
+// identical across arms; only the final segment encode changes.
+const ENCODER = process.env.ENCODER ?? "libx264";
+const QUALITY = process.env.QUALITY ?? "20";
+
+function videoEncoderArgs() {
+  if (ENCODER === "libx264") {
+    return ["-c:v", "libx264", "-preset", "medium", "-crf", QUALITY, "-pix_fmt", "yuv420p"];
+  }
+  if (ENCODER === "nvenc") {
+    return [
+      "-c:v",
+      "h264_nvenc",
+      "-preset",
+      "p5",
+      "-tune",
+      "hq",
+      "-rc",
+      "vbr",
+      "-cq",
+      QUALITY,
+      "-b:v",
+      "0",
+      "-pix_fmt",
+      "yuv420p",
+    ];
+  }
+  if (ENCODER === "qsv") {
+    return ["-c:v", "h264_qsv", "-preset", "medium", "-global_quality", QUALITY, "-pix_fmt", "nv12"];
+  }
+  throw new Error(`Unknown ENCODER "${ENCODER}". Use libx264, nvenc, or qsv.`);
+}
 
 const SEGMENTS = [
   {
@@ -282,14 +314,7 @@ async function compositeSegment({ segment, layerFiles, videoPath, imagePath, out
     String(segment.end - segment.start),
     "-r",
     String(FPS),
-    "-c:v",
-    "libx264",
-    "-preset",
-    "medium",
-    "-crf",
-    "20",
-    "-pix_fmt",
-    "yuv420p",
+    ...videoEncoderArgs(),
     outputPath,
   );
   const started = performance.now();
@@ -604,6 +629,8 @@ async function main() {
 
     const result = {
       benchmark: "segmented-timeline-representative-60s",
+      encoder: ENCODER,
+      quality: Number(QUALITY),
       projectRoot,
       outputDir,
       scratchDir,

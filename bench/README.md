@@ -48,6 +48,10 @@ Common options:
 - `--output <dir>`: artifacts (stills, segments, final MP4, result JSON).
 - `--scratch <dir>`: intermediate segments and frames. Defaults to `--output`.
 - `--workers <n>`: segment concurrency for the representative benchmark.
+- `ENCODER=libx264|nvenc|qsv` and `QUALITY=<n>`: encoder A/B for the
+  representative benchmark. Captures, FFV1 intermediates, and audio stay
+  identical; only the final segment encode changes. Run each arm into its own
+  `--output` directory.
 
 Run the chain in order:
 

@@ -9,7 +9,19 @@ import type { Project, ProjectComposition } from "../project.js";
 import { startPreviewServer } from "../server/server.js";
 import { inspectTimelineAudio, type AudioInspection, type InspectAudioClip } from "./audio.js";
 import { openCompositionSession, type CompositionSession } from "./browser.js";
-import { assertFfmpegCapabilities, mixAudioTimeline, startVideoEncoder } from "./ffmpeg.js";
+import {
+  assertContainerCodec,
+  assertFfmpegCapabilities,
+  CONTAINER_EXTENSION,
+  defaultCodecForContainer,
+  mixAudioTimeline,
+  resolveVideoEncoder,
+  startVideoEncoder,
+  type VideoCodec,
+  type VideoContainer,
+  type VideoEncoderChoice,
+  type VideoEncoderName,
+} from "./ffmpeg.js";
 import { inspectTranscriptClips, type TranscriptInspection } from "./transcripts.js";
 
 export interface ProgressEvent {
@@ -68,6 +80,12 @@ export interface RenderResult {
   durationSeconds: number;
   framesRendered: number;
   concurrency: number;
+  /** Resolved delivery codec. */
+  codec: VideoCodec;
+  /** Resolved delivery container. */
+  container: VideoContainer;
+  /** Resolved encoder used for the output. */
+  encoder: VideoEncoderName;
   bytes: number;
   audio: {
     clips: number;
@@ -503,16 +521,30 @@ export async function renderComposition(
     outPath: string;
     overwrite?: boolean;
     concurrency?: number;
+    /** Encoder choice; defaults to the codec's software encoder. */
+    encoder?: VideoEncoderChoice;
+    /** Delivery codec; defaults to `h264`. */
+    codec?: VideoCodec;
+    /** Delivery container; defaults to `mp4`. */
+    container?: VideoContainer;
   },
 ): Promise<RenderResult> {
-  if (path.extname(options.outPath).toLowerCase() !== ".mp4") {
-    throw new FrameyardError("USAGE", `Render output must use an .mp4 extension: ${options.outPath}`);
+  const container = options.container ?? "mp4";
+  const codec = options.codec ?? defaultCodecForContainer(container);
+  assertContainerCodec(container, codec);
+  const extension = `.${CONTAINER_EXTENSION[container]}`;
+  if (path.extname(options.outPath).toLowerCase() !== extension) {
+    throw new FrameyardError(
+      "USAGE",
+      `Render output for --container ${container} must use a ${extension} extension: ${options.outPath}`,
+    );
   }
 
   const requestedConcurrency = validateRenderConcurrency(options.concurrency);
   const overwrite = options.overwrite ?? false;
   await ensureOutputAvailable(options.outPath, overwrite);
-  await assertFfmpegCapabilities(options.signal);
+  await assertFfmpegCapabilities(options.signal, codec);
+  const encoderName = await resolveVideoEncoder(codec, options.encoder, options.signal);
   const startedAt = performance.now();
 
   return withSessions(
@@ -577,6 +609,9 @@ export async function renderComposition(
           fps,
           frames: total,
           durationSeconds,
+          encoder: encoderName,
+          codec,
+          container,
           ...(audioPath !== undefined ? { audioPath } : {}),
           signal: options.signal,
         });
@@ -631,6 +666,9 @@ export async function renderComposition(
           durationSeconds,
           framesRendered: total,
           concurrency,
+          codec,
+          container,
+          encoder: encoderName,
           bytes: (await stat(options.outPath)).size,
           audio: { clips: audio.clips.length },
           transcripts: {

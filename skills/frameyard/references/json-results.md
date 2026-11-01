@@ -126,6 +126,9 @@ Static validation diagnostics include source locations. Runtime diagnostics may 
   "durationSeconds": 30,
   "framesRendered": 900,
   "concurrency": 1,
+  "codec": "h264",
+  "container": "mp4",
+  "encoder": "libx264",
   "bytes": 1234567,
   "audio": { "clips": 1 },
   "transcripts": { "clips": 1 },
@@ -134,7 +137,7 @@ Static validation diagnostics include source locations. Runtime diagnostics may 
 }
 ```
 
-A successful render means the final path exists and was published atomically. A nonzero exit means no new partial video was published. Without `--out`, the final path is `out/<composition-id>.mp4` inside the project root. `concurrency` is the number of browser sessions actually used; it is capped by `durationInFrames` and by the CLI maximum of 16.
+A successful render means the final path exists and was published atomically. A nonzero exit means no new partial video was published. Without `--out`, the final path is `out/<composition-id>.<ext>` inside the project root, using the container extension. `concurrency` is the number of browser sessions actually used; it is capped by `durationInFrames` and by the CLI maximum of 16. `container` is `mp4`, `mov`, `mkv`, or `webm`; `codec` is `h264`, `hevc`, or `vp9`; and `encoder` is the resolved encoder (`libx264`, `libx265`, `libvpx-vp9`, `h264_nvenc`, `hevc_nvenc`, `h264_qsv`, or `hevc_qsv`). Timeline results also report the effective `workers` count after the encoder session cap, with an `ENCODER_WARNING` diagnostic when it was reduced.
 
 ## tts
 

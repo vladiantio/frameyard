@@ -15,14 +15,23 @@ import { startPreviewServer } from "../server/server.js";
 import { inspectTimelineAudio, type AudioInspection, type InspectAudioClip } from "./audio.js";
 import { openCompositionSession, type CompositionSession } from "./browser.js";
 import {
+  assertContainerCodec,
   assertFfmpegCapabilities,
   compositeTimelineFrame,
   compositeTimelineSegment,
   concatTimelineSegments,
+  CONTAINER_EXTENSION,
+  defaultCodecForContainer,
+  ENCODER_SESSION_LIMIT,
   encodePngSequenceToFfv1,
   mixAudioTimeline,
   muxVideoWithAudio,
+  resolveVideoEncoder,
   type TimelineCompositeLayer,
+  type VideoCodec,
+  type VideoContainer,
+  type VideoEncoderChoice,
+  type VideoEncoderName,
 } from "./ffmpeg.js";
 import { inspectTranscriptClips, type TranscriptInspection } from "./transcripts.js";
 import { planTimelineRender, type TimelineRenderSegment } from "../timeline/plan.js";
@@ -54,6 +63,12 @@ export interface TimelineRenderOptions {
   signal?: AbortSignal;
   /** Render-time props overrides keyed by top-level composition clip ID. */
   propsOverrides?: Record<string, unknown>;
+  /** Encoder choice for segments; defaults to the codec's software encoder. */
+  encoder?: VideoEncoderChoice;
+  /** Delivery codec; defaults to `h264`. */
+  codec?: VideoCodec;
+  /** Delivery container; defaults to `mp4`. */
+  container?: VideoContainer;
   onProgress?: (event: TimelineProgressEvent) => void;
 }
 
@@ -105,6 +120,12 @@ export interface TimelineRenderResult {
   framesRendered: number;
   segments: number;
   workers: number;
+  /** Resolved delivery codec. */
+  codec: VideoCodec;
+  /** Resolved delivery container. */
+  container: VideoContainer;
+  /** Resolved encoder used for segment encoding. */
+  encoder: VideoEncoderName;
   bytes: number;
   audio: { clips: number };
   transcripts: { clips: number };
@@ -121,6 +142,14 @@ function validateWorkers(value: number | undefined): number {
     throw new FrameyardError("USAGE", `--workers must be at most ${MAX_TIMELINE_WORKERS}; received ${workers}.`);
   }
   return workers;
+}
+
+/**
+ * Caps workers at the encoder's concurrent-session limit. Consumer NVIDIA
+ * drivers allow eight NVENC sessions, and each worker opens one encoder.
+ */
+export function clampTimelineWorkers(workers: number, encoder: VideoEncoderName): number {
+  return Math.min(workers, ENCODER_SESSION_LIMIT[encoder]);
 }
 
 function throwIfAborted(signal: AbortSignal | undefined): void {
@@ -512,6 +541,8 @@ async function renderNestedTimelineRange(options: {
     segmentPaths: results.map((result) => result.path),
     listPath: path.join(options.scratchRoot, `${prefix}-segments.txt`),
     outputPath,
+    // Nested timeline segments are always lossless FFV1 in Matroska.
+    container: "mkv",
     ...(options.signal ? { signal: options.signal } : {}),
   });
   return { path: outputPath, diagnostics };
@@ -524,10 +555,12 @@ async function processTimelineSegment(options: {
   serverUrl: string;
   scratchRoot: string;
   infoCache: Map<string, StaticValidationResult>;
-  codec?: "h264" | "ffv1";
+  codec?: VideoCodec | "ffv1";
+  container?: VideoContainer;
   background?: string;
   prefix?: string;
   depth?: number;
+  encoder?: VideoEncoderName;
   signal?: AbortSignal;
 }): Promise<{ path: string; diagnostics: CompositionDiagnostic[] }> {
   const { project, timeline, segment, serverUrl, scratchRoot, infoCache } = options;
@@ -627,7 +660,7 @@ async function processTimelineSegment(options: {
     throw new FrameyardError("TIMELINE_INVALID", `Unsupported visual source for clip "${clip.id}".`);
   }
 
-  const extension = codec === "ffv1" ? "mkv" : "mp4";
+  const extension = codec === "ffv1" ? "mkv" : CONTAINER_EXTENSION[options.container ?? "mp4"];
   const segmentPath = path.join(
     scratchRoot,
     `${prefix}-segment-${String(segment.index).padStart(4, "0")}.${extension}`,
@@ -641,6 +674,8 @@ async function processTimelineSegment(options: {
     background,
     layers,
     codec,
+    ...(options.container !== undefined ? { container: options.container } : {}),
+    ...(options.encoder !== undefined ? { encoder: options.encoder } : {}),
     ...(options.signal ? { signal: options.signal } : {}),
   });
   await rm(segmentDir, { recursive: true, force: true });
@@ -1129,14 +1164,23 @@ export async function captureTimelineStill(options: TimelineStillOptions): Promi
 
 /** Renders one timeline to MP4 through the segmented lossless clip pipeline. */
 export async function renderTimeline(options: TimelineRenderOptions): Promise<TimelineRenderResult> {
-  if (path.extname(options.outPath).toLowerCase() !== ".mp4") {
-    throw new FrameyardError("USAGE", `Timeline output must use an .mp4 extension: ${options.outPath}`);
+  const container = options.container ?? "mp4";
+  const codec = options.codec ?? defaultCodecForContainer(container);
+  assertContainerCodec(container, codec);
+  const extension = `.${CONTAINER_EXTENSION[container]}`;
+  if (path.extname(options.outPath).toLowerCase() !== extension) {
+    throw new FrameyardError(
+      "USAGE",
+      `Timeline output for --container ${container} must use a ${extension} extension: ${options.outPath}`,
+    );
   }
 
-  const workers = validateWorkers(options.workers);
+  const requestedWorkers = validateWorkers(options.workers);
   const overwrite = options.overwrite ?? false;
   await ensureOutputAvailable(options.outPath, overwrite);
-  await assertFfmpegCapabilities(options.signal);
+  await assertFfmpegCapabilities(options.signal, codec);
+  const encoder = await resolveVideoEncoder(codec, options.encoder, options.signal);
+  const workers = clampTimelineWorkers(requestedWorkers, encoder);
   const startedAt = performance.now();
 
   const projectTimeline = options.project.timelines.get(options.timelineId);
@@ -1168,6 +1212,13 @@ export async function renderTimeline(options: TimelineRenderOptions): Promise<Ti
   const server = await startPreviewServer({ projectRoot: options.project.root, port: 0 });
   const infoCache = new Map<string, StaticValidationResult>();
   const diagnostics: CompositionDiagnostic[] = [...resolved.diagnostics];
+  if (workers < requestedWorkers) {
+    diagnostics.push({
+      severity: "warning",
+      code: "ENCODER_WARNING",
+      message: `Encoder ${encoder} allows ${workers} concurrent encode sessions; using ${workers} workers instead of ${requestedWorkers}.`,
+    });
+  }
   const total = timeline.durationInFrames;
   const segmentResults: Array<{ path: string; diagnostics: CompositionDiagnostic[] } | undefined> = Array.from({
     length: plan.segments.length,
@@ -1233,6 +1284,9 @@ export async function renderTimeline(options: TimelineRenderOptions): Promise<Ti
           serverUrl: server.url,
           scratchRoot,
           infoCache,
+          codec,
+          container,
+          encoder,
           ...(options.signal ? { signal: options.signal } : {}),
         });
         segmentResults[index] = result;
@@ -1259,6 +1313,8 @@ export async function renderTimeline(options: TimelineRenderOptions): Promise<Ti
       segmentPaths,
       listPath: path.join(scratchRoot, "segments.txt"),
       outputPath: tempVideo,
+      codec,
+      container,
       ...(options.signal ? { signal: options.signal } : {}),
     });
 
@@ -1282,6 +1338,8 @@ export async function renderTimeline(options: TimelineRenderOptions): Promise<Ti
         videoPath: tempVideo,
         audioPath,
         outputPath: tempFinal,
+        codec,
+        container,
         ...(options.signal ? { signal: options.signal } : {}),
       });
       finalPath = tempFinal;
@@ -1308,6 +1366,9 @@ export async function renderTimeline(options: TimelineRenderOptions): Promise<Ti
       framesRendered: total,
       segments: plan.segments.length,
       workers,
+      codec,
+      container,
+      encoder,
       bytes: (await stat(options.outPath)).size,
       audio: { clips: audioInspection.clips.length },
       transcripts: { clips: transcripts.clips.length },

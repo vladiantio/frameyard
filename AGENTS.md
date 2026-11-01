@@ -47,7 +47,7 @@ node dist/cli.js render demo --project examples/demo --props examples/demo/props
 node dist/cli.js doctor
 ```
 
-`render` defaults to `out/<id>.mp4` inside the project root; pass `--out` for another path. Timeline renders accept `--workers <n>` and `--scratch <dir>`; composition renders accept `--concurrency <n>`. The repository and scaffold ignore `out/`.
+`render` defaults to `out/<id>.mp4` inside the project root; pass `--out` for another path. Timeline renders accept `--workers <n>` and `--scratch <dir>`; composition renders accept `--concurrency <n>`. Both accept `--container <mp4|mov|mkv|webm>`, `--codec <h264|hevc|vp9>`, and `--encoder <auto|software|nvenc|qsv>`; the default is MP4/H.264 with `auto`, which probes hardware and falls back to software, WebM defaults to VP9, the output extension must match the container, and the probe is a one-frame encode. The repository and scaffold ignore `out/`.
 
 Documentation command examples: runnable examples in `README.md`, `skills/frameyard/`, the `init` scaffold, and `init --json` `next` use `npx frameyard`; repository-internal commands (this file, `examples/*/README.md`, and README's `Development` section) use `node dist/cli.js` after `pnpm build`. Command reference tables and `--help` usage lines keep the bare `frameyard` name. `test/docs.test.ts` enforces the user-facing rule, including the generated scaffold markdown in `src/scaffold.ts`; `test/examples.test.ts` enforces the example README rule.
 
@@ -160,7 +160,7 @@ Timeline path: `src/timeline/resolve.ts` resolves the JSON and references; `src/
 - The renderer uses static metadata for the viewport before navigation, blocks network after loading, and captures through CDP. Concurrency uses independent sessions but ordered writing; output order and pixels must match a sequential render.
 - `check` exercises every frame; `still` follows the production capture path. A render writes a temporary output and publishes atomically; existing outputs are replaced only with `--overwrite`.
 - Timeline preview serves `/__frameyard/timeline/<id>` and `.json`; embedded pages expose `window.__fyTimeline`. The preview host lazily loads active clips and evicts inactive layers; it is not the production compositor.
-- Timeline production captures compositions with `transparentBackground: true`, preserves alpha in FFV1, and composites nested timelines as groups. `--workers` bounds segment concurrency; `--scratch` bounds intermediates. Composition rendering keeps `--concurrency`.
+- Timeline production captures compositions with `transparentBackground: true`, preserves alpha in FFV1, and composites nested timelines as groups. `--workers` bounds segment concurrency; `--scratch` bounds intermediates. Composition rendering keeps `--concurrency`. `--container`, `--codec`, and `--encoder` select the delivery pair and encoder for both paths; FFV1 intermediates remain lossless and software-encoded, HEVC keeps the `hvc1` tag in MP4/MOV, VP9 pairs with Opus, NVENC caps timeline workers at eight sessions, and encoded bytes are not a reproducibility guarantee.
 - Timeline `still` and `check` recurse into nested timelines; media-only frames are validated but not decoded frame-by-frame.
 
 ### Generated assets

@@ -158,7 +158,7 @@ npx frameyard render hello --props props/hello.json --json
 - Use \`--json\` for non-interactive commands. Parse stdout as the structured result; treat stderr as progress and diagnostics.
 - Use \`--project <dir>\` when running outside the project root.
 - \`render\` writes to \`out/<id>.mp4\` in the project unless \`--out\` is passed. \`out/\` is gitignored.
-- Use \`--concurrency <n>\` for composition renders (1-16). Use \`--workers <n>\` for timeline renders (1-16); the default is 8. Timeline renders also accept \`--scratch <dir>\` for FFV1 intermediates.
+- Use \`--concurrency <n>\` for composition renders (1-16). Use \`--workers <n>\` for timeline renders (1-16); the default is 8. Timeline renders also accept \`--scratch <dir>\` for FFV1 intermediates. \`--container <mp4|mov|mkv|webm>\`, \`--codec <h264|hevc|vp9>\`, and \`--encoder <auto|software|nvenc|qsv>\` select the delivery pair and encoder; the defaults are MP4 with H.264 and \`auto\`, which falls back to software.
 - \`still\` and \`render\` replace existing outputs only with \`--overwrite\`. Generated assets are replaced only with \`--force\`, and only with user approval.
 
 The official \`frameyard\` agent skill contains the full host-neutral contract. Install it with \`npx skills add vladiantio/frameyard\` or see the \`skills/frameyard/\` directory in the \`frameyard\` npm package. This file is the project-local summary.

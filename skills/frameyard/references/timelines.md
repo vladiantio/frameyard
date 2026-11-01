@@ -124,8 +124,9 @@ npx frameyard render main --props props/main.json --workers 8 --scratch /path/to
 ```
 
 - `--props` on a timeline is a JSON object keyed by top-level composition clip ID; values merge over the clip's `props`.
-- `--workers` is 1–16. The default is 8.
+- `--workers` is 1–16. The default is 8. With `--encoder nvenc` it is capped at 8 concurrent encode sessions and a larger value reports an `ENCODER_WARNING`.
 - `--scratch` selects the FFV1 intermediate directory. Use a disk with enough space; intermediates are cleaned after the render.
+- `--container <mp4|mov|mkv|webm>` selects the delivery container (default `mp4`); `--codec <h264|hevc|vp9>` selects the codec, and `--encoder <auto|software|nvenc|qsv>` selects how it is encoded. MP4 and MOV hold H.264/HEVC with AAC; MKV holds all three; WebM holds VP9 with Opus and defaults to VP9. `auto` is the default and probes NVENC, then Quick Sync, then software; `software` forces `libx264`, `libx265`, or `libvpx-vp9`. FFV1 intermediates stay lossless and software-encoded, HEVC keeps the `hvc1` tag in MP4/MOV, and the output extension must match the container.
 - `--concurrency` is composition-only.
 - `render` defaults to `out/<timeline-id>.mp4`.
 - `check` evaluates every timeline frame and composition frame. `still` captures one frame through the same clip capture and composite path.

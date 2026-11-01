@@ -47,6 +47,7 @@ export type FrameyardErrorCode =
   | "OUTPUT_EXISTS"
   | "OUTPUT_FAILED"
   | "FFMPEG_FAILED"
+  | "ENCODER_WARNING"
   | "FFPROBE_FAILED"
   | "BROWSER_FAILED"
   | "RENDER_FAILED"

@@ -13,6 +13,15 @@ import {
   type ProgressEvent,
 } from "./renderer/index.js";
 import { MAX_TIMELINE_WORKERS, captureTimelineStill, checkTimeline, renderTimeline } from "./renderer/timeline.js";
+import {
+  assertContainerCodec,
+  CONTAINER_EXTENSION,
+  defaultCodecForContainer,
+  encoderNameFor,
+  type VideoCodec,
+  type VideoContainer,
+  type VideoEncoderChoice,
+} from "./renderer/ffmpeg.js";
 import { startPreviewServer } from "./server/server.js";
 import { scaffoldFiles, SCAFFOLD_NEXT } from "./scaffold.js";
 import { VERSION } from "./version.js";
@@ -31,6 +40,9 @@ const VALUE_FLAGS = new Set([
   "concurrency",
   "workers",
   "scratch",
+  "encoder",
+  "codec",
+  "container",
   "text-file",
   "speaker",
   "talker-model",
@@ -138,7 +150,18 @@ function allowedFlags(command: string): Set<string> {
     case "still":
       return new Set([...common, "props", "out", "frame", "overwrite"]);
     case "render":
-      return new Set([...common, "props", "out", "overwrite", "concurrency", "workers", "scratch"]);
+      return new Set([
+        ...common,
+        "props",
+        "out",
+        "overwrite",
+        "concurrency",
+        "workers",
+        "scratch",
+        "encoder",
+        "codec",
+        "container",
+      ]);
     case "tts":
       return new Set([
         ...common,
@@ -255,7 +278,7 @@ Usage:
   frameyard dev [--port <port>] [--project <dir>]
   frameyard check <composition-id> [--props <file>] [--project <dir>] [--json]
   frameyard still <composition-id> --frame <n> [--out <file.png>] [--props <file>] [--project <dir>] [--json]
-  frameyard render <composition-or-timeline-id> [--out <video.mp4>] [--props <file>] [--project <dir>] [--concurrency <n>] [--workers <n>] [--scratch <dir>] [--overwrite] [--json]
+  frameyard render <composition-or-timeline-id> [--out <video>] [--props <file>] [--project <dir>] [--concurrency <n>] [--workers <n>] [--encoder <name>] [--codec <name>] [--container <name>] [--scratch <dir>] [--overwrite] [--json]
   frameyard tts --speaker <name> --talker-model <gguf> --codec-model <gguf> --out <file.wav> [--text-file <file>] [--style <text>] [--language <lang>] [--device <name>] [--executable <path>] [--manifest <file>] [--force] [--json]
   frameyard transcribe <source> --model <gguf> --out <file.json> [--words] [--export srt,vtt] [--language <lang>] [--executable <path>] [--manifest <file>] [--force] [--json]
   frameyard doctor [--qwen-tts <path>] [--whisper-cli <path>] [--talker-model <gguf>] [--codec-model <gguf>] [--model <gguf>] [--manifest <file>] [--project <dir>] [--json]
@@ -267,6 +290,9 @@ Options:
   --frame <n>            Frame to capture for still.
   --concurrency <n>      Parallel browser sessions for composition render, 1-${MAX_RENDER_CONCURRENCY} (default: 1).
   --workers <n>          Parallel segment workers for timeline render, 1-${MAX_TIMELINE_WORKERS} (default: 8).
+  --encoder <name>       Encoder: auto, software, nvenc, or qsv (default: auto).
+  --codec <name>         Delivery codec for render: h264, hevc, or vp9 (default: h264; vp9 for webm).
+  --container <name>     Delivery container: mp4, mov, mkv, or webm (default: mp4).
   --scratch <dir>        Scratch directory for timeline intermediates (default: system temp).
   --overwrite            Replace an existing still or render output.
   --force                Replace existing generated assets and manifest entries.
@@ -312,7 +338,7 @@ function printCommandHelp(command: string): void {
       return;
     case "render":
       process.stdout.write(
-        `Usage: frameyard render <composition-or-timeline-id> [--out <video.mp4>] [--props <file>] [--project <dir>] [--concurrency <n>] [--workers <n>] [--scratch <dir>] [--overwrite] [--json]\nRender a complete MP4 with H.264 video and AAC audio. The default output is out/<id>.mp4 in the project. Composition concurrency is 1-${MAX_RENDER_CONCURRENCY}; timeline workers are 1-${MAX_TIMELINE_WORKERS}.\n`,
+        `Usage: frameyard render <composition-or-timeline-id> [--out <video>] [--props <file>] [--project <dir>] [--concurrency <n>] [--workers <n>] [--encoder <name>] [--codec <name>] [--container <name>] [--scratch <dir>] [--overwrite] [--json]\nRender an MP4, MOV, MKV, or WebM with H.264, HEVC, or VP9 video and AAC or Opus audio. The default output is out/<id>.<extension> in the project. Composition concurrency is 1-${MAX_RENDER_CONCURRENCY}; timeline workers are 1-${MAX_TIMELINE_WORKERS}. Encoder choices are auto, software, nvenc, and qsv; the default auto probes NVENC, then Quick Sync, then the codec's software encoder. WebM and VP9 use Opus audio, and HEVC in MP4/MOV keeps the hvc1 sample entry.\n`,
       );
       return;
     case "tts":
@@ -380,6 +406,43 @@ async function readStdin(): Promise<string> {
 function flagString(flags: Map<string, string | true>, name: string): string | undefined {
   const value = flags.get(name);
   return typeof value === "string" ? value : undefined;
+}
+
+const ENCODER_CHOICES = new Set<VideoEncoderChoice>(["auto", "software", "nvenc", "qsv"]);
+const CODEC_CHOICES = new Set<VideoCodec>(["h264", "hevc", "vp9"]);
+const CONTAINER_CHOICES = new Set<VideoContainer>(["mp4", "mov", "mkv", "webm"]);
+
+function encoderChoice(flags: Map<string, string | true>): VideoEncoderChoice | undefined {
+  const value = flagString(flags, "encoder");
+  if (value === undefined) {
+    return undefined;
+  }
+  if (!ENCODER_CHOICES.has(value as VideoEncoderChoice)) {
+    usage(`--encoder must be auto, software, nvenc, or qsv; received "${value}".`);
+  }
+  return value as VideoEncoderChoice;
+}
+
+function codecChoice(flags: Map<string, string | true>): VideoCodec | undefined {
+  const value = flagString(flags, "codec");
+  if (value === undefined) {
+    return undefined;
+  }
+  if (!CODEC_CHOICES.has(value as VideoCodec)) {
+    usage(`--codec must be h264, hevc, or vp9; received "${value}".`);
+  }
+  return value as VideoCodec;
+}
+
+function containerChoice(flags: Map<string, string | true>): VideoContainer | undefined {
+  const value = flagString(flags, "container");
+  if (value === undefined) {
+    return undefined;
+  }
+  if (!CONTAINER_CHOICES.has(value as VideoContainer)) {
+    usage(`--container must be mp4, mov, mkv, or webm; received "${value}".`);
+  }
+  return value as VideoContainer;
 }
 
 function parseSubtitleFormats(value: string | true | undefined): SubtitleFormat[] {
@@ -684,10 +747,21 @@ async function runStill(parsed: ParsedArgs, signal: AbortSignal): Promise<number
 async function runRender(parsed: ParsedArgs, signal: AbortSignal): Promise<number> {
   const project = await projectFromFlag(parsed.flags);
   const props = await readPropsFile(parsed.flags);
+  const encoder = encoderChoice(parsed.flags);
+  const container = containerChoice(parsed.flags) ?? "mp4";
+  // WebM is a VP9/Opus container; every other container defaults to H.264.
+  const codec = codecChoice(parsed.flags) ?? defaultCodecForContainer(container);
+  assertContainerCodec(container, codec);
+  if (encoder !== undefined && encoder !== "auto") {
+    // Rejects codec/vendor mismatches such as --codec hevc --encoder libx264.
+    encoderNameFor(codec, encoder);
+  }
   const targetId = parsed.positionals[0] as string;
   const outValue = flagString(parsed.flags, "out");
   const outPath =
-    outValue === undefined ? path.join(project.root, "out", `${targetId}.mp4`) : path.resolve(process.cwd(), outValue);
+    outValue === undefined
+      ? path.join(project.root, "out", `${targetId}.${CONTAINER_EXTENSION[container]}`)
+      : path.resolve(process.cwd(), outValue);
   const json = parsed.flags.has("json") === true;
 
   if (project.timelines.has(targetId)) {
@@ -714,6 +788,9 @@ async function runRender(parsed: ParsedArgs, signal: AbortSignal): Promise<numbe
       outPath,
       ...(workers !== undefined ? { workers } : {}),
       ...(scratchDir !== undefined ? { scratchDir } : {}),
+      ...(encoder !== undefined ? { encoder } : {}),
+      codec,
+      container,
       ...(props !== undefined ? { propsOverrides: props as Record<string, unknown> } : {}),
       overwrite: parsed.flags.has("overwrite") === true,
       signal,
@@ -725,7 +802,7 @@ async function runRender(parsed: ParsedArgs, signal: AbortSignal): Promise<numbe
       printJson({ ok: true, command: "render", ...result });
     } else {
       process.stdout.write(
-        `Rendered timeline ${targetId} to ${result.path} (${result.framesRendered} frames, ${formatDuration(result.durationSeconds)}, ${result.audio.clips} audio clip${result.audio.clips === 1 ? "" : "s"}, ${result.workers} workers)\n`,
+        `Rendered timeline ${targetId} to ${result.path} (${result.framesRendered} frames, ${formatDuration(result.durationSeconds)}, ${result.audio.clips} audio clip${result.audio.clips === 1 ? "" : "s"}, ${result.workers} workers, ${result.encoder} encoder)\n`,
       );
     }
     return 0;
@@ -747,6 +824,9 @@ async function runRender(parsed: ParsedArgs, signal: AbortSignal): Promise<numbe
     props,
     outPath,
     concurrency,
+    ...(encoder !== undefined ? { encoder } : {}),
+    codec,
+    container,
     overwrite: parsed.flags.has("overwrite") === true,
     signal,
     onProgress: progressPrinter("Rendering"),
@@ -757,7 +837,7 @@ async function runRender(parsed: ParsedArgs, signal: AbortSignal): Promise<numbe
     printJson({ ok: true, command: "render", ...result });
   } else {
     process.stdout.write(
-      `Rendered ${compositionId} to ${result.path} (${result.framesRendered} frames, ${formatDuration(result.durationSeconds)}, ${result.audio.clips} audio clip${result.audio.clips === 1 ? "" : "s"})\n`,
+      `Rendered ${compositionId} to ${result.path} (${result.framesRendered} frames, ${formatDuration(result.durationSeconds)}, ${result.audio.clips} audio clip${result.audio.clips === 1 ? "" : "s"}, ${result.encoder} encoder)\n`,
     );
   }
   return 0;

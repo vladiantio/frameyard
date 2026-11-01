@@ -5,7 +5,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 import { loadProject } from "../src/project.ts";
-import { captureTimelineStill, checkTimeline, renderTimeline } from "../src/renderer/timeline.ts";
+import { captureTimelineStill, checkTimeline, clampTimelineWorkers, renderTimeline } from "../src/renderer/timeline.ts";
 import { BARCODE, barcodeCompositionHtml, barcodeCropFilter, decodeBarcodeFrames } from "./helpers/frame-probe.ts";
 import { mediaPixel } from "./helpers/media.ts";
 
@@ -88,12 +88,15 @@ async function probe(filePath: string) {
     "error",
     "-count_frames",
     "-show_entries",
-    "stream=codec_type,width,height,nb_read_frames,duration",
+    "stream=codec_type,codec_name,codec_tag_string,width,height,nb_read_frames,duration:format=format_name",
     "-of",
     "json",
     filePath,
   ]);
-  return JSON.parse(stdout) as { streams: Array<Record<string, unknown>> };
+  return JSON.parse(stdout) as {
+    streams: Array<Record<string, unknown>>;
+    format?: { format_name?: string };
+  };
 }
 
 afterEach(async () => {
@@ -101,6 +104,13 @@ afterEach(async () => {
 });
 
 describe("timeline rendering", () => {
+  it("caps workers at the encoder session limit", () => {
+    expect(clampTimelineWorkers(16, "h264_nvenc")).toBe(8);
+    expect(clampTimelineWorkers(4, "h264_nvenc")).toBe(4);
+    expect(clampTimelineWorkers(16, "libx264")).toBe(16);
+    expect(clampTimelineWorkers(16, "h264_qsv")).toBe(16);
+  });
+
   it("checks every timeline frame and its audio without capturing", async () => {
     const { root } = await createProject();
     const project = await loadProject(root);
@@ -149,6 +159,7 @@ describe("timeline rendering", () => {
       timelineId: "main",
       outPath,
       workers: 2,
+      encoder: "software",
     });
 
     expect(result.timeline).toBe("main");
@@ -159,6 +170,9 @@ describe("timeline rendering", () => {
     expect(result.durationInFrames).toBe(10);
     expect(result.framesRendered).toBe(10);
     expect(result.segments).toBe(1);
+    expect(result.workers).toBe(2);
+    expect(result.codec).toBe("h264");
+    expect(result.encoder).toBe("libx264");
     expect(result.audio.clips).toBe(1);
     expect(result.diagnostics.filter((diagnostic) => diagnostic.severity === "error")).toEqual([]);
     expect((await stat(outPath)).size).toBeGreaterThan(0);
@@ -168,6 +182,76 @@ describe("timeline rendering", () => {
     const audio = streams.find((stream) => stream.codec_type === "audio");
     expect(video).toMatchObject({ width: 320, height: 180, nb_read_frames: "10" });
     expect(audio).toBeDefined();
+  }, 120_000);
+
+  it("renders HEVC across concatenated segments with the hvc1 tag", async () => {
+    const { root, outPath } = await createProject();
+    const project = await loadProject(root);
+
+    const result = await renderTimeline({
+      project,
+      timelineId: "main",
+      outPath,
+      workers: 2,
+      maxSegmentFrames: 4,
+      codec: "hevc",
+      encoder: "software",
+    });
+
+    expect(result.codec).toBe("hevc");
+    expect(result.encoder).toBe("libx265");
+    expect(result.segments).toBeGreaterThan(1);
+    expect(result.framesRendered).toBe(10);
+
+    const streams = (await probe(outPath)).streams;
+    const video = streams.find((stream) => stream.codec_type === "video");
+    expect(video).toMatchObject({
+      codec_name: "hevc",
+      codec_tag_string: "hvc1",
+      nb_read_frames: "10",
+    });
+    expect(streams.find((stream) => stream.codec_type === "audio")).toBeDefined();
+  }, 120_000);
+
+  it("delivers MKV and WebM with the matching container and audio codec", async () => {
+    const { root } = await createProject();
+    const project = await loadProject(root);
+
+    const mkvPath = path.join(root, "out", "main.mkv");
+    const mkv = await renderTimeline({
+      project,
+      timelineId: "main",
+      outPath: mkvPath,
+      workers: 2,
+      container: "mkv",
+      encoder: "software",
+    });
+    expect(mkv).toMatchObject({ codec: "h264", container: "mkv", encoder: "libx264" });
+    const mkvProbe = await probe(mkvPath);
+    expect(mkvProbe.format?.format_name).toContain("matroska");
+    expect(mkvProbe.streams.find((stream) => stream.codec_type === "video")).toMatchObject({
+      codec_name: "h264",
+      nb_read_frames: "10",
+    });
+    expect(mkvProbe.streams.find((stream) => stream.codec_type === "audio")).toMatchObject({ codec_name: "aac" });
+
+    const webmPath = path.join(root, "out", "main.webm");
+    const webm = await renderTimeline({
+      project,
+      timelineId: "main",
+      outPath: webmPath,
+      workers: 2,
+      container: "webm",
+      encoder: "software",
+    });
+    expect(webm).toMatchObject({ codec: "vp9", container: "webm", encoder: "libvpx-vp9" });
+    const webmProbe = await probe(webmPath);
+    expect(webmProbe.format?.format_name).toContain("webm");
+    expect(webmProbe.streams.find((stream) => stream.codec_type === "video")).toMatchObject({
+      codec_name: "vp9",
+      nb_read_frames: "10",
+    });
+    expect(webmProbe.streams.find((stream) => stream.codec_type === "audio")).toMatchObject({ codec_name: "opus" });
   }, 120_000);
 });
 

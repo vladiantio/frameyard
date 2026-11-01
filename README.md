@@ -7,7 +7,7 @@ The 0.6 design is implemented: HTML composition documents, JSON timelines with t
 ## Requirements
 
 - Node.js 22.12 or newer
-- FFmpeg and FFprobe on `PATH`, built with H.264 (`libx264`) and AAC support
+- FFmpeg and FFprobe on `PATH`, built with H.264 (`libx264`), AAC, HEVC (`libx265`), VP9 (`libvpx-vp9`), and Opus (`libopus`) support. The software HEVC and VP9 encoders are only used for software renders; `--encoder nvenc` and `--encoder qsv` need no software encoder for that codec.
 - The Playwright-managed Chromium build
 - Optional: `qwen-tts` from [`qwentts.cpp`](https://github.com/ServeurpersoCom/qwentts.cpp) for local speech synthesis
 - Optional: `whisper-cli` from [`whisper.cpp`](https://github.com/ggml-org/whisper.cpp) for local transcription
@@ -277,7 +277,7 @@ Transcript paths resolve from the project root. `words` requires actual measured
 | `frameyard transcribe ...` | Produce canonical transcript JSON with optional word timings and SRT/VTT exports |
 | `frameyard doctor` | Inspect core requirements, optional integrations, and manifest integrity |
 
-Common options: `--project <dir>`, `--json`, `--help`, and `--version`. `still` and `render` accept `--overwrite`. Composition renders accept `--concurrency <n>` (1-16); timeline renders accept `--workers <n>` (1-16) and `--scratch <dir>`. For a timeline, `--props` is a JSON object keyed by composition clip id; for a composition, it is the props object. `tts` and `transcribe` accept `--force`. `init` takes the target directory as a positional argument. Explicit output paths passed with `--out` are relative to the current working directory; `render` defaults to `out/<id>.mp4` inside the project root.
+Common options: `--project <dir>`, `--json`, `--help`, and `--version`. `still` and `render` accept `--overwrite`. Composition renders accept `--concurrency <n>` (1-16); timeline renders accept `--workers <n>` (1-16) and `--scratch <dir>`. `render` also accepts `--container <mp4|mov|mkv|webm>`, `--codec <h264|hevc|vp9>`, and `--encoder <auto|software|nvenc|qsv>`. MP4 and MOV hold H.264 and HEVC with AAC; MKV holds H.264, HEVC, and VP9; WebM holds VP9 with Opus and defaults to VP9. `--out` must use the container's extension, and `render` defaults to `out/<id>.<ext>` accordingly. `--encoder` defaults to `auto`, which probes NVENC, then Quick Sync with a one-frame encode, and falls back to the codec's software encoder; `software` forces `libx264`, `libx265`, or `libvpx-vp9`. For a timeline, `--props` is a JSON object keyed by composition clip id; for a composition, it is the props object. `tts` and `transcribe` accept `--force`. `init` takes the target directory as a positional argument. Explicit output paths passed with `--out` are relative to the current working directory.
 
 A render fails immediately on an uncaught error, unhandled rejection, missing required asset, or invalid composition output. It writes to a temporary file and publishes only after FFmpeg succeeds. Existing outputs are not replaced unless `--overwrite` is supplied.
 
@@ -376,17 +376,19 @@ A composition renders directly:
 1. Static composition validation resolves metadata before launching Chromium.
 2. Chromium navigates to the composition document with the composition host.
 3. One session, or several when `--concurrency` is greater than 1, seeks every frame, calls the controller, seeks CSS/WAAPI animations, and waits for embedded media decode and paint.
-4. The viewport is captured through the Chrome DevTools Protocol, piped to FFmpeg, and encoded as H.264/AAC.
+4. The viewport is captured through the Chrome DevTools Protocol, piped to FFmpeg, and encoded as H.264, HEVC, or VP9 with AAC or Opus audio.
 
 A timeline renders through segments:
 
 1. Static timeline validation resolves references, media, nested timelines, durations, props, audio, and overlaps.
 2. The timeline is split at active-layer changes and a maximum segment duration.
 3. In parallel workers, Chromium captures active composition and nested-timeline clips to alpha-preserving FFV1 intermediates.
-4. FFmpeg applies fit, static transforms, opacity, video/image decoding, and audio mixing, and encodes each segment as H.264.
+4. FFmpeg applies fit, static transforms, opacity, video/image decoding, and audio mixing, and encodes each segment as H.264, HEVC, or VP9.
 5. Segments are concatenated in timeline order without re-encoding and the global audio mix is muxed into the final MP4.
 
 Composition concurrency changes scheduling only. Timeline workers process independent segments; output order and captured composition frames remain deterministic. `check` and `still` use the same clip capture and composite path as their target.
+
+Both targets encode H.264 in MP4 by default. `--container` selects `mp4`, `mov`, `mkv`, or `webm`, `--codec` selects `h264`, `hevc`, or `vp9`, and `--encoder` selects how that codec is encoded: `software` forces `libx264`, `libx265`, or `libvpx-vp9`; `nvenc` and `qsv` drive NVIDIA NVENC and Intel Quick Sync; the default `auto` probes NVENC, then Quick Sync, then falls back to the codec's software encoder. WebM defaults to VP9 and rejects H.264 and HEVC; MP4 and MOV reject VP9. VP9 renders use Opus audio everywhere; H.264 and HEVC use AAC. The probe is a real one-frame encode, so a driver that lists an encoder but cannot open it is skipped instead of failing mid-render. Hardware encoders are faster but produce different encoded bytes and file sizes at the calibrated quality. HEVC in MP4 and MOV uses the `hvc1` sample entry so Apple players accept it, but it does not play in browsers without platform HEVC decoding, so H.264 remains the portable default. Hardware encoders never capture frames, and the segmented timeline pipeline still writes lossless alpha-preserving FFV1 intermediates in software. NVENC allows eight concurrent encode sessions on consumer drivers, so timeline `--workers` is capped at eight when NVENC resolves, with an `ENCODER_WARNING` diagnostic when a larger value is requested.
 
 For the same composition or timeline revision, props, assets, segment plan, frame, and pinned runtime/browser/FFmpeg environment, the captured composition frames and deterministic composite are identical. Encoded bytes are not a reproducibility guarantee, even on the same machine; they depend on the FFmpeg build, encoder threading, and runtime environment. Preview composites in Chromium while timeline production composites with FFmpeg, so small differences in scaling, alpha, and video color conversion are expected; parity is guaranteed at clip capture.
 
@@ -401,7 +403,7 @@ Deferred from this implementation slice:
 - Timeline-level variables and prop overrides inside nested timelines
 - Per-timeline formats and frame-rate conversion/retiming
 - Persistent clip caches; timeline scratch intermediates are cleaned after a render
-- Hardware encoders, GPU compositing, and non-H.264 final output
+- GPU compositing and codecs beyond H.264, HEVC, and VP9
 - Built-in subtitle rendering, automatic caption burn-in, and declarative karaoke elements
 - Nested `data-fy-repeat` scopes and a general template language
 - Declarative JSON Schema validation

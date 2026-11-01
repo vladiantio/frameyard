@@ -8,6 +8,20 @@ Frameyard uses `0.x` versions until the composition, configuration, CLI,
 JSON-result, transcript, and skill contracts stabilize. Before `1.0.0`, a
 contract change may ship in a minor release and is called out explicitly below.
 
+## [Unreleased]
+
+### Added
+
+- `render --container <mp4|mov|mkv|webm>`,
+  `--codec <h264|hevc|vp9>`, and
+  `--encoder <auto|software|nvenc|qsv>` select the delivery container, codec,
+  and encoder for composition and timeline renders. `auto` is the default and
+  probes NVENC, then Quick Sync, then the codec's software encoder. MP4 with
+  H.264 stays the default and WebM defaults to VP9 with Opus; HEVC keeps the
+  `hvc1` sample entry in MP4/MOV, the output extension must match the
+  container, timeline workers are capped at the NVENC session limit, and render
+  results report the resolved `container`, `codec`, and `encoder`.
+
 ## [0.6.0] - 2026-11-01
 
 ### Added

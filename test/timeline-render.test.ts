@@ -6,6 +6,7 @@ import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 import { loadProject } from "../src/project.ts";
 import { captureTimelineStill, checkTimeline, renderTimeline } from "../src/renderer/timeline.ts";
+import { BARCODE, barcodeCompositionHtml, barcodeCropFilter, decodeBarcodeFrames } from "./helpers/frame-probe.ts";
 
 const exec = promisify(execFile);
 const repoRoot = path.resolve(new URL("..", import.meta.url).pathname);
@@ -432,46 +433,7 @@ describe("timeline rendering media and alpha", () => {
 
   it("keeps composition frames aligned through overlay compositing", async () => {
     const root = await customRoot();
-    await writeFile(
-      path.join(root, "compositions", "barcode.html"),
-      `<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8">
-    <style>
-      html, body { margin: 0; width: 100%; height: 100%; background: #808080; }
-      .bar { position: absolute; top: 20px; width: 30px; height: 80px; background: #000; }
-    </style>
-  </head>
-  <body>
-    <fy-composition width="320" height="180" fps="30" duration-in-frames="60">
-      <div class="bar" style="left: 25px"></div>
-      <div class="bar" style="left: 55px"></div>
-      <div class="bar" style="left: 85px"></div>
-      <div class="bar" style="left: 115px"></div>
-      <div class="bar" style="left: 145px"></div>
-      <div class="bar" style="left: 175px"></div>
-      <div class="bar" style="left: 205px"></div>
-      <div class="bar" style="left: 235px"></div>
-      <div class="bar" style="left: 265px"></div>
-    </fy-composition>
-    <script type="text/fy-controller">
-let bars = [];
-export default {
-  mount({ root }) {
-    bars = [...root.querySelectorAll(".bar")];
-  },
-  update({ frame }) {
-    bars.forEach((bar, index) => {
-      bar.style.background = ((frame >> index) & 1) === 1 ? "#ffffff" : "#000000";
-    });
-  },
-};
-    </script>
-  </body>
-</html>
-`,
-    );
+    await writeFile(path.join(root, "compositions", "barcode.html"), barcodeCompositionHtml());
     await writeFile(
       path.join(root, "timelines", "main.json"),
       `${JSON.stringify(
@@ -484,7 +446,7 @@ export default {
               track: "v1",
               source: { kind: "composition", id: "barcode" },
               start: 0,
-              duration: 60,
+              duration: BARCODE.frames,
             },
           ],
         },
@@ -505,27 +467,14 @@ export default {
 
     const result = await renderTimeline({ project, timelineId: "main", outPath, workers: 1 });
 
-    expect(result.framesRendered).toBe(60);
+    expect(result.framesRendered).toBe(BARCODE.frames);
     const { stdout } = await exec(
       "ffmpeg",
-      ["-v", "error", "-i", outPath, "-vf", "format=gray,crop=270:80:25:20", "-f", "rawvideo", "-"],
+      ["-v", "error", "-i", outPath, "-vf", barcodeCropFilter(), "-f", "rawvideo", "-"],
       { encoding: "buffer", maxBuffer: 8 * 1024 * 1024 },
     );
-    const buffer = stdout as unknown as Buffer;
-    const frameBytes = 270 * 80;
-    expect(buffer.length).toBe(60 * frameBytes);
-    for (let frame = 0; frame < 60; frame += 1) {
-      let value = 0;
-      for (let bit = 0; bit < 9; bit += 1) {
-        const x = bit * 30 + 15;
-        const y = 40;
-        const sample = buffer[frame * frameBytes + y * 270 + x] ?? 0;
-        if (sample > 128) {
-          value |= 1 << bit;
-        }
-      }
-      expect(value, `frame ${frame}`).toBe(frame);
-    }
+    const { mismatches } = decodeBarcodeFrames(stdout as unknown as Buffer, BARCODE.frames);
+    expect(mismatches).toEqual([]);
   }, 120_000);
 
   it("includes audio declared inside a composition clip", async () => {
@@ -796,5 +745,71 @@ describe("nested timeline rendering", () => {
     expect(still.height).toBe(180);
     const [stillRed, stillGreen] = await mediaPixel(stillPath, 160, 90);
     expect(stillGreen).toBeGreaterThan(stillRed + 40);
+  }, 120_000);
+
+  it("keeps nested timeline frames aligned through overlay compositing", async () => {
+    const root = await customRoot();
+    await writeFile(path.join(root, "compositions", "barcode.html"), barcodeCompositionHtml());
+    await writeFile(
+      path.join(root, "timelines", "lower.json"),
+      `${JSON.stringify(
+        {
+          version: 1,
+          tracks: [{ id: "v1", kind: "video" }],
+          clips: [
+            {
+              id: "barcode",
+              track: "v1",
+              source: { kind: "composition", id: "barcode" },
+              start: 0,
+              duration: BARCODE.frames,
+            },
+          ],
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    await writeFile(
+      path.join(root, "timelines", "main.json"),
+      `${JSON.stringify(
+        {
+          version: 1,
+          tracks: [{ id: "v1", kind: "video" }],
+          clips: [
+            {
+              id: "nested",
+              track: "v1",
+              source: { kind: "timeline", id: "lower" },
+              start: 0,
+              duration: BARCODE.frames,
+            },
+          ],
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    await writeFile(
+      path.join(root, "video.config.js"),
+      `export default {
+        format: { width: ${BARCODE.width}, height: ${BARCODE.height}, fps: ${BARCODE.fps} },
+        compositions: { barcode: "./compositions/barcode.html" },
+        timelines: { main: "./timelines/main.json", lower: "./timelines/lower.json" },
+      };\n`,
+    );
+    const outPath = path.join(root, "out", "main.mp4");
+    const project = await loadProject(root);
+
+    const result = await renderTimeline({ project, timelineId: "main", outPath, workers: 1 });
+
+    expect(result.framesRendered).toBe(BARCODE.frames);
+    const { stdout } = await exec(
+      "ffmpeg",
+      ["-v", "error", "-i", outPath, "-vf", barcodeCropFilter(), "-f", "rawvideo", "-"],
+      { encoding: "buffer", maxBuffer: 8 * 1024 * 1024 },
+    );
+    const { mismatches } = decodeBarcodeFrames(stdout as unknown as Buffer, BARCODE.frames);
+    expect(mismatches).toEqual([]);
   }, 120_000);
 });

@@ -25,8 +25,10 @@ contract change may ship in a minor release and is called out explicitly below.
 - Transparent composition capture and nested timeline groups with recursive
   visual, still, check, and audio handling.
 - Timeline preview in `dev`: composition and timeline selectors, program
-  monitor, read-only tracks and clips, playhead, playback, audio controls, and
-  diagnostics.
+  monitor, read-only tracks and clips, playhead, playback, frame stepping, and
+  one-second jumps with buttons or arrow keys, audio controls, and diagnostics.
+- Timeline visual transforms accept `width`/`height` as an explicit clip box,
+  mutually exclusive with `scale`.
 - `render`, `check`, and `still` accept timeline IDs alongside composition
   IDs. Timeline renders add `--workers` and `--scratch`; timeline `--props`
   is a map keyed by composition clip ID.
@@ -34,6 +36,8 @@ contract change may ship in a minor release and is called out explicitly below.
   `timelines` map. `project.json` publishes `format` and `timelines`.
 - Timeline-first `init` scaffold with a composition clip, timeline override
   props, and `main` commands.
+- The video example adds WebM and MP4 timelines that place video clips under a
+  transparent HTML overlay.
 - Official skill reference for timelines, clips, tracks, nested timelines,
   props overrides, commands, preview, and determinism.
 - Timeline config, schema, resolution, planning, rendering, preview, and
@@ -45,6 +49,8 @@ contract change may ship in a minor release and is called out explicitly below.
 - `check` and `still` use timeline clip capture and composite behavior for
   timeline targets.
 - Timeline audio mixing pads short inputs to the full timeline duration.
+- Timed timeline layers are normalized to the project frame rate before
+  compositing.
 - The design baseline, glossary, and architecture decision records describe
   timelines as the render unit and compositions as clip sources.
 
@@ -52,6 +58,8 @@ contract change may ship in a minor release and is called out explicitly below.
 
 - Composition audio, embedded video audio, and nested timeline audio are
   trimmed and shifted by clip source ranges and groups.
+- Selecting a different composition in the preview picker reloads the iframe
+  instead of leaving the previous composition loaded.
 
 [0.6.0]: https://github.com/vladiantio/frameyard/compare/v0.5.0...v0.6.0
 

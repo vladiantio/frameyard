@@ -9,6 +9,7 @@ Frameyard is a local-first framework for deterministic, parameterized videos aut
 - **Before changing determinism or rendering architecture**: read `docs/adr/0002-make-frame-and-props-the-only-animation-state.md`, `docs/adr/0003-render-browser-frames-offline.md`, `docs/adr/0005-keep-parallel-rendering-opt-in-and-frame-ordered.md`, `docs/adr/0009-composite-production-frames-in-software.md`, and the reproducibility guarantee in `docs/v0.1-design.md` §3.
 - **Before changing authoring APIs or the HTML/controller boundary**: read `docs/adr/0001-keep-composition-authoring-web-native.md` (amended by ADR 0007), `docs/adr/0006-seek-embedded-media-from-the-frame-clock.md` (placement amended by ADR 0007), and `docs/adr/0007-make-html-documents-the-composition-unit.md`.
 - **For usage and project layout**: read `README.md` and `docs/migration-0.4.md`.
+- **For preview tests or browser probes**: read `docs/preview-testing.md`.
 
 ## Commands
 
@@ -71,6 +72,7 @@ A full 30-second demo timeline render is segmented and uses 8 workers by default
 | `src/runtime/host.ts` | Browser composition host exposed as `window.__fy` |
 | `src/runtime/bindings.ts` | Browser binding application and `--fy-prop-*` variables |
 | `src/runtime/media.ts` | Embedded video/audio preparation, seeking, settling, and release |
+| `src/runtime/video.ts` | Shared video paint barrier: `requestVideoFrameCallback` with animation-frame and timeout fallbacks |
 | `src/runtime/diagnostics.ts` | Best-effort clock/randomness diagnostics around controller `mount`/`update` |
 | `src/runtime/clock.ts` | Frame/time conversion |
 | `src/runtime/random.ts` | Stateless keyed deterministic randomness |
@@ -189,7 +191,7 @@ Timeline path: `src/timeline/resolve.ts` resolves the JSON and references; `src/
 - **Timeline schema and resolution** → `src/timeline/schema.ts`, `src/timeline/resolve.ts`, `src/timeline/plan.ts`; extend `test/timeline-schema.test.ts`, `test/timeline-resolve.test.ts`, `test/timeline-plan.test.ts`. Document contract fields in `skills/frameyard/references/timelines.md`; other docs link to it.
 - **Timeline rendering** → `src/renderer/timeline.ts`, `src/renderer/ffmpeg.ts`, `src/renderer/browser.ts`; extend `test/timeline-render.test.ts` with per-frame mapping coverage for every affected layer kind (video, composition, nested timeline), and verify artifacts with FFprobe.
 - **Preview** → `src/preview/main.ts`, `src/server/preview-html.ts`; extend the HTML iframe case in `test/preview-runtime.test.ts`.
-- **Timeline preview** → `src/preview/timeline-main.ts`, `src/preview/timeline-host.ts`, `src/preview/timeline-data.ts`, `src/server/timeline-preview-*.ts`; extend `test/timeline-preview.test.ts`, `test/timeline-preview-runtime.test.ts`.
+- **Timeline preview** → `src/preview/timeline-main.ts`, `src/preview/timeline-host.ts`, `src/preview/timeline-data.ts`, `src/server/timeline-preview-*.ts`; extend `test/timeline-preview.test.ts`, `test/timeline-preview-runtime.test.ts`; keep `docs/preview-testing.md` in step with the embedded host API.
 - **Server routes, host injection, inline controller, `project.json`, timeline preview/data** → `src/server/server.ts`, `src/server/composition-html.ts`; extend `test/project-server.test.ts`, `test/server-html.test.ts`, `test/timeline-preview.test.ts`.
 - **Chromium capture, audio/transcript inspection, FFmpeg** → `src/renderer/`; extend `test/cli-e2e.test.ts`, `test/video-determinism.test.ts`, and verify artifacts with FFprobe.
 - **Static validation integration and result schemas** → `src/renderer/index.ts`, `src/renderer/timeline.ts`, `src/cli.ts`; extend `test/cli-e2e.test.ts`, `test/agent-workflow.test.ts`, `test/timeline-render.test.ts`.
@@ -213,7 +215,7 @@ Test at public seams, not private helpers:
 - `test/host-runtime.test.ts`: host bindings, repeat/if/class, animation scheduling, frame variables, inline/external controllers, props validation, load atomicity, dispose, diagnostics, auto mode, media settle.
 - `test/project-server.test.ts`: config loading, static routes, import map, ranges, traversal rejection.
 - `test/preview-runtime.test.ts`: HTML iframe preview, props, seeking, transport keys, CSS animation, Canvas, WebGL, embedded video, determinism, diagnostics.
-- `test/timeline-preview-runtime.test.ts`: timeline preview UI and embedding, scrubbing, frame/one-second stepping, seek coalescing, keyboard forwarding, layer sizing.
+- `test/timeline-preview-runtime.test.ts`: timeline preview UI and embedding, scrubbing, frame/one-second stepping, seek coalescing, keyboard forwarding, layer sizing, and video frame presentation.
 - `test/timeline-render.test.ts`: segmented rendering, transform boxes, alpha compositing, media/audio, nested timelines, and per-frame barcode mapping for video, composition, and nested-timeline layers.
 - `test/cli-e2e.test.ts`: real CLI with Chromium and FFmpeg, JSON envelopes, missing assets, deterministic stills across concurrent sessions, embedded video/WebGL capture and audio, MP4/audio output, overwrite behavior, HTML check/still/render, static diagnostics, `dev`, `init`.
 - `test/video-determinism.test.ts`: a full-scene opacity animation over embedded video captures the requested frame, and consecutive composition frames map to consecutive source frames.

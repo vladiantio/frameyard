@@ -1,3 +1,4 @@
+import { nextPaint, waitForVideoPaint } from "../runtime/video.js";
 import type {
   TimelinePreviewClip,
   TimelinePreviewData,
@@ -142,11 +143,13 @@ function waitForVideo(video: HTMLVideoElement): Promise<void> {
 }
 
 function seekVideo(video: HTMLVideoElement, time: number): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (Math.abs(video.currentTime - time) <= 0.001 && video.readyState >= 2) {
-      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
-      return;
-    }
+  if (Math.abs(video.currentTime - time) <= 0.001 && video.readyState >= 2) {
+    return nextPaint();
+  }
+  // Register before the seek so the callback catches the frame this seek
+  // presents, not a later one.
+  const painted = waitForVideoPaint(video);
+  return new Promise<void>((resolve, reject) => {
     let onSeeked: () => void;
     let onError: () => void;
     const cleanup = (): void => {
@@ -155,7 +158,7 @@ function seekVideo(video: HTMLVideoElement, time: number): Promise<void> {
     };
     onSeeked = (): void => {
       cleanup();
-      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+      void painted.then(resolve, reject);
     };
     onError = (): void => {
       cleanup();
@@ -382,7 +385,7 @@ export function createTimelineHost(
     },
     seek,
     async settle(): Promise<void> {
-      await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+      await nextPaint();
     },
     setKeyHandler(handler) {
       keyHandler = handler;

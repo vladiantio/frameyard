@@ -3,6 +3,7 @@ import type { CompositionDiagnostic, ResolvedAudioClip } from "../contracts.js";
 import { FrameyardError } from "../errors.js";
 import { frameToSeconds } from "./clock.js";
 import { createDomAdapter } from "./document-adapter.js";
+import { nextPaint, waitForVideoPaint } from "./video.js";
 
 interface PreparedMedia {
   element: HTMLVideoElement;
@@ -268,6 +269,7 @@ async function seekVideo(video: HTMLVideoElement, frame: number, fps: number): P
     "Embedded video could not seek to the requested frame.",
     "MEDIA_SEEK_FAILED",
   );
+  const painted = waitForVideoPaint(video);
   try {
     video.currentTime = target;
   } catch (error) {
@@ -277,13 +279,7 @@ async function seekVideo(video: HTMLVideoElement, frame: number, fps: number): P
       { cause: error },
     );
   }
-  await seeked;
-}
-
-async function nextPaint(): Promise<void> {
-  await new Promise<void>((resolve) => {
-    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
-  });
+  await Promise.all([seeked, painted]);
 }
 
 /**

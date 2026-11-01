@@ -351,14 +351,17 @@ async function main(): Promise<void> {
   };
 
   const isTextEntry = (target: EventTarget | null): boolean => {
-    if (!(target instanceof HTMLElement)) {
+    // Keys forwarded from layer iframes carry elements from another realm,
+    // where `instanceof HTMLElement` is false.
+    if (!target || typeof (target as Element).tagName !== "string") {
       return false;
     }
+    const element = target as HTMLElement;
     return (
-      target.isContentEditable ||
-      target.tagName === "INPUT" ||
-      target.tagName === "TEXTAREA" ||
-      target.tagName === "SELECT"
+      element.isContentEditable ||
+      element.tagName === "INPUT" ||
+      element.tagName === "TEXTAREA" ||
+      element.tagName === "SELECT"
     );
   };
 
@@ -376,6 +379,7 @@ async function main(): Promise<void> {
     }
   };
 
+  host.setKeyHandler(handleTransportKey);
   playButton.addEventListener("click", () => setPlaying(!playing));
   stepBackButton.addEventListener("click", () => stepFrame(-1));
   stepForwardButton.addEventListener("click", () => stepFrame(1));

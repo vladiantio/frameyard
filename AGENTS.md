@@ -212,7 +212,8 @@ Test at public seams, not private helpers:
 - `test/server-html.test.ts`: `.html` entries, host injection, virtual inline controller, static error pages, `project.json` diagnostics.
 - `test/host-runtime.test.ts`: host bindings, repeat/if/class, animation scheduling, frame variables, inline/external controllers, props validation, load atomicity, dispose, diagnostics, auto mode, media settle.
 - `test/project-server.test.ts`: config loading, static routes, import map, ranges, traversal rejection.
-- `test/preview-runtime.test.ts`: HTML iframe preview, props, seeking, CSS animation, Canvas, WebGL, embedded video, determinism, diagnostics.
+- `test/preview-runtime.test.ts`: HTML iframe preview, props, seeking, transport keys, CSS animation, Canvas, WebGL, embedded video, determinism, diagnostics.
+- `test/timeline-preview-runtime.test.ts`: timeline preview UI and embedding, scrubbing, frame/one-second stepping, seek coalescing, keyboard forwarding, layer sizing.
 - `test/cli-e2e.test.ts`: real CLI with Chromium and FFmpeg, JSON envelopes, missing assets, deterministic stills across concurrent sessions, embedded video/WebGL capture and audio, MP4/audio output, overwrite behavior, HTML check/still/render, static diagnostics, `dev`, `init`.
 - `test/video-determinism.test.ts`: a full-scene opacity animation over embedded video captures the requested frame, and consecutive composition frames map to consecutive source frames.
 - `test/examples.test.ts`: example README commands use the repository CLI, and each bundled example captures a still.
@@ -224,7 +225,7 @@ Test at public seams, not private helpers:
 - `test/release.test.ts`: CI, release workflow, and pre-commit hook share `pnpm check`; release metadata verification.
 - `test/scaffold.test.ts`: scaffold file generation, package manifest, project-name normalization.
 
-Prefer one failing public-behavior test, then the minimal implementation. Use real Chromium and FFmpeg for production-path behavior; mock only external model executables. Run `pnpm test` before finishing. Browser/CLI tests are intentionally sequential (`fileParallelism: false`).
+Prefer one failing public-behavior test, then the minimal implementation. Every behavior named in a commit message needs a test that fails without the change. Use real Chromium and FFmpeg for production-path behavior; mock only external model executables. Run `pnpm test` before finishing. Browser/CLI tests are intentionally sequential (`fileParallelism: false`).
 
 ## Before finishing
 
@@ -237,6 +238,7 @@ Prefer one failing public-behavior test, then the minimal implementation. Use re
 
 - **Rebuild before browser work**: the server serves `/__frameyard/framework/*` from `dist/`.
 - **Iframe preview**: the parent owns preview audio/playback. Props apply reuses the host; composition changes reload the iframe with a unique `__fy-load` token. Cross-realm props are cloned into the iframe realm before `load`.
+- **Transport keys cross the stage iframe**: the preview stage is an iframe, so parent `keydown` listeners do not see keys while it has focus. The composition preview attaches the transport handler to `stageFrame.contentDocument`; the timeline host forwards layer `keydown` events via `setKeyHandler`. Keep both paths wired when adding shortcuts.
 - **Host load**: validates props before disposing, restores the pristine DOM snapshot, re-applies bindings, remounts the controller, and prepares media. `seek`/`settle` before a successful load reject `COMPOSITION_NOT_READY`; `dispose` during a load rejects `COMPOSITION_DISPOSED`.
 - **Errors cross the Playwright boundary** as `[CODE] message`; `src/renderer/browser.ts` parses that tag back into a `FrameyardError`. Preserve the tag and stable codes.
 - **Session close calls the host's `dispose()`** before closing the browser. Do not bypass that cleanup.

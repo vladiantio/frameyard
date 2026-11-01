@@ -225,4 +225,54 @@ describe("timeline preview runtime", () => {
       await page.close();
     }
   }, 60_000);
+
+  it("coalesces rapid timeline steps onto the latest frame", async () => {
+    const page = await browser.newPage({ viewport: { width: 1000, height: 700 } });
+    try {
+      await page.goto(new URL("/__frameyard/timeline/main", server.url).href, {
+        waitUntil: "domcontentloaded",
+      });
+      await page.waitForFunction(() => document.querySelectorAll(".timeline-layer iframe").length === 1);
+      await waitForFrame(page, 0);
+
+      await page.evaluate(() => {
+        const step = document.querySelector("#step-forward") as HTMLButtonElement;
+        step.click();
+        step.click();
+      });
+      await waitForFrame(page, 2);
+      expect(await page.locator("#frame").textContent()).toBe("2");
+
+      await page.evaluate(() => {
+        const step = document.querySelector("#step-back") as HTMLButtonElement;
+        step.click();
+        step.click();
+      });
+      await waitForFrame(page, 0);
+      expect(await page.locator("#frame").textContent()).toBe("0");
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+
+  it("forwards transport keys from a focused timeline layer", async () => {
+    const page = await browser.newPage({ viewport: { width: 1000, height: 700 } });
+    try {
+      await page.goto(new URL("/__frameyard/timeline/main", server.url).href, {
+        waitUntil: "domcontentloaded",
+      });
+      await page.waitForFunction(() => document.querySelectorAll(".timeline-layer iframe").length === 1);
+      await waitForFrame(page, 0);
+
+      await page
+        .frameLocator(".timeline-layer iframe")
+        .locator("body")
+        .click({ position: { x: 300, y: 160 } });
+      await page.keyboard.press("ArrowRight");
+      await waitForFrame(page, 1);
+      expect(await page.locator("#frame").textContent()).toBe("1");
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
 });

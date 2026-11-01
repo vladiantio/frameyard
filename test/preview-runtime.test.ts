@@ -28,6 +28,7 @@ const demoHtml = String.raw`<!doctype html>
       <div id="box" data-frame="-1" data-fy-anim-start="0" data-fy-anim-duration="20"></div>
       <div id="label"></div>
       <canvas id="canvas" width="20" height="20"></canvas>
+      <input id="note" aria-label="Note" />
       <audio src="assets/tone.wav" data-fy-start="2" data-fy-volume="0.5"></audio>
       <audio src="assets/tone.wav" data-fy-start="8" data-fy-trim="0.1" data-fy-duration="0.2"></audio>
       <fy-transcript src="assets/voice.json" words></fy-transcript>
@@ -513,6 +514,44 @@ describe("browser preview runtime", () => {
     expect(await frame.locator("#label").textContent()).toBe("Preview:0");
     expect(pageErrors).toEqual([]);
 
+    await context.close();
+  });
+
+  it("forwards transport keys from the stage iframe and ignores text entry", async () => {
+    const context = await browser.newContext({ viewport: { width: 900, height: 700 } });
+    const page = await context.newPage();
+    const pageErrors: string[] = [];
+    page.on("pageerror", (error) => pageErrors.push(error.message));
+
+    await page.goto(new URL("/__frameyard/", server.url).href);
+    await page.waitForFunction(() => {
+      const stage = document.querySelector("#stage-frame") as HTMLIFrameElement | null;
+      return stage?.contentDocument?.querySelector("#box")?.getAttribute("data-frame") === "0";
+    });
+
+    const frame = page.frameLocator("#stage-frame");
+    await frame.locator("body").click({ position: { x: 180, y: 50 } });
+    await page.keyboard.press("ArrowRight");
+    await page.waitForFunction(() => {
+      const stage = document.querySelector("#stage-frame") as HTMLIFrameElement | null;
+      return stage?.contentDocument?.querySelector("#box")?.getAttribute("data-frame") === "1";
+    });
+    expect(await page.locator("#frame").textContent()).toBe("1");
+
+    await frame.locator("#note").focus();
+    await page.keyboard.press("ArrowLeft");
+    expect(await page.locator("#frame").textContent()).toBe("1");
+
+    await page.locator("#step-forward").click();
+    await page.waitForFunction(() => {
+      const stage = document.querySelector("#stage-frame") as HTMLIFrameElement | null;
+      return stage?.contentDocument?.querySelector("#box")?.getAttribute("data-frame") === "2";
+    });
+    await page.locator("#props").focus();
+    await page.keyboard.press("ArrowLeft");
+    expect(await page.locator("#frame").textContent()).toBe("2");
+
+    expect(pageErrors).toEqual([]);
     await context.close();
   });
 

@@ -52,6 +52,8 @@ export interface TimelineHost {
   load(): Promise<void>;
   seek(frame: number): Promise<void>;
   settle(): Promise<void>;
+  /** Forward keydown events from composition and nested-timeline layers. */
+  setKeyHandler(handler: ((event: KeyboardEvent) => void) | null): void;
   dispose(): Promise<void>;
 }
 
@@ -181,6 +183,7 @@ export function createTimelineHost(
   const visualClips = data.clips.filter((clip) => clip.source.kind !== "audio");
   const layers = new Map<string, Layer>();
   let currentFrame = 0;
+  let keyHandler: ((event: KeyboardEvent) => void) | null = null;
 
   const disposeLayer = (layer: Layer): void => {
     const frame = layer.element instanceof HTMLIFrameElement ? layer.element : undefined;
@@ -230,6 +233,10 @@ export function createTimelineHost(
 
     if (source.kind === "composition" || source.kind === "timeline") {
       const frame = document.createElement("iframe");
+      // The layer is its own document; keydown there does not bubble to the preview.
+      frame.addEventListener("load", () => {
+        frame.contentDocument?.addEventListener("keydown", (event) => keyHandler?.(event));
+      });
       frame.src = source.url;
       frame.width = String(size.width);
       frame.height = String(size.height);
@@ -376,6 +383,9 @@ export function createTimelineHost(
     seek,
     async settle(): Promise<void> {
       await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+    },
+    setKeyHandler(handler) {
+      keyHandler = handler;
     },
     async dispose(): Promise<void> {
       for (const layer of Array.from(layers.values())) {

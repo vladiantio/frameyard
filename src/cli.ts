@@ -1,18 +1,25 @@
 #!/usr/bin/env node
-import { access, mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, rmdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { isPlainObject } from "./contracts.js";
-import { FrameyardError, isFrameyardError, type FrameyardDiagnostic } from "./errors.js";
+import { FrameyardError, errorMessage, isFrameyardError, type FrameyardDiagnostic } from "./errors.js";
 import { loadProject, resolveProjectRoot, type Project } from "./project.js";
 import {
   checkComposition,
-  captureStill,
+  captureStills,
   MAX_RENDER_CONCURRENCY,
   renderComposition,
   validateRenderConcurrency,
   type ProgressEvent,
+  type StillResult,
 } from "./renderer/index.js";
-import { MAX_TIMELINE_WORKERS, captureTimelineStill, checkTimeline, renderTimeline } from "./renderer/timeline.js";
+import {
+  MAX_TIMELINE_WORKERS,
+  captureTimelineStills,
+  checkTimeline,
+  renderTimeline,
+  type TimelineStillResult,
+} from "./renderer/timeline.js";
 import {
   assertContainerCodec,
   CONTAINER_EXTENSION,
@@ -58,6 +65,7 @@ const VALUE_FLAGS = new Set([
   "whisper-cli",
 ]);
 const BOOLEAN_FLAGS = new Set(["json", "overwrite", "force", "words", "help", "version"]);
+const MAX_STILL_FRAMES = 32;
 
 interface ParsedArgs {
   command: string;
@@ -226,7 +234,7 @@ function validateArgs(parsed: ParsedArgs): void {
   }
 
   if (parsed.command === "still" && !parsed.flags.has("frame")) {
-    usage('"still" requires --frame <n>.');
+    usage('"still" requires --frame <spec>.');
   }
   if (parsed.command === "render" && parsed.flags.has("concurrency")) {
     validateRenderConcurrency(Number(parsed.flags.get("concurrency")));
@@ -277,7 +285,7 @@ Usage:
   frameyard init [directory]
   frameyard dev [--port <port>] [--project <dir>]
   frameyard check <composition-id> [--props <file>] [--project <dir>] [--json]
-  frameyard still <composition-id> --frame <n> [--out <file.png>] [--props <file>] [--project <dir>] [--json]
+  frameyard still <composition-or-timeline-id> --frame <spec> [--out <file-or-dir>] [--props <file>] [--project <dir>] [--json]
   frameyard render <composition-or-timeline-id> [--out <video>] [--props <file>] [--project <dir>] [--concurrency <n>] [--workers <n>] [--encoder <name>] [--codec <name>] [--container <name>] [--scratch <dir>] [--overwrite] [--json]
   frameyard tts --speaker <name> --talker-model <gguf> --codec-model <gguf> --out <file.wav> [--text-file <file>] [--style <text>] [--language <lang>] [--device <name>] [--executable <path>] [--manifest <file>] [--force] [--json]
   frameyard transcribe <source> --model <gguf> --out <file.json> [--words] [--export srt,vtt] [--language <lang>] [--executable <path>] [--manifest <file>] [--force] [--json]
@@ -286,8 +294,8 @@ Usage:
 Options:
   --project <dir>        Use a project other than the current directory.
   --props <file>         Composition props, or a { "<clip-id>": {...} } override map for a timeline.
-  --out <file>           Output path for still, render, tts, or transcribe. Render defaults to out/<id>.mp4 in the project.
-  --frame <n>            Frame to capture for still.
+  --out <path>           Output path for still, render, tts, or transcribe. For still, one frame uses a .png file and multiple frames use a directory. Render defaults to out/<id>.mp4 in the project.
+  --frame <spec>         Still frames: n, n-m, or a comma-separated list (maximum 32 unique frames).
   --concurrency <n>      Parallel browser sessions for composition render, 1-${MAX_RENDER_CONCURRENCY} (default: 1).
   --workers <n>          Parallel segment workers for timeline render, 1-${MAX_TIMELINE_WORKERS} (default: 8).
   --encoder <name>       Encoder: auto, software, nvenc, or qsv (default: auto).
@@ -333,7 +341,7 @@ function printCommandHelp(command: string): void {
       return;
     case "still":
       process.stdout.write(
-        "Usage: frameyard still <composition-id> --frame <n> [--out <file.png>] [--props <file>] [--project <dir>] [--json]\nCapture one frame through the production rendering path.\n",
+        "Usage: frameyard still <composition-or-timeline-id> --frame <spec> [--out <path>] [--props <file>] [--project <dir>] [--overwrite] [--json]\nCapture one or more frames through the production rendering path. <spec> is a frame number, an inclusive range like 2-12, or a comma-separated list, with at most 32 unique frames per invocation. With one frame, --out is a .png file; with multiple frames, --out is a directory.\n",
       );
       return;
     case "render":
@@ -681,67 +689,228 @@ async function runCheck(parsed: ParsedArgs, signal: AbortSignal): Promise<number
   return 0;
 }
 
+function frameSpecUsage(message: string, details: Record<string, unknown>): never {
+  throw new FrameyardError("USAGE", message, { details });
+}
+
+/** Expands a still frame spec into unique frames, preserving input order. */
+function parseFrameSpec(value: string): number[] {
+  const frames: number[] = [];
+  const seen = new Set<number>();
+
+  for (const rawSegment of value.split(",")) {
+    const segment = rawSegment.trim();
+    if (segment.length === 0) {
+      frameSpecUsage(`--frame contains an empty entry: "${value}".`, { requested: value });
+    }
+    if (/\s/.test(segment)) {
+      frameSpecUsage(
+        `--frame entries must not contain spaces; write ranges like 2-12 and separate frames with commas.`,
+        {
+          requested: value,
+          segment,
+        },
+      );
+    }
+
+    const match = /^(\d+)(?:-(\d+))?$/.exec(segment);
+    if (!match) {
+      frameSpecUsage(`--frame entries must be a frame number or an inclusive range like 2-12; received "${segment}".`, {
+        requested: value,
+        segment,
+      });
+    }
+
+    const start = Number(match[1]);
+    const end = match[2] === undefined ? start : Number(match[2]);
+    if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || end < 0) {
+      frameSpecUsage(`--frame entries must use non-negative safe integers: "${segment}".`, {
+        requested: value,
+        segment,
+      });
+    }
+    if (end < start) {
+      frameSpecUsage(`--frame range "${segment}" is descending; ranges must be ascending.`, {
+        requested: value,
+        range: segment,
+      });
+    }
+
+    const count = end - start + 1;
+    if (count > MAX_STILL_FRAMES) {
+      frameSpecUsage(
+        `--frame range "${segment}" expands to ${count} frames; still captures at most ${MAX_STILL_FRAMES} frames per invocation.`,
+        { requested: value, range: segment, count, cap: MAX_STILL_FRAMES },
+      );
+    }
+
+    for (let frame = start; frame <= end; frame += 1) {
+      if (seen.has(frame)) {
+        continue;
+      }
+      seen.add(frame);
+      frames.push(frame);
+    }
+  }
+
+  if (frames.length > MAX_STILL_FRAMES) {
+    frameSpecUsage(
+      `still captures at most ${MAX_STILL_FRAMES} unique frames per invocation; the requested spec expands to ${frames.length}.`,
+      { requested: value, count: frames.length, cap: MAX_STILL_FRAMES },
+    );
+  }
+
+  return frames;
+}
+
+interface StillOutputPlan {
+  outPaths: string[];
+  outDir?: string;
+  createdOutDir: boolean;
+}
+
+async function resolveStillOutputs(options: {
+  targetId: string;
+  frames: number[];
+  outValue: string | true | undefined;
+  cwd: string;
+}): Promise<StillOutputPlan> {
+  const explicit = typeof options.outValue === "string" ? options.outValue : undefined;
+
+  if (options.frames.length === 1) {
+    const frame = options.frames[0] as number;
+    const outPath = path.resolve(options.cwd, explicit ?? `still-${options.targetId}-${frame}.png`);
+    return { outPaths: [outPath], createdOutDir: false };
+  }
+
+  let outDir: string;
+  let createdOutDir = false;
+  if (explicit === undefined) {
+    outDir = options.cwd;
+  } else {
+    outDir = path.resolve(options.cwd, explicit);
+    if (path.extname(outDir).toLowerCase() === ".png") {
+      throw new FrameyardError(
+        "USAGE",
+        `With multiple frames, --out must be a directory, not a .png file: ${explicit}`,
+      );
+    }
+
+    let existing: Awaited<ReturnType<typeof stat>> | undefined;
+    try {
+      existing = await stat(outDir);
+    } catch {
+      existing = undefined;
+    }
+    if (existing?.isFile()) {
+      throw new FrameyardError("USAGE", `With multiple frames, --out must be a directory: ${outDir}`);
+    }
+    if (existing === undefined) {
+      try {
+        await mkdir(outDir, { recursive: true });
+      } catch (error) {
+        throw new FrameyardError(
+          "OUTPUT_FAILED",
+          `Could not create output directory ${outDir}: ${errorMessage(error)}`,
+          { cause: error },
+        );
+      }
+      createdOutDir = true;
+    }
+  }
+
+  const outPaths = options.frames.map((frame) => path.join(outDir, `still-${options.targetId}-${frame}.png`));
+  return { outPaths, outDir, createdOutDir };
+}
+
+async function removeDirIfEmpty(directory: string): Promise<void> {
+  try {
+    await rmdir(directory);
+  } catch {
+    // Keep the directory when it is not empty or was already removed.
+  }
+}
+
+function printStillResult(
+  result: StillResult | TimelineStillResult,
+  targetId: string,
+  timeline: boolean,
+  json: boolean,
+): void {
+  printDiagnostics(result.diagnostics);
+  if (json) {
+    printJson({ ok: true, command: "still", ...result });
+    return;
+  }
+
+  const target = timeline ? `timeline ${targetId}` : targetId;
+  for (const frame of result.frames) {
+    process.stdout.write(
+      `Wrote frame ${frame.frame} of ${target} to ${frame.path} (${result.width}×${result.height})\n`,
+    );
+  }
+  if (result.frames.length > 1) {
+    const directory = path.dirname(result.frames[0]?.path ?? "");
+    process.stdout.write(
+      `Wrote ${result.frames.length} frames of ${target} to ${directory} (${result.width}×${result.height})\n`,
+    );
+  }
+}
+
 async function runStill(parsed: ParsedArgs, signal: AbortSignal): Promise<number> {
   const project = await projectFromFlag(parsed.flags);
   const props = await readPropsFile(parsed.flags);
   const targetId = parsed.positionals[0] as string;
-  const frame = Number(parsed.flags.get("frame"));
-  if (!Number.isInteger(frame) || frame < 0) {
-    usage("--frame must be a non-negative integer.");
+  const frameValue = parsed.flags.get("frame");
+  if (typeof frameValue !== "string") {
+    usage('"still" requires --frame <spec>.');
   }
 
-  const outValue = parsed.flags.get("out");
-  const outPath = path.resolve(
-    process.cwd(),
-    typeof outValue === "string" ? outValue : `still-${targetId}-${frame}.png`,
-  );
+  const frames = parseFrameSpec(frameValue);
+  const outputPlan = await resolveStillOutputs({
+    targetId,
+    frames,
+    outValue: parsed.flags.get("out"),
+    cwd: process.cwd(),
+  });
+  const overwrite = parsed.flags.has("overwrite") === true;
   const json = parsed.flags.has("json") === true;
 
-  if (project.timelines.has(targetId)) {
-    if (props !== undefined && !isPlainObject(props)) {
-      usage("Timeline --props must be a JSON object keyed by composition clip id.");
+  try {
+    if (project.timelines.has(targetId)) {
+      if (props !== undefined && !isPlainObject(props)) {
+        usage("Timeline --props must be a JSON object keyed by composition clip id.");
+      }
+      const result = await captureTimelineStills({
+        project,
+        timelineId: targetId,
+        frames,
+        outPaths: outputPlan.outPaths,
+        ...(props !== undefined ? { propsOverrides: props as Record<string, unknown> } : {}),
+        overwrite,
+        signal,
+      });
+      printStillResult(result, targetId, true, json);
+      return 0;
     }
-    const result = await captureTimelineStill({
+
+    const result = await captureStills({
       project,
-      timelineId: targetId,
-      frame,
-      outPath,
-      ...(props !== undefined ? { propsOverrides: props as Record<string, unknown> } : {}),
-      overwrite: parsed.flags.has("overwrite") === true,
+      compositionId: targetId,
+      props,
+      frames,
+      outPaths: outputPlan.outPaths,
+      overwrite,
       signal,
     });
-
-    printDiagnostics(result.diagnostics);
-    if (json) {
-      printJson({ ok: true, command: "still", ...result });
-    } else {
-      process.stdout.write(
-        `Wrote frame ${result.frame} of timeline ${targetId} to ${result.path} (${result.width}×${result.height})\n`,
-      );
-    }
+    printStillResult(result, targetId, false, json);
     return 0;
+  } catch (error) {
+    if (outputPlan.createdOutDir && outputPlan.outDir !== undefined) {
+      await removeDirIfEmpty(outputPlan.outDir);
+    }
+    throw error;
   }
-
-  const compositionId = targetId;
-  const result = await captureStill({
-    project,
-    compositionId,
-    props,
-    frame,
-    outPath,
-    overwrite: parsed.flags.has("overwrite") === true,
-    signal,
-  });
-
-  printDiagnostics(result.diagnostics);
-  if (json) {
-    printJson({ ok: true, command: "still", ...result });
-  } else {
-    process.stdout.write(
-      `Wrote frame ${result.frame} of ${compositionId} to ${result.path} (${result.width}×${result.height})\n`,
-    );
-  }
-  return 0;
 }
 
 async function runRender(parsed: ParsedArgs, signal: AbortSignal): Promise<number> {

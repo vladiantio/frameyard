@@ -1,11 +1,27 @@
 import { execFile } from "node:child_process";
-import { cp, mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 
 const exec = promisify(execFile);
+
+async function runScript(
+  script: string,
+  args: string[],
+  env: NodeJS.ProcessEnv = {},
+): Promise<{ code: number; stdout: string; stderr: string }> {
+  try {
+    const { stdout, stderr } = await exec(process.execPath, [script, ...args], {
+      env: { ...process.env, ...env },
+    });
+    return { code: 0, stdout, stderr };
+  } catch (error) {
+    const failure = error as { code?: number; stdout?: string; stderr?: string };
+    return { code: failure.code ?? 1, stdout: failure.stdout ?? "", stderr: failure.stderr ?? "" };
+  }
+}
 
 // Containers the `skills` CLI scans directly. Outside these it falls back to a
 // recursive search, which only resolves while the repository has one skill.
@@ -116,6 +132,30 @@ describe("official agent skill", () => {
       });
 
       expect(stdout.trim()).toBe(packageJson.version);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("ignores a dist/cli.js that is not part of the frameyard package", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "frameyard-skill-"));
+    try {
+      const host = path.join(root, "host");
+      const copied = path.join(host, ".claude", "skills", "frameyard");
+      await cp(path.resolve("skills/frameyard"), copied, { recursive: true });
+      await mkdir(path.join(host, ".claude", "dist"), { recursive: true });
+      await writeFile(path.join(host, ".claude", "dist", "cli.js"), 'process.stdout.write("unrelated-cli\\n");\n');
+
+      const emptyPath = path.join(root, "empty-path");
+      await mkdir(emptyPath, { recursive: true });
+      const result = await runScript(path.join(copied, "scripts", "frameyard.mjs"), ["--version"], {
+        PATH: emptyPath,
+        FRAMEYARD_CLI: "",
+      });
+
+      expect(result.stdout).not.toContain("unrelated-cli");
+      expect(result.code).toBe(1);
+      expect(result.stderr).toContain("The frameyard CLI was not found");
     } finally {
       await rm(root, { recursive: true, force: true });
     }

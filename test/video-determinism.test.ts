@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { assertFreshDist } from "./helpers/dist.ts";
 
 const exec = promisify(execFile);
 const cli = path.resolve("dist/cli.js");
@@ -242,6 +243,7 @@ async function still(id: string, frame: number, out: string): Promise<string> {
 }
 
 beforeAll(async () => {
+  await assertFreshDist();
   root = await mkdtemp(path.join(tmpdir(), "frameyard-video-"));
   await mkdir(path.join(root, "compositions"), { recursive: true });
   await mkdir(path.join(root, "assets"), { recursive: true });

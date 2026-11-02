@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { assertFreshDist } from "./helpers/dist.ts";
 
 const exec = promisify(execFile);
 const cli = path.resolve("dist/cli.js");
@@ -55,6 +56,7 @@ async function run(args: string[]): Promise<{ code: number; stdout: string; stde
 }
 
 beforeAll(async () => {
+  await assertFreshDist();
   temp = await mkdtemp(path.join(tmpdir(), "frameyard-examples-"));
 });
 
@@ -124,4 +126,36 @@ describe("bundled examples", () => {
     expect(png.subarray(0, 8)).toEqual(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
     expect((await stat(out)).size).toBeGreaterThan(1024);
   });
+
+  it("captures multiple stills from a timeline in one command", async () => {
+    const outDir = path.join(temp, "video-timeline-batch");
+    const result = await run([
+      "still",
+      "video-timeline",
+      "--frame",
+      "210,300",
+      "--project",
+      path.resolve("examples", "video"),
+      "--out",
+      outDir,
+      "--json",
+    ]);
+
+    expect(result.code, result.stderr).toBe(0);
+    const json = JSON.parse(result.stdout) as {
+      timeline?: string;
+      frames?: Array<{ frame: number; path: string }>;
+      frame?: number;
+      path?: string;
+    };
+    expect(json.timeline).toBe("video-timeline");
+    expect(json.frames?.map((entry) => entry.frame)).toEqual([210, 300]);
+    expect(json).not.toHaveProperty("frame");
+    expect(json).not.toHaveProperty("path");
+
+    for (const frame of [210, 300]) {
+      const png = await readFile(path.join(outDir, `still-video-timeline-${frame}.png`));
+      expect(png.subarray(0, 8)).toEqual(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+    }
+  }, 120_000);
 });

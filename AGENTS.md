@@ -29,12 +29,15 @@ pnpm check                             # scripts, lint, format, typechecks, full
 pnpm check:preview                     # static checks, then build + preview tests
 pnpm test                              # builds first, then runs the full suite
 pnpm test:preview                      # builds first, then runs the preview test files
-pnpm vitest run test/contracts.test.ts # one test file
+pnpm test:unit                         # tool-free subset used by the pre-commit hook
+pnpm test test/contracts.test.ts       # one test file, builds first
 pnpm bench                             # seek/capture/encode/full-render timings
 pnpm compare-stills a.png b.png        # exact decoded-pixel diff; exits nonzero on any difference
 ```
 
 `pnpm install` installs the local git hooks: pre-commit runs `pnpm check:static` and the unit tests; pre-push runs the full suite. `pnpm check` remains the single entry point CI and the release workflow share; `pnpm check:preview` is a local subset for preview-only UI work, not a CI replacement. Add new checks to `package.json`, not to the workflow files. Lint and formatting use `oxlint` and `oxfmt`; configuration lives in `.oxlintrc.json` and `.oxfmtrc.json`.
+
+Browser and CLI tests spawn `dist/cli.js`, so run one file with `pnpm test <file>`; a bare `pnpm vitest run <file>` skips the build and tests the previous binary. After edits limited to docs, the skill, or scaffold prose, `pnpm check:static` plus `pnpm vitest run test/docs.test.ts test/skill.test.ts test/scaffold.test.ts` covers the change; reserve the full `pnpm check` for the final state.
 
 Releases are tag-driven. Read `RELEASING.md` before publishing. `pnpm set-version <version>` updates the package, runtime, and skill versions together; `pnpm set-version --check` verifies they agree; `pnpm retag-release <version>` recovers an unpublished tag after a failed release.
 
@@ -179,6 +182,8 @@ Timeline path: `src/timeline/resolve.ts` resolves the JSON and references; `src/
 - Non-interactive commands support `--json`. With `--json`, stdout contains only the structured result/error envelope; progress and human diagnostics go to stderr.
 - Keep error envelopes stable: `{ ok: false, command, error: { code, message, details? }, diagnostics? }`. Usage failures emitted before a command is known still produce an envelope with `command: null`.
 - Failures exit nonzero. A render never publishes a partial file.
+- Output directories are created during preflight, before Chromium starts; the CLI removes a directory it created when the invocation publishes nothing.
+- `elapsedMs` measures from static validation and preflight through publication; CLI argument parsing is excluded.
 - Preserve exact frame counts in FFmpeg (`-frames:v`) and bounded audio (`-t`).
 - `check` must inspect every frame and report audio/transcript durations and diagnostics without capturing or encoding.
 - `doctor` exits nonzero when required checks fail but does not throw away the structured findings.
@@ -196,6 +201,7 @@ Timeline path: `src/timeline/resolve.ts` resolves the JSON and references; `src/
 - **Timeline preview** → `src/preview/timeline-main.ts`, `src/preview/timeline-host.ts`, `src/preview/timeline-data.ts`, `src/server/timeline-preview-*.ts`; extend `test/timeline-preview.test.ts`, `test/timeline-preview-runtime.test.ts`; keep `docs/preview-testing.md` in step with the embedded host API.
 - **Server routes, host injection, inline controller, `project.json`, timeline preview/data** → `src/server/server.ts`, `src/server/composition-html.ts`; extend `test/project-server.test.ts`, `test/server-html.test.ts`, `test/timeline-preview.test.ts`.
 - **Chromium capture, audio/transcript inspection, FFmpeg** → `src/renderer/`; extend `test/cli-e2e.test.ts`, `test/video-determinism.test.ts`, and verify artifacts with FFprobe.
+- **CLI commands, flags, and their result contracts** → `src/cli.ts`; update `README.md` (commands table, options, non-goals), `docs/v0.1-design.md` §5-§6 and non-goals, `GLOSSARY.md`, `skills/frameyard/SKILL.md` and its references (`json-results`, `diagnostics`, `failure-recovery`, `common-mistakes`, `deterministic-authoring`, `timelines`), `src/scaffold.ts`, and `CHANGELOG.md`; extend `test/cli-e2e.test.ts` and `test/docs.test.ts`.
 - **Static validation integration and result schemas** → `src/renderer/index.ts`, `src/renderer/timeline.ts`, `src/cli.ts`; extend `test/cli-e2e.test.ts`, `test/agent-workflow.test.ts`, `test/timeline-render.test.ts`.
 - **TTS, transcription, provenance, executable resolution** → `src/assets/`; extend `test/assets-e2e.test.ts` with fake executables.
 - **Doctor checks** → `src/doctor.ts`, `src/cli.ts`; extend `test/assets-e2e.test.ts`.
@@ -229,7 +235,7 @@ Test at public seams, not private helpers:
 - `test/agent-workflow.test.ts`: source preservation, check/still/render reporting, failure reporting through the CLI.
 - `test/real-integrations.test.ts`: opt-in real-model checks enabled by `FRAMEYARD_REAL_INTEGRATIONS=1` and explicit model paths.
 - `test/skill.test.ts`: skill layout discovery, frontmatter name, single skill, contents, API version, package inclusion, thin wrapper.
-- `test/docs.test.ts`: user-facing command examples use `npx frameyard`; scaffold markdown commands and package scripts are real; every test file is listed in this section.
+- `test/docs.test.ts`: user-facing command examples use `npx frameyard`; scaffold markdown commands and package scripts are real; the still frame cap matches `src/cli.ts`; every test file is listed in this section.
 - `test/release.test.ts`: CI, release workflow, and pre-commit hook share `pnpm check`; release metadata verification.
 - `test/scaffold.test.ts`: scaffold file generation, package manifest, project-name normalization.
 

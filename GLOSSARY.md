@@ -281,7 +281,7 @@ The finished audiovisual output of a successful render.
 _Avoid_: Composition, project
 
 **Still**:
-A single frame captured as a PNG through the production rendering path for a timeline or composition.
+One or more requested frames captured as PNGs through the production rendering path for a timeline or composition. A single invocation captures at most 32 inspection frames; this is not image-sequence output.
 _Avoid_: Frame export, image sequence
 
 **Reproducibility**:

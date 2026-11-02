@@ -10,15 +10,17 @@ Install from the repository with the open agent-skills CLI:
 npx skills add vladiantio/frameyard
 ```
 
-The skill lives at `skills/frameyard` in the repository and npm package. Alternatively, copy or symlink the whole `skills/frameyard/` directory into the skill location your agent host uses. Examples:
+The skill lives at `skills/frameyard` in the repository and npm package. Alternatively, copy or symlink the whole `skills/frameyard/` directory into the skill location your agent host uses:
 
-- Claude Code project skills: `.claude/skills/frameyard`
-- Agent hosts that read `.agents/skills`: `.agents/skills/frameyard`
-- Global installations: place it under your host's documented personal skills directory
+- Project-scoped: `.claude/skills/frameyard` for Claude Code, or `.agents/skills/frameyard` for hosts that read the shared `.agents` container.
+- Personal or global: `~/.claude/skills/frameyard`, `~/.agents/skills/frameyard`, or another host's personal directory; for example, OpenCode reads `~/.config/opencode/skills/frameyard`.
+- Keep one canonical copy and symlink it into the host directories you use, so updates do not drift.
 
-The skill is host-neutral: it uses only the normal `frameyard` project format and CLI. There is no agent-only runtime.
+The skill is host-neutral: it uses only the normal `frameyard` project format and CLI. There is no agent-only runtime. All `references/`, `scripts/`, and `SKILL.md` paths inside the skill are relative, so the directory works wherever it is installed.
 
 Run the CLI with `npx frameyard`. It resolves the latest published version; pin it with `npx frameyard@<version>` or install the package locally when the CLI version must match the skill. When the skill is copied outside the npm package, `scripts/frameyard.mjs` falls back to the `frameyard` command on `PATH`; if that command is unavailable, set `FRAMEYARD_CLI` to an installed CLI path.
+
+When you work inside the Frameyard repository itself, `npx frameyard` resolves the published package, not your working tree. Run the built CLI (`node dist/cli.js`, after `pnpm build`) or `skills/frameyard/scripts/frameyard.mjs`, which prefers the repository build. The repository `AGENTS.md` is the authority for development commands.
 
 ## Contents
 

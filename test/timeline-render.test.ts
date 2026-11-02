@@ -1,11 +1,17 @@
 import { execFile } from "node:child_process";
-import { copyFile, mkdtemp, mkdir, rm, stat, writeFile } from "node:fs/promises";
+import { copyFile, mkdtemp, mkdir, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 import { loadProject } from "../src/project.ts";
-import { captureTimelineStill, checkTimeline, clampTimelineWorkers, renderTimeline } from "../src/renderer/timeline.ts";
+import {
+  captureTimelineStill,
+  captureTimelineStills,
+  checkTimeline,
+  clampTimelineWorkers,
+  renderTimeline,
+} from "../src/renderer/timeline.ts";
 import { BARCODE, barcodeCompositionHtml, barcodeCropFilter, decodeBarcodeFrames } from "./helpers/frame-probe.ts";
 import { mediaPixel } from "./helpers/media.ts";
 
@@ -34,6 +40,24 @@ const compositionHtml = `<!doctype html>
     <fy-composition width="320" height="180" fps="10" duration-in-frames="10">
       <div class="dot"></div>
     </fy-composition>
+  </body>
+</html>
+`;
+
+const throwingCompositionHtml = `<!doctype html>
+<html>
+  <head><meta charset="utf-8"></head>
+  <body>
+    <fy-composition width="320" height="180" fps="10" duration-in-frames="10">
+      <div class="dot"></div>
+    </fy-composition>
+    <script type="text/fy-controller">
+export default {
+  update({ frame }) {
+    if (frame === 2) throw new Error("frame boom");
+  },
+};
+    </script>
   </body>
 </html>
 `;
@@ -156,6 +180,64 @@ describe("timeline rendering", () => {
       width: 320,
       height: 180,
     });
+  }, 120_000);
+
+  it("captures a batch of timeline stills through the clip composite path", async () => {
+    const { root } = await createProject();
+    const project = await loadProject(root);
+    const outDir = path.join(root, "out", "frames");
+
+    const result = await captureTimelineStills({
+      project,
+      timelineId: "main",
+      frames: [0, 5, 9],
+      outPaths: [0, 5, 9].map((frame) => path.join(outDir, `still-main-${frame}.png`)),
+    });
+
+    expect(result.timeline).toBe("main");
+    expect(result.width).toBe(320);
+    expect(result.height).toBe(180);
+    expect(result.frames.map((entry) => entry.frame)).toEqual([0, 5, 9]);
+    expect(result).not.toHaveProperty("frame");
+    expect(result).not.toHaveProperty("path");
+
+    for (const frame of [0, 5, 9]) {
+      const batchPath = path.join(outDir, `still-main-${frame}.png`);
+      expect((await stat(batchPath)).size).toBeGreaterThan(0);
+
+      const singlePath = path.join(root, "out", `single-${frame}.png`);
+      const single = await captureTimelineStill({
+        project,
+        timelineId: "main",
+        frame,
+        outPath: singlePath,
+      });
+      expect(single.frame).toBe(frame);
+      expect(await mediaPixel(batchPath, 10, 90)).toEqual(await mediaPixel(singlePath, 10, 90));
+      expect(await mediaPixel(batchPath, 180, 90)).toEqual(await mediaPixel(singlePath, 180, 90));
+    }
+  }, 120_000);
+
+  it("publishes no timeline stills when a frame fails", async () => {
+    const { root } = await createProject();
+    await writeFile(path.join(root, "compositions", "intro.html"), throwingCompositionHtml);
+    const project = await loadProject(root);
+    const outDir = path.join(root, "out", "batch-failure");
+    const frames = [0, 1, 2, 3];
+
+    await expect(
+      captureTimelineStills({
+        project,
+        timelineId: "main",
+        frames,
+        outPaths: frames.map((frame) => path.join(outDir, `still-main-${frame}.png`)),
+      }),
+    ).rejects.toMatchObject({
+      code: "COMPOSITION_ERROR",
+      details: { frames, failedFrame: 2 },
+    });
+
+    expect(await readdir(outDir)).toEqual([]);
   }, 120_000);
 
   it("renders a composition and timeline audio through the segmented pipeline", async () => {

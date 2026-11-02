@@ -39,6 +39,7 @@ npx frameyard doctor
 npx frameyard check main
 npx frameyard render main --props props/main.json --workers 8 --scratch /path/to/scratch
 npx frameyard still main --frame 42 --out main-frame.png
+npx frameyard still main --frame 0,118-126 --out out/stills
 ```
 
 The scaffold wraps its composition in `timelines/main.timeline.json`. `render` writes the video to `out/main.mp4` in the project by default; pass `--out <file.mp4>` to choose another path. The composition remains renderable on its own with `npx frameyard render hello --props props/hello.json`. The scaffold's `.gitignore` ignores `out/`.
@@ -271,13 +272,13 @@ Transcript paths resolve from the project root. `words` requires actual measured
 | `frameyard init [directory]` | Scaffold a timeline-first HTML/JSON project with an `AGENTS.md` guide and pinned scripts |
 | `frameyard dev [--port <port>]` | Start the preview server; preview compositions or open a timeline |
 | `frameyard check <id> [--props <file>]` | Run static validation, then evaluate every frame of a composition or timeline without capture |
-| `frameyard still <id> --frame <n>` | Capture one PNG through the production path for a composition or timeline |
+| `frameyard still <id> --frame <spec>` | Capture one or more PNGs through the production path for a composition or timeline |
 | `frameyard render <id> [--out <video.mp4>]` | Render a composition directly, or a timeline through the segmented lossless pipeline; defaults to `out/<id>.mp4` |
 | `frameyard tts ...` | Produce one frozen 24 kHz mono WAV with local qwentts.cpp |
 | `frameyard transcribe ...` | Produce canonical transcript JSON with optional word timings and SRT/VTT exports |
 | `frameyard doctor` | Inspect core requirements, optional integrations, and manifest integrity |
 
-Common options: `--project <dir>`, `--json`, `--help`, and `--version`. `still` and `render` accept `--overwrite`. Composition renders accept `--concurrency <n>` (1-16); timeline renders accept `--workers <n>` (1-16) and `--scratch <dir>`. `render` also accepts `--container <mp4|mov|mkv|webm>`, `--codec <h264|hevc|vp9>`, and `--encoder <auto|software|nvenc|qsv>`. MP4 and MOV hold H.264 and HEVC with AAC; MKV holds H.264, HEVC, and VP9; WebM holds VP9 with Opus and defaults to VP9. `--out` must use the container's extension, and `render` defaults to `out/<id>.<ext>` accordingly. `--encoder` defaults to `auto`, which probes NVENC, then Quick Sync with a one-frame encode, and falls back to the codec's software encoder; `software` forces `libx264`, `libx265`, or `libvpx-vp9`. For a timeline, `--props` is a JSON object keyed by composition clip id; for a composition, it is the props object. `tts` and `transcribe` accept `--force`. `init` takes the target directory as a positional argument. Explicit output paths passed with `--out` are relative to the current working directory.
+Common options: `--project <dir>`, `--json`, `--help`, and `--version`. `still` and `render` accept `--overwrite`. `still` accepts `--frame <spec>`, where `<spec>` is a frame number, an inclusive range such as `2-12`, or a comma-separated list; duplicates are removed preserving the first occurrence, order is preserved, and one invocation captures at most 32 unique frames. With one frame, `--out` is a `.png` file; with multiple frames, it is a directory and the files are named `still-<id>-<frame>.png`, defaulting to the current working directory. Composition renders accept `--concurrency <n>` (1-16); timeline renders accept `--workers <n>` (1-16) and `--scratch <dir>`. `render` also accepts `--container <mp4|mov|mkv|webm>`, `--codec <h264|hevc|vp9>`, and `--encoder <auto|software|nvenc|qsv>`. MP4 and MOV hold H.264 and HEVC with AAC; MKV holds H.264, HEVC, and VP9; WebM holds VP9 with Opus and defaults to VP9. `--out` must use the container's extension, and `render` defaults to `out/<id>.<ext>` accordingly. `--encoder` defaults to `auto`, which probes NVENC, then Quick Sync with a one-frame encode, and falls back to the codec's software encoder; `software` forces `libx264`, `libx265`, or `libvpx-vp9`. For a timeline, `--props` is a JSON object keyed by composition clip id; for a composition, it is the props object. `tts` and `transcribe` accept `--force`. `init` takes the target directory as a positional argument. Explicit output paths passed with `--out` are relative to the current working directory.
 
 A render fails immediately on an uncaught error, unhandled rejection, missing required asset, or invalid composition output. It writes to a temporary file and publishes only after FFmpeg succeeds. Existing outputs are not replaced unless `--overwrite` is supplied.
 
@@ -386,7 +387,7 @@ A timeline renders through segments:
 4. FFmpeg applies fit, static transforms, opacity, video/image decoding, and audio mixing, and encodes each segment as H.264, HEVC, or VP9.
 5. Segments are concatenated in timeline order without re-encoding and the global audio mix is muxed into the final output.
 
-Composition concurrency changes scheduling only. Timeline workers process independent segments; output order and captured composition frames remain deterministic. `check` and `still` use the same clip capture and composite path as their target.
+Composition concurrency changes scheduling only. Timeline workers process independent segments; output order and captured composition frames remain deterministic. `check` and `still` use the same clip capture and composite path as their target. A multi-frame `still` captures sequentially, reuses one preview server, and its frames are pixel-identical to capturing each frame separately.
 
 Both targets encode H.264 in MP4 by default. `--container` selects `mp4`, `mov`, `mkv`, or `webm`, `--codec` selects `h264`, `hevc`, or `vp9`, and `--encoder` selects how that codec is encoded: `software` forces `libx264`, `libx265`, or `libvpx-vp9`; `nvenc` and `qsv` drive NVIDIA NVENC and Intel Quick Sync; the default `auto` probes NVENC, then Quick Sync, then falls back to the codec's software encoder. WebM defaults to VP9 and rejects H.264 and HEVC; MP4 and MOV reject VP9. VP9 renders use Opus audio everywhere; H.264 and HEVC use AAC. The probe is a real one-frame encode, so a driver that lists an encoder but cannot open it is skipped instead of failing mid-render. Hardware encoders are faster but produce different encoded bytes and file sizes at the calibrated quality. HEVC in MP4 and MOV uses the `hvc1` sample entry so Apple players accept it, but it does not play in browsers without platform HEVC decoding, so H.264 remains the portable default. Hardware encoders never capture frames, and the segmented timeline pipeline still writes lossless alpha-preserving FFV1 intermediates in software. NVENC allows eight concurrent encode sessions on consumer drivers, so timeline `--workers` is capped at eight when NVENC resolves, with an `ENCODER_WARNING` diagnostic when a larger value is requested. Use `--encoder software` when the encoder choice must not depend on the host GPU, such as CI or a reproducible A/B measurement; encoded bytes still depend on the FFmpeg build and its threading.
 
@@ -411,11 +412,11 @@ Deferred from this implementation slice:
 - `qwentts.cpp` reference-audio voice cloning and VoiceDesign
 - Automatic long-text chunking, streaming synthesis, and alternative generated-audio formats
 - Automatic upstream builds, model downloads, environment repair, and hosted rendering
-- Batch still capture and general image-sequence output
+- Unbounded batch still capture and general image-sequence output; `still` accepts at most 32 inspection frames per invocation
 - React or other UI-framework adapters, plugin APIs, and agent-only runtimes
 - TypeScript transpilation for project compositions and npm dependency optimization
 
-See the [design baseline](./docs/v0.1-design.md) for the full product contract, [ADR 0007](./docs/adr/0007-make-html-documents-the-composition-unit.md) for the HTML authoring decision, [ADR 0010](./docs/adr/0010-make-timelines-the-render-unit.md) for timelines, [ADR 0012](./docs/adr/0012-render-timelines-with-segmented-lossless-clip-intermediates.md) for segmented rendering, and the [domain glossary](./GLOSSARY.md) for terminology.
+See the [design baseline](./docs/v0.1-design.md) for the full product contract, [ADR 0007](./docs/adr/0007-make-html-documents-the-composition-unit.md) for the HTML authoring decision, [ADR 0010](./docs/adr/0010-make-timelines-the-render-unit.md) for timelines, [ADR 0012](./docs/adr/0012-render-timelines-with-segmented-lossless-clip-intermediates.md) for segmented rendering, [ADR 0013](./docs/adr/0013-capture-bounded-multi-frame-stills-for-inspection.md) for bounded multi-frame stills, and the [domain glossary](./GLOSSARY.md) for terminology.
 
 ## Repository layout
 

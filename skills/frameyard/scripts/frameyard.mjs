@@ -1,12 +1,29 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
-const localCli = path.resolve(scriptDir, "../../../dist/cli.js");
+const packageRoot = path.resolve(scriptDir, "../../..");
 const configured = process.env.FRAMEYARD_CLI;
+
+// Only prefer a sibling build inside the frameyard package itself. A copied
+// skill sits three levels below its host directory, which may hold an
+// unrelated dist/cli.js.
+function packageCli() {
+  const manifestPath = path.join(packageRoot, "package.json");
+  const cliPath = path.join(packageRoot, "dist", "cli.js");
+  if (!existsSync(manifestPath) || !existsSync(cliPath)) return undefined;
+  try {
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+    return manifest.name === "frameyard" ? cliPath : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+const localCli = packageCli();
 
 let command;
 let args;
@@ -22,7 +39,7 @@ if (configured) {
     command = configured;
     args = process.argv.slice(2);
   }
-} else if (existsSync(localCli)) {
+} else if (localCli) {
   command = process.execPath;
   args = [localCli, ...process.argv.slice(2)];
 } else {

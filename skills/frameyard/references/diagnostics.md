@@ -75,7 +75,7 @@ Static validation covers:
 - `controller`: `{ kind: "inline" }`, `{ kind: "external", src }`, or `null`
 - `diagnostics`: all static and runtime diagnostics, deduplicated
 
-`check` also exposes `metadata`, `framesChecked`, `audio.details`, and `transcripts.details`. `still` exposes `frame`, `path`, `width`, and `height`. `render` exposes the output path, dimensions, frame count, concurrency, bytes, and audio/transcript clip counts.
+`check` also exposes `metadata`, `framesChecked`, `audio.details`, and `transcripts.details`. `still` exposes `frames`, `width`, and `height`, plus `frame` and `path` when exactly one frame was captured. `render` exposes the output path, dimensions, frame count, concurrency, bytes, and audio/transcript clip counts.
 
 Failures use the same envelope with `error.code`, `error.message`, optional `error.details`, and top-level `diagnostics`.
 

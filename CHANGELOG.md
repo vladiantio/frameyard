@@ -21,6 +21,18 @@ contract change may ship in a minor release and is called out explicitly below.
   `hvc1` sample entry in MP4/MOV, the output extension must match the
   container, timeline workers are capped at the NVENC session limit, and render
   results report the resolved `container`, `codec`, and `encoder`.
+- `still --frame` accepts a frame number, an inclusive range, or a
+  comma-separated list and captures up to 32 unique frames in one invocation.
+  Multi-frame output writes
+  `still-<id>-<frame>.png` files to a directory; all frames are captured to
+  temporary files before any file is published.
+
+### Changed
+
+- `still` results always include `frames`; `frame` and `path` remain only when
+  exactly one frame was captured. The `--frame` contract, multi-frame `--out`
+  directory behavior, and the 32-frame inspection cap are documented in
+  ADR 0013. Single-frame output paths and pixels are unchanged.
 
 ## [0.6.0] - 2026-11-01
 

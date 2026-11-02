@@ -120,6 +120,7 @@ A nested timeline clip behaves as one layer: its internal tracks are composited 
 ```sh
 npx frameyard check main --json
 npx frameyard still main --frame 42 --out main-42.png --json
+npx frameyard still main --frame 0,118-126 --out out/stills --json
 npx frameyard render main --props props/main.json --workers 8 --scratch /path/to/scratch --json
 ```
 
@@ -129,7 +130,7 @@ npx frameyard render main --props props/main.json --workers 8 --scratch /path/to
 - `--container <mp4|mov|mkv|webm>` selects the delivery container (default `mp4`); `--codec <h264|hevc|vp9>` selects the codec, and `--encoder <auto|software|nvenc|qsv>` selects how it is encoded. MP4 and MOV hold H.264/HEVC with AAC; MKV holds all three; WebM holds VP9 with Opus and defaults to VP9. `auto` is the default and probes NVENC, then Quick Sync, then software; `software` forces `libx264`, `libx265`, or `libvpx-vp9`. FFV1 intermediates stay lossless and software-encoded, HEVC keeps the `hvc1` tag in MP4/MOV, and the output extension must match the container.
 - `--concurrency` is composition-only.
 - `render` defaults to `out/<timeline-id>.mp4`.
-- `check` evaluates every timeline frame and composition frame. `still` captures one frame through the same clip capture and composite path.
+- `check` evaluates every timeline frame and composition frame. `still` captures one or more requested frames through the same clip capture and composite path; a multi-frame still resolves the timeline, starts one server, and reuses one scratch directory. The `--frame` spec and 32-frame cap are the same as for compositions.
 - `npx frameyard dev` lists timelines in the preview; the timeline view has a program monitor, read-only tracks and clips, playhead, playback, audio controls, and diagnostics.
 
 ## Determinism and performance

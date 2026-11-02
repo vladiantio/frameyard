@@ -2,13 +2,14 @@ import { link, mkdir, mkdtemp, rename, rm, stat, writeFile } from "node:fs/promi
 import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import type {
-  CompositionDiagnostic,
-  CompositionSourceInfo,
-  ResolvedAudioClip,
-  ResolvedTranscriptClip,
+import {
+  isPlainObject,
+  type CompositionDiagnostic,
+  type CompositionSourceInfo,
+  type ResolvedAudioClip,
+  type ResolvedTranscriptClip,
 } from "../contracts.js";
-import { FrameyardError } from "../errors.js";
+import { FrameyardError, isFrameyardError } from "../errors.js";
 import { validateHtmlComposition, type StaticValidationResult } from "../html/validate.js";
 import type { Project } from "../project.js";
 import { startPreviewServer } from "../server/server.js";
@@ -83,15 +84,34 @@ export interface TimelineStillOptions {
   signal?: AbortSignal;
 }
 
+export interface TimelineStillFrameResult {
+  frame: number;
+  path: string;
+}
+
 export interface TimelineStillResult {
   timeline: string;
   entry: string;
-  frame: number;
-  path: string;
+  /** Present only when exactly one frame was captured. */
+  frame?: number;
+  /** Present only when exactly one frame was captured. */
+  path?: string;
+  frames: TimelineStillFrameResult[];
   width: number;
   height: number;
   diagnostics: CompositionDiagnostic[];
   elapsedMs: number;
+}
+
+export interface TimelineStillsOptions {
+  project: Project;
+  timelineId: string;
+  frames: number[];
+  outPaths: string[];
+  overwrite?: boolean;
+  propsOverrides?: Record<string, unknown>;
+  scratchDir?: string;
+  signal?: AbortSignal;
 }
 
 export interface TimelineCheckResult {
@@ -174,6 +194,29 @@ async function ensureOutputAvailable(outPath: string, overwrite: boolean): Promi
   await mkdir(path.dirname(outPath), { recursive: true });
 }
 
+async function assertOutputsAvailable(outPaths: readonly string[], overwrite: boolean): Promise<void> {
+  if (overwrite) {
+    return;
+  }
+
+  const conflicts: string[] = [];
+  for (const outPath of outPaths) {
+    if (await pathExists(outPath)) {
+      conflicts.push(outPath);
+    }
+  }
+  if (conflicts.length === 0) {
+    return;
+  }
+
+  const first = conflicts[0] as string;
+  const message =
+    conflicts.length === 1
+      ? `Output already exists: ${first}. Pass --overwrite to replace it.`
+      : `Output already exists: ${first} (and ${conflicts.length - 1} more). Pass --overwrite to replace them.`;
+  throw new FrameyardError("OUTPUT_EXISTS", message, { details: { conflicts } });
+}
+
 async function publishFile(tempPath: string, outPath: string, overwrite: boolean): Promise<void> {
   if (overwrite) {
     await rename(tempPath, outPath);
@@ -210,6 +253,23 @@ function mergeDiagnostics(...groups: readonly CompositionDiagnostic[][]): Compos
     }
   }
   return result;
+}
+
+function withBatchContext(error: unknown, frames: readonly number[], failedFrame: number): unknown {
+  if (!isFrameyardError(error)) {
+    return error;
+  }
+  const details =
+    error.details === undefined
+      ? {}
+      : isPlainObject(error.details)
+        ? { ...error.details }
+        : { originalDetails: error.details };
+  return new FrameyardError(error.code, error.message, {
+    cause: error,
+    details: { ...details, frames: [...frames], failedFrame },
+    diagnostics: error.diagnostics,
+  });
 }
 
 function compositionDiagnostic(
@@ -1066,20 +1126,32 @@ async function renderResolvedTimelineFrame(options: {
   return diagnostics;
 }
 
-/** Captures one timeline frame as PNG through the clip capture and composite path. */
-export async function captureTimelineStill(options: TimelineStillOptions): Promise<TimelineStillResult> {
-  if (!Number.isInteger(options.frame) || options.frame < 0) {
-    throw new FrameyardError(
-      "FRAME_OUT_OF_RANGE",
-      `--frame must be a non-negative integer; received ${options.frame}.`,
-    );
+/** Captures timeline frames as PNGs through the clip capture and composite path. */
+export async function captureTimelineStills(options: TimelineStillsOptions): Promise<TimelineStillResult> {
+  if (options.frames.length === 0) {
+    throw new FrameyardError("USAGE", "Still capture requires at least one frame.");
   }
-  if (path.extname(options.outPath).toLowerCase() !== ".png") {
-    throw new FrameyardError("USAGE", `Still output must use a .png extension: ${options.outPath}`);
+  if (options.frames.length !== options.outPaths.length) {
+    throw new FrameyardError("USAGE", "Still frames and output paths must have the same length.");
+  }
+  for (const frame of options.frames) {
+    if (!Number.isInteger(frame) || frame < 0) {
+      throw new FrameyardError("FRAME_OUT_OF_RANGE", `--frame must be a non-negative integer; received ${frame}.`);
+    }
+  }
+  if (new Set(options.frames).size !== options.frames.length) {
+    throw new FrameyardError("USAGE", "Still frames must be unique.");
+  }
+  if (new Set(options.outPaths).size !== options.outPaths.length) {
+    throw new FrameyardError("USAGE", "Still output paths must be unique.");
+  }
+  for (const outPath of options.outPaths) {
+    if (path.extname(outPath).toLowerCase() !== ".png") {
+      throw new FrameyardError("USAGE", `Still output must use a .png extension: ${outPath}`);
+    }
   }
 
   const overwrite = options.overwrite ?? false;
-  await ensureOutputAvailable(options.outPath, overwrite);
   const startedAt = performance.now();
   const projectTimeline = options.project.timelines.get(options.timelineId);
   if (!projectTimeline) {
@@ -1102,64 +1174,94 @@ export async function captureTimelineStill(options: TimelineStillOptions): Promi
     });
   }
   const timeline = resolved.timeline;
-  if (options.frame >= timeline.durationInFrames) {
+  const invalidFrames = options.frames.filter((frame) => frame >= timeline.durationInFrames);
+  if (invalidFrames.length > 0) {
+    const first = invalidFrames[0] as number;
     throw new FrameyardError(
       "FRAME_OUT_OF_RANGE",
-      `Frame ${options.frame} is outside the valid range 0..${timeline.durationInFrames - 1}.`,
+      `Frame ${first} is outside the valid range 0..${timeline.durationInFrames - 1}.`,
+      { details: { invalidFrames, validRange: { min: 0, max: timeline.durationInFrames - 1 } } },
     );
+  }
+  await assertOutputsAvailable(options.outPaths, overwrite);
+  for (const outPath of options.outPaths) {
+    await mkdir(path.dirname(outPath), { recursive: true });
   }
 
   const scratchBase = options.scratchDir ?? tmpdir();
   await mkdir(scratchBase, { recursive: true });
   const scratchRoot = await mkdtemp(path.join(scratchBase, "frameyard-timeline-still-"));
-  const server = await startPreviewServer({ projectRoot: options.project.root, port: 0 });
-  const tempPath = path.join(
-    path.dirname(options.outPath),
-    `.${path.basename(options.outPath)}.frameyard-${process.pid}-${randomUUID()}.png`,
+  const tempPaths = options.outPaths.map((outPath) =>
+    path.join(path.dirname(outPath), `.${path.basename(outPath)}.frameyard-${process.pid}-${randomUUID()}.png`),
   );
+  let server: Awaited<ReturnType<typeof startPreviewServer>> | undefined;
 
   try {
-    const diagnostics = await renderResolvedTimelineFrame({
-      timeline,
-      frame: options.frame,
-      outputPath: tempPath,
-      background: timeline.background ?? "black",
-      context: {
-        project: options.project,
-        serverUrl: server.url,
-        scratchRoot,
-        depth: 0,
-        ...(options.signal ? { signal: options.signal } : {}),
-      },
-    });
+    server = await startPreviewServer({ projectRoot: options.project.root, port: 0 });
 
-    if (!overwrite && (await pathExists(options.outPath))) {
-      throw new FrameyardError(
-        "OUTPUT_EXISTS",
-        `Output already exists: ${options.outPath}. Pass --overwrite to replace it.`,
-      );
+    const diagnostics: CompositionDiagnostic[] = [];
+    for (const [index, frame] of options.frames.entries()) {
+      throwIfAborted(options.signal);
+      try {
+        diagnostics.push(
+          ...(await renderResolvedTimelineFrame({
+            timeline,
+            frame,
+            outputPath: tempPaths[index] as string,
+            background: timeline.background ?? "black",
+            context: {
+              project: options.project,
+              serverUrl: server.url,
+              scratchRoot,
+              depth: 0,
+              ...(options.signal ? { signal: options.signal } : {}),
+            },
+          })),
+        );
+      } catch (error) {
+        throw withBatchContext(error, options.frames, frame);
+      }
     }
-    await publishFile(tempPath, options.outPath, overwrite);
 
+    await assertOutputsAvailable(options.outPaths, overwrite);
+    for (const [index, outPath] of options.outPaths.entries()) {
+      await publishFile(tempPaths[index] as string, outPath, overwrite);
+    }
+
+    const frames = options.frames.map((frame, index) => ({
+      frame,
+      path: options.outPaths[index] as string,
+    }));
+    const first = frames[0];
     return {
       timeline: options.timelineId,
       entry: timeline.entry,
-      frame: options.frame,
-      path: options.outPath,
+      ...(frames.length === 1 && first !== undefined ? { frame: first.frame, path: first.path } : {}),
+      frames,
       width: timeline.format.width,
       height: timeline.format.height,
       diagnostics: mergeDiagnostics(resolved.diagnostics, diagnostics),
       elapsedMs: performance.now() - startedAt,
     };
   } finally {
-    await rm(tempPath, { force: true });
+    await Promise.all(tempPaths.map((tempPath) => rm(tempPath, { force: true })));
     try {
-      await server.close();
+      await server?.close();
     } catch {
       // Preserve the still's original error.
     }
     await rm(scratchRoot, { recursive: true, force: true });
   }
+}
+
+/** Captures one timeline frame as a PNG through the clip capture and composite path. */
+export async function captureTimelineStill(options: TimelineStillOptions): Promise<TimelineStillResult> {
+  const { frame, outPath, ...rest } = options;
+  return captureTimelineStills({
+    ...rest,
+    frames: [frame],
+    outPaths: [outPath],
+  });
 }
 
 /** Renders one timeline to MP4 through the segmented lossless clip pipeline. */
@@ -1177,11 +1279,11 @@ export async function renderTimeline(options: TimelineRenderOptions): Promise<Ti
 
   const requestedWorkers = validateWorkers(options.workers);
   const overwrite = options.overwrite ?? false;
+  const startedAt = performance.now();
   await ensureOutputAvailable(options.outPath, overwrite);
   await assertFfmpegCapabilities(options.signal, codec);
   const encoder = await resolveVideoEncoder(codec, options.encoder, options.signal);
   const workers = clampTimelineWorkers(requestedWorkers, encoder);
-  const startedAt = performance.now();
 
   const projectTimeline = options.project.timelines.get(options.timelineId);
   if (!projectTimeline) {

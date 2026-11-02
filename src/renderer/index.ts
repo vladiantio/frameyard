@@ -2,7 +2,12 @@ import { link, mkdir, mkdtemp, rename, rm, stat, writeFile } from "node:fs/promi
 import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import type { CompositionDiagnostic, CompositionMetadata, CompositionSourceInfo } from "../contracts.js";
+import {
+  isPlainObject,
+  type CompositionDiagnostic,
+  type CompositionMetadata,
+  type CompositionSourceInfo,
+} from "../contracts.js";
 import { FrameyardError, isFrameyardError } from "../errors.js";
 import { validateHtmlComposition } from "../html/validate.js";
 import type { Project, ProjectComposition } from "../project.js";
@@ -56,12 +61,20 @@ export interface CheckResult {
   elapsedMs: number;
 }
 
+export interface StillFrameResult {
+  frame: number;
+  path: string;
+}
+
 export interface StillResult {
   composition: string;
   entry: string;
   controller: { kind: "inline" } | { kind: "external"; src: string } | null;
-  frame: number;
-  path: string;
+  /** Present only when exactly one frame was captured. */
+  frame?: number;
+  /** Present only when exactly one frame was captured. */
+  path?: string;
+  frames: StillFrameResult[];
   width: number;
   height: number;
   diagnostics: CompositionDiagnostic[];
@@ -157,6 +170,23 @@ function mergeDiagnostics(...groups: CompositionDiagnostic[][]): CompositionDiag
   return result;
 }
 
+function withBatchContext(error: unknown, frames: readonly number[], failedFrame: number): unknown {
+  if (!isFrameyardError(error)) {
+    return error;
+  }
+  const details =
+    error.details === undefined
+      ? {}
+      : isPlainObject(error.details)
+        ? { ...error.details }
+        : { originalDetails: error.details };
+  return new FrameyardError(error.code, error.message, {
+    cause: error,
+    details: { ...details, frames: [...frames], failedFrame },
+    diagnostics: error.diagnostics,
+  });
+}
+
 async function readSessionDiagnostics(sessions: readonly CompositionSession[]): Promise<CompositionDiagnostic[]> {
   const groups = await Promise.all(sessions.map((session) => session.readDiagnostics()));
   return mergeDiagnostics(...groups);
@@ -184,6 +214,29 @@ async function ensureOutputAvailable(outPath: string, overwrite: boolean): Promi
   await mkdir(path.dirname(outPath), { recursive: true });
 }
 
+async function assertOutputsAvailable(outPaths: readonly string[], overwrite: boolean): Promise<void> {
+  if (overwrite) {
+    return;
+  }
+
+  const conflicts: string[] = [];
+  for (const outPath of outPaths) {
+    if (await pathExists(outPath)) {
+      conflicts.push(outPath);
+    }
+  }
+  if (conflicts.length === 0) {
+    return;
+  }
+
+  const first = conflicts[0] as string;
+  const message =
+    conflicts.length === 1
+      ? `Output already exists: ${first}. Pass --overwrite to replace it.`
+      : `Output already exists: ${first} (and ${conflicts.length - 1} more). Pass --overwrite to replace them.`;
+  throw new FrameyardError("OUTPUT_EXISTS", message, { details: { conflicts } });
+}
+
 async function publishFile(tempPath: string, outPath: string, overwrite: boolean): Promise<void> {
   if (overwrite) {
     await rename(tempPath, outPath);
@@ -205,11 +258,13 @@ async function publishFile(tempPath: string, outPath: string, overwrite: boolean
   }
 }
 
-async function withSessions<T>(
-  options: SessionOptions,
-  resolveSessionCount: (first: CompositionSession) => number,
-  callback: (sessions: CompositionSession[]) => Promise<T>,
-): Promise<T> {
+interface PreparedComposition {
+  composition: ProjectComposition;
+  staticInfo: CompositionSourceInfo;
+  staticDiagnostics: CompositionDiagnostic[];
+}
+
+async function prepareComposition(options: SessionOptions): Promise<PreparedComposition> {
   throwIfAborted(options.signal);
   const composition = compositionFor(options.project, options.compositionId);
   const validation = await validateHtmlComposition({
@@ -227,8 +282,16 @@ async function withSessions<T>(
       { diagnostics: validation.diagnostics },
     );
   }
-  const staticInfo: CompositionSourceInfo = validation.info;
+  return { composition, staticInfo: validation.info, staticDiagnostics };
+}
 
+async function withPreparedSessions<T>(
+  options: SessionOptions,
+  prepared: PreparedComposition,
+  resolveSessionCount: (first: CompositionSession) => number,
+  callback: (sessions: CompositionSession[]) => Promise<T>,
+): Promise<T> {
+  const { composition, staticInfo, staticDiagnostics } = prepared;
   const server = await startPreviewServer({ projectRoot: options.project.root, port: 0 });
   const sessions: CompositionSession[] = [];
 
@@ -290,6 +353,15 @@ async function withSessions<T>(
       // Preserve the command's original error.
     }
   }
+}
+
+async function withSessions<T>(
+  options: SessionOptions,
+  resolveSessionCount: (first: CompositionSession) => number,
+  callback: (sessions: CompositionSession[]) => Promise<T>,
+): Promise<T> {
+  const prepared = await prepareComposition(options);
+  return withPreparedSessions(options, prepared, resolveSessionCount, callback);
 }
 
 async function withSession<T>(
@@ -449,6 +521,113 @@ export async function checkComposition(options: SessionOptions): Promise<CheckRe
   });
 }
 
+export async function captureStills(
+  options: SessionOptions & {
+    frames: number[];
+    outPaths: string[];
+    overwrite?: boolean;
+  },
+): Promise<StillResult> {
+  if (options.frames.length === 0) {
+    throw new FrameyardError("USAGE", "Still capture requires at least one frame.");
+  }
+  if (options.frames.length !== options.outPaths.length) {
+    throw new FrameyardError("USAGE", "Still frames and output paths must have the same length.");
+  }
+  for (const frame of options.frames) {
+    if (!Number.isInteger(frame) || frame < 0) {
+      throw new FrameyardError("FRAME_OUT_OF_RANGE", `--frame must be a non-negative integer; received ${frame}.`);
+    }
+  }
+  if (new Set(options.frames).size !== options.frames.length) {
+    throw new FrameyardError("USAGE", "Still frames must be unique.");
+  }
+  if (new Set(options.outPaths).size !== options.outPaths.length) {
+    throw new FrameyardError("USAGE", "Still output paths must be unique.");
+  }
+  for (const outPath of options.outPaths) {
+    if (path.extname(outPath).toLowerCase() !== ".png") {
+      throw new FrameyardError("USAGE", `Still output must use a .png extension: ${outPath}`);
+    }
+  }
+
+  const overwrite = options.overwrite ?? false;
+  const startedAt = performance.now();
+  const prepared = await prepareComposition(options);
+  const total = prepared.staticInfo.metadata.durationInFrames;
+  const invalidFrames = options.frames.filter((frame) => frame >= total);
+  if (invalidFrames.length > 0) {
+    const first = invalidFrames[0] as number;
+    throw new FrameyardError("FRAME_OUT_OF_RANGE", `Frame ${first} is outside the valid range 0..${total - 1}.`, {
+      details: { invalidFrames, validRange: { min: 0, max: total - 1 } },
+    });
+  }
+  await assertOutputsAvailable(options.outPaths, overwrite);
+  for (const outPath of options.outPaths) {
+    await mkdir(path.dirname(outPath), { recursive: true });
+  }
+
+  return withPreparedSessions(
+    options,
+    prepared,
+    () => 1,
+    async (sessions) => {
+      const session = sessions[0] as CompositionSession;
+      const transcripts = await inspectTranscriptClips({
+        projectRoot: options.project.root,
+        clips: session.transcriptClips,
+        signal: options.signal,
+      });
+
+      const tempPaths = options.outPaths.map((outPath) =>
+        path.join(path.dirname(outPath), `.${path.basename(outPath)}.frameyard-${process.pid}-${randomUUID()}.tmp`),
+      );
+
+      try {
+        for (const [index, frame] of options.frames.entries()) {
+          throwIfAborted(options.signal);
+          try {
+            await session.seek(frame);
+            const png = await session.capture();
+            await writeFile(tempPaths[index] as string, png);
+          } catch (error) {
+            throw withBatchContext(error, options.frames, frame);
+          }
+        }
+
+        await assertOutputsAvailable(options.outPaths, overwrite);
+        const diagnostics = mergeDiagnostics(
+          await session.readDiagnostics(),
+          transcriptDiagnostics(transcripts.warnings),
+        );
+
+        for (const [index, outPath] of options.outPaths.entries()) {
+          await publishFile(tempPaths[index] as string, outPath, overwrite);
+        }
+
+        const frames = options.frames.map((frame, index) => ({
+          frame,
+          path: options.outPaths[index] as string,
+        }));
+        const first = frames[0];
+        return {
+          composition: options.compositionId,
+          entry: session.entry,
+          controller: session.controller,
+          ...(frames.length === 1 && first !== undefined ? { frame: first.frame, path: first.path } : {}),
+          frames,
+          width: session.metadata.width,
+          height: session.metadata.height,
+          diagnostics,
+          elapsedMs: performance.now() - startedAt,
+        };
+      } finally {
+        await Promise.all(tempPaths.map((tempPath) => rm(tempPath, { force: true })));
+      }
+    },
+  );
+}
+
 export async function captureStill(
   options: SessionOptions & {
     frame: number;
@@ -456,63 +635,11 @@ export async function captureStill(
     overwrite?: boolean;
   },
 ): Promise<StillResult> {
-  if (!Number.isInteger(options.frame) || options.frame < 0) {
-    throw new FrameyardError(
-      "FRAME_OUT_OF_RANGE",
-      `--frame must be a non-negative integer; received ${options.frame}.`,
-    );
-  }
-  if (path.extname(options.outPath).toLowerCase() !== ".png") {
-    throw new FrameyardError("USAGE", `Still output must use a .png extension: ${options.outPath}`);
-  }
-
-  const overwrite = options.overwrite ?? false;
-  await ensureOutputAvailable(options.outPath, overwrite);
-  const startedAt = performance.now();
-
-  return withSession(options, async (session) => {
-    const total = session.metadata.durationInFrames;
-    if (options.frame >= total) {
-      throw new FrameyardError(
-        "FRAME_OUT_OF_RANGE",
-        `Frame ${options.frame} is outside the valid range 0..${total - 1}.`,
-      );
-    }
-
-    const transcripts = await inspectTranscriptClips({
-      projectRoot: options.project.root,
-      clips: session.transcriptClips,
-      signal: options.signal,
-    });
-
-    throwIfAborted(options.signal);
-    await session.seek(options.frame);
-    const png = await session.capture();
-    const diagnostics = mergeDiagnostics(await session.readDiagnostics(), transcriptDiagnostics(transcripts.warnings));
-
-    const tempPath = path.join(
-      path.dirname(options.outPath),
-      `.${path.basename(options.outPath)}.frameyard-${process.pid}-${randomUUID()}.tmp`,
-    );
-    try {
-      await writeFile(tempPath, png);
-      await ensureOutputAvailable(options.outPath, overwrite);
-      await publishFile(tempPath, options.outPath, overwrite);
-    } finally {
-      await rm(tempPath, { force: true });
-    }
-
-    return {
-      composition: options.compositionId,
-      entry: session.entry,
-      controller: session.controller,
-      frame: options.frame,
-      path: options.outPath,
-      width: session.metadata.width,
-      height: session.metadata.height,
-      diagnostics,
-      elapsedMs: performance.now() - startedAt,
-    };
+  const { frame, outPath, ...rest } = options;
+  return captureStills({
+    ...rest,
+    frames: [frame],
+    outPaths: [outPath],
   });
 }
 
@@ -542,10 +669,10 @@ export async function renderComposition(
 
   const requestedConcurrency = validateRenderConcurrency(options.concurrency);
   const overwrite = options.overwrite ?? false;
+  const startedAt = performance.now();
   await ensureOutputAvailable(options.outPath, overwrite);
   await assertFfmpegCapabilities(options.signal, codec);
   const encoderName = await resolveVideoEncoder(codec, options.encoder, options.signal);
-  const startedAt = performance.now();
 
   return withSessions(
     options,

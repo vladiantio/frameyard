@@ -11,7 +11,7 @@ Every non-interactive command supports `--json`. Stdout contains one JSON docume
 }
 ```
 
-Additional fields are command-specific and stable within the 0.4 contract.
+Additional fields are command-specific and stable within the 0.4 contract. `check`, `still`, and `render` report `elapsedMs`, the wall time of the operation from static validation and preflight through the final frame or publication; CLI argument parsing is excluded.
 
 ## Error envelope
 
@@ -100,14 +100,18 @@ Static validation diagnostics include source locations. Runtime diagnostics may 
   "composition": "hello",
   "entry": "compositions/hello.html",
   "controller": { "kind": "external", "src": "compositions/hello.controller.js" },
-  "frame": 42,
-  "path": "/absolute/path/hello-42.png",
+  "frames": [
+    { "frame": 0, "path": "/absolute/path/out/stills/still-hello-0.png" },
+    { "frame": 42, "path": "/absolute/path/out/stills/still-hello-42.png" }
+  ],
   "width": 1920,
   "height": 1080,
   "diagnostics": [],
-  "elapsedMs": 700
+  "elapsedMs": 1400
 }
 ```
+
+`frames` is always present and follows the expanded `--frame` order. `frame` and `path` are also present only when exactly one frame was captured. `--frame` accepts a number, an inclusive range (`2-12`), or a comma-separated list; at most 32 unique frames are captured per invocation. With multiple frames, `--out` is a directory and the files are named `still-<id>-<frame>.png`.
 
 ## render
 

@@ -217,9 +217,10 @@ Images declared in the document are awaited by the host. Static fonts should be 
 ```sh
 npx frameyard check hello --json
 npx frameyard still hello --frame 42 --out hello-42.png --json
+npx frameyard still hello --frame 0,118-126 --out out/stills --json
 ```
 
-`check` runs static validation before Chromium, then evaluates every frame and validates audio and declared transcripts without capturing or encoding. Read the structured `diagnostics` array. Do not replace `check` with a single still.
+`check` runs static validation before Chromium, then evaluates every frame and validates audio and declared transcripts without capturing or encoding. Read the structured `diagnostics` array. Do not replace `check` with a single still. Inspect several representative frames in one `still` call with a range or list; the batch seeks sequentially in one session and is limited to 32 unique frames.
 
 ## Metadata is fixed
 

@@ -32,7 +32,7 @@ Do not claim success after a nonzero exit. Fix the cause, rerun `check`, and onl
 | `ELEMENT_UNKNOWN` | Unknown `fy-*` element | Use `fy-composition`/`fy-transcript` or a normal element. |
 | `CONTENT_OUTSIDE_ROOT` | Visual content outside `<fy-composition>` | Move it inside the root. |
 | `PROPS_INVALID` | Invalid props JSON or `validateProps()` failure | Fix the props file or validator. |
-| `FRAME_OUT_OF_RANGE` | Frame outside `0..durationInFrames - 1` | Choose a valid frame. |
+| `FRAME_OUT_OF_RANGE` | Frame outside `0..durationInFrames - 1` | Choose valid frames; a batch error lists every invalid frame and the valid range. |
 | `AUDIO_INVALID` | Bad clip or unreadable/unsupported audio | Use a local project-root-relative file with a decodable audio stream. |
 | `AUDIO_WARNING` | Audio timeline overrun or silent embedded media | Adjust timing/trim or remove the silent source. |
 | `MEDIA_INVALID` | Invalid media source or attributes | Use local, seekable files and valid `data-fy-*` values. |
@@ -58,6 +58,7 @@ Do not claim success after a nonzero exit. Fix the cause, rerun `check`, and onl
 ## Behavior to rely on
 
 - A failed render writes to a temporary file and does not publish a partial output.
+- A multi-frame still captures every frame to a temporary file first; a failed capture publishes no stills. `OUTPUT_EXISTS` lists every conflicting output path before capture starts.
 - Failed TTS/transcription operations leave no artifact and no manifest entry.
 - Existing outputs are replaced only with `--overwrite` (renders/stills) or `--force` (generated assets).
 - Cancellation terminates the child inference process and cleans temporary work.

@@ -72,10 +72,10 @@ Apply that value to text styling inside the controller's `update({ frame })`. Do
 
 ```sh
 npx frameyard check karaoke --json
-npx frameyard still karaoke --frame 120 --out karaoke-120.png --json
+npx frameyard still karaoke --frame 118-126 --out karaoke-frames --json
 ```
 
-Inspect several frames across a word boundary. A single still cannot prove that highlighting is synchronized.
+Inspect several frames across a word boundary in one batch. A single still cannot prove that highlighting is synchronized.
 
 ## Derived exports
 

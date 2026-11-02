@@ -37,6 +37,26 @@ const PNPM_BUILTINS = new Set([
   "why",
 ]);
 
+const STILL_CAP_DOCS = [
+  "README.md",
+  "docs/v0.1-design.md",
+  "GLOSSARY.md",
+  "skills/frameyard/SKILL.md",
+  "skills/frameyard/references/json-results.md",
+  "skills/frameyard/references/deterministic-authoring.md",
+  "skills/frameyard/references/timelines.md",
+  "skills/frameyard/references/common-mistakes.md",
+  "src/scaffold.ts",
+];
+
+const STILL_CAP_PATTERNS = [
+  /at most (\d+) (?:unique|inspection) frames/g,
+  /up to (\d+) unique frames/g,
+  /more than (\d+) unique frames/g,
+  /limited to (\d+) unique frames/g,
+  /(\d+)-frame (?:inspection )?cap/g,
+];
+
 async function markdownFiles(directory: string): Promise<string[]> {
   const entries = await readdir(directory, { withFileTypes: true });
   const files: string[] = [];
@@ -210,5 +230,28 @@ describe("documentation command examples", () => {
     const agents = files["AGENTS.md"] ?? "";
     expect(agents).toContain(`npx frameyard@${VERSION}`);
     expect(agents).toContain("npx skills add vladiantio/frameyard");
+  });
+
+  it("states one still frame cap in every command document", async () => {
+    const cli = await readFile("src/cli.ts", "utf8");
+    const cap = /const MAX_STILL_FRAMES = (\d+);/.exec(cli)?.[1];
+    expect(cap, "src/cli.ts must define MAX_STILL_FRAMES").toBeDefined();
+
+    const offenders: string[] = [];
+    for (const file of STILL_CAP_DOCS) {
+      const contents = await readFile(file, "utf8");
+      const values = STILL_CAP_PATTERNS.flatMap((pattern) =>
+        [...contents.matchAll(pattern)].map((match) => match[1] as string),
+      );
+      if (values.length === 0) {
+        offenders.push(`${file}: does not state the still frame cap`);
+        continue;
+      }
+      for (const value of values) {
+        if (value !== cap) offenders.push(`${file}: states ${value}, src/cli.ts sets ${cap}`);
+      }
+    }
+
+    expect(offenders).toEqual([]);
   });
 });

@@ -139,9 +139,9 @@ export default {
 1. Read \`video.config.js\`, the timeline document, the referenced composition HTML, the optional controller, and the props files before changing behavior.
 2. Author compositions with native HTML, CSS, SVG, Canvas 2D, WebGL, embedded video, and an optional controller. Arrange composition and media clips in the timeline JSON. Do not add a bundling step.
 3. Validate every frame: \`npx frameyard check main --json\`. Static validation runs before Chromium and reports stable diagnostic codes with source locations. Use \`--props <file>\` for composition props or a timeline clip override map.
-4. Inspect a representative frame: \`npx frameyard still main --frame <n> --out <file.png> --json\`, then view the PNG when the host supports images. State explicitly when visual inspection is not possible.
+4. Inspect representative frames: \`npx frameyard still main --frame <spec> --out <dir|file.png> --json\`, where \`<spec>\` is a frame number, an inclusive range like \`2-12\`, or a comma-separated list with at most 32 unique frames. With multiple frames, \`--out\` is a directory. Then view the PNGs when the host supports images. State explicitly when visual inspection is not possible.
 5. Render: \`npx frameyard render main --props props/main.json [--workers <n>] [--scratch <dir>] --json\`. The video is written to \`out/main.mp4\` unless \`--out\` is passed.
-6. Report the timeline, composition sources, props, validation result, diagnostics, still path and inspection status, video path, and any failure. Never claim success when \`check\` fails, a still is missing, or a render exits nonzero.
+6. Report the timeline, composition sources, props, validation result, diagnostics, still paths and inspection status, video path, and any failure. Never claim success when \`check\` fails, a still is missing, or a render exits nonzero.
 
 ## Commands
 
@@ -150,6 +150,7 @@ npx frameyard dev
 npx frameyard doctor --json
 npx frameyard check main --json
 npx frameyard still main --frame 42 --out main-42.png --json
+npx frameyard still main --frame 0,118-126 --out out/stills --json
 npx frameyard render main --props props/main.json --workers 8 --scratch /path/to/scratch --json
 npx frameyard check hello --json
 npx frameyard render hello --props props/hello.json --json

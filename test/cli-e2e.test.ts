@@ -6,6 +6,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { VERSION } from "../src/version.ts";
+import { assertFreshDist } from "./helpers/dist.ts";
 
 const exec = promisify(execFile);
 const cli = path.resolve("dist/cli.js");
@@ -118,6 +119,19 @@ export default {
   </body>
 </html>
 `;
+
+const longComposition = `<!doctype html>
+<html>
+  <head><meta charset="utf-8"></head>
+  <body>
+    <fy-composition width="160" height="90" fps="10" duration-in-frames="40">
+      <div style="width: 100%; height: 100%; background: #123456"></div>
+    </fy-composition>
+  </body>
+</html>
+`;
+
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
 const missingVideoComposition = `<!doctype html>
 <html>
@@ -280,16 +294,18 @@ async function audioMeanVolume(filePath: string): Promise<number> {
 }
 
 beforeAll(async () => {
+  await assertFreshDist();
   root = await mkdtemp(path.join(tmpdir(), "frameyard-cli-"));
   await mkdir(path.join(root, "compositions"), { recursive: true });
   await mkdir(path.join(root, "assets"), { recursive: true });
   await writeFile(
     path.join(root, "video.config.js"),
-    `export default { compositions: { demo: "./compositions/demo.html", media: "./compositions/media.html", webgl: "./compositions/webgl.html", "missing-video": "./compositions/missing-video.html", broken: "./compositions/broken.html", throwing: "./compositions/throwing.html", html: "./compositions/html.html", "html-invalid": "./compositions/html-invalid.html" } };\n`,
+    `export default { compositions: { demo: "./compositions/demo.html", media: "./compositions/media.html", webgl: "./compositions/webgl.html", long: "./compositions/long.html", "missing-video": "./compositions/missing-video.html", broken: "./compositions/broken.html", throwing: "./compositions/throwing.html", html: "./compositions/html.html", "html-invalid": "./compositions/html-invalid.html" } };\n`,
   );
   await writeFile(path.join(root, "compositions", "demo.html"), composition);
   await writeFile(path.join(root, "compositions", "media.html"), mediaComposition);
   await writeFile(path.join(root, "compositions", "webgl.html"), webglComposition);
+  await writeFile(path.join(root, "compositions", "long.html"), longComposition);
   await writeFile(path.join(root, "compositions", "missing-video.html"), missingVideoComposition);
   await writeFile(path.join(root, "compositions", "html.html"), htmlComposition);
   await writeFile(path.join(root, "compositions", "html-invalid.html"), invalidHtmlComposition);
@@ -555,6 +571,7 @@ describe("CLI end-to-end", () => {
       width: 160,
       height: 90,
     });
+    expect(firstJson.frames).toEqual([{ frame: 3, path: path.join(root, "still-a.png") }]);
 
     const [a, b] = await Promise.all([
       readFile(path.join(root, "still-a.png")),
@@ -666,6 +683,293 @@ describe("CLI end-to-end", () => {
 
     await capturePair("demo", 3, "concurrent-demo", ["--props", "props.json"]);
     await capturePair("media", 3, "concurrent-media");
+  });
+
+  it("captures a batch of stills in one session", async () => {
+    const result = await run(
+      ["still", "demo", "--frame", "0,3,5", "--props", "props.json", "--out", "batch", "--project", root, "--json"],
+      root,
+    );
+    expect(result.code, result.stderr).toBe(0);
+    const json = JSON.parse(result.stdout) as {
+      frames?: Array<{ frame: number; path: string }>;
+      frame?: number;
+      path?: string;
+    };
+    expect(json.frames?.map((entry) => entry.frame)).toEqual([0, 3, 5]);
+    expect(json).not.toHaveProperty("frame");
+    expect(json).not.toHaveProperty("path");
+
+    for (const frame of [0, 3, 5]) {
+      const batchPath = path.join(root, "batch", `still-demo-${frame}.png`);
+      expect(json.frames?.find((entry) => entry.frame === frame)?.path).toBe(batchPath);
+      const capture = await run(
+        [
+          "still",
+          "demo",
+          "--frame",
+          String(frame),
+          "--props",
+          "props.json",
+          "--out",
+          `single-${frame}.png`,
+          "--project",
+          root,
+          "--json",
+        ],
+        root,
+      );
+      expect(capture.code, capture.stderr).toBe(0);
+      const [batchPng, singlePng] = await Promise.all([
+        readFile(batchPath),
+        readFile(path.join(root, `single-${frame}.png`)),
+      ]);
+      expect(batchPng.subarray(0, 8)).toEqual(PNG_SIGNATURE);
+      expect(createHash("sha256").update(batchPng).digest("hex")).toBe(
+        createHash("sha256").update(singlePng).digest("hex"),
+      );
+    }
+  });
+
+  it("expands ranges, preserves order, and removes duplicates", async () => {
+    const result = await run(
+      ["still", "long", "--frame", " 2-4, 4, 0 ", "--out", "range", "--project", root, "--json"],
+      root,
+    );
+    expect(result.code, result.stderr).toBe(0);
+    const json = JSON.parse(result.stdout) as { frames?: Array<{ frame: number; path: string }> };
+    expect(json.frames?.map((entry) => entry.frame)).toEqual([2, 3, 4, 0]);
+    expect(json.frames?.map((entry) => path.basename(entry.path))).toEqual([
+      "still-long-2.png",
+      "still-long-3.png",
+      "still-long-4.png",
+      "still-long-0.png",
+    ]);
+  });
+
+  it("enforces the 32-frame still cap", async () => {
+    const accepted = await run(
+      ["still", "long", "--frame", "0-31", "--out", "cap-ok", "--project", root, "--json"],
+      root,
+    );
+    expect(accepted.code, accepted.stderr).toBe(0);
+    const acceptedJson = JSON.parse(accepted.stdout) as { frames?: unknown[] };
+    expect(acceptedJson.frames).toHaveLength(32);
+
+    const rejected = await run(
+      ["still", "long", "--frame", "0-32", "--out", "cap-rejected", "--project", root, "--json"],
+      root,
+    );
+    expect(rejected.code).toBe(2);
+    expect(JSON.parse(rejected.stdout)).toMatchObject({
+      ok: false,
+      command: "still",
+      error: { code: "USAGE", details: { cap: 32, count: 33 } },
+    });
+    await expect(stat(path.join(root, "cap-rejected"))).rejects.toThrow();
+  }, 120_000);
+
+  it("rejects malformed and descending frame specs before creating output", async () => {
+    for (const spec of ["4-2", "2-", "0,,2", "0 - 2", "2.5", "abc"]) {
+      const result = await run(
+        ["still", "long", "--frame", spec, "--out", "invalid-spec", "--project", root, "--json"],
+        root,
+      );
+      expect(result.code, spec).toBe(2);
+      expect(JSON.parse(result.stdout), spec).toMatchObject({
+        ok: false,
+        command: "still",
+        error: { code: "USAGE" },
+      });
+    }
+    await expect(stat(path.join(root, "invalid-spec"))).rejects.toThrow();
+  });
+
+  it("rejects out-of-range still frames before capture", async () => {
+    const result = await run(
+      ["still", "demo", "--frame", "0,99", "--out", "out-of-range", "--project", root, "--json"],
+      root,
+    );
+    expect(result.code).toBe(1);
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      ok: false,
+      command: "still",
+      error: {
+        code: "FRAME_OUT_OF_RANGE",
+        details: { invalidFrames: [99], validRange: { min: 0, max: 5 } },
+      },
+    });
+    await expect(stat(path.join(root, "out-of-range"))).rejects.toThrow();
+  });
+
+  it("reports frame bounds before output conflicts", async () => {
+    const outDir = path.join(root, "bounds-before-conflicts");
+    await mkdir(outDir, { recursive: true });
+    await writeFile(path.join(outDir, "still-demo-0.png"), "existing");
+
+    const result = await run(
+      ["still", "demo", "--frame", "0,99", "--out", "bounds-before-conflicts", "--project", root, "--json"],
+      root,
+    );
+    expect(result.code).toBe(1);
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      ok: false,
+      command: "still",
+      error: { code: "FRAME_OUT_OF_RANGE" },
+    });
+  });
+
+  it("preflights every still output before capture", async () => {
+    const outDir = path.join(root, "conflicts");
+    await mkdir(outDir, { recursive: true });
+    await writeFile(path.join(outDir, "still-demo-0.png"), "existing");
+    await writeFile(path.join(outDir, "still-demo-3.png"), "existing");
+
+    const result = await run(
+      ["still", "demo", "--frame", "0,2,3", "--props", "props.json", "--out", "conflicts", "--project", root, "--json"],
+      root,
+    );
+    expect(result.code).toBe(1);
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      ok: false,
+      command: "still",
+      error: {
+        code: "OUTPUT_EXISTS",
+        details: {
+          conflicts: [path.join(outDir, "still-demo-0.png"), path.join(outDir, "still-demo-3.png")],
+        },
+      },
+    });
+    await expect(stat(path.join(outDir, "still-demo-2.png"))).rejects.toThrow();
+
+    const overwrite = await run(
+      [
+        "still",
+        "demo",
+        "--frame",
+        "0,2,3",
+        "--props",
+        "props.json",
+        "--out",
+        "conflicts",
+        "--project",
+        root,
+        "--overwrite",
+        "--json",
+      ],
+      root,
+    );
+    expect(overwrite.code, overwrite.stderr).toBe(0);
+    expect((await readFile(path.join(outDir, "still-demo-0.png"))).subarray(0, 8)).toEqual(PNG_SIGNATURE);
+  });
+
+  it("uses a file for one still and a directory for many", async () => {
+    const single = await run(
+      ["still", "demo", "--frame", "0", "--out", "single-output.png", "--project", root, "--json"],
+      root,
+    );
+    expect(single.code, single.stderr).toBe(0);
+    const singleJson = JSON.parse(single.stdout) as { frame?: number; path?: string; frames?: unknown[] };
+    expect(singleJson).toMatchObject({ frame: 0, path: path.join(root, "single-output.png") });
+    expect(singleJson.frames).toHaveLength(1);
+
+    const pngDirectory = await run(
+      ["still", "demo", "--frame", "0,1", "--out", "not-a-directory.png", "--project", root, "--json"],
+      root,
+    );
+    expect(pngDirectory.code).toBe(2);
+    expect(JSON.parse(pngDirectory.stdout)).toMatchObject({ error: { code: "USAGE" } });
+
+    await writeFile(path.join(root, "still-file"), "existing");
+    const fileDirectory = await run(
+      ["still", "demo", "--frame", "0,1", "--out", "still-file", "--project", root, "--json"],
+      root,
+    );
+    expect(fileDirectory.code).toBe(2);
+    expect(JSON.parse(fileDirectory.stdout)).toMatchObject({ error: { code: "USAGE" } });
+  });
+
+  it("publishes no stills when a later frame fails", async () => {
+    const outDir = path.join(root, "throwing-batch");
+    const result = await run(
+      ["still", "throwing", "--frame", "0-5", "--out", "throwing-batch", "--project", root, "--json"],
+      root,
+    );
+    expect(result.code).toBe(1);
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      ok: false,
+      command: "still",
+      error: {
+        code: "COMPOSITION_ERROR",
+        details: { frames: [0, 1, 2, 3, 4, 5], failedFrame: 3 },
+      },
+    });
+    await expect(stat(outDir)).rejects.toThrow();
+  });
+
+  it("captures embedded video and WebGL frames in one batch", async () => {
+    const batch = await run(
+      ["still", "media", "--frame", "3,7", "--out", "media-batch", "--project", root, "--json"],
+      root,
+    );
+    expect(batch.code, batch.stderr).toBe(0);
+    const batchJson = JSON.parse(batch.stdout) as { frames?: Array<{ frame: number; path: string }> };
+    expect(batchJson.frames?.map((entry) => entry.frame)).toEqual([3, 7]);
+
+    const singleThree = await run(
+      ["still", "media", "--frame", "3", "--out", "media-single-3.png", "--project", root, "--json"],
+      root,
+    );
+    expect(singleThree.code, singleThree.stderr).toBe(0);
+
+    const [batchThree, singleThreePng] = await Promise.all([
+      readFile(path.join(root, "media-batch", "still-media-3.png")),
+      readFile(path.join(root, "media-single-3.png")),
+    ]);
+    expect(createHash("sha256").update(batchThree).digest("hex")).toBe(
+      createHash("sha256").update(singleThreePng).digest("hex"),
+    );
+
+    const [earlyVideo, earlyWebGl] = await Promise.all([
+      pngPixel(path.join(root, "media-batch", "still-media-3.png"), 10, 10),
+      pngPixel(path.join(root, "media-batch", "still-media-3.png"), 100, 10),
+    ]);
+    expect(earlyVideo[0]).toBeGreaterThan(180);
+    expect(earlyVideo[1]).toBeLessThan(60);
+    expect(earlyWebGl[2]).toBeGreaterThan(200);
+    expect(earlyWebGl[0]).toBeLessThan(20);
+
+    const [lateVideo, lateWebGl] = await Promise.all([
+      pngPixel(path.join(root, "media-batch", "still-media-7.png"), 10, 10),
+      pngPixel(path.join(root, "media-batch", "still-media-7.png"), 100, 10),
+    ]);
+    expect(lateVideo[1]).toBeGreaterThan(180);
+    expect(lateVideo[0]).toBeLessThan(60);
+    expect(lateWebGl[0]).toBeGreaterThan(200);
+    expect(lateWebGl[2]).toBeLessThan(20);
+  });
+
+  it("uses still-<id>-<frame>.png when --out is omitted", async () => {
+    const cwd = path.join(root, "default-names");
+    await mkdir(cwd, { recursive: true });
+    const result = await run(["still", "long", "--frame", "0,2", "--project", root, "--json"], cwd);
+    expect(result.code, result.stderr).toBe(0);
+    expect((await stat(path.join(cwd, "still-long-0.png"))).size).toBeGreaterThan(0);
+    expect((await stat(path.join(cwd, "still-long-2.png"))).size).toBeGreaterThan(0);
+
+    const single = await run(["still", "long", "--frame", "1", "--project", root, "--json"], cwd);
+    expect(single.code, single.stderr).toBe(0);
+    expect((await stat(path.join(cwd, "still-long-1.png"))).size).toBeGreaterThan(0);
+  });
+
+  it("prints one line per still and a summary in human mode", async () => {
+    const result = await run(["still", "demo", "--frame", "0,3", "--out", "human-batch", "--project", root], root);
+    expect(result.code, result.stderr).toBe(0);
+    const lines = result.stdout.trim().split("\n");
+    expect(lines).toHaveLength(3);
+    expect(lines[0]).toContain("Wrote frame 0 of demo");
+    expect(lines[1]).toContain("Wrote frame 3 of demo");
+    expect(lines[2]).toContain("Wrote 2 frames of demo");
   });
 
   it("checks and renders embedded video audio with the declared timeline", async () => {

@@ -8,7 +8,7 @@ Frameyard uses `0.x` versions until the composition, configuration, CLI,
 JSON-result, transcript, and skill contracts stabilize. Before `1.0.0`, a
 contract change may ship in a minor release and is called out explicitly below.
 
-## [Unreleased]
+## [0.7.0] - 2026-11-02
 
 ### Added
 
@@ -26,6 +26,10 @@ contract change may ship in a minor release and is called out explicitly below.
   Multi-frame output writes
   `still-<id>-<frame>.png` files to a directory; all frames are captured to
   temporary files before any file is published.
+- `doctor` adds optional `ffmpeg-opus-encoder` and `ffmpeg-video-encoders`
+  checks. The video check proves each supported encoder opens with a one-frame
+  encode and reports advertised encoders that the driver or device cannot
+  open; neither optional check affects `healthy`.
 
 ### Changed
 
@@ -33,6 +37,21 @@ contract change may ship in a minor release and is called out explicitly below.
   exactly one frame was captured. The `--frame` contract, multi-frame `--out`
   directory behavior, and the 32-frame inspection cap are documented in
   ADR 0013. Single-frame output paths and pixels are unchanged.
+- Typechecking uses TypeScript 7.0.2's native compiler. The three `tsconfig`
+  projects pass unchanged and emit the same JavaScript and declarations.
+
+### Fixed
+
+- Embedded video settles on a presented frame in both composition capture and
+  timeline preview, using one shared paint barrier with animation-frame and
+  timeout fallbacks.
+- Preview iframes pin a light color scheme to match the production capture
+  context, so transparent compositions composite over the same base color.
+- Arrow and Shift+Arrow transport keys pressed inside composition and timeline
+  layer iframes reach the preview transport, while text entry does not step
+  frames across iframe boundaries.
+
+[0.7.0]: https://github.com/vladiantio/frameyard/compare/v0.6.0...v0.7.0
 
 ## [0.6.0] - 2026-11-01
 

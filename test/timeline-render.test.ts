@@ -46,6 +46,11 @@ const compositionHtml = `<!doctype html>
 </html>
 `;
 
+const inheritedCompositionHtml = compositionHtml.replace(
+  '<fy-composition width="320" height="180" fps="10" duration-in-frames="10">',
+  '<fy-composition duration-in-frames="10">',
+);
+
 const throwingCompositionHtml = `<!doctype html>
 <html>
   <head><meta charset="utf-8"></head>
@@ -64,13 +69,13 @@ export default {
 </html>
 `;
 
-async function createProject(): Promise<{ root: string; outPath: string }> {
+async function createProject(compositionSource = compositionHtml): Promise<{ root: string; outPath: string }> {
   const root = await mkdtemp(path.join(tmpdir(), "frameyard-timeline-render-"));
   roots.push(root);
   await mkdir(path.join(root, "compositions"), { recursive: true });
   await mkdir(path.join(root, "timelines"), { recursive: true });
   await mkdir(path.join(root, "assets"), { recursive: true });
-  await writeFile(path.join(root, "compositions", "intro.html"), compositionHtml);
+  await writeFile(path.join(root, "compositions", "intro.html"), compositionSource);
   await copyFile(
     path.join(repoRoot, "examples", "demo", "assets", "chime.wav"),
     path.join(root, "assets", "chime.wav"),
@@ -225,6 +230,27 @@ describe("timeline rendering", () => {
     expect(result.width).toBe(320);
     expect(result.height).toBe(180);
     expect((await stat(stillPath)).size).toBeGreaterThan(0);
+    const streams = (await probe(stillPath)).streams;
+    expect(streams.find((stream) => stream.codec_type === "video")).toMatchObject({
+      width: 320,
+      height: 180,
+    });
+  }, 120_000);
+
+  it("captures a composition that inherits the project format at project size", async () => {
+    const { root } = await createProject(inheritedCompositionHtml);
+    const project = await loadProject(root);
+    const stillPath = path.join(root, "out", "inherited.png");
+
+    const result = await captureTimelineStill({
+      project,
+      timelineId: "main",
+      frame: 5,
+      outPath: stillPath,
+    });
+
+    expect(result.width).toBe(320);
+    expect(result.height).toBe(180);
     const streams = (await probe(stillPath)).streams;
     expect(streams.find((stream) => stream.codec_type === "video")).toMatchObject({
       width: 320,

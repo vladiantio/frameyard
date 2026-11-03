@@ -163,7 +163,10 @@ describe("composition document reader", () => {
     expect(result.valid).toBe(true);
     expect(result.diagnostics).toEqual([]);
     expect(result.root).toBe(root);
-    expect(result.descriptor.metadata).toEqual({ width: 320, height: 180, fps: 10, durationInFrames: 5 });
+    expect(result.descriptor.metadata).toEqual({
+      format: { width: 320, height: 180, fps: 10 },
+      durationInFrames: 5,
+    });
     expect(result.descriptor.defaultProps).toEqual({ title: "Hello" });
     expect(Object.isFrozen(result.descriptor.defaultProps)).toBe(true);
     expect(result.descriptor.controller).toMatchObject({
@@ -173,6 +176,40 @@ describe("composition document reader", () => {
       line: 12,
       column: 5,
     });
+  });
+
+  it("accepts a composition that omits width, height, and fps", () => {
+    const root = element("fy-composition", {
+      attributes: { "duration-in-frames": "5" },
+      location: location(5, 3),
+    });
+    const result = readCompositionDescriptor(adapterFor(makeDocument({ root })), options);
+
+    expect(result.valid).toBe(true);
+    expect(result.diagnostics).toEqual([]);
+    expect(result.descriptor.metadata).toEqual({
+      format: { width: null, height: null, fps: null },
+      durationInFrames: 5,
+    });
+  });
+
+  it("rejects declaring width without height", () => {
+    const root = element("fy-composition", {
+      attributes: { width: "320", "duration-in-frames": "5" },
+      location: location(5, 3),
+      attributeLocations: { width: location(5, 18) },
+    });
+    const result = readCompositionDescriptor(adapterFor(makeDocument({ root })), options);
+
+    expect(result.valid).toBe(false);
+    expect(result.descriptor.metadata).toBeNull();
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: "COMPOSITION_INVALID",
+        message: expect.stringContaining("declared together"),
+        details: expect.objectContaining({ attribute: "width", line: 5, column: 18 }),
+      }),
+    );
   });
 
   it("reads an inline controller from its text location", () => {

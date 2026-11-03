@@ -60,10 +60,15 @@ function documentHtml(options: { root?: string; head?: string; body?: string; do
 </html>`;
 }
 
-async function validate(name: string, html: string, props?: unknown) {
+async function validate(
+  name: string,
+  html: string,
+  props?: unknown,
+  format?: { width: number; height: number; fps: number },
+) {
   const entry = `compositions/${name}.html`;
   await writeFile(path.join(root, entry), html);
-  return validateHtmlComposition({ projectRoot: root, entry, props });
+  return validateHtmlComposition({ projectRoot: root, entry, props, ...(format ? { format } : {}) });
 }
 
 describe("HTML composition static validation", () => {
@@ -80,6 +85,7 @@ describe("HTML composition static validation", () => {
       }),
     );
     expect(result.info?.metadata).toEqual({ width: 320, height: 180, fps: 10, durationInFrames: 5 });
+    expect(result.info?.declaredFormat).toEqual({ width: 320, height: 180, fps: 10 });
     expect(result.info?.defaultProps).toMatchObject({ title: "Hello", accent: "#b8f36b" });
     expect(result.info?.controller).toMatchObject({
       kind: "external",
@@ -123,6 +129,62 @@ describe("HTML composition static validation", () => {
         severity: "error",
         code: "COMPOSITION_INVALID",
         details: expect.objectContaining({ attribute: "width", value: "0" }),
+      }),
+    );
+  });
+
+  it("inherits width, height, and fps from the project format", async () => {
+    const result = await validate(
+      "inherited-format",
+      documentHtml({ root: '<fy-composition duration-in-frames="5"></fy-composition>' }),
+      undefined,
+      { width: 640, height: 360, fps: 24 },
+    );
+
+    expect(result.formatUnresolved).toBe(false);
+    expect(result.info?.metadata).toEqual({ width: 640, height: 360, fps: 24, durationInFrames: 5 });
+    expect(result.info?.declaredFormat).toEqual({ width: null, height: null, fps: null });
+    expect(result.diagnostics.filter((diagnostic) => diagnostic.severity === "error")).toEqual([]);
+  });
+
+  it("prefers declared format values over the project format", async () => {
+    const result = await validate(
+      "declared-format",
+      documentHtml({ root: '<fy-composition width="320" height="180" duration-in-frames="5"></fy-composition>' }),
+      undefined,
+      { width: 640, height: 360, fps: 24 },
+    );
+
+    expect(result.info?.metadata).toEqual({ width: 320, height: 180, fps: 24, durationInFrames: 5 });
+    expect(result.info?.declaredFormat).toEqual({ width: 320, height: 180, fps: null });
+  });
+
+  it("flags an unresolved format without a document diagnostic", async () => {
+    const result = await validate(
+      "unresolved-format",
+      documentHtml({ root: '<fy-composition duration-in-frames="5"></fy-composition>' }),
+    );
+
+    expect(result.info).toBeNull();
+    expect(result.formatUnresolved).toBe(true);
+    expect(result.diagnostics.filter((diagnostic) => diagnostic.severity === "error")).toEqual([]);
+  });
+
+  it("rejects declaring width without height", async () => {
+    const result = await validate(
+      "half-format",
+      documentHtml({ root: '<fy-composition width="320" duration-in-frames="5"></fy-composition>' }),
+      undefined,
+      { width: 640, height: 360, fps: 24 },
+    );
+
+    expect(result.info).toBeNull();
+    expect(result.formatUnresolved).toBe(false);
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({
+        severity: "error",
+        code: "COMPOSITION_INVALID",
+        message: expect.stringContaining("declared together"),
       }),
     );
   });

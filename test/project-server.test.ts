@@ -241,3 +241,78 @@ describe("preview server", () => {
     expect(response.headers.get("location")).toBe("/__frameyard/");
   });
 });
+
+describe("composition format inheritance", () => {
+  const inheritedSource = `<!doctype html>
+<html>
+  <head><meta charset="utf-8"></head>
+  <body>
+    <fy-composition duration-in-frames="5"><h1>Hello</h1></fy-composition>
+  </body>
+</html>
+`;
+
+  async function serveProject(config: string): Promise<{ root: string; server: PreviewServer }> {
+    const root = await mkdtemp(path.join(tmpdir(), "frameyard-format-"));
+    await mkdir(path.join(root, "compositions"), { recursive: true });
+    await writeFile(path.join(root, "video.config.js"), config);
+    await writeFile(path.join(root, "compositions", "plain.html"), inheritedSource);
+    const server = await startPreviewServer({ projectRoot: root, port: 0 });
+    return { root, server };
+  }
+
+  it("resolves project.json metadata from the project format", async () => {
+    const { root: projectRoot, server } = await serveProject(
+      'export default { format: { width: 640, height: 360, fps: 24 }, compositions: { plain: "./compositions/plain.html" } };\n',
+    );
+    try {
+      const response = await fetch(new URL("/__frameyard/project.json", server.url));
+      const body = (await response.json()) as { compositions: Array<{ metadata: unknown }> };
+
+      expect(body.compositions[0]?.metadata).toEqual({
+        width: 640,
+        height: 360,
+        fps: 24,
+        durationInFrames: 5,
+      });
+    } finally {
+      await server.close();
+      await rm(projectRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("injects the project format into served composition documents", async () => {
+    const { root: projectRoot, server } = await serveProject(
+      'export default { format: { width: 640, height: 360, fps: 24 }, compositions: { plain: "./compositions/plain.html" } };\n',
+    );
+    try {
+      const response = await fetch(new URL("/compositions/plain.html", server.url));
+      const html = await response.text();
+
+      expect(response.status).toBe(200);
+      expect(html).toContain('data-fy="format"');
+      expect(html).toContain('{"width":640,"height":360,"fps":24}');
+    } finally {
+      await server.close();
+      await rm(projectRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("reports an unresolved format when the project has no format", async () => {
+    const { root: projectRoot, server } = await serveProject(
+      'export default { compositions: { plain: "./compositions/plain.html" } };\n',
+    );
+    try {
+      const projectResponse = await fetch(new URL("/__frameyard/project.json", server.url));
+      const body = (await projectResponse.json()) as { compositions: Array<{ metadata: unknown }> };
+      const documentResponse = await fetch(new URL("/compositions/plain.html", server.url));
+
+      expect(body.compositions[0]?.metadata).toBeNull();
+      expect(documentResponse.status).toBe(500);
+      expect(await documentResponse.text()).toContain("COMPOSITION_FORMAT_UNRESOLVED");
+    } finally {
+      await server.close();
+      await rm(projectRoot, { recursive: true, force: true });
+    }
+  });
+});

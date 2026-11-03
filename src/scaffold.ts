@@ -14,7 +14,7 @@ This project produces deterministic, parameterized video with Frameyard. Follow 
 - \`assets/\` (create it when needed) contains audio, images, fonts, and generated assets.
 - \`package.json\` pins the CLI version in \`dev\`, \`check\`, \`render\`, and \`still\` scripts. Run \`dev\` with \`npm run dev\` or \`pnpm dev\`; for the others, pass the timeline or composition id: \`npm run check -- main\` (npm) or \`pnpm check main\` (pnpm).
 
-\`width\`, \`height\`, \`fps\`, and \`duration-in-frames\` are fixed on \`<fy-composition>\`. Do not derive them from props.
+\`duration-in-frames\` is required on \`<fy-composition>\`. \`width\`, \`height\`, and \`fps\` are optional and inherit the project \`format\`; this scaffold declares them explicitly. Declare \`width\` and \`height\` together or not at all, and never derive metadata from props.
 
 ## Composition skeleton
 
@@ -70,7 +70,7 @@ This project produces deterministic, parameterized video with Frameyard. Follow 
 - Visual clips may declare a static \`blend\` mode from the separable CSS set (\`normal\`, \`multiply\`, \`screen\`, \`overlay\`, \`darken\`, \`lighten\`, \`color-dodge\`, \`color-burn\`, \`hard-light\`, \`soft-light\`, \`difference\`, \`exclusion\`); omitted means \`normal\`.
 - Video and audio clips are muted with \`audio.muted\`; \`audio.gain\` is 0-1. Composition audio is included automatically.
 - Tracks composite from bottom to top. Clips on the same track cannot overlap. No transitions or keyframes.
-- Project \`format\` fixes width, height, and fps for every timeline. Composition fps must match the project; different composition sizes are fitted by the clip.
+- Project \`format\` fixes width, height, and fps for every timeline and fills those values for compositions that omit them. A declared composition fps must match the project; different composition sizes are fitted by the clip.
 
 ## Bindings
 

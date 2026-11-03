@@ -1,14 +1,17 @@
 import {
+  COMPOSITION_FORMAT_UNRESOLVED_MESSAGE,
   readAnimationDeclarations,
   readCompositionDescriptor,
   readMediaDeclarations,
   readTranscriptDeclarations,
+  resolveCompositionMetadata,
   type AnimationDeclaration,
 } from "../composition/index.js";
 import {
   isPlainObject,
   mergeProps,
   type CompositionDiagnostic,
+  type CompositionFormat,
   type CompositionMetadata,
   type ControllerDeclaration,
   type FrameyardHost,
@@ -672,6 +675,37 @@ function setFrameState(metadata: CompositionMetadata, frame: number): void {
   root.style.setProperty("--fy-duration-frames", String(metadata.durationInFrames));
 }
 
+/**
+ * Reads the project format the preview server injects into served composition
+ * documents. Author documents cannot supply it: the block must carry the
+ * framework's `data-fy-host` marker.
+ */
+function readInjectedFormat(): CompositionFormat | null {
+  const block = document.querySelector('script[type="application/json"][data-fy="format"][data-fy-host]');
+  if (!block) {
+    return null;
+  }
+  try {
+    const parsed: unknown = JSON.parse(block.textContent ?? "");
+    if (!isPlainObject(parsed)) {
+      return null;
+    }
+    const { width, height, fps } = parsed;
+    if (!Number.isInteger(width) || (width as number) <= 0) {
+      return null;
+    }
+    if (!Number.isInteger(height) || (height as number) <= 0) {
+      return null;
+    }
+    if (typeof fps !== "number" || !Number.isFinite(fps) || fps <= 0) {
+      return null;
+    }
+    return { width: width as number, height: height as number, fps };
+  } catch {
+    return null;
+  }
+}
+
 export async function createFrameyardHost(): Promise<FrameyardHost> {
   await waitForDom();
   const path = decodeURIComponent(window.location.pathname).replace(/^\/+/, "");
@@ -684,13 +718,19 @@ export async function createFrameyardHost(): Promise<FrameyardHost> {
   });
   const firstError = read.diagnostics.find((diagnostic) => diagnostic.severity === "error");
   const root = read.root;
-  const metadata = read.descriptor.metadata;
-  if (!read.valid || firstError !== undefined || root === null || metadata === null) {
+  const declared = read.descriptor.metadata;
+  if (!read.valid || firstError !== undefined || root === null || declared === null) {
     throw new FrameyardError(
       firstError?.code ?? "COMPOSITION_INVALID",
       firstError?.message ?? "Composition document is invalid.",
       { diagnostics: read.diagnostics },
     );
+  }
+  const metadata = resolveCompositionMetadata(declared, readInjectedFormat());
+  if (metadata === null) {
+    throw new FrameyardError("COMPOSITION_FORMAT_UNRESOLVED", COMPOSITION_FORMAT_UNRESOLVED_MESSAGE, {
+      diagnostics: read.diagnostics,
+    });
   }
   if (!(root instanceof HTMLElement)) {
     throw new FrameyardError("COMPOSITION_INVALID", "Composition document must contain one <fy-composition> root.", {

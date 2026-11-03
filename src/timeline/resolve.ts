@@ -391,6 +391,7 @@ async function resolveCompositionSource(options: {
       projectRoot: project.root,
       entry: composition.entry,
       ...(clip.props !== undefined ? { props: clip.props } : {}),
+      ...(project.format ? { format: project.format } : {}),
     });
     cache.set(cacheKey, validation);
   }
@@ -417,11 +418,12 @@ async function resolveCompositionSource(options: {
     return null;
   }
 
-  if (validation.info.metadata.fps !== project.format?.fps) {
+  const declaredFps = validation.info.declaredFormat.fps;
+  if (declaredFps !== null && declaredFps !== project.format?.fps) {
     addError(
       diagnostics,
       "TIMELINE_FPS_MISMATCH",
-      `Composition "${sourceId}" runs at ${validation.info.metadata.fps} fps, but the project format is ${project.format?.fps} fps.`,
+      `Composition "${sourceId}" runs at ${declaredFps} fps, but the project format is ${project.format?.fps} fps.`,
       details,
     );
   }

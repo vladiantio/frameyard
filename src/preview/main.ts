@@ -6,6 +6,7 @@ import type {
   ResolvedAudioClip,
   ResolvedTranscriptClip,
 } from "../index.js";
+import { COMPOSITION_FORMAT_UNRESOLVED_MESSAGE } from "../composition/index.js";
 import { frameToMilliseconds } from "../runtime/index.js";
 import {
   FrameyardError,
@@ -450,6 +451,13 @@ async function loadNow(entry: string, propOverrides?: unknown): Promise<LoadedHo
 
 async function loadHtmlNow(composition: CompositionEntry, propOverrides?: unknown): Promise<LoadedHostState> {
   if (!composition.metadata) {
+    const hasErrors = composition.diagnostics.some((diagnostic) => diagnostic.severity === "error");
+    if (!hasErrors) {
+      throw new FrameyardError(
+        "COMPOSITION_FORMAT_UNRESOLVED",
+        `Composition "${composition.id}": ${COMPOSITION_FORMAT_UNRESOLVED_MESSAGE}`,
+      );
+    }
     throw new FrameyardError("COMPOSITION_INVALID", `Composition "${composition.id}" has no static metadata.`);
   }
 

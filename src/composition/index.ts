@@ -4,6 +4,7 @@ export type {
   CompositionDescriptorResult,
   ReadCompositionDescriptorOptions,
 } from "./descriptor.js";
+export { COMPOSITION_FORMAT_UNRESOLVED_MESSAGE, resolveCompositionMetadata } from "./format.js";
 export { readAnimationDeclarations } from "./animation.js";
 export type { AnimationDeclaration, AnimationDeclarations, ReadAnimationDeclarationsOptions } from "./animation.js";
 export { readMediaDeclarations, readMediaSpec } from "./media.js";

@@ -1,4 +1,5 @@
 import { defaultTreeAdapter, html, parse, serialize } from "parse5";
+import type { CompositionFormat } from "../contracts.js";
 import { getElementByTagName, type HtmlElement } from "../html/parse.js";
 
 export const FRAMEWORK_IMPORT_MAP = {
@@ -13,16 +14,21 @@ export const COMPOSITION_HOST_STYLE =
 
 export interface CompositionHostInjectionOptions {
   html: string;
+  /**
+   * Project format the host uses to fill width, height, and fps the
+   * composition omits. Absent in projects without a format.
+   */
+  format?: CompositionFormat | null;
   importMap?: Record<string, string>;
   hostScriptUrl?: string;
   styleText?: string;
 }
 
 /**
- * Injects the framework import map, sizing style, and composition host into a
- * composition document. The host script is a deferred module, so it runs after
- * the document is parsed; author executable scripts are rejected by static
- * validation before this function is called.
+ * Injects the framework import map, sizing style, resolved project format, and
+ * composition host into a composition document. The host script is a deferred
+ * module, so it runs after the document is parsed; author executable scripts
+ * are rejected by static validation before this function is called.
  */
 export function injectCompositionHost(options: CompositionHostInjectionOptions): string {
   const document = parse(options.html);
@@ -46,8 +52,26 @@ export function injectCompositionHost(options: CompositionHostInjectionOptions):
     { name: "data-fy-host", value: "" },
   ]);
 
-  head.childNodes.unshift(importMap, style, host);
-  for (const child of [importMap, style, host]) {
+  const injected: HtmlElement[] = [importMap, style, host];
+  if (options.format) {
+    const format = createElement("script", [
+      { name: "type", value: "application/json" },
+      { name: "data-fy", value: "format" },
+      { name: "data-fy-host", value: "" },
+    ]);
+    appendText(
+      format,
+      JSON.stringify({
+        width: options.format.width,
+        height: options.format.height,
+        fps: options.format.fps,
+      }),
+    );
+    injected.unshift(format);
+  }
+
+  head.childNodes.unshift(...injected);
+  for (const child of injected) {
     child.parentNode = head;
   }
 

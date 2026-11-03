@@ -8,6 +8,25 @@ Frameyard uses `0.x` versions until the composition, configuration, CLI,
 JSON-result, transcript, and skill contracts stabilize. Before `1.0.0`, a
 contract change may ship in a minor release and is called out explicitly below.
 
+## [Unreleased]
+
+### Changed
+
+- `<fy-composition>` keeps `duration-in-frames` required but makes `width`,
+  `height`, and `fps` optional. An omitted value is inherited from the project
+  `format`; a declared value wins, and `width`/`height` must be declared
+  together. `CompositionSourceInfo` gains `declaredFormat`, and
+  `project.json`/render results keep exposing resolved metadata.
+- Rendering a composition that omits format values in a project without
+  `format` fails with `COMPOSITION_FORMAT_UNRESOLVED` instead of a document
+  diagnostic; `check`, `still`, `render`, and the preview report the same
+  actionable error. See ADR 0015.
+
+### Added
+
+- `examples/blend/compositions/backdrop.html` demonstrates an inherited
+  composition format.
+
 ## [0.7.0] - 2026-11-02
 
 ### Added

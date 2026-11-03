@@ -3,6 +3,7 @@ import { readFile, stat } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { COMPOSITION_FORMAT_UNRESOLVED_MESSAGE } from "../composition/index.js";
 import type { CompositionDiagnostic, ControllerDeclaration } from "../contracts.js";
 import { FrameyardError } from "../errors.js";
 import { validateHtmlComposition } from "../html/validate.js";
@@ -246,7 +247,11 @@ async function buildProjectJson(project: Project): Promise<{
 }> {
   const compositions: unknown[] = [];
   for (const composition of project.compositions.values()) {
-    const result = await validateHtmlComposition({ projectRoot: project.root, entry: composition.entry });
+    const result = await validateHtmlComposition({
+      projectRoot: project.root,
+      entry: composition.entry,
+      ...(project.format ? { format: project.format } : {}),
+    });
     compositions.push({
       id: composition.id,
       entry: composition.entry,
@@ -362,7 +367,11 @@ export async function startPreviewServer(options: PreviewServerOptions): Promise
 
       const composition = findCompositionForPath(project, pathname);
       if (composition) {
-        const result = await validateHtmlComposition({ projectRoot: project.root, entry: composition.entry });
+        const result = await validateHtmlComposition({
+          projectRoot: project.root,
+          entry: composition.entry,
+          ...(project.format ? { format: project.format } : {}),
+        });
         if (url.searchParams.has("__fy-controller")) {
           const controller = result.info?.controller;
           if (controller?.kind === "inline" && controller.source !== undefined) {
@@ -383,9 +392,29 @@ export async function startPreviewServer(options: PreviewServerOptions): Promise
           );
           return;
         }
+        if (result.formatUnresolved) {
+          sendHtml(
+            response,
+            500,
+            renderCompositionError(composition.entry, [
+              {
+                severity: "error",
+                code: "COMPOSITION_FORMAT_UNRESOLVED",
+                message: COMPOSITION_FORMAT_UNRESOLVED_MESSAGE,
+              },
+            ]),
+            request.method === "HEAD",
+          );
+          return;
+        }
 
         const source = await readFile(composition.absoluteEntry, "utf8");
-        sendHtml(response, 200, injectCompositionHost({ html: source }), request.method === "HEAD");
+        sendHtml(
+          response,
+          200,
+          injectCompositionHost({ html: source, ...(project.format ? { format: project.format } : {}) }),
+          request.method === "HEAD",
+        );
         return;
       }
 

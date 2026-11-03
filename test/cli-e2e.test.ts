@@ -1472,3 +1472,79 @@ describe("CLI end-to-end", () => {
     expect(manifest.name).toBe("scaffold-dot");
   });
 });
+
+describe("composition format inheritance", () => {
+  const inheritedComposition = `<!doctype html>
+<html>
+  <head><meta charset="utf-8"></head>
+  <body>
+    <fy-composition duration-in-frames="6">
+      <div style="width: 100%; height: 100%; background: #123456"></div>
+    </fy-composition>
+  </body>
+</html>
+`;
+
+  async function createFormatProject(options: { format?: boolean } = {}): Promise<string> {
+    const projectRoot = await mkdtemp(path.join(tmpdir(), "frameyard-cli-format-"));
+    await mkdir(path.join(projectRoot, "compositions"), { recursive: true });
+    await writeFile(path.join(projectRoot, "compositions", "plain.html"), inheritedComposition);
+    await writeFile(
+      path.join(projectRoot, "video.config.js"),
+      `export default { ${
+        options.format === false ? "" : "format: { width: 160, height: 90, fps: 10 }, "
+      }compositions: { plain: "./compositions/plain.html" } };\n`,
+    );
+    return projectRoot;
+  }
+
+  it("checks and stills a composition that inherits the project format", async () => {
+    const projectRoot = await createFormatProject();
+    try {
+      const check = await run(["check", "plain", "--project", projectRoot, "--json"], projectRoot);
+      expect(check.code).toBe(0);
+      expect(JSON.parse(check.stdout)).toMatchObject({
+        ok: true,
+        command: "check",
+        composition: "plain",
+        metadata: { width: 160, height: 90, fps: 10, durationInFrames: 6 },
+        framesChecked: 6,
+      });
+
+      const still = await run(
+        [
+          "still",
+          "plain",
+          "--frame",
+          "0",
+          "--project",
+          projectRoot,
+          "--out",
+          path.join(projectRoot, "still.png"),
+          "--json",
+        ],
+        projectRoot,
+      );
+      expect(still.code).toBe(0);
+      expect(JSON.parse(still.stdout)).toMatchObject({ ok: true, width: 160, height: 90 });
+    } finally {
+      await rm(projectRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects an unresolved composition format without a project format", async () => {
+    const projectRoot = await createFormatProject({ format: false });
+    try {
+      const result = await run(["check", "plain", "--project", projectRoot, "--json"], projectRoot);
+
+      expect(result.code).not.toBe(0);
+      expect(JSON.parse(result.stdout)).toMatchObject({
+        ok: false,
+        command: "check",
+        error: { code: "COMPOSITION_FORMAT_UNRESOLVED" },
+      });
+    } finally {
+      await rm(projectRoot, { recursive: true, force: true });
+    }
+  });
+});

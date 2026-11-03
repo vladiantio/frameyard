@@ -2,16 +2,13 @@ import { stat } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { FrameyardError } from "./errors.js";
-import { isPlainObject } from "./contracts.js";
+import { isPlainObject, type CompositionFormat } from "./contracts.js";
 
 export type CompositionKind = "html";
 export type TimelineKind = "timeline";
 
-export interface ProjectFormat {
-  width: number;
-  height: number;
-  fps: number;
-}
+/** The project format is the composition format the project fixes for every entry. */
+export type ProjectFormat = CompositionFormat;
 
 export interface ProjectComposition {
   id: string;

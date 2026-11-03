@@ -10,6 +10,7 @@ import {
   readCompositionDescriptor,
   readMediaDeclarations,
   readTranscriptDeclarations,
+  resolveCompositionMetadata,
   type AnimationDeclaration,
   type MediaDeclaration,
   type TranscriptDeclaration,
@@ -18,9 +19,11 @@ import {
   mergeProps,
   type CompositionDiagnostic,
   type CompositionDiagnosticDetails,
+  type CompositionFormat,
   type CompositionMetadata,
   type CompositionSourceInfo,
   type ControllerDeclaration,
+  type DeclaredFormat,
   type DiagnosticSeverity,
   type Props,
   type ResolvedAudioClip,
@@ -57,10 +60,21 @@ export interface ValidateHtmlCompositionOptions {
   entry: string;
   /** External props overrides merged over the document's default props. */
   props?: unknown;
+  /**
+   * Project format used to fill width, height, and fps the composition omits.
+   * Omit it for composition-only projects that declare their own format.
+   */
+  format?: CompositionFormat;
 }
 
 export interface StaticValidationResult {
   info: CompositionSourceInfo | null;
+  /**
+   * True when the document is otherwise valid but width, height, or fps is
+   * neither declared nor available from a project format. Callers report this
+   * with COMPOSITION_FORMAT_UNRESOLVED instead of a document diagnostic.
+   */
+  formatUnresolved: boolean;
   diagnostics: CompositionDiagnostic[];
 }
 
@@ -92,7 +106,10 @@ class HtmlCompositionValidator {
   private readonly propsOverrides: unknown;
   private defaultPropsValue: Readonly<Props> = Object.freeze({});
   private props: Readonly<Props>;
+  private readonly format: CompositionFormat | undefined;
   private metadata: CompositionMetadata | null = null;
+  private declaredFormat: DeclaredFormat | null = null;
+  private formatUnresolved = false;
   private controller: ControllerDeclaration | null = null;
   private documentValid = true;
   private fixedFactsValid = false;
@@ -110,6 +127,7 @@ class HtmlCompositionValidator {
     this.document = document;
     this.propsOverrides = options.props;
     this.props = this.defaultPropsValue;
+    this.format = options.format;
   }
 
   async run(): Promise<StaticValidationResult> {
@@ -124,7 +142,10 @@ class HtmlCompositionValidator {
     this.fixedFactsValid = read.valid;
     const readRoot = read.root;
     this.root = readRoot !== null && isElement(readRoot) ? readRoot : null;
-    this.metadata = read.descriptor.metadata;
+    const declared = read.descriptor.metadata;
+    this.declaredFormat = declared?.format ?? null;
+    this.metadata = declared ? resolveCompositionMetadata(declared, this.format) : null;
+    this.formatUnresolved = this.fixedFactsValid && declared !== null && this.metadata === null;
     this.defaultPropsValue = read.descriptor.defaultProps;
     this.controller = read.descriptor.controller;
     this.mergeOverrides();
@@ -164,11 +185,19 @@ class HtmlCompositionValidator {
     await this.validateOrdinaryAssets();
 
     const metadata = this.metadata;
+    const declaredFormat = this.declaredFormat;
     const root = this.root;
     const info: CompositionSourceInfo | null =
-      metadata && root && this.fixedFactsValid && this.overridesValid && this.controllerFileValid && this.documentValid
+      metadata &&
+      declaredFormat &&
+      root &&
+      this.fixedFactsValid &&
+      this.overridesValid &&
+      this.controllerFileValid &&
+      this.documentValid
         ? {
             metadata,
+            declaredFormat,
             defaultProps: this.defaultPropsValue,
             controller: this.controller,
             audioClips: Object.freeze([...this.audioClips]),
@@ -177,7 +206,7 @@ class HtmlCompositionValidator {
           }
         : null;
 
-    return { info, diagnostics: this.finishDiagnostics() };
+    return { info, formatUnresolved: this.formatUnresolved, diagnostics: this.finishDiagnostics() };
   }
 
   private report(
@@ -845,6 +874,7 @@ export async function validateHtmlComposition(
   if (entryPath !== projectRoot && !entryPath.startsWith(projectRoot + path.sep)) {
     return {
       info: null,
+      formatUnresolved: false,
       diagnostics: [
         {
           severity: "error",
@@ -862,6 +892,7 @@ export async function validateHtmlComposition(
   } catch {
     return {
       info: null,
+      formatUnresolved: false,
       diagnostics: [
         {
           severity: "error",
@@ -879,6 +910,7 @@ export async function validateHtmlComposition(
   } catch (error) {
     return {
       info: null,
+      formatUnresolved: false,
       diagnostics: [
         {
           severity: "error",

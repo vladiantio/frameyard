@@ -253,6 +253,33 @@ describe("timeline resolution", () => {
     expect(resolved.diagnostics.some((diagnostic) => diagnostic.code === "TIMELINE_CYCLE")).toBe(true);
   });
 
+  it("inherits the project format for a composition that omits width, height, and fps", async () => {
+    const project = await createProject({
+      timeline: timeline([
+        {
+          id: "intro",
+          track: "v1",
+          source: { kind: "composition", id: "intro" },
+          start: 0,
+        },
+      ]),
+      compositionHtml: compositionHtml.replace(
+        '<fy-composition width="1920" height="1080" fps="30" duration-in-frames="10">',
+        '<fy-composition duration-in-frames="10">',
+      ),
+    });
+
+    const resolved = await resolveMain(project);
+    const clip = resolved.timeline?.clips[0];
+
+    expect(resolved.diagnostics.some((diagnostic) => diagnostic.code === "TIMELINE_FPS_MISMATCH")).toBe(false);
+    expect(clip?.source).toMatchObject({
+      kind: "composition",
+      metadata: { width: 1920, height: 1080, fps: 30, durationInFrames: 10 },
+      durationInFrames: 10,
+    });
+  });
+
   it("rejects a composition with a different frame rate", async () => {
     const project = await createProject({
       timeline: timeline([

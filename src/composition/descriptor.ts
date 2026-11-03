@@ -4,8 +4,8 @@ import {
   mergeProps,
   type CompositionDiagnostic,
   type CompositionDiagnosticDetails,
-  type CompositionMetadata,
   type ControllerDeclaration,
+  type DeclaredCompositionMetadata,
   type Props,
 } from "../contracts.js";
 import { errorMessage } from "../errors.js";
@@ -15,7 +15,12 @@ import { isLocalRelative } from "./paths.js";
 import { findElements, getAttribute, type ElementMatch } from "./walk.js";
 
 export interface CompositionDescriptor {
-  metadata: CompositionMetadata | null;
+  /**
+   * Declared metadata before format resolution. Null when the document does
+   * not declare a usable `duration-in-frames` or declares only one of
+   * `width` and `height`.
+   */
+  metadata: DeclaredCompositionMetadata | null;
   defaultProps: Readonly<Props>;
   controller: ControllerDeclaration | null;
 }
@@ -36,8 +41,6 @@ export interface ReadCompositionDescriptorOptions {
    */
   resolvePath(raw: string): string;
 }
-
-const METADATA_ATTRIBUTES = ["width", "height", "fps", "duration-in-frames"] as const;
 
 function readRoot<Node>(
   adapter: DocumentAdapter<Node>,
@@ -97,17 +100,20 @@ function readPositiveInteger<Node>(
   root: Node,
   attribute: string,
   diagnostics: CompositionDiagnostic[],
+  required: boolean,
 ): number | null {
   const raw = getAttribute(adapter, root, attribute);
   if (raw === undefined) {
-    diagnostics.push(
-      createDiagnostic(
-        "error",
-        "COMPOSITION_INVALID",
-        `Missing required "${attribute}" attribute on <fy-composition>.`,
-        attributeDetails(adapter, path, root, attribute),
-      ),
-    );
+    if (required) {
+      diagnostics.push(
+        createDiagnostic(
+          "error",
+          "COMPOSITION_INVALID",
+          `Missing required "${attribute}" attribute on <fy-composition>.`,
+          attributeDetails(adapter, path, root, attribute),
+        ),
+      );
+    }
     return null;
   }
 
@@ -132,17 +138,20 @@ function readPositiveNumber<Node>(
   root: Node,
   attribute: string,
   diagnostics: CompositionDiagnostic[],
+  required: boolean,
 ): number | null {
   const raw = getAttribute(adapter, root, attribute);
   if (raw === undefined) {
-    diagnostics.push(
-      createDiagnostic(
-        "error",
-        "COMPOSITION_INVALID",
-        `Missing required "${attribute}" attribute on <fy-composition>.`,
-        attributeDetails(adapter, path, root, attribute),
-      ),
-    );
+    if (required) {
+      diagnostics.push(
+        createDiagnostic(
+          "error",
+          "COMPOSITION_INVALID",
+          `Missing required "${attribute}" attribute on <fy-composition>.`,
+          attributeDetails(adapter, path, root, attribute),
+        ),
+      );
+    }
     return null;
   }
 
@@ -165,28 +174,32 @@ function readMetadata<Node>(
   adapter: DocumentAdapter<Node>,
   path: string,
   root: Node,
-): { metadata: CompositionMetadata | null; diagnostics: CompositionDiagnostic[] } {
+): { metadata: DeclaredCompositionMetadata | null; diagnostics: CompositionDiagnostic[] } {
   const diagnostics: CompositionDiagnostic[] = [];
-  const values = new Map<(typeof METADATA_ATTRIBUTES)[number], number | null>();
+  const width = readPositiveInteger(adapter, path, root, "width", diagnostics, false);
+  const height = readPositiveInteger(adapter, path, root, "height", diagnostics, false);
+  const fps = readPositiveNumber(adapter, path, root, "fps", diagnostics, false);
+  const durationInFrames = readPositiveInteger(adapter, path, root, "duration-in-frames", diagnostics, true);
 
-  for (const attribute of METADATA_ATTRIBUTES) {
-    values.set(
-      attribute,
-      attribute === "fps"
-        ? readPositiveNumber(adapter, path, root, attribute, diagnostics)
-        : readPositiveInteger(adapter, path, root, attribute, diagnostics),
+  const hasWidth = getAttribute(adapter, root, "width") !== undefined;
+  const hasHeight = getAttribute(adapter, root, "height") !== undefined;
+  let paired = true;
+  if (hasWidth !== hasHeight) {
+    paired = false;
+    diagnostics.push(
+      createDiagnostic(
+        "error",
+        "COMPOSITION_INVALID",
+        '"width" and "height" must be declared together on <fy-composition>.',
+        attributeDetails(adapter, path, root, hasWidth ? "width" : "height"),
+      ),
     );
   }
 
-  const width = values.get("width") ?? null;
-  const height = values.get("height") ?? null;
-  const fps = values.get("fps") ?? null;
-  const durationInFrames = values.get("duration-in-frames") ?? null;
-
   return {
     metadata:
-      width !== null && height !== null && fps !== null && durationInFrames !== null
-        ? { width, height, fps, durationInFrames }
+      paired && durationInFrames !== null && diagnostics.length === 0
+        ? { format: { width, height, fps }, durationInFrames }
         : null,
     diagnostics,
   };
@@ -383,7 +396,7 @@ export function readCompositionDescriptor<Node>(
   const rootRead = readRoot(adapter, options.path);
   const diagnostics = [...rootRead.diagnostics];
 
-  let metadata: CompositionMetadata | null = null;
+  let metadata: DeclaredCompositionMetadata | null = null;
   if (rootRead.root) {
     const metadataRead = readMetadata(adapter, options.path, rootRead.root);
     metadata = metadataRead.metadata;

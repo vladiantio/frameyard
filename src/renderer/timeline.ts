@@ -504,6 +504,7 @@ async function captureCompositionLayer(options: {
       projectRoot: project.root,
       entry: source.entry,
       ...(clip.props !== undefined ? { props: clip.props } : {}),
+      ...(project.format ? { format: project.format } : {}),
     });
     infoCache.set(cacheKey, validation);
   }
@@ -782,6 +783,7 @@ async function checkResolvedTimelineRange(options: {
           projectRoot: context.project.root,
           entry: source.entry,
           ...(layer.clip.props !== undefined ? { props: layer.clip.props } : {}),
+          ...(context.project.format ? { format: context.project.format } : {}),
         });
         if (!validation.info) {
           throw new FrameyardError(
@@ -1040,6 +1042,7 @@ async function renderResolvedTimelineFrame(options: {
         projectRoot: context.project.root,
         entry: source.entry,
         ...(clip.props !== undefined ? { props: clip.props } : {}),
+        ...(context.project.format ? { format: context.project.format } : {}),
       });
       if (!validation.info) {
         throw new FrameyardError(

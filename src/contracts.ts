@@ -4,6 +4,33 @@ export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
 export type Props = { [key: string]: JsonValue };
 
+/** Output width, height, and frame rate fixed for a project. */
+export interface CompositionFormat {
+  /** Output width in CSS pixels. */
+  width: number;
+  /** Output height in CSS pixels. */
+  height: number;
+  /** Frames per second. Frame time is always derived from frame / fps. */
+  fps: number;
+}
+
+/**
+ * Format values a composition declares on its root. A null value is inherited
+ * from the project format; declarations always win over inheritance.
+ */
+export interface DeclaredFormat {
+  width: number | null;
+  height: number | null;
+  fps: number | null;
+}
+
+/** The fixed facts a composition document declares before format resolution. */
+export interface DeclaredCompositionMetadata {
+  format: DeclaredFormat;
+  /** Positive integer number of frames in the composition. */
+  durationInFrames: number;
+}
+
 export interface CompositionMetadata {
   /** Output width in CSS pixels. */
   width: number;
@@ -105,7 +132,13 @@ export interface ControllerDeclaration {
 }
 
 export interface CompositionSourceInfo {
+  /** Metadata resolved against the project format. */
   metadata: CompositionMetadata;
+  /**
+   * The format values the document declares. Missing values were inherited
+   * from the project format to produce `metadata`.
+   */
+  declaredFormat: DeclaredFormat;
   defaultProps: Readonly<Props>;
   controller: ControllerDeclaration | null;
   audioClips: readonly ResolvedAudioClip[];

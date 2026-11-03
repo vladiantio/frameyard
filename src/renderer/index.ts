@@ -2,6 +2,7 @@ import { link, mkdir, mkdtemp, rename, rm, stat, writeFile } from "node:fs/promi
 import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { COMPOSITION_FORMAT_UNRESOLVED_MESSAGE } from "../composition/index.js";
 import {
   isPlainObject,
   type CompositionDiagnostic,
@@ -271,11 +272,19 @@ async function prepareComposition(options: SessionOptions): Promise<PreparedComp
     projectRoot: options.project.root,
     entry: composition.entry,
     props: options.props,
+    ...(options.project.format ? { format: options.project.format } : {}),
   });
   const staticDiagnostics = validation.diagnostics;
   const staticErrors = staticDiagnostics.filter((diagnostic) => diagnostic.severity === "error");
   if (!validation.info || staticErrors.length > 0) {
     const first = staticErrors[0];
+    if (!first && validation.formatUnresolved) {
+      throw new FrameyardError(
+        "COMPOSITION_FORMAT_UNRESOLVED",
+        `Composition "${options.compositionId}": ${COMPOSITION_FORMAT_UNRESOLVED_MESSAGE}`,
+        { diagnostics: validation.diagnostics },
+      );
+    }
     throw new FrameyardError(
       first?.code ?? "COMPOSITION_INVALID",
       `Composition "${options.compositionId}": ${first?.message ?? "static validation failed."}`,

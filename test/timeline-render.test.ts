@@ -5,6 +5,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 import { loadProject } from "../src/project.ts";
+import { compositeTimelineFrame } from "../src/renderer/ffmpeg.ts";
 import {
   captureTimelineStill,
   captureTimelineStills,
@@ -12,8 +13,9 @@ import {
   clampTimelineWorkers,
   renderTimeline,
 } from "../src/renderer/timeline.ts";
+import type { BlendMode } from "../src/timeline/schema.ts";
 import { BARCODE, barcodeCompositionHtml, barcodeCropFilter, decodeBarcodeFrames } from "./helpers/frame-probe.ts";
-import { mediaPixel } from "./helpers/media.ts";
+import { mediaPixel, mediaPixelRgba } from "./helpers/media.ts";
 
 const exec = promisify(execFile);
 const repoRoot = path.resolve(new URL("..", import.meta.url).pathname);
@@ -129,6 +131,54 @@ async function probe(filePath: string) {
     streams: Array<Record<string, unknown>>;
     format?: { format_name?: string };
   };
+}
+
+/** W3C blend math in 0-255 space, matching the FFmpeg recipe. */
+function cssBlend(mode: BlendMode, backdrop: number, source: number): number {
+  const cb = backdrop / 255;
+  const cs = source / 255;
+  let result = cs;
+  switch (mode) {
+    case "normal":
+      break;
+    case "multiply":
+      result = cb * cs;
+      break;
+    case "screen":
+      result = cb + cs - cb * cs;
+      break;
+    case "overlay":
+      result = cb <= 0.5 ? 2 * cb * cs : 1 - 2 * (1 - cb) * (1 - cs);
+      break;
+    case "darken":
+      result = Math.min(cb, cs);
+      break;
+    case "lighten":
+      result = Math.max(cb, cs);
+      break;
+    case "color-dodge":
+      result = cs === 1 ? 1 : Math.min(1, cb / (1 - cs));
+      break;
+    case "color-burn":
+      result = cs === 0 ? 0 : 1 - Math.min(1, (1 - cb) / cs);
+      break;
+    case "hard-light":
+      result = cs <= 0.5 ? 2 * cb * cs : 1 - 2 * (1 - cb) * (1 - cs);
+      break;
+    case "soft-light":
+      result =
+        cs <= 0.5
+          ? cb - (1 - 2 * cs) * cb * (1 - cb)
+          : cb + (2 * cs - 1) * ((cb <= 0.25 ? ((16 * cb - 12) * cb + 4) * cb : Math.sqrt(cb)) - cb);
+      break;
+    case "difference":
+      result = Math.abs(cb - cs);
+      break;
+    case "exclusion":
+      result = cb + cs - 2 * cb * cs;
+      break;
+  }
+  return Math.round(result * 255);
 }
 
 afterEach(async () => {
@@ -964,5 +1014,613 @@ describe("nested timeline rendering", () => {
     );
     const { mismatches } = decodeBarcodeFrames(stdout as unknown as Buffer, BARCODE.frames);
     expect(mismatches).toEqual([]);
+  }, 120_000);
+});
+
+describe("timeline blend modes", () => {
+  async function solidPng(filePath: string, color: string, size = "64x64"): Promise<void> {
+    await exec("ffmpeg", [
+      "-y",
+      "-v",
+      "error",
+      "-f",
+      "lavfi",
+      "-i",
+      `color=c=${color}:s=${size}:d=1`,
+      "-frames:v",
+      "1",
+      filePath,
+    ]);
+  }
+
+  it("composites every supported mode against the accumulated backdrop", async () => {
+    const root = await customRoot();
+    await mkdir(path.join(root, "out"), { recursive: true });
+    const basePath = path.join(root, "assets", "base.png");
+    const sourcePath = path.join(root, "assets", "source.png");
+    await solidPng(basePath, "0x336699");
+    await solidPng(sourcePath, "0xff8800");
+    const backdrop = await mediaPixel(basePath);
+    const source = await mediaPixel(sourcePath);
+    const modes: BlendMode[] = [
+      "normal",
+      "multiply",
+      "screen",
+      "overlay",
+      "darken",
+      "lighten",
+      "color-dodge",
+      "color-burn",
+      "hard-light",
+      "soft-light",
+      "difference",
+      "exclusion",
+    ];
+
+    for (const mode of modes) {
+      const outputPath = path.join(root, "out", `${mode}.png`);
+      await compositeTimelineFrame({
+        outputPath,
+        width: 64,
+        height: 64,
+        fps: 10,
+        background: "#000000",
+        layers: [
+          {
+            kind: "image",
+            path: basePath,
+            sourceWidth: 64,
+            sourceHeight: 64,
+            fit: "stretch",
+            x: 0,
+            y: 0,
+            scale: 1,
+            rotation: 0,
+            opacity: 1,
+            blend: "normal",
+          },
+          {
+            kind: "image",
+            path: sourcePath,
+            sourceWidth: 64,
+            sourceHeight: 64,
+            fit: "stretch",
+            x: 0,
+            y: 0,
+            scale: 1,
+            rotation: 0,
+            opacity: 1,
+            blend: mode,
+          },
+        ],
+      });
+
+      const actual = await mediaPixel(outputPath);
+      for (let channel = 0; channel < 3; channel += 1) {
+        const expected = cssBlend(mode, backdrop[channel] as number, source[channel] as number);
+        expect(
+          Math.abs((actual[channel] as number) - expected),
+          `${mode} channel ${channel}: ${actual.join(",")} vs ${expected}`,
+        ).toBeLessThanOrEqual(3);
+      }
+    }
+  }, 120_000);
+
+  it("stacks multiple blended layers in track order", async () => {
+    const root = await customRoot();
+    await mkdir(path.join(root, "out"), { recursive: true });
+    const basePath = path.join(root, "assets", "base.png");
+    const redPath = path.join(root, "assets", "red.png");
+    const greenPath = path.join(root, "assets", "green.png");
+    await solidPng(basePath, "0x336699");
+    await solidPng(redPath, "0xff8800");
+    await solidPng(greenPath, "0x00ff80");
+    const backdrop = await mediaPixel(basePath);
+    const red = await mediaPixel(redPath);
+    const green = await mediaPixel(greenPath);
+    const outputPath = path.join(root, "out", "stacked.png");
+
+    await compositeTimelineFrame({
+      outputPath,
+      width: 64,
+      height: 64,
+      fps: 10,
+      background: "#000000",
+      layers: [
+        {
+          kind: "image",
+          path: basePath,
+          sourceWidth: 64,
+          sourceHeight: 64,
+          fit: "stretch",
+          x: 0,
+          y: 0,
+          scale: 1,
+          rotation: 0,
+          opacity: 1,
+          blend: "normal",
+        },
+        {
+          kind: "image",
+          path: redPath,
+          sourceWidth: 64,
+          sourceHeight: 64,
+          fit: "stretch",
+          x: 0,
+          y: 0,
+          scale: 1,
+          rotation: 0,
+          opacity: 1,
+          blend: "multiply",
+        },
+        {
+          kind: "image",
+          path: greenPath,
+          sourceWidth: 64,
+          sourceHeight: 64,
+          fit: "stretch",
+          x: 0,
+          y: 0,
+          scale: 1,
+          rotation: 0,
+          opacity: 1,
+          blend: "screen",
+        },
+      ],
+    });
+
+    const actual = await mediaPixel(outputPath);
+    for (let channel = 0; channel < 3; channel += 1) {
+      const first = cssBlend("multiply", backdrop[channel] as number, red[channel] as number);
+      const expected = cssBlend("screen", first, green[channel] as number);
+      expect(Math.abs((actual[channel] as number) - expected)).toBeLessThanOrEqual(4);
+    }
+  }, 120_000);
+
+  it("blends only where the source has alpha", async () => {
+    const root = await customRoot();
+    await mkdir(path.join(root, "out"), { recursive: true });
+    const basePath = path.join(root, "assets", "base.png");
+    const sourcePath = path.join(root, "assets", "alpha.png");
+    await solidPng(basePath, "0x336699");
+    await exec("ffmpeg", [
+      "-y",
+      "-v",
+      "error",
+      "-f",
+      "lavfi",
+      "-i",
+      "color=c=black:s=64x64:d=1",
+      "-vf",
+      "format=rgba,colorchannelmixer=aa=0,drawbox=x=16:y=16:w=16:h=32:color=red@1:t=fill:replace=1,drawbox=x=40:y=16:w=8:h=32:color=red@0.5:t=fill:replace=1",
+      "-frames:v",
+      "1",
+      sourcePath,
+    ]);
+    const backdrop = await mediaPixelRgba(basePath);
+    const outputPath = path.join(root, "out", "alpha.png");
+    await compositeTimelineFrame({
+      outputPath,
+      width: 64,
+      height: 64,
+      fps: 10,
+      background: "#000000",
+      layers: [
+        {
+          kind: "image",
+          path: basePath,
+          sourceWidth: 64,
+          sourceHeight: 64,
+          fit: "stretch",
+          x: 0,
+          y: 0,
+          scale: 1,
+          rotation: 0,
+          opacity: 1,
+          blend: "normal",
+        },
+        {
+          kind: "image",
+          path: sourcePath,
+          sourceWidth: 64,
+          sourceHeight: 64,
+          fit: "stretch",
+          x: 0,
+          y: 0,
+          scale: 1,
+          rotation: 0,
+          opacity: 1,
+          blend: "multiply",
+        },
+      ],
+    });
+
+    const transparent = await mediaPixelRgba(outputPath, 5, 5);
+    const actualOpaque = await mediaPixelRgba(outputPath, 20, 20);
+    const actualSemi = await mediaPixelRgba(outputPath, 44, 20);
+    const opaque = await mediaPixelRgba(sourcePath, 20, 20);
+    const semi = await mediaPixelRgba(sourcePath, 44, 20);
+
+    for (let channel = 0; channel < 3; channel += 1) {
+      expect(transparent[channel], "transparent source leaves the backdrop").toBe(backdrop[channel]);
+      const blended = cssBlend("multiply", backdrop[channel] as number, opaque[channel] as number);
+      const mixed = Math.round(
+        (1 - (semi[3] as number) / 255) * (backdrop[channel] as number) + ((semi[3] as number) / 255) * blended,
+      );
+      expect(Math.abs((actualOpaque[channel] as number) - blended)).toBeLessThanOrEqual(3);
+      expect(Math.abs((actualSemi[channel] as number) - mixed)).toBeLessThanOrEqual(3);
+    }
+  }, 120_000);
+
+  it("renders blended composition layers across independent segments", async () => {
+    const root = await customRoot();
+    await writeFile(
+      path.join(root, "compositions", "base.html"),
+      `<!doctype html><html><head><meta charset="utf-8"><style>html, body { margin: 0; width: 100%; height: 100%; background: #336699; }</style></head><body><fy-composition width="320" height="180" fps="10" duration-in-frames="20"></fy-composition></body></html>`,
+    );
+    await writeFile(
+      path.join(root, "compositions", "top.html"),
+      `<!doctype html><html><head><meta charset="utf-8"><style>html, body { margin: 0; width: 100%; height: 100%; background: #ff8800; }</style></head><body><fy-composition width="320" height="180" fps="10" duration-in-frames="20"></fy-composition></body></html>`,
+    );
+    await writeFile(
+      path.join(root, "timelines", "main.json"),
+      `${JSON.stringify(
+        {
+          version: 1,
+          tracks: [
+            { id: "v1", kind: "video" },
+            { id: "v2", kind: "video" },
+          ],
+          clips: [
+            {
+              id: "base",
+              track: "v1",
+              source: { kind: "composition", id: "base" },
+              start: 0,
+              duration: 20,
+            },
+            {
+              id: "top",
+              track: "v2",
+              source: { kind: "composition", id: "top" },
+              start: 0,
+              duration: 20,
+              blend: "multiply",
+            },
+          ],
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    await writeFile(
+      path.join(root, "video.config.js"),
+      `export default {
+        format: { width: 320, height: 180, fps: 10 },
+        compositions: { base: "./compositions/base.html", top: "./compositions/top.html" },
+        timelines: { main: "./timelines/main.json" },
+      };\n`,
+    );
+    const outPath = path.join(root, "out", "main.mp4");
+    const project = await loadProject(root);
+
+    const result = await renderTimelineForTest({
+      project,
+      timelineId: "main",
+      outPath,
+      workers: 2,
+      maxSegmentFrames: 10,
+    });
+
+    expect(result.segments).toBe(2);
+    expect(result.framesRendered).toBe(20);
+    expect((await probe(outPath)).streams.find((stream) => stream.codec_type === "video")).toMatchObject({
+      width: 320,
+      height: 180,
+      nb_read_frames: "20",
+    });
+    const [red, green, blue] = await mediaPixel(outPath, 160, 90);
+    expect(Math.abs(red - 51)).toBeLessThanOrEqual(6);
+    expect(Math.abs(green - 54)).toBeLessThanOrEqual(6);
+    expect(blue).toBeLessThan(20);
+  }, 120_000);
+
+  it("blends only inside a transformed and offset clip box", async () => {
+    const root = await customRoot();
+    await mkdir(path.join(root, "out"), { recursive: true });
+    const basePath = path.join(root, "assets", "base.png");
+    const sourcePath = path.join(root, "assets", "source.png");
+    await solidPng(basePath, "0x336699");
+    await solidPng(sourcePath, "0xff8800", "16x16");
+    const backdrop = await mediaPixel(basePath);
+    const source = await mediaPixel(sourcePath);
+    const outputPath = path.join(root, "out", "offset.png");
+
+    await compositeTimelineFrame({
+      outputPath,
+      width: 64,
+      height: 64,
+      fps: 10,
+      background: "#000000",
+      layers: [
+        {
+          kind: "image",
+          path: basePath,
+          sourceWidth: 64,
+          sourceHeight: 64,
+          fit: "stretch",
+          x: 0,
+          y: 0,
+          scale: 1,
+          rotation: 0,
+          opacity: 1,
+          blend: "normal",
+        },
+        {
+          kind: "image",
+          path: sourcePath,
+          sourceWidth: 16,
+          sourceHeight: 16,
+          width: 16,
+          height: 16,
+          fit: "stretch",
+          x: 10,
+          y: 10,
+          scale: 1,
+          rotation: 0,
+          opacity: 1,
+          blend: "multiply",
+        },
+      ],
+    });
+
+    const outside = await mediaPixel(outputPath, 5, 5);
+    const inside = await mediaPixel(outputPath, 42, 42);
+    for (let channel = 0; channel < 3; channel += 1) {
+      expect(outside[channel], "outside the clip box").toBe(backdrop[channel]);
+      const expected = cssBlend("multiply", backdrop[channel] as number, source[channel] as number);
+      expect(Math.abs((inside[channel] as number) - expected)).toBeLessThanOrEqual(3);
+    }
+  }, 120_000);
+
+  it("applies clip opacity to the blended source alpha", async () => {
+    const root = await customRoot();
+    await mkdir(path.join(root, "out"), { recursive: true });
+    const basePath = path.join(root, "assets", "base.png");
+    const sourcePath = path.join(root, "assets", "source.png");
+    await solidPng(basePath, "0x336699");
+    await solidPng(sourcePath, "0xff8800");
+    const backdrop = await mediaPixel(basePath);
+    const source = await mediaPixel(sourcePath);
+    const outputPath = path.join(root, "out", "opacity.png");
+
+    await compositeTimelineFrame({
+      outputPath,
+      width: 64,
+      height: 64,
+      fps: 10,
+      background: "#000000",
+      layers: [
+        {
+          kind: "image",
+          path: basePath,
+          sourceWidth: 64,
+          sourceHeight: 64,
+          fit: "stretch",
+          x: 0,
+          y: 0,
+          scale: 1,
+          rotation: 0,
+          opacity: 1,
+          blend: "normal",
+        },
+        {
+          kind: "image",
+          path: sourcePath,
+          sourceWidth: 64,
+          sourceHeight: 64,
+          fit: "stretch",
+          x: 0,
+          y: 0,
+          scale: 1,
+          rotation: 0,
+          opacity: 0.5,
+          blend: "multiply",
+        },
+      ],
+    });
+
+    const actual = await mediaPixel(outputPath);
+    for (let channel = 0; channel < 3; channel += 1) {
+      const blended = cssBlend("multiply", backdrop[channel] as number, source[channel] as number);
+      const expected = Math.round(0.5 * (backdrop[channel] as number) + 0.5 * blended);
+      expect(Math.abs((actual[channel] as number) - expected)).toBeLessThanOrEqual(3);
+    }
+  }, 120_000);
+
+  it("keeps a transparent nested timeline's blend isolated from the parent backdrop", async () => {
+    const root = await customRoot();
+    await mkdir(path.join(root, "out"), { recursive: true });
+    await solidPng(path.join(root, "assets", "green.png"), "0x00ff00", "320x180");
+    await writeFile(
+      path.join(root, "compositions", "base.html"),
+      `<!doctype html><html><head><meta charset="utf-8"><style>html, body { margin: 0; width: 100%; height: 100%; background: #ff0000; }</style></head><body><fy-composition width="320" height="180" fps="10" duration-in-frames="1"></fy-composition></body></html>`,
+    );
+    await writeFile(
+      path.join(root, "timelines", "nested.json"),
+      `${JSON.stringify(
+        {
+          version: 1,
+          tracks: [{ id: "v1", kind: "video" }],
+          clips: [
+            {
+              id: "green",
+              track: "v1",
+              source: { kind: "image", src: "assets/green.png" },
+              start: 0,
+              duration: 1,
+              blend: "multiply",
+            },
+          ],
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    await writeFile(
+      path.join(root, "timelines", "main.json"),
+      `${JSON.stringify(
+        {
+          version: 1,
+          tracks: [
+            { id: "v1", kind: "video" },
+            { id: "v2", kind: "video" },
+          ],
+          clips: [
+            {
+              id: "red",
+              track: "v1",
+              source: { kind: "composition", id: "base" },
+              start: 0,
+              duration: 1,
+            },
+            {
+              id: "nested",
+              track: "v2",
+              source: { kind: "timeline", id: "nested" },
+              start: 0,
+              duration: 1,
+            },
+          ],
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    await writeFile(
+      path.join(root, "video.config.js"),
+      `export default {
+        format: { width: 320, height: 180, fps: 10 },
+        compositions: { base: "./compositions/base.html" },
+        timelines: { main: "./timelines/main.json", nested: "./timelines/nested.json" },
+      };\n`,
+    );
+    const project = await loadProject(root);
+    const outPath = path.join(root, "out", "nested-blend.png");
+
+    await captureTimelineStill({ project, timelineId: "main", frame: 0, outPath });
+
+    const [red, green, blue] = await mediaPixel(outPath, 160, 90);
+    expect(green, "the nested blend must not see the parent's red backdrop").toBeGreaterThan(200);
+    expect(red).toBeLessThan(60);
+    expect(blue).toBeLessThan(60);
+  }, 120_000);
+
+  it("composites blend modes on image, composition, video, and nested timeline clips", async () => {
+    const root = await customRoot();
+    await mkdir(path.join(root, "out"), { recursive: true });
+    await solidPng(path.join(root, "assets", "base.png"), "0x336699", "320x180");
+    await solidPng(path.join(root, "assets", "top.png"), "0xff8800", "320x180");
+    await exec("ffmpeg", [
+      "-y",
+      "-v",
+      "error",
+      "-f",
+      "lavfi",
+      "-i",
+      "color=c=0xff8800:s=320x180:r=10:d=1",
+      "-c:v",
+      "libx264",
+      "-pix_fmt",
+      "yuv420p",
+      "-g",
+      "1",
+      path.join(root, "assets", "top.mp4"),
+    ]);
+    await writeFile(
+      path.join(root, "compositions", "top.html"),
+      `<!doctype html><html><head><meta charset="utf-8"><style>html, body { margin: 0; width: 100%; height: 100%; background: #ff8800; }</style></head><body><fy-composition width="320" height="180" fps="10" duration-in-frames="10"></fy-composition></body></html>`,
+    );
+    await writeFile(
+      path.join(root, "timelines", "nested.json"),
+      `${JSON.stringify(
+        {
+          version: 1,
+          tracks: [{ id: "v1", kind: "video" }],
+          clips: [
+            {
+              id: "top",
+              track: "v1",
+              source: { kind: "image", src: "assets/top.png" },
+              start: 0,
+              duration: 10,
+            },
+          ],
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    const baseClip = (start: number) => ({
+      id: `base-${start}`,
+      track: "v1",
+      source: { kind: "image", src: "assets/base.png" },
+      start,
+      duration: 1,
+    });
+    const topClip = (start: number, source: Record<string, unknown>) => ({
+      id: `top-${start}`,
+      track: "v2",
+      source,
+      start,
+      duration: 1,
+      blend: "multiply",
+    });
+    await writeFile(
+      path.join(root, "timelines", "main.json"),
+      `${JSON.stringify(
+        {
+          version: 1,
+          tracks: [
+            { id: "v1", kind: "video" },
+            { id: "v2", kind: "video" },
+          ],
+          clips: [
+            baseClip(0),
+            topClip(0, { kind: "image", src: "assets/top.png" }),
+            baseClip(1),
+            topClip(1, { kind: "composition", id: "top" }),
+            baseClip(2),
+            topClip(2, { kind: "video", src: "assets/top.mp4" }),
+            baseClip(3),
+            topClip(3, { kind: "timeline", id: "nested" }),
+          ],
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    await writeFile(
+      path.join(root, "video.config.js"),
+      `export default {
+        format: { width: 320, height: 180, fps: 10 },
+        compositions: { top: "./compositions/top.html" },
+        timelines: { main: "./timelines/main.json", nested: "./timelines/nested.json" },
+      };\n`,
+    );
+    const project = await loadProject(root);
+    const frames = [0, 1, 2, 3];
+    const outPaths = frames.map((frame) => path.join(root, "out", `blend-${frame}.png`));
+
+    await captureTimelineStills({ project, timelineId: "main", frames, outPaths });
+
+    for (const [index, outPath] of outPaths.entries()) {
+      const [red, green, blue] = await mediaPixel(outPath, 160, 90);
+      expect(red, `frame ${frames[index]} red`).toBeGreaterThanOrEqual(40);
+      expect(red, `frame ${frames[index]} red`).toBeLessThanOrEqual(65);
+      expect(green, `frame ${frames[index]} green`).toBeGreaterThanOrEqual(40);
+      expect(green, `frame ${frames[index]} green`).toBeLessThanOrEqual(70);
+      expect(blue, `frame ${frames[index]} blue`).toBeLessThan(25);
+    }
   }, 120_000);
 });

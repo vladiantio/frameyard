@@ -66,6 +66,7 @@ describe("timeline schema", () => {
       track: "v1",
       sourceIn: 0,
       transform: { fit: "contain", x: 0, y: 0, scale: 1, rotation: 0, opacity: 1 },
+      blend: "normal",
       audio: { muted: false, gain: 1 },
       props: { title: "Hello" },
     });
@@ -222,6 +223,51 @@ describe("timeline schema", () => {
       rotation: 5,
       opacity: 0.8,
     });
+  });
+
+  it("accepts every supported blend mode and defaults visual clips to normal", () => {
+    for (const blend of [
+      "normal",
+      "multiply",
+      "screen",
+      "overlay",
+      "darken",
+      "lighten",
+      "color-dodge",
+      "color-burn",
+      "hard-light",
+      "soft-light",
+      "difference",
+      "exclusion",
+    ]) {
+      const value = validTimeline();
+      (value.clips as Record<string, unknown>[])[2]!.blend = blend;
+
+      const parsed = parseTimelineDocument(value);
+
+      expect(parsed.diagnostics, blend).toEqual([]);
+      expect(parsed.timeline?.clips[2]?.blend, blend).toBe(blend);
+    }
+  });
+
+  it("rejects unsupported, unknown, mistyped, and audio-clip blend values", () => {
+    const unsupported = validTimeline();
+    (unsupported.clips as Record<string, unknown>[])[2]!.blend = "hue";
+    const unsupportedParsed = parseTimelineDocument(unsupported);
+    expect(unsupportedParsed.diagnostics[0]).toMatchObject({
+      code: "TIMELINE_CLIP_INVALID",
+      details: { jsonPath: "$.clips[2].blend", suggestion: expect.stringContaining("separable") },
+    });
+
+    for (const blend of ["Multiply", "blur", 3]) {
+      const value = validTimeline();
+      (value.clips as Record<string, unknown>[])[2]!.blend = blend;
+      expect(codes(value), String(blend)).toContain("TIMELINE_CLIP_INVALID");
+    }
+
+    const audio = validTimeline();
+    (audio.clips as Record<string, unknown>[])[3]!.blend = "multiply";
+    expect(codes(audio)).toContain("TIMELINE_CLIP_INVALID");
   });
 
   it("rejects incomplete, invalid, or ambiguous transform boxes", () => {

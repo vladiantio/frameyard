@@ -105,6 +105,7 @@ A full 30-second demo timeline render is segmented and uses 8 workers by default
 | `examples/demo/` | 30-second reference HTML composition, external controller, and timeline |
 | `examples/webgl/` | Focused WebGL shader example with an external controller |
 | `examples/video/` | Embedded-video compositions (WebM and MP4) and WebM/MP4 timelines with video clips under a transparent HTML overlay |
+| `examples/blend/` | Static CSS blend modes on composition and video timeline clips |
 | `test/` | Public-seam tests |
 
 Per-frame path: `src/renderer/browser.ts` `openCompositionSession` navigates to the composition document, waits for `window.__fy`, calls `load`, then `seek`/`settle`/capture. `src/runtime/host.ts` applies bindings, imports the controller, mounts it, prepares media, sets frame-state variables, calls `update`, seeks animations, and settles media. `src/renderer/index.ts` merges static and runtime diagnostics into the result.
@@ -128,9 +129,9 @@ Timeline path: `src/timeline/resolve.ts` resolves the JSON and references; `src/
 ### Timelines
 
 - A timeline is a versioned JSON document listed explicitly in `video.config.js`. `format` fixes width, height, and fps for every timeline; composition and timeline IDs share one namespace.
-- Tracks are `video` or `audio`. Video tracks composite bottom-to-top; audio tracks mix. Clips on one track cannot overlap. No transitions or keyframes in 0.6.
+- Tracks are `video` or `audio`. Video tracks composite bottom-to-top; audio tracks mix. Clips on one track cannot overlap. No transitions or keyframes; blend modes are static per visual clip.
 - Clip sources are composition ID, nested timeline ID, or a project-relative video/image/audio path. `start`, `sourceIn`, and `duration` are project frames; image clips require a duration.
-- Composition clips can fix `props` and trim the source range. Visual clips support a static transform; see `skills/frameyard/references/timelines.md` for the fields. Composition fps must match the project.
+- Composition clips can fix `props` and trim the source range. Visual clips support a static transform and a static CSS blend mode; see `skills/frameyard/references/timelines.md` for the fields. Composition fps must match the project.
 - Visual clips contribute audio automatically unless muted. Timeline audio clips live on audio tracks. Nested timelines are groups and include their audio.
 - The timeline renderer is segmented: Chromium captures composition/nested ranges to alpha-preserving FFV1, FFmpeg composites and encodes segments in parallel, segments are concatenated in order, and audio is mixed once. Scratch is bounded and cleaned.
 
@@ -153,7 +154,7 @@ Timeline path: `src/timeline/resolve.ts` resolves the JSON and references; `src/
 - Diagnostics carry `severity`, `code`, `message`, and optional `details` with `path`, `line`, `column`, `element`, `attribute`, `value`, and `suggestion`. Error envelopes carry optional `error.details` and top-level `diagnostics`.
 - Unknown `data-fy-*` attributes, repeat misuse, controller declaration errors, executable scripts, event handlers, `javascript:` URLs, unsupported elements, and missing media/transcript references are errors. Missing binding paths and animation mismatches are warnings.
 - The result schemas expose `entry`, `controller`, and top-level `diagnostics` for composition `check`, `still`, and `render`. Timeline results expose `timeline`, `format`, `tracks`, `clips`, and `diagnostics`; audio/transcript warnings are `AUDIO_WARNING`/`TRANSCRIPT_WARNING` diagnostics, not nested string arrays.
-- `src/timeline/schema.ts` is browser-safe and strict: unknown fields, invalid sources, track mismatches, overlaps, and transform/audio values are errors. `src/timeline/resolve.ts` adds references, fps, media probes, source bounds, nested cycles, and props overrides.
+- `src/timeline/schema.ts` is browser-safe and strict: unknown fields, invalid sources, track mismatches, overlaps, and transform/blend/audio values are errors. `src/timeline/resolve.ts` adds references, fps, media probes, source bounds, nested cycles, and props overrides.
 
 ### Host, preview, and rendering
 
@@ -207,7 +208,7 @@ Timeline path: `src/timeline/resolve.ts` resolves the JSON and references; `src/
 - **Doctor checks** → `src/doctor.ts`, `src/cli.ts`; extend `test/assets-e2e.test.ts`.
 - **Init scaffold content** → `src/scaffold.ts` (project format, composition, timeline, config, props, README, agent guide, and `next`); keep the agent guide aligned with `skills/frameyard/`; extend `test/scaffold.test.ts`, `test/docs.test.ts`, and the `init` case. When the scaffold file set changes, update `README.md`, `docs/v0.1-design.md` §6, and the scaffold README/agent guide.
 - **Agent skill contract** → `skills/frameyard/`, `package.json`; extend `test/skill.test.ts`.
-- **Reference behavior** → `examples/demo/`, `examples/webgl/`, and `examples/video/`; keep their README commands working. The demo includes a timeline wrapping its composition; the video example includes WebM and MP4 timelines with video clips under a transparent overlay composition. Extend `test/examples.test.ts` when the example set or entry layout changes.
+- **Reference behavior** → `examples/demo/`, `examples/webgl/`, `examples/video/`, and `examples/blend/`; keep their README commands working. The demo includes a timeline wrapping its composition; the video example includes WebM and MP4 timelines with video clips under a transparent overlay composition; the blend example sequences static blend modes on composition and video clips. Extend `test/examples.test.ts` when the example set or entry layout changes.
 - **Performance benchmarks** → `scripts/bench-render.mjs`, `bench/fixtures/`, `bench/README.md`; keep `pnpm bench` representative of the composition capture path. Timeline benchmark scripts are temporary measurement tools; the production projection is in ADR 0012.
 - **Lint and formatting** → `.oxlintrc.json`, `.oxfmtrc.json`, `package.json`, `.githooks/pre-commit`, and CI/release workflows; run `pnpm check:static`.
 - **Release checks and versioning** → `scripts/set-version.mjs`, `scripts/verify-release.mjs`, `scripts/retag-release.mjs`, `RELEASING.md`, `.github/workflows/release.yml`; run `pnpm verify-release` after tagging.
@@ -225,8 +226,8 @@ Test at public seams, not private helpers:
 - `test/project-server.test.ts`: config loading, static routes, import map, ranges, traversal rejection.
 - `test/timeline-config.test.ts`: `video.config.js` timeline entries, format requirements, timeline-only projects, and duplicate or missing entries.
 - `test/preview-runtime.test.ts`: HTML iframe preview, props, seeking, transport keys, CSS animation, Canvas, WebGL, embedded video, determinism, diagnostics.
-- `test/timeline-preview-runtime.test.ts`: timeline preview UI and embedding, scrubbing, frame/one-second stepping, seek coalescing, keyboard forwarding, layer sizing, and video frame presentation.
-- `test/timeline-render.test.ts`: segmented rendering, transform boxes, alpha compositing, media/audio, nested timelines, and per-frame barcode mapping for video, composition, and nested-timeline layers.
+- `test/timeline-preview-runtime.test.ts`: timeline preview UI and embedding, scrubbing, frame/one-second stepping, seek coalescing, keyboard forwarding, layer sizing, blend layering and preview/still parity, and video frame presentation.
+- `test/timeline-render.test.ts`: segmented rendering, transform boxes, alpha and blend-mode compositing, media/audio, nested timelines, and per-frame barcode mapping for video, composition, and nested-timeline layers.
 - `test/encoders.test.ts`: codec and container matrix, encoder name mapping, encoder arguments, HEVC tags, and NVENC session limits.
 - `test/cli-e2e.test.ts`: real CLI with Chromium and FFmpeg, JSON envelopes, missing assets, deterministic stills across concurrent sessions, embedded video/WebGL capture and audio, container/codec/audio output, overwrite behavior, HTML check/still/render, static diagnostics, `dev`, `init`.
 - `test/video-determinism.test.ts`: a full-scene opacity animation over embedded video captures the requested frame, and consecutive composition frames map to consecutive source frames.

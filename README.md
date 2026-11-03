@@ -2,7 +2,7 @@
 
 Frameyard is a local-first framework for building parameterized videos with HTML, CSS, and an optional JavaScript controller, assembling them into timelines, and rendering them deterministically.
 
-The 0.6 design is implemented: HTML composition documents, JSON timelines with tracks and clips, nested timelines, declarative bindings, CSS animation scheduling, frame-state variables, inline and external controllers, composition and timeline hosts, static validation with structured diagnostics, an interactive preview with a read-only timeline, direct composition rendering, segmented lossless timeline rendering, audio and transcripts, deterministic Chromium capture, FFmpeg output, and the official agent skill.
+The current design is implemented: HTML composition documents, JSON timelines with tracks and clips, nested timelines, static clip blend modes, declarative bindings, CSS animation scheduling, frame-state variables, inline and external controllers, composition and timeline hosts, static validation with structured diagnostics, an interactive preview with a read-only timeline, direct composition rendering, segmented lossless timeline rendering, audio and transcripts, deterministic Chromium capture, FFmpeg output, and the official agent skill.
 
 ## Requirements
 
@@ -44,7 +44,7 @@ npx frameyard still main --frame 0,118-126 --out out/stills
 
 The scaffold wraps its composition in `timelines/main.timeline.json`. `render` writes the video to `out/main.mp4` in the project by default; pass `--out <file.mp4>` to choose another path. The composition remains renderable on its own with `npx frameyard render hello --props props/hello.json`. The scaffold's `.gitignore` ignores `out/`.
 
-The 30-second reference composition lives in [`examples/demo`](./examples/demo), a focused WebGL shader example lives in [`examples/webgl`](./examples/webgl), and the video example in [`examples/video`](./examples/video) includes two embedded-video compositions plus WebM and MP4 timelines that place the clips on tracks under a transparent HTML overlay. Each README has the commands for running it from a repository checkout.
+The 30-second reference composition lives in [`examples/demo`](./examples/demo), a focused WebGL shader example lives in [`examples/webgl`](./examples/webgl), the video example in [`examples/video`](./examples/video) includes two embedded-video compositions plus WebM and MP4 timelines that place the clips on tracks under a transparent HTML overlay, and [`examples/blend`](./examples/blend) demonstrates static CSS blend modes on composition and video clips. Each README has the commands for running it from a repository checkout.
 
 ## Project format
 
@@ -120,6 +120,7 @@ A timeline is a JSON document that places composition and media clips on video a
       "source": { "kind": "image", "src": "assets/logo.png" },
       "start": 30,
       "duration": 60,
+      "blend": "multiply",
       "transform": { "fit": "contain", "width": 480, "height": 270, "x": 640, "y": -320, "rotation": 0, "opacity": 0.9 }
     },
     {
@@ -137,10 +138,10 @@ A timeline is a JSON document that places composition and media clips on video a
 - Sources are `composition` + `id`, `timeline` + `id`, or `video`/`image`/`audio` + project-relative `src`.
 - `start`, `sourceIn`, and `duration` use timeline frames. Omitted durations use the rest of the source; image clips require a duration.
 - Composition clips can fix `props`, trim the source range, and repeat the same composition with different settings.
-- Visual clips support static `fit`, `width`/`height` (an explicit box), `x`, `y`, `scale`, `rotation`, and `opacity`. `fit` applies inside the box; `width` and `height` go together and are mutually exclusive with `scale`. No keyframes, transitions, or effects in 0.6.
+- Visual clips support static `fit`, `width`/`height` (an explicit box), `x`, `y`, `scale`, `rotation`, `opacity`, and `blend`. `fit` applies inside the box; `width` and `height` go together and are mutually exclusive with `scale`. `blend` is a CSS `mix-blend-mode` value with source-alpha semantics, from `normal` (the default) through `multiply`, `screen`, `overlay`, the light/dodge/burn family, `difference`, and `exclusion`; `hue`, `saturation`, `color`, and `luminosity` are rejected. No keyframes, transitions, or other effects.
 - Video, composition, and nested-timeline clips contribute audio automatically unless muted. Timeline audio clips live on audio tracks.
 - A composition used in a timeline must match the project fps; different sizes are fitted by the clip. Clips on one track cannot overlap.
-- Nested timelines are rendered as groups, so the parent clip's opacity and transform apply to the whole nested result.
+- Nested timelines are rendered as groups, so the parent clip's opacity, transform, and blend mode apply to the whole nested result. A blend inside a nested timeline sees only that timeline's own backdrop; a transparent nested timeline does not see the parent's layers.
 
 ### Bindings
 
@@ -399,7 +400,7 @@ For a repeatable local measurement of seek, capture, encode, and full-render tim
 
 Deferred from this implementation slice:
 
-- Timeline transitions, effects, keyframes, blend modes, masks, and audio fades
+- Timeline transitions, filters, keyframes, masks, and audio fades
 - Full visual timeline editing, drag-and-drop, trim handles, and undo/redo
 - Timeline-level variables and prop overrides inside nested timelines
 - Per-timeline formats and frame-rate conversion/retiming
@@ -437,6 +438,7 @@ See the [design baseline](./docs/v0.1-design.md) for the full product contract, 
 - `examples/demo/`: the 30-second reference composition
 - `examples/webgl/`: the focused WebGL shader example
 - `examples/video/`: embedded-video compositions and WebM/MP4 timelines with video clips under a transparent HTML overlay
+- `examples/blend/`: composition and video clips composited with static CSS blend modes
 - `bench/fixtures/`: controlled HTML compositions for the render benchmark
 - `scripts/`: benchmark, release checks, versioning, and git-hook installation
 - `docs/adr/`: architecture decision records

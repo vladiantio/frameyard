@@ -28,6 +28,7 @@ beforeAll(async () => {
             source: { kind: "composition", id: "intro" },
             start: 0,
             duration: 10,
+            blend: "multiply",
           },
         ],
       },
@@ -82,6 +83,7 @@ describe("timeline preview server", () => {
           durationInFrames: 10,
         }),
         transform: { fit: "contain", x: 0, y: 0, scale: 1, rotation: 0, opacity: 1 },
+        blend: "multiply",
       }),
     ]);
   });

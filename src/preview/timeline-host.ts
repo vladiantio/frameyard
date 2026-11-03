@@ -182,7 +182,10 @@ export function createTimelineHost(
   stage.style.height = `${stageSize.height}px`;
   stage.style.overflow = "hidden";
   stage.style.background = options.background ?? data.background ?? "#000";
+  // Blend modes must not reach the preview chrome behind the stage.
+  stage.style.isolation = "isolate";
 
+  const trackOrder = new Map(data.tracks.map((track, index) => [track.id, index]));
   const visualClips = data.clips.filter((clip) => clip.source.kind !== "audio");
   const layers = new Map<string, Layer>();
   let currentFrame = 0;
@@ -216,12 +219,16 @@ export function createTimelineHost(
     const scale = clip.transform.width === undefined ? clip.transform.scale : 1;
     const wrapper = document.createElement("div");
     wrapper.className = "timeline-layer";
+    wrapper.dataset.clip = clip.id;
     wrapper.style.width = `${box.width}px`;
     wrapper.style.height = `${box.height}px`;
     wrapper.style.overflow = "hidden";
     wrapper.style.display = "none";
     wrapper.style.opacity = String(clip.transform.opacity);
     wrapper.style.transform = `translate(-50%, -50%) translate(${clip.transform.x}px, ${clip.transform.y}px) rotate(${clip.transform.rotation}deg) scale(${scale})`;
+    // Layers are created on first activation, so DOM order is not track order.
+    wrapper.style.zIndex = String(trackOrder.get(clip.track) ?? 0);
+    wrapper.style.mixBlendMode = clip.blend === "normal" ? "" : clip.blend;
 
     const place = (element: HTMLElement): void => {
       element.style.position = "absolute";

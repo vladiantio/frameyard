@@ -41,6 +41,7 @@ export default {
       "duration": 150,
       "sourceIn": 0,
       "props": { "title": "Hello" },
+      "blend": "screen",
       "transform": { "fit": "contain", "x": 0, "y": 0, "scale": 1, "rotation": 0, "opacity": 1 },
       "audio": { "muted": false, "gain": 1 }
     },
@@ -68,7 +69,7 @@ export default {
 - `tracks` and `clips` are required. Track order is bottom-to-top for video and irrelevant for audio.
 - `background` is an optional color; the final video composites over black.
 - `durationInFrames` is optional. The duration is derived from the latest clip end unless declared; a declared duration may extend but not cut clips.
-- Unknown fields are errors. No transitions, effects, keyframes, or track solo/visibility in 0.6.
+- Unknown fields are errors. Blend modes are static per clip; no transitions, keyframes, other effects, or track solo/visibility.
 
 ## Sources
 
@@ -100,8 +101,9 @@ Visual clips accept a static transform:
 - `scale`: multiplier after fitting to the project frame; an alternative to `width`/`height`.
 - `rotation`: degrees around the center.
 - `opacity`: 0–1.
+- `blend`: CSS `mix-blend-mode`, defaulting to `normal`. Supported values are `normal`, `multiply`, `screen`, `overlay`, `darken`, `lighten`, `color-dodge`, `color-burn`, `hard-light`, `soft-light`, `difference`, and `exclusion`. `hue`, `saturation`, `color`, and `luminosity` are rejected.
 
-No keyframes or animated transforms in 0.6.
+A blend mode composites the clip against everything below it in the stage, including the timeline background, and only where the clip's source alpha is non-zero. A composition or nested timeline that paints an opaque background blocks the lower layers; source alpha is what lets a blend reach them. A top-level timeline with no declared background renders over black; a nested or embedded timeline stays transparent. Blend modes are static; there are no keyframes or animated transforms.
 
 ## Audio
 
@@ -113,7 +115,7 @@ No keyframes or animated transforms in 0.6.
 
 ## Nested timelines
 
-A nested timeline clip behaves as one layer: its internal tracks are composited first, then the parent clip's opacity and transform apply to the whole group. Nested audio is included. Cycles are rejected statically. Timeline clips do not override props of compositions inside a nested timeline in 0.6.
+A nested timeline clip behaves as one layer: its internal tracks are composited first, then the parent clip's opacity, transform, and blend mode apply to the whole group. A blend mode inside the nested timeline sees only that timeline's own backdrop; it never sees the parent's layers. A declared nested background is part of the group, so a transparent nested timeline has no backdrop to blend against beyond its own layers. Nested audio is included. Cycles are rejected statically. Timeline clips do not override props of compositions inside a nested timeline.
 
 ## Commands
 
@@ -138,6 +140,7 @@ npx frameyard render main --props props/main.json --workers 8 --scratch /path/to
 - A timeline frame derives only from its active clips, their composition frames, props, assets, and the render plan.
 - Composition frames are captured with Chromium; transparent compositions preserve alpha.
 - Timeline production captures active composition and nested-timeline clips to lossless FFV1, composites segments with FFmpeg, concatenates the ordered segments, and mixes audio once.
-- Preview composites in Chromium; production composites with FFmpeg. Small scaling, alpha, and video color differences are expected. Parity is guaranteed at clip capture, not at final encoded pixels.
+- Preview composites in Chromium with CSS `mix-blend-mode`; production composites with FFmpeg's `blend` and `maskedmerge`. CSS is the reference; small scaling, alpha, color, and blend-math differences are expected. Parity is guaranteed at clip capture, not at final encoded pixels.
+- Alpha-correct blending costs roughly 1.7× per blended 1080p layer in the production composite. Budget for it when a timeline stacks several blended layers.
 - Final output bytes are not a reproducibility guarantee.
 - Long timelines are segmented and bounded. The reference target and measured worst cases are documented in `docs/adr/0012-render-timelines-with-segmented-lossless-clip-intermediates.md`.

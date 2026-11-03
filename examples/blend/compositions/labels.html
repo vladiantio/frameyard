@@ -1,0 +1,146 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      html,
+      body,
+      fy-composition {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        background: transparent;
+      }
+      fy-composition {
+        display: block;
+        overflow: hidden;
+      }
+      .scene {
+        position: relative;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        color: #eef4ff;
+        font-family: Inter, "Helvetica Neue", ui-sans-serif, system-ui, sans-serif;
+      }
+      .panel {
+        position: absolute;
+        left: 92px;
+        top: 104px;
+        width: 840px;
+        padding: 46px 50px 42px;
+        border: 1px solid rgba(160, 205, 255, 0.24);
+        border-radius: 22px;
+        background: linear-gradient(135deg, rgba(6, 12, 24, 0.9), rgba(6, 12, 24, 0.62));
+        box-shadow: 0 38px 110px rgba(0, 0, 0, 0.38);
+      }
+      .kicker {
+        color: #7fd6ff;
+        font-family: ui-monospace, "SFMono-Regular", "Cascadia Code", monospace;
+        font-size: 13px;
+        font-weight: 650;
+        letter-spacing: 0.22em;
+        text-transform: uppercase;
+      }
+      h1 {
+        margin: 20px 0 16px;
+        font-size: 84px;
+        font-weight: 680;
+        letter-spacing: -0.045em;
+        line-height: 0.94;
+      }
+      h1 span {
+        color: #ffb347;
+      }
+      .subtitle {
+        margin: 0;
+        max-width: 720px;
+        color: #a9b8d0;
+        font-size: 22px;
+        line-height: 1.4;
+      }
+      .legend {
+        display: grid;
+        grid-template-columns: 1fr 1.35fr;
+        gap: 22px;
+        margin-top: 34px;
+      }
+      .legend div {
+        padding-top: 12px;
+        border-top: 2px solid rgba(127, 214, 255, 0.55);
+      }
+      .legend div + div {
+        border-top-color: rgba(255, 179, 71, 0.55);
+      }
+      .legend b {
+        display: block;
+        margin-bottom: 7px;
+        color: #7fd6ff;
+        font-family: ui-monospace, "SFMono-Regular", "Cascadia Code", monospace;
+        font-size: 12px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+      .legend div + div b {
+        color: #ffb347;
+      }
+      .legend span {
+        display: block;
+        color: #dbe6f5;
+        font-size: 17px;
+        line-height: 1.35;
+      }
+      .foot {
+        margin-top: 32px;
+        color: #73839a;
+        font-family: ui-monospace, "SFMono-Regular", "Cascadia Code", monospace;
+        font-size: 12px;
+        letter-spacing: 0.04em;
+      }
+      .progress {
+        position: absolute;
+        left: 142px;
+        bottom: 92px;
+        width: 740px;
+        height: 3px;
+        overflow: hidden;
+        border-radius: 99px;
+        background: rgba(220, 235, 255, 0.16);
+      }
+      .progress::after {
+        content: "";
+        display: block;
+        width: calc(var(--fy-progress) * 100%);
+        height: 100%;
+        border-radius: inherit;
+        background: linear-gradient(90deg, #7fd6ff, #ffb347);
+      }
+    </style>
+  </head>
+  <body>
+    <fy-composition width="1920" height="1080" fps="30" duration-in-frames="180">
+      <div class="scene">
+        <div class="panel">
+          <div class="kicker">Frameyard / Blend lab</div>
+          <h1>Screen.<br /><span>Soft-light.</span><br />Overlay.</h1>
+          <p class="subtitle">
+            Static CSS blend modes on timeline clips. The backdrop is a composition, the light pass is a composition,
+            and the moving gradient is a local video.
+          </p>
+          <div class="legend">
+            <div>
+              <b>v2 · composition</b>
+              <span>screen · 0–6s</span>
+            </div>
+            <div>
+              <b>v3 · video</b>
+              <span>multiply 0–2s · soft-light 2–4s · overlay 4–6s</span>
+            </div>
+          </div>
+          <div class="foot">Preview: Chromium mix-blend-mode · Render: FFmpeg blend + alpha mask</div>
+        </div>
+        <div class="progress"></div>
+      </div>
+    </fy-composition>
+  </body>
+</html>

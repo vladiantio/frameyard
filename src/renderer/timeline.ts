@@ -655,6 +655,7 @@ async function processTimelineSegment(options: {
       scale: transform.scale,
       rotation: transform.rotation,
       opacity: transform.opacity,
+      blend: clip.blend ?? "normal",
     };
 
     if (source.kind === "composition") {
@@ -1031,6 +1032,7 @@ async function renderResolvedTimelineFrame(options: {
       scale: transform.scale,
       rotation: transform.rotation,
       opacity: transform.opacity,
+      blend: clip.blend ?? "normal",
     };
 
     if (source.kind === "composition") {

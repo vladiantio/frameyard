@@ -67,8 +67,9 @@ This project produces deterministic, parameterized video with Frameyard. Follow 
 - \`start\`, \`sourceIn\`, and \`duration\` use timeline frames. Omitted durations use the rest of the source; image clips require a duration.
 - Composition clips may declare \`props\`; the same composition can appear multiple times with different props, trims, and transforms.
 - Visual clips support static \`transform\` values: \`fit\` (\`contain\`, \`cover\`, \`stretch\`), \`width\`/\`height\` (an explicit box, both together), \`x\`, \`y\`, \`scale\`, \`rotation\`, and \`opacity\`. \`width\`/\`height\` are mutually exclusive with \`scale\`.
+- Visual clips may declare a static \`blend\` mode from the separable CSS set (\`normal\`, \`multiply\`, \`screen\`, \`overlay\`, \`darken\`, \`lighten\`, \`color-dodge\`, \`color-burn\`, \`hard-light\`, \`soft-light\`, \`difference\`, \`exclusion\`); omitted means \`normal\`.
 - Video and audio clips are muted with \`audio.muted\`; \`audio.gain\` is 0-1. Composition audio is included automatically.
-- Tracks composite from bottom to top. Clips on the same track cannot overlap. No transitions or keyframes in 0.6.
+- Tracks composite from bottom to top. Clips on the same track cannot overlap. No transitions or keyframes.
 - Project \`format\` fixes width, height, and fps for every timeline. Composition fps must match the project; different composition sizes are fitted by the clip.
 
 ## Bindings

@@ -11,6 +11,27 @@ export type TimelineTrackKind = "video" | "audio";
 export type TimelineSourceKind = "composition" | "timeline" | "video" | "image" | "audio";
 export type FitPolicy = "contain" | "cover" | "stretch";
 
+/** CSS blend modes that FFmpeg can reproduce with matching semantics. */
+export const BLEND_MODES = [
+  "normal",
+  "multiply",
+  "screen",
+  "overlay",
+  "darken",
+  "lighten",
+  "color-dodge",
+  "color-burn",
+  "hard-light",
+  "soft-light",
+  "difference",
+  "exclusion",
+] as const;
+
+export type BlendMode = (typeof BLEND_MODES)[number];
+
+/** CSS blend modes that require cross-channel math and are not supported yet. */
+export const UNSUPPORTED_BLEND_MODES = ["hue", "saturation", "color", "luminosity"] as const;
+
 export interface TimelineSourceComposition {
   kind: "composition";
   id: string;
@@ -63,6 +84,8 @@ export interface TimelineClip {
   sourceIn: number;
   props?: Props;
   transform?: TimelineTransform;
+  /** CSS blend mode against the accumulated backdrop. Defaults to `normal`. */
+  blend?: BlendMode;
   audio?: TimelineClipAudio;
 }
 
@@ -445,6 +468,7 @@ export function parseTimelineDocument(value: unknown, context: DiagnosticContext
       "sourceIn",
       "props",
       "transform",
+      "blend",
       "audio",
     ])) {
       add("TIMELINE_CLIP_INVALID", `Unknown clip field "${key}".`, jsonPath(path, key), details);
@@ -555,6 +579,38 @@ export function parseTimelineDocument(value: unknown, context: DiagnosticContext
       transform = { fit: "contain", x: 0, y: 0, scale: 1, rotation: 0, opacity: 1 };
     }
 
+    let blend: BlendMode | undefined;
+    if (rawClip.blend !== undefined) {
+      if (!visual) {
+        add("TIMELINE_CLIP_INVALID", "blend is only valid on visual clips.", jsonPath(path, "blend"), clipDetails);
+      } else if (typeof rawClip.blend !== "string") {
+        add("TIMELINE_CLIP_INVALID", "Clip blend must be a string.", jsonPath(path, "blend"), clipDetails);
+      } else if ((BLEND_MODES as readonly string[]).includes(rawClip.blend)) {
+        blend = rawClip.blend as BlendMode;
+      } else if ((UNSUPPORTED_BLEND_MODES as readonly string[]).includes(rawClip.blend)) {
+        add(
+          "TIMELINE_CLIP_INVALID",
+          `Clip blend "${rawClip.blend}" is not supported. Supported modes: ${BLEND_MODES.join(", ")}.`,
+          jsonPath(path, "blend"),
+          {
+            ...clipDetails,
+            value: rawClip.blend,
+            suggestion: "Use a separable CSS blend mode such as multiply, screen, or soft-light.",
+          },
+        );
+      } else {
+        add("TIMELINE_CLIP_INVALID", `Clip blend must be one of: ${BLEND_MODES.join(", ")}.`, jsonPath(path, "blend"), {
+          ...clipDetails,
+          value: rawClip.blend,
+          ...(rawClip.blend.toLowerCase() !== rawClip.blend
+            ? { suggestion: "Blend mode names are lowercase CSS values." }
+            : {}),
+        });
+      }
+    } else if (visual) {
+      blend = "normal";
+    }
+
     let audio: TimelineClipAudio | undefined;
     if (rawClip.audio !== undefined) {
       if (!audioBearing) {
@@ -587,6 +643,7 @@ export function parseTimelineDocument(value: unknown, context: DiagnosticContext
       sourceIn,
       ...(props !== undefined ? { props } : {}),
       ...(transform !== undefined ? { transform } : {}),
+      ...(blend !== undefined ? { blend } : {}),
       ...(audio !== undefined ? { audio } : {}),
     });
   }

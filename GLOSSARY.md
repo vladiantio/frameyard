@@ -138,6 +138,10 @@ _Avoid_: Resize mode, object-fit
 The static size, position, rotation, and opacity applied to a visual clip. Size is either an explicit `width`/`height` box or a `scale` multiplier.
 _Avoid_: Effect, animation
 
+**Blend mode**:
+The static CSS `mix-blend-mode` a visual clip applies against the accumulated backdrop of all lower layers and the timeline background. It respects the clip's source alpha and is not animated.
+_Avoid_: Filter, effect, composite mode
+
 **Nested timeline**:
 A timeline used as a clip source inside another timeline.
 _Avoid_: Compound composition

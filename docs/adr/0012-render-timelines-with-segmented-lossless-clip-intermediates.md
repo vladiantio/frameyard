@@ -12,7 +12,7 @@ The 1.8 TB USB HDD provides enough scratch capacity; a raw-frame cache would be 
 ## Considered Options
 
 - **Live browser host (ADR 0011).** Rejected: deterministic and pixel-exact, but 138.8 ms per 1920×1080 frame with four layers versus 33.6 ms for a direct composition capture. It does not meet the long-timeline target.
-- **Skia + FFmpeg streaming compositor.** Rejected for 0.6: it avoids intermediates and preserves capture pixels, but adds a large compositor dependency and a custom frame pipeline. The FFmpeg + FFV1 path already meets the target without it. Skia remains an option if future effects or blend modes outgrow FFmpeg filters.
+- **Skia + FFmpeg streaming compositor.** Rejected for 0.6: it avoids intermediates and preserves capture pixels, but adds a large compositor dependency and a custom frame pipeline. The FFmpeg + FFV1 path already meets the target without it. Skia remains an option if future effects outgrow FFmpeg filters; ADR 0014 records the static blend-mode path that stays within FFmpeg.
 - **FFmpeg streaming through pipes.** Rejected: avoids intermediates and dependencies, but requires a fragile cross-platform multi-pipe/filter-graph coordination for a variable set of active layers.
 - **Pre-render every clip for the whole timeline.** Rejected: for 60 minutes the intermediates can be tens to hundreds of gigabytes and the write/read time alone can exceed the render budget. Segmentation bounds peak scratch and lets workers run in parallel.
 - **Lossy intermediates.** Rejected as the default: an extra lossy encode breaks pixel parity at clip capture. FFV1 keeps the captured frames exact; only the final H.264 encode is lossy, as it already is for composition renders.

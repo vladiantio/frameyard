@@ -32,8 +32,9 @@ export type {
   TranscriptSource,
   WordTiming,
 } from "./transcript.js";
-export { parseTimelineDocument } from "./timeline/schema.js";
+export { BLEND_MODES, parseTimelineDocument, UNSUPPORTED_BLEND_MODES } from "./timeline/schema.js";
 export type {
+  BlendMode,
   FitPolicy,
   ParseTimelineResult,
   TimelineClip,

@@ -15,7 +15,7 @@ Timeline frames will be produced by a browser timeline host that loads every cli
 
 ## Consequences
 
-- Composition and nested-timeline clips are isolated iframe surfaces. CSS blend modes and backdrop filters cannot blend across clip boundaries; 0.6 has neither.
+- Composition and nested-timeline clips are isolated iframe surfaces. A blend mode declared on a timeline clip is applied to the clip's wrapper, so the whole clip blends with the parent backdrop, but CSS inside a composition cannot blend across the iframe boundary. Backdrop filters remain unsupported. See ADR 0014 for per-clip blend modes.
 - The timeline host preloads all clip sources, then network is blocked for frame production. Memory and WebGL context use grow with the number of loaded clips; the spike must measure a representative timeline before this decision is accepted.
 - Timeline rendering is sequential in 0.6. Composition rendering keeps opt-in concurrency.
 - Audio is not played by the host; preview mixes timeline audio in the parent and production mixes it offline with FFmpeg.

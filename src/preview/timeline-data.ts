@@ -1,4 +1,5 @@
 import type { CompositionDiagnostic, Props } from "../contracts.js";
+import type { BlendMode } from "../timeline/schema.js";
 
 export type TimelinePreviewFit = "contain" | "cover" | "stretch";
 
@@ -61,6 +62,7 @@ export interface TimelinePreviewClip {
   sourceIn: number;
   props?: Props;
   transform: TimelinePreviewTransform;
+  blend: BlendMode;
   audio: TimelinePreviewClipAudio;
 }
 

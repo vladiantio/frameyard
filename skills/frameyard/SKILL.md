@@ -18,7 +18,7 @@ Use Frameyard's public project format and CLI. Do not introduce an agent-only ru
 ## Workflow
 
 1. **Author compositions** as full HTML documents with one `<fy-composition>` root. Put metadata, default props, markup, CSS animation, bindings, audio, and transcripts in the document. Use an optional controller for Canvas 2D, WebGL, karaoke, or per-frame computation CSS cannot express. Read [deterministic authoring](references/deterministic-authoring.md), [bindings](references/bindings.md), and [controllers](references/controllers.md).
-2. **Assemble the timeline** in JSON: project format, video/audio tracks, composition, media, and nested-timeline clips, source ranges, static transforms, and audio. Read [timelines](references/timelines.md).
+2. **Assemble the timeline** in JSON: project format, video/audio tracks, composition, media, and nested-timeline clips, source ranges, static transforms and blend modes, and audio. Read [timelines](references/timelines.md).
 3. **Provide props** as JSON. Composition props merge over defaults; timeline render props are a map keyed by composition clip ID. Validate domain-specific requirements with a controller's `validateProps()`.
 4. **Produce optional assets** with `npx frameyard tts` and `npx frameyard transcribe`, never with the upstream executables. Read [audio assets](references/audio-assets.md). Do not overwrite or regenerate existing generated assets without permission.
 5. **Validate** with `npx frameyard check <id> --json`, where `<id>` is a timeline or composition. Static validation runs before Chromium; then every frame is evaluated. Read the structured `diagnostics` array. Read [diagnostics](references/diagnostics.md) and [common mistakes](references/common-mistakes.md).

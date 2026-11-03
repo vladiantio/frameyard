@@ -5,6 +5,8 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { chromium, type Browser } from "playwright";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { loadProject } from "../src/project.ts";
+import { captureTimelineStills } from "../src/renderer/timeline.ts";
 import { startPreviewServer, type PreviewServer } from "../src/server/server.ts";
 import { loadTimeline, openEmbeddedTimeline, seekTimeline, waitForFrame } from "./helpers/preview.ts";
 import { mediaPixel } from "./helpers/media.ts";
@@ -42,7 +44,7 @@ beforeAll(async () => {
   await mkdir(path.join(root, "timelines"), { recursive: true });
   await mkdir(path.join(root, "assets"), { recursive: true });
   await mkdir(path.join(root, "out"), { recursive: true });
-  for (const [index, color] of ["red", "lime", "blue"].entries()) {
+  for (const [index, color] of ["red", "lime", "blue", "#808080"].entries()) {
     await exec("ffmpeg", [
       "-y",
       "-v",
@@ -138,11 +140,57 @@ beforeAll(async () => {
     )}\n`,
   );
   await writeFile(
+    path.join(root, "timelines", "blend.json"),
+    `${JSON.stringify(
+      {
+        version: 1,
+        tracks: [
+          { id: "v1", kind: "video" },
+          { id: "v2", kind: "video" },
+        ],
+        clips: [
+          {
+            id: "top-screen",
+            track: "v2",
+            source: { kind: "image", src: "assets/frame-1.png" },
+            start: 0,
+            duration: 5,
+            blend: "screen",
+          },
+          {
+            id: "bottom-screen",
+            track: "v1",
+            source: { kind: "image", src: "assets/frame-3.png" },
+            start: 0,
+            duration: 5,
+          },
+          {
+            id: "top-multiply",
+            track: "v2",
+            source: { kind: "image", src: "assets/frame-1.png" },
+            start: 5,
+            duration: 5,
+            blend: "multiply",
+          },
+          {
+            id: "bottom-multiply",
+            track: "v1",
+            source: { kind: "image", src: "assets/frame-4.png" },
+            start: 5,
+            duration: 5,
+          },
+        ],
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  await writeFile(
     path.join(root, "video.config.js"),
     `export default {
       format: { width: 320, height: 180, fps: 10 },
       compositions: { intro: "./compositions/intro.html" },
-      timelines: { main: "./timelines/main.json", sized: "./timelines/sized.json", video: "./timelines/video.json" },
+      timelines: { main: "./timelines/main.json", sized: "./timelines/sized.json", video: "./timelines/video.json", blend: "./timelines/blend.json" },
     };\n`,
   );
   server = await startPreviewServer({ projectRoot: root, port: 0 });
@@ -188,6 +236,62 @@ describe("timeline preview runtime", () => {
       expect(frameBox?.width).toBeCloseTo(160, 5);
       expect(frameBox?.height).toBeCloseTo(90, 5);
       expect(await wrapper.evaluate((element) => getComputedStyle(element).overflow)).toBe("hidden");
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+
+  it("stacks blended layers by track order and matches production pixels", async () => {
+    const page = await browser.newPage({ viewport: { width: 640, height: 360 } });
+    try {
+      await openEmbeddedTimeline(page, new URL("/__frameyard/timeline/blend?__fy-embed=1", server.url).href);
+      await loadTimeline(page);
+      await seekTimeline(page, 0);
+
+      const topScreen = page.locator('[data-clip="top-screen"]');
+      const bottomScreen = page.locator('[data-clip="bottom-screen"]');
+      expect(await topScreen.evaluate((element) => getComputedStyle(element).zIndex)).toBe("1");
+      expect(await bottomScreen.evaluate((element) => getComputedStyle(element).zIndex)).toBe("0");
+      expect(await topScreen.evaluate((element) => getComputedStyle(element).mixBlendMode)).toBe("screen");
+      expect(await bottomScreen.evaluate((element) => getComputedStyle(element).mixBlendMode)).toBe("normal");
+      expect(await page.locator("#stage").evaluate((element) => getComputedStyle(element).isolation)).toBe("isolate");
+
+      const stage = page.locator("#stage");
+      const box = await stage.boundingBox();
+      if (box === null) {
+        throw new Error("Missing timeline stage.");
+      }
+      const screenImage = path.join(root, "out", "blend-preview-screen.png");
+      await writeFile(screenImage, await page.screenshot({ clip: box }));
+      const screenPixel = await mediaPixel(screenImage, Math.floor(box.width / 2), Math.floor(box.height / 2));
+      expect(screenPixel[0], "screen of red over blue must be magenta").toBeGreaterThan(200);
+      expect(screenPixel[2], "screen of red over blue must be magenta").toBeGreaterThan(200);
+      expect(screenPixel[1]).toBeLessThan(60);
+
+      await seekTimeline(page, 5);
+      const topMultiply = page.locator('[data-clip="top-multiply"]');
+      const bottomMultiply = page.locator('[data-clip="bottom-multiply"]');
+      expect(await topMultiply.evaluate((element) => getComputedStyle(element).mixBlendMode)).toBe("multiply");
+      expect(await bottomMultiply.evaluate((element) => getComputedStyle(element).mixBlendMode)).toBe("normal");
+      const multiplyImage = path.join(root, "out", "blend-preview-multiply.png");
+      await writeFile(multiplyImage, await page.screenshot({ clip: box }));
+      const multiplyPixel = await mediaPixel(multiplyImage, Math.floor(box.width / 2), Math.floor(box.height / 2));
+
+      const stillPaths = [path.join(root, "out", "blend-still-0.png"), path.join(root, "out", "blend-still-5.png")];
+      await captureTimelineStills({
+        project: await loadProject(root),
+        timelineId: "blend",
+        frames: [0, 5],
+        outPaths: stillPaths,
+      });
+      const screenStill = await mediaPixel(stillPaths[0] as string, 160, 90);
+      const multiplyStill = await mediaPixel(stillPaths[1] as string, 160, 90);
+      for (let channel = 0; channel < 3; channel += 1) {
+        expect(Math.abs((screenPixel[channel] as number) - (screenStill[channel] as number))).toBeLessThanOrEqual(10);
+        expect(Math.abs((multiplyPixel[channel] as number) - (multiplyStill[channel] as number))).toBeLessThanOrEqual(
+          10,
+        );
+      }
     } finally {
       await page.close();
     }

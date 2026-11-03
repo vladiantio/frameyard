@@ -1,6 +1,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { writeFile } from "node:fs/promises";
 import { FrameyardError } from "../errors.js";
+import type { BlendMode } from "../timeline/schema.js";
 
 const STDERR_LIMIT = 16 * 1024;
 
@@ -746,6 +747,8 @@ export interface TimelineCompositeLayer {
   scale: number;
   rotation: number;
   opacity: number;
+  /** CSS blend mode against the accumulated backdrop. */
+  blend: BlendMode;
   /** Absolute source frame at the segment start, for video inputs. */
   sourceStartFrame?: number;
 }
@@ -814,6 +817,174 @@ function layerFilter(layer: TimelineCompositeLayer, stageWidth: number, stageHei
   return filters.join(",");
 }
 
+/** W3C soft-light in 0-255 space; FFmpeg's native mode uses a different formula. */
+const SOFT_LIGHT_EXPRESSION =
+  "if(lt(B,128), A-(1-2*B/255)*A*(1-A/255), A+(2*B/255-1)*(if(lt(A,64),((16*A/255-12)*A/255+4)*A/255,sqrt(A/255))*255-A))";
+
+const BLEND_FILTER_NAMES: Readonly<Record<Exclude<BlendMode, "normal" | "soft-light">, string>> = {
+  multiply: "multiply",
+  screen: "screen",
+  overlay: "overlay",
+  darken: "darken",
+  lighten: "lighten",
+  "color-dodge": "dodge",
+  "color-burn": "burn",
+  "hard-light": "hardlight",
+  difference: "difference",
+  exclusion: "exclusion",
+};
+
+interface BlendSpec {
+  options: string;
+  /** True when the source is blend input #0 and the backdrop is #1. */
+  sourceFirst: boolean;
+}
+
+function blendSpec(mode: Exclude<BlendMode, "normal">): BlendSpec {
+  if (mode === "soft-light") {
+    return {
+      options: `c0_expr='${SOFT_LIGHT_EXPRESSION}':c1_expr='${SOFT_LIGHT_EXPRESSION}':c2_expr='${SOFT_LIGHT_EXPRESSION}':c3_mode=normal`,
+      sourceFirst: false,
+    };
+  }
+  const name = BLEND_FILTER_NAMES[mode];
+  return {
+    options: `c0_mode=${name}:c1_mode=${name}:c2_mode=${name}:c3_mode=normal`,
+    sourceFirst: mode === "color-dodge" || mode === "color-burn",
+  };
+}
+
+function placementFilter(layer: TimelineCompositeLayer): string {
+  return `x=(main_w-overlay_w)/2+${formatNumber(layer.x)}:y=(main_h-overlay_h)/2+${formatNumber(layer.y)}`;
+}
+
+interface CompositeGraph {
+  args: string[];
+  filters: string[];
+  output: string;
+}
+
+/**
+ * Builds the FFmpeg filter graph for one timeline composite. Blend layers are
+ * placed on a transparent stage-sized canvas, blended with the accumulated
+ * backdrop, masked by the source alpha, and composited source-over.
+ */
+function buildCompositeGraph(options: {
+  width: number;
+  height: number;
+  fps: number;
+  frames: number;
+  background: string;
+  layers: readonly TimelineCompositeLayer[];
+  /** Segment mode trims video and loops images for the full segment duration. */
+  segment: boolean;
+}): CompositeGraph {
+  const durationSeconds = options.frames / options.fps;
+  const args = [
+    "-y",
+    "-v",
+    "error",
+    "-f",
+    "lavfi",
+    "-i",
+    `color=c=${ffmpegBackgroundColor(options.background)}:s=${options.width}x${options.height}:r=${formatNumber(options.fps)}:d=${formatNumber(durationSeconds)}`,
+  ];
+  const filters = [
+    options.background === "transparent" ? "[0:v]format=rgba,colorchannelmixer=aa=0[base0]" : "[0:v]format=rgba[base0]",
+  ];
+  let current = "base0";
+  let inputIndex = 0;
+  let includedIndex = 0;
+
+  const blendedLayers = options.layers.filter(
+    (layer) => layer.blend !== "normal" && layer.opacity > 0 && layer.scale > 0,
+  );
+  const canvasLabels: string[] = [];
+  if (blendedLayers.length > 0) {
+    args.push(
+      "-f",
+      "lavfi",
+      "-i",
+      `color=c=black@0.0:s=${options.width}x${options.height}:r=${formatNumber(options.fps)}:d=${formatNumber(durationSeconds)}`,
+    );
+    inputIndex += 1;
+    for (let index = 0; index < blendedLayers.length; index += 1) {
+      canvasLabels.push(`cv${index}`);
+    }
+    const canvasChain = `[${inputIndex}:v]format=rgba,colorchannelmixer=aa=0`;
+    filters.push(
+      canvasLabels.length === 1
+        ? `${canvasChain}[${canvasLabels[0] as string}]`
+        : `${canvasChain},split=${canvasLabels.length}${canvasLabels.map((label) => `[${label}]`).join("")}`,
+    );
+  }
+  let canvasIndex = 0;
+
+  for (const layer of options.layers) {
+    if (layer.opacity <= 0 || layer.scale <= 0) {
+      continue;
+    }
+
+    if (layer.kind === "video") {
+      const startSeconds = (layer.sourceStartFrame ?? 0) / options.fps;
+      if (options.segment) {
+        args.push("-ss", formatNumber(startSeconds), "-t", formatNumber(durationSeconds), "-i", layer.path, "-an");
+      } else {
+        args.push("-ss", formatNumber(startSeconds), "-i", layer.path, "-an");
+      }
+    } else if (layer.kind === "image") {
+      if (options.segment) {
+        args.push(
+          "-loop",
+          "1",
+          "-framerate",
+          formatNumber(options.fps),
+          "-t",
+          formatNumber(durationSeconds),
+          "-i",
+          layer.path,
+          "-an",
+        );
+      } else {
+        args.push("-i", layer.path, "-an");
+      }
+    } else {
+      args.push("-i", layer.path);
+    }
+
+    inputIndex += 1;
+    includedIndex += 1;
+    filters.push(
+      `[${inputIndex}:v]${layerFilter(layer, options.width, options.height, options.fps)}[l${includedIndex}]`,
+    );
+
+    if (layer.blend === "normal") {
+      filters.push(`[${current}][l${includedIndex}]overlay=${placementFilter(layer)}:format=auto[b${includedIndex}]`);
+      current = `b${includedIndex}`;
+      continue;
+    }
+
+    const canvas = canvasLabels[canvasIndex] as string;
+    canvasIndex += 1;
+    filters.push(
+      `[${canvas}][l${includedIndex}]overlay=${placementFilter(layer)}:format=auto,format=rgba,split=2[pb${includedIndex}][pm${includedIndex}]`,
+    );
+    filters.push(`[${current}]format=rgba,split=3[bc${includedIndex}][bm${includedIndex}][bo${includedIndex}]`);
+    filters.push(`[bm${includedIndex}]alphaextract,format=rgba[mask${includedIndex}]`);
+    const spec = blendSpec(layer.blend);
+    const first = spec.sourceFirst ? `pb${includedIndex}` : `bc${includedIndex}`;
+    const second = spec.sourceFirst ? `bc${includedIndex}` : `pb${includedIndex}`;
+    filters.push(`[${first}][${second}]blend=${spec.options}[bl${includedIndex}]`);
+    filters.push(
+      `[pm${includedIndex}][bl${includedIndex}][mask${includedIndex}]maskedmerge=planes=7[cs${includedIndex}]`,
+    );
+    filters.push(`[bo${includedIndex}][cs${includedIndex}]overlay=x=0:y=0:format=auto,format=rgba[b${includedIndex}]`);
+    current = `b${includedIndex}`;
+  }
+
+  return { args, filters, output: current };
+}
+
 /** Encode a numbered PNG sequence into a lossless alpha-preserving FFV1 file. */
 export async function encodePngSequenceToFfv1(options: {
   pattern: string;
@@ -861,59 +1032,17 @@ export async function compositeTimelineSegment(options: {
   container?: VideoContainer;
   signal?: AbortSignal;
 }): Promise<void> {
-  const durationSeconds = options.frames / options.fps;
-  const args = [
-    "-y",
-    "-v",
-    "error",
-    "-f",
-    "lavfi",
-    "-i",
-    `color=c=${ffmpegBackgroundColor(options.background)}:s=${options.width}x${options.height}:r=${formatNumber(options.fps)}:d=${formatNumber(durationSeconds)}`,
-  ];
-  const filters = [
-    options.background === "transparent" ? "[0:v]format=rgba,colorchannelmixer=aa=0[base0]" : "[0:v]format=rgba[base0]",
-  ];
-  let current = "base0";
-  let inputIndex = 0;
-  let includedIndex = 0;
-
-  for (const layer of options.layers) {
-    if (layer.opacity <= 0 || layer.scale <= 0) {
-      continue;
-    }
-
-    if (layer.kind === "video") {
-      const startSeconds = (layer.sourceStartFrame ?? 0) / options.fps;
-      args.push("-ss", formatNumber(startSeconds), "-t", formatNumber(durationSeconds), "-i", layer.path, "-an");
-    } else if (layer.kind === "image") {
-      args.push(
-        "-loop",
-        "1",
-        "-framerate",
-        formatNumber(options.fps),
-        "-t",
-        formatNumber(durationSeconds),
-        "-i",
-        layer.path,
-        "-an",
-      );
-    } else {
-      args.push("-i", layer.path);
-    }
-
-    inputIndex += 1;
-    includedIndex += 1;
-    filters.push(
-      `[${inputIndex}:v]${layerFilter(layer, options.width, options.height, options.fps)}[l${includedIndex}]`,
-    );
-    filters.push(
-      `[${current}][l${includedIndex}]overlay=x=(main_w-overlay_w)/2+${formatNumber(layer.x)}:y=(main_h-overlay_h)/2+${formatNumber(layer.y)}:format=auto[b${includedIndex}]`,
-    );
-    current = `b${includedIndex}`;
-  }
-
-  filters.push(`[${current}]format=${options.codec === "ffv1" ? "bgra" : "yuv420p"}[out]`);
+  const graph = buildCompositeGraph({
+    width: options.width,
+    height: options.height,
+    fps: options.fps,
+    frames: options.frames,
+    background: options.background,
+    layers: options.layers,
+    segment: true,
+  });
+  const filters = [...graph.filters, `[${graph.output}]format=${options.codec === "ffv1" ? "bgra" : "yuv420p"}[out]`];
+  const args = graph.args;
   args.push(
     "-filter_complex",
     filters.join(";"),
@@ -1028,45 +1157,17 @@ export async function compositeTimelineFrame(options: {
   layers: readonly TimelineCompositeLayer[];
   signal?: AbortSignal;
 }): Promise<void> {
-  const args = [
-    "-y",
-    "-v",
-    "error",
-    "-f",
-    "lavfi",
-    "-i",
-    `color=c=${ffmpegBackgroundColor(options.background)}:s=${options.width}x${options.height}:r=${formatNumber(options.fps)}:d=${formatNumber(1 / options.fps)}`,
-  ];
-  const filters = [
-    options.background === "transparent" ? "[0:v]format=rgba,colorchannelmixer=aa=0[base0]" : "[0:v]format=rgba[base0]",
-  ];
-  let current = "base0";
-  let inputIndex = 0;
-  let includedIndex = 0;
-
-  for (const layer of options.layers) {
-    if (layer.opacity <= 0 || layer.scale <= 0) {
-      continue;
-    }
-
-    if (layer.kind === "video") {
-      args.push("-ss", formatNumber((layer.sourceStartFrame ?? 0) / options.fps), "-i", layer.path, "-an");
-    } else {
-      args.push("-i", layer.path);
-    }
-
-    inputIndex += 1;
-    includedIndex += 1;
-    filters.push(
-      `[${inputIndex}:v]${layerFilter(layer, options.width, options.height, options.fps)}[l${includedIndex}]`,
-    );
-    filters.push(
-      `[${current}][l${includedIndex}]overlay=x=(main_w-overlay_w)/2+${formatNumber(layer.x)}:y=(main_h-overlay_h)/2+${formatNumber(layer.y)}:format=auto[b${includedIndex}]`,
-    );
-    current = `b${includedIndex}`;
-  }
-
-  filters.push(`[${current}]format=rgba[out]`);
+  const graph = buildCompositeGraph({
+    width: options.width,
+    height: options.height,
+    fps: options.fps,
+    frames: 1,
+    background: options.background,
+    layers: options.layers,
+    segment: false,
+  });
+  const filters = [...graph.filters, `[${graph.output}]format=rgba[out]`];
+  const args = graph.args;
   args.push(
     "-filter_complex",
     filters.join(";"),

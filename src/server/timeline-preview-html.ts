@@ -33,7 +33,7 @@ export function renderTimelinePreviewHtml(timelineId: string, options: { embed?:
     <title>Frameyard timeline ${id}</title>
     <style>
       html, body { margin: 0; width: 100%; height: 100%; background: transparent; overflow: hidden; }
-      #stage { position: relative; width: 100%; height: 100%; overflow: hidden; background: transparent; }
+      #stage { position: relative; width: 100%; height: 100%; overflow: hidden; background: transparent; isolation: isolate; }
       .timeline-layer { position: absolute; left: 50%; top: 50%; transform-origin: center; }
       .timeline-layer iframe, .timeline-layer video, .timeline-layer img { display: block; border: 0; }
     </style>
@@ -121,6 +121,7 @@ export function renderTimelinePreviewHtml(timelineId: string, options: { embed?:
         transform-origin: top left;
         overflow: hidden;
         background: #000;
+        isolation: isolate;
       }
       .timeline-layer { position: absolute; left: 50%; top: 50%; transform-origin: center; }
       .timeline-layer iframe, .timeline-layer video, .timeline-layer img { display: block; border: 0; }

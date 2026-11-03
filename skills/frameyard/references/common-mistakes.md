@@ -51,6 +51,14 @@
 - Assuming media/transcript `src` is document-relative. It is project-root-relative.
 - Assuming the controller `src` is project-root-relative. It is document-relative.
 
+## Timelines
+
+- Putting `blend` on an audio clip. It is only valid on visual clips.
+- Using `hue`, `saturation`, `color`, or `luminosity`. They need cross-channel math and are rejected; use one of the separable CSS modes.
+- Expecting a blend on a transparent nested timeline to see the parent's layers. A nested timeline is its own document and blends only against its own backdrop.
+- Expecting a blend on a composition with an opaque background to reach lower tracks. The composition's alpha is opaque; leave its background transparent.
+- Expecting preview and final render blend pixels to match exactly. CSS is the reference and FFmpeg approximates it; the guarantee is at clip capture.
+
 ## Validation
 
 - Replacing `check` with a single `still`.

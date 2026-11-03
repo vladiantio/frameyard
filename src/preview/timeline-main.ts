@@ -116,8 +116,9 @@ function renderTracks(data: TimelinePreviewData): { playheads: HTMLDivElement[];
       element.className = clipClass(clip);
       element.style.left = `${(clip.start / data.durationInFrames) * 100}%`;
       element.style.width = `${(clip.duration / data.durationInFrames) * 100}%`;
-      element.textContent = clip.id;
-      element.title = `${clip.id} · ${clip.source.kind} · ${clip.start}..${clip.end}`;
+      const blendLabel = clip.blend === "normal" ? "" : ` · ${clip.blend}`;
+      element.textContent = `${clip.id}${blendLabel}`;
+      element.title = `${clip.id} · ${clip.source.kind} · ${clip.start}..${clip.end}${blendLabel}`;
       lane.append(element);
     }
 

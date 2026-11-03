@@ -26,12 +26,12 @@
       .panel {
         position: absolute;
         left: 92px;
-        top: 104px;
-        width: 840px;
-        padding: 46px 50px 42px;
+        top: 96px;
+        width: 920px;
+        padding: 44px 46px 40px;
         border: 1px solid rgba(160, 205, 255, 0.24);
         border-radius: 22px;
-        background: linear-gradient(135deg, rgba(6, 12, 24, 0.9), rgba(6, 12, 24, 0.62));
+        background: linear-gradient(135deg, rgba(6, 12, 24, 0.91), rgba(6, 12, 24, 0.64));
         box-shadow: 0 38px 110px rgba(0, 0, 0, 0.38);
       }
       .kicker {
@@ -43,65 +43,69 @@
         text-transform: uppercase;
       }
       h1 {
-        margin: 20px 0 16px;
-        font-size: 84px;
+        margin: 18px 0 14px;
+        font-size: 78px;
         font-weight: 680;
         letter-spacing: -0.045em;
-        line-height: 0.94;
+        line-height: 0.95;
       }
       h1 span {
         color: #ffb347;
       }
       .subtitle {
         margin: 0;
-        max-width: 720px;
+        max-width: 780px;
         color: #a9b8d0;
-        font-size: 22px;
+        font-size: 20px;
         line-height: 1.4;
       }
-      .legend {
+      .modes {
         display: grid;
-        grid-template-columns: 1fr 1.35fr;
-        gap: 22px;
-        margin-top: 34px;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 14px 18px;
+        margin-top: 28px;
       }
-      .legend div {
-        padding-top: 12px;
-        border-top: 2px solid rgba(127, 214, 255, 0.55);
+      .modes div {
+        padding-top: 9px;
+        border-top: 2px solid rgba(127, 214, 255, 0.5);
       }
-      .legend div + div {
-        border-top-color: rgba(255, 179, 71, 0.55);
+      .modes div:nth-child(4n + 2) {
+        border-top-color: rgba(255, 179, 71, 0.5);
       }
-      .legend b {
+      .modes div:nth-child(4n + 3) {
+        border-top-color: rgba(255, 100, 180, 0.5);
+      }
+      .modes div:nth-child(4n + 4) {
+        border-top-color: rgba(160, 190, 255, 0.5);
+      }
+      .modes b {
         display: block;
-        margin-bottom: 7px;
-        color: #7fd6ff;
+        margin-bottom: 5px;
+        color: #eef4ff;
         font-family: ui-monospace, "SFMono-Regular", "Cascadia Code", monospace;
-        font-size: 12px;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
+        font-size: 15px;
+        font-weight: 600;
+        letter-spacing: -0.01em;
       }
-      .legend div + div b {
-        color: #ffb347;
-      }
-      .legend span {
+      .modes span {
         display: block;
-        color: #dbe6f5;
-        font-size: 17px;
-        line-height: 1.35;
+        color: #7f90a8;
+        font-family: ui-monospace, "SFMono-Regular", "Cascadia Code", monospace;
+        font-size: 11px;
       }
       .foot {
-        margin-top: 32px;
+        margin-top: 26px;
         color: #73839a;
         font-family: ui-monospace, "SFMono-Regular", "Cascadia Code", monospace;
         font-size: 12px;
-        letter-spacing: 0.04em;
+        line-height: 1.55;
+        letter-spacing: 0.03em;
       }
       .progress {
         position: absolute;
         left: 142px;
         bottom: 92px;
-        width: 740px;
+        width: 820px;
         height: 3px;
         overflow: hidden;
         border-radius: 99px;
@@ -118,26 +122,33 @@
     </style>
   </head>
   <body>
-    <fy-composition width="1920" height="1080" fps="30" duration-in-frames="180">
+    <fy-composition width="1920" height="1080" fps="30" duration-in-frames="360">
       <div class="scene">
         <div class="panel">
           <div class="kicker">Frameyard / Blend lab</div>
-          <h1>Screen.<br /><span>Soft-light.</span><br />Overlay.</h1>
+          <h1>12 modes.<br /><span>One timeline.</span></h1>
           <p class="subtitle">
-            Static CSS blend modes on timeline clips. The backdrop is a composition, the light pass is a composition,
-            and the moving gradient is a local video.
+            A composition stays on screen while the video clip cycles through every supported CSS blend mode, one second
+            each.
           </p>
-          <div class="legend">
-            <div>
-              <b>v2 · composition</b>
-              <span>screen · 0–6s</span>
-            </div>
-            <div>
-              <b>v3 · video</b>
-              <span>multiply 0–2s · soft-light 2–4s · overlay 4–6s</span>
-            </div>
+          <div class="modes">
+            <div><b>normal</b><span>0–1s</span></div>
+            <div><b>multiply</b><span>1–2s</span></div>
+            <div><b>screen</b><span>2–3s</span></div>
+            <div><b>overlay</b><span>3–4s</span></div>
+            <div><b>darken</b><span>4–5s</span></div>
+            <div><b>lighten</b><span>5–6s</span></div>
+            <div><b>color-dodge</b><span>6–7s</span></div>
+            <div><b>color-burn</b><span>7–8s</span></div>
+            <div><b>hard-light</b><span>8–9s</span></div>
+            <div><b>soft-light</b><span>9–10s</span></div>
+            <div><b>difference</b><span>10–11s</span></div>
+            <div><b>exclusion</b><span>11–12s</span></div>
           </div>
-          <div class="foot">Preview: Chromium mix-blend-mode · Render: FFmpeg blend + alpha mask</div>
+          <div class="foot">
+            v2 · composition · screen · 0–12s<br />
+            v3 · video · 12 modes · 1s each · Preview uses CSS; render uses FFmpeg + alpha mask
+          </div>
         </div>
         <div class="progress"></div>
       </div>

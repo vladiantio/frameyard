@@ -1,11 +1,11 @@
 {
   "version": 1,
-  "name": "Blend lab: screen, multiply, soft-light, overlay",
+  "name": "Blend lab: every supported mode on a video clip",
   "background": "#05070d",
   "tracks": [
     { "id": "v1", "kind": "video", "name": "Backdrop" },
     { "id": "v2", "kind": "video", "name": "Aurora · screen" },
-    { "id": "v3", "kind": "video", "name": "Video · multiply / soft-light / overlay" },
+    { "id": "v3", "kind": "video", "name": "Video · 12 modes, one per second" },
     { "id": "v4", "kind": "video", "name": "Labels" }
   ],
   "clips": [
@@ -14,47 +14,134 @@
       "track": "v1",
       "source": { "kind": "composition", "id": "backdrop" },
       "start": 0,
-      "duration": 180
+      "duration": 360
     },
     {
       "id": "aurora",
       "track": "v2",
       "source": { "kind": "composition", "id": "aurora" },
       "start": 0,
-      "duration": 180,
+      "duration": 360,
       "blend": "screen"
+    },
+    {
+      "id": "ink-normal",
+      "track": "v3",
+      "source": { "kind": "video", "src": "assets/ink.mp4" },
+      "start": 0,
+      "duration": 30,
+      "sourceIn": 0,
+      "blend": "normal",
+      "audio": { "muted": true }
     },
     {
       "id": "ink-multiply",
       "track": "v3",
       "source": { "kind": "video", "src": "assets/ink.mp4" },
-      "start": 0,
-      "duration": 60,
-      "sourceIn": 0,
-      "transform": { "fit": "cover", "width": 1920, "height": 1080, "x": 0, "y": 0 },
+      "start": 30,
+      "duration": 30,
+      "sourceIn": 30,
       "blend": "multiply",
       "audio": { "muted": true }
     },
     {
-      "id": "ink-soft-light",
+      "id": "ink-screen",
       "track": "v3",
       "source": { "kind": "video", "src": "assets/ink.mp4" },
       "start": 60,
-      "duration": 60,
-      "sourceIn": 30,
-      "transform": { "fit": "cover", "width": 1920, "height": 1080, "x": 0, "y": 0 },
-      "blend": "soft-light",
+      "duration": 30,
+      "sourceIn": 60,
+      "blend": "screen",
       "audio": { "muted": true }
     },
     {
       "id": "ink-overlay",
       "track": "v3",
       "source": { "kind": "video", "src": "assets/ink.mp4" },
-      "start": 120,
-      "duration": 60,
-      "sourceIn": 30,
-      "transform": { "fit": "cover", "width": 1920, "height": 1080, "x": 0, "y": 0 },
+      "start": 90,
+      "duration": 30,
+      "sourceIn": 90,
       "blend": "overlay",
+      "audio": { "muted": true }
+    },
+    {
+      "id": "ink-darken",
+      "track": "v3",
+      "source": { "kind": "video", "src": "assets/ink.mp4" },
+      "start": 120,
+      "duration": 30,
+      "sourceIn": 120,
+      "blend": "darken",
+      "audio": { "muted": true }
+    },
+    {
+      "id": "ink-lighten",
+      "track": "v3",
+      "source": { "kind": "video", "src": "assets/ink.mp4" },
+      "start": 150,
+      "duration": 30,
+      "sourceIn": 150,
+      "blend": "lighten",
+      "audio": { "muted": true }
+    },
+    {
+      "id": "ink-color-dodge",
+      "track": "v3",
+      "source": { "kind": "video", "src": "assets/ink.mp4" },
+      "start": 180,
+      "duration": 30,
+      "sourceIn": 180,
+      "blend": "color-dodge",
+      "audio": { "muted": true }
+    },
+    {
+      "id": "ink-color-burn",
+      "track": "v3",
+      "source": { "kind": "video", "src": "assets/ink.mp4" },
+      "start": 210,
+      "duration": 30,
+      "sourceIn": 210,
+      "blend": "color-burn",
+      "audio": { "muted": true }
+    },
+    {
+      "id": "ink-hard-light",
+      "track": "v3",
+      "source": { "kind": "video", "src": "assets/ink.mp4" },
+      "start": 240,
+      "duration": 30,
+      "sourceIn": 240,
+      "blend": "hard-light",
+      "audio": { "muted": true }
+    },
+    {
+      "id": "ink-soft-light",
+      "track": "v3",
+      "source": { "kind": "video", "src": "assets/ink.mp4" },
+      "start": 270,
+      "duration": 30,
+      "sourceIn": 270,
+      "blend": "soft-light",
+      "audio": { "muted": true }
+    },
+    {
+      "id": "ink-difference",
+      "track": "v3",
+      "source": { "kind": "video", "src": "assets/ink.mp4" },
+      "start": 300,
+      "duration": 30,
+      "sourceIn": 300,
+      "blend": "difference",
+      "audio": { "muted": true }
+    },
+    {
+      "id": "ink-exclusion",
+      "track": "v3",
+      "source": { "kind": "video", "src": "assets/ink.mp4" },
+      "start": 330,
+      "duration": 30,
+      "sourceIn": 330,
+      "blend": "exclusion",
       "audio": { "muted": true }
     },
     {
@@ -62,7 +149,7 @@
       "track": "v4",
       "source": { "kind": "composition", "id": "labels" },
       "start": 0,
-      "duration": 180
+      "duration": 360
     }
   ]
 }

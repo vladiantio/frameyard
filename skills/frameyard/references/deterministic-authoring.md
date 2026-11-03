@@ -46,7 +46,7 @@ There is no directory scanning. A new composition document is invisible until it
 </html>
 ```
 
-- `width`, `height`, `fps`, and `duration-in-frames` are fixed on the root.
+- `duration-in-frames` is required on the root. `width`, `height`, and `fps` are optional: a missing value inherits the project `format`, and a declared value wins. Declare `width` and `height` together or not at all.
 - The `data-fy="props"` block is a JSON object. External props merge shallowly over it and are deep-frozen.
 - There is exactly one `<fy-composition>` root, inside `<body>`.
 - A doctype is required. Unsupported document features such as `<base>`, refresh/CSP meta tags, `<iframe>`, `<object>`, and `<embed>` are rejected.
@@ -224,4 +224,4 @@ npx frameyard still hello --frame 0,118-126 --out out/stills --json
 
 ## Metadata is fixed
 
-`width`, `height`, `fps`, and `duration-in-frames` cannot be derived from props. Choose a reusable resolution, frame rate, and duration; put variation in props. Frameyard does not change duration to fit audio.
+`width`, `height`, `fps`, and `duration-in-frames` cannot be derived from props. `duration-in-frames` is always declared. `width`, `height`, and `fps` are either declared or inherited from the project `format`, and the resolved values are fixed for the load. A composition that declares none of them in a project without `format` fails with `COMPOSITION_FORMAT_UNRESOLVED`. The resolved format is part of the immutable frame environment, so viewport units and percentage layout are valid but depend on it. Put variation in props. Frameyard does not change duration to fit audio.

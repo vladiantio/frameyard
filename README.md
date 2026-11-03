@@ -92,7 +92,9 @@ A composition is a full HTML document with one `<fy-composition>` root. Metadata
 </html>
 ```
 
-`width`, `height`, `fps`, and `duration-in-frames` are fixed. Props are JSON-serializable, deep-frozen, and merged shallowly over the `data-fy="props"` defaults. They cannot change metadata.
+`duration-in-frames` is required. `width`, `height`, and `fps` are optional: a missing value is inherited from the project `format`, and a declared value always wins. Declare `width` and `height` together or not at all. The same document above can therefore be written as `<fy-composition duration-in-frames="900">`, rendering at 1920×1080 and 30 fps because the project fixes that format. Props are JSON-serializable, deep-frozen, and merged shallowly over the `data-fy="props"` defaults. They cannot change metadata.
+
+A composition that declares no format values in a project without `format` fails with `COMPOSITION_FORMAT_UNRESOLVED`: declare the attributes or add `format { width, height, fps }` to `video.config.js`. A composition-only project stays valid without `format` as long as its compositions declare their own.
 
 ### Timeline
 
@@ -140,7 +142,7 @@ A timeline is a JSON document that places composition and media clips on video a
 - Composition clips can fix `props`, trim the source range, and repeat the same composition with different settings.
 - Visual clips support static `fit`, `width`/`height` (an explicit box), `x`, `y`, `scale`, `rotation`, `opacity`, and `blend`. `fit` applies inside the box; `width` and `height` go together and are mutually exclusive with `scale`. `blend` is a CSS `mix-blend-mode` value with source-alpha semantics, from `normal` (the default) through `multiply`, `screen`, `overlay`, the light/dodge/burn family, `difference`, and `exclusion`; `hue`, `saturation`, `color`, and `luminosity` are rejected. No keyframes, transitions, or other effects.
 - Video, composition, and nested-timeline clips contribute audio automatically unless muted. Timeline audio clips live on audio tracks.
-- A composition used in a timeline must match the project fps; different sizes are fitted by the clip. Clips on one track cannot overlap.
+- A composition that declares an `fps` must match the project fps; an undeclared `fps` inherits it. Different sizes are fitted by the clip. Clips on one track cannot overlap.
 - Nested timelines are rendered as groups, so the parent clip's opacity, transform, and blend mode apply to the whole nested result. A blend inside a nested timeline sees only that timeline's own backdrop; a transparent nested timeline does not see the parent's layers.
 
 ### Bindings

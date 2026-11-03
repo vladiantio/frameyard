@@ -4,7 +4,8 @@ A 12-second, 1920×1080, 30 fps timeline that demonstrates every supported CSS
 blend mode on composition and video clips. Four video tracks build one frame:
 
 - `v1` **backdrop** — an opaque HTML composition with a grid, concentric rings,
-  and a dark vignette.
+  and a dark vignette. It omits `width`, `height`, and `fps` and inherits the
+  project format, so it is captured at the timeline's own size.
 - `v2` **aurora** — a transparent HTML composition with three blurred color
   blobs. Its clip uses `blend: "screen"` for the full 12 seconds.
 - `v3` **ink** — a local 1280×720 H.264 clip scaled to fill the project frame.
@@ -59,7 +60,10 @@ examples/blend/
 ```
 
 The timeline lives in `timelines/blend.timeline.json`; the project format and
-entries are fixed in `video.config.js`.
+entries are fixed in `video.config.js`. `backdrop.html` demonstrates the
+optional composition format: with `width`, `height`, and `fps` omitted it
+renders at the project's 1920×1080, 30 fps, while the other compositions keep
+declaring their format explicitly.
 
 ## Commands
 

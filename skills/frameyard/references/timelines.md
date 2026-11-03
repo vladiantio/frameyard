@@ -16,9 +16,9 @@ export default {
 };
 ```
 
-- `format` fixes width, height, and fps for every timeline. It is required when the project lists timelines.
+- `format` fixes width, height, and fps for every timeline and fills those values for compositions that omit them; a declared value always wins. It is required when the project lists timelines.
 - Composition and timeline IDs share one namespace and must be unique.
-- A composition used in a timeline must match the project fps exactly. A different size is fitted by the clip.
+- A composition that declares an `fps` must match the project fps exactly; an undeclared `fps` inherits it. A different size is fitted by the clip.
 - Composition-only projects remain valid without `format` or `timelines`.
 
 ## Timeline document

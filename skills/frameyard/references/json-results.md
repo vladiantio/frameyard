@@ -55,6 +55,8 @@ Static validation diagnostics include source locations. Runtime diagnostics may 
 
 ## check
 
+`metadata` always reports the resolved format, combining declared values with the project `format`.
+
 ```json
 {
   "ok": true,

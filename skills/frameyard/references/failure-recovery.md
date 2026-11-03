@@ -11,6 +11,7 @@ Do not claim success after a nonzero exit. Fix the cause, rerun `check`, and onl
 | `CONFIG_INVALID` | Invalid config or composition entry | Fix `video.config.js`; entries must be explicit, local, `.html`, and exist. |
 | `COMPOSITION_NOT_FOUND` | ID is not listed | Add the entry to `video.config.js`. |
 | `COMPOSITION_INVALID` | Invalid doctype, root, metadata, or document structure | Fix the composition document; check `details.line` and `details.attribute`. |
+| `COMPOSITION_FORMAT_UNRESOLVED` | The composition omits `width`/`height`/`fps` and the project has no `format` | Declare the attributes on `<fy-composition>`, add `format { width, height, fps }` to `video.config.js`, or render through a timeline. |
 | `COMPOSITION_ERROR` | Mount, update, or browser page error | Read the frame location; remove forbidden clocks/randomness or fix the controller. |
 | `COMPOSITION_UPDATE_ASYNC` | `update()` returned a promise | Move async work to `mount()`. |
 | `COMPOSITION_NOT_READY` | `seek`/`settle` before a successful load | Await `load`/`ready`. |

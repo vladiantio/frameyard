@@ -8,7 +8,7 @@ Frameyard reports composition problems as structured diagnostics before and duri
 
 Static validation covers:
 
-- doctype, root count, metadata, and default-props JSON
+- doctype, root count, metadata (including `width`/`height` pairing), and default-props JSON
 - controller declaration and file existence
 - executable scripts, `on*` handlers, `javascript:` URLs, and unsupported visual elements
 - unknown `data-fy-*` attributes, binding paths, `if`/`repeat` placement, and animation attributes
@@ -41,6 +41,7 @@ Static validation covers:
 | Code | Severity | Meaning |
 | --- | --- | --- |
 | `COMPOSITION_INVALID` | error | Missing/invalid doctype, root, metadata, or document structure |
+| `COMPOSITION_FORMAT_UNRESOLVED` | error | The composition omits `width`/`height`/`fps` and the project has no `format`; this is a command error, not a document diagnostic |
 | `PROPS_INVALID` | error | Invalid default props JSON, invalid overrides, or `validateProps` failure |
 | `CONTROLLER_INVALID` | error | Missing/duplicate/both-inline-and-external controller, missing file, or invalid exports |
 | `BINDING_INVALID` | error | Unknown `data-fy-*` attribute or malformed binding path |

@@ -43,7 +43,7 @@ Never claim success when `check` fails, a still is missing, a render exits nonze
 
 ## Authoring rules
 
-- A composition is a full HTML document with one `<fy-composition width height fps duration-in-frames>` root and a `data-fy="props"` default-props block.
+- A composition is a full HTML document with one `<fy-composition duration-in-frames>` root and a `data-fy="props"` default-props block. `width`, `height`, and `fps` are optional and inherit from the project `format`; declare them to override it.
 - A timeline is a versioned JSON document with explicit tracks and clips. Sources are composition IDs, nested timeline IDs, or local video/image/audio paths. Timeline frames, sourceIn, and duration are integer frames. No remote URLs.
 - Bindings are explicit: `data-fy-text`, `data-fy-attr-*`, `data-fy-class-*`, `data-fy-if`, and `data-fy-repeat` on `<template>`. Primitive top-level props are also `--fy-prop-<name>` CSS variables.
 - CSS `@keyframes` and the Web Animations API are seeked from the frame clock. `data-fy-anim-start`, `data-fy-anim-duration`, and `data-fy-anim-easing` schedule one animation per element in frames.

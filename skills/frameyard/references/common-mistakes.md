@@ -8,7 +8,8 @@
 ## Document structure
 
 - Missing `<!doctype html>` or missing/multiple `<fy-composition>` roots.
-- Missing `width`, `height`, `fps`, or `duration-in-frames` on the root.
+- Missing `duration-in-frames` on the root. `width`, `height`, and `fps` may be omitted when the project declares `format`, but declaring only one of `width` and `height` is an error.
+- Rendering a composition that declares no `width`/`height`/`fps` in a project without `format`; add the attributes or the project `format` (`COMPOSITION_FORMAT_UNRESOLVED`).
 - Missing the `data-fy="props"` block when the composition relies on default props.
 - Visual content outside `<fy-composition>`; it is not captured.
 - Using `<base>`, refresh/CSP meta tags, `<iframe>`, `<object>`, or `<embed>`.

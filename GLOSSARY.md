@@ -11,19 +11,27 @@ A collection of related compositions, timelines, and the assets and configuratio
 _Avoid_: Video, render
 
 **Project format**:
-The fixed width, height, and frame rate shared by every timeline in a project.
+The fixed width, height, and frame rate shared by every timeline in a project and inherited by compositions that omit those values.
 _Avoid_: Composition metadata, render options
 
 **Composition**:
-A uniquely identified, reusable video source with fixed dimensions, frame rate, duration in frames, and content parameterized by props.
+A uniquely identified, reusable video source with a fixed duration in frames, content parameterized by props, and a format that is either declared or inherited from the project.
 _Avoid_: Scene, template, video
 
+**Declared format**:
+The width, height, and frame rate a composition document writes on its root. A value may be absent, in which case it is inherited; a declared value always wins over the project format.
+_Avoid_: Composition metadata, defaults
+
+**Resolved format**:
+The width, height, and frame rate a composition actually renders with, after declared values and the project format are combined. It is part of the immutable frame environment.
+_Avoid_: Output options, render settings
+
 **Composition metadata**:
-The fixed dimensions, frame rate, and duration in frames that define a composition's source contract.
+The resolved dimensions and frame rate plus the duration in frames that define a composition's source contract.
 _Avoid_: Render options, props
 
 **Composition descriptor**:
-The fixed facts read from an HTML composition before frame production: composition metadata, default props, and the controller declaration. It excludes per-load declarations such as audio clips, transcripts, and animation schedules.
+The fixed facts read from an HTML composition before frame production: declared composition metadata, default props, and the controller declaration. It excludes per-load declarations such as audio clips, transcripts, and animation schedules.
 _Avoid_: Composition config, parsed document
 
 **Composition lifecycle**:

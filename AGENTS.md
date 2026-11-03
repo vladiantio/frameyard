@@ -64,7 +64,7 @@ A full 30-second demo timeline render is segmented and uses 8 workers by default
 | --- | --- |
 | `src/contracts.ts` | Shared composition, metadata, props, audio, transcript, diagnostic, controller, and host contracts |
 | `src/bindings.ts` | Browser-safe binding path validation, resolution, and value coercion |
-| `src/composition/` | Browser-safe composition document reader, descriptor, per-kind declarations, adapter contract, and path rules |
+| `src/composition/` | Browser-safe composition document reader, descriptor, declared-format resolution against the project format, per-kind declarations, adapter contract, and path rules |
 | `src/html/parse.ts` | Node-only parse5 document helpers and source locations |
 | `src/html/document-adapter.ts` | parse5 adapter for the composition document reader |
 | `src/html/validate.ts` | Static composition validation and diagnostic extraction |
@@ -117,7 +117,8 @@ Timeline path: `src/timeline/resolve.ts` resolves the JSON and references; `src/
 ### Authoring
 
 - A composition is a full HTML document with one `<fy-composition>` root. `video.config.js` explicitly maps IDs to `.html` entries; there is no directory scanning. JavaScript composition modules are rejected.
-- Metadata (`width`, `height`, `fps`, `duration-in-frames`) is fixed on the root. Props cannot change it.
+- Metadata (`width`, `height`, `fps`, `duration-in-frames`) is fixed on the root. `duration-in-frames` is required; `width`, `height`, and `fps` are optional and inherit the project `format` when absent (declared values win, `width`/`height` are declared together). Props cannot change metadata.
+- The resolved format is part of the immutable frame environment. A composition that omits format values in a project without `format` fails with `COMPOSITION_FORMAT_UNRESOLVED`.
 - Default props are a `data-fy="props"` JSON block. Props are JSON, deep-frozen, and merged shallowly over defaults.
 - Bindings are explicit: `data-fy-text`, `data-fy-attr-*`, `data-fy-class-*`, `data-fy-if`, and `data-fy-repeat` on `<template>`. Bindings apply once per load, before controller `mount`.
 - The `fy` prefix is the authoring namespace: `fy-composition`, `fy-transcript`, `data-fy-*`, `--fy-*`, `text/fy-controller`. The package, CLI, config, manifest, server route, import specifier, and error codes remain `frameyard`.
@@ -151,6 +152,7 @@ Timeline path: `src/timeline/resolve.ts` resolves the JSON and references; `src/
 
 - `src/html/validate.ts` parses composition HTML with parse5 and reports all static diagnostics in source order. It is Node-only. `src/contracts.ts`, `src/bindings.ts`, `src/composition/`, and `src/runtime/` must stay free of `node:` imports; `pnpm typecheck:browser` enforces it.
 - `check`, `still`, and `render` run static validation before Chromium. Static errors fail without launching a browser; warnings allow frame evaluation. `dev` validates on composition request.
+- A composition that omits `width`/`height`/`fps` in a project without `format` is not a document error: validation reports `formatUnresolved`, and the command fails with `COMPOSITION_FORMAT_UNRESOLVED`.
 - Diagnostics carry `severity`, `code`, `message`, and optional `details` with `path`, `line`, `column`, `element`, `attribute`, `value`, and `suggestion`. Error envelopes carry optional `error.details` and top-level `diagnostics`.
 - Unknown `data-fy-*` attributes, repeat misuse, controller declaration errors, executable scripts, event handlers, `javascript:` URLs, unsupported elements, and missing media/transcript references are errors. Missing binding paths and animation mismatches are warnings.
 - The result schemas expose `entry`, `controller`, and top-level `diagnostics` for composition `check`, `still`, and `render`. Timeline results expose `timeline`, `format`, `tracks`, `clips`, and `diagnostics`; audio/transcript warnings are `AUDIO_WARNING`/`TRANSCRIPT_WARNING` diagnostics, not nested string arrays.

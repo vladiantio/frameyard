@@ -13,7 +13,7 @@ beforeAll(async () => {
   await mkdir(path.join(root, "timelines"), { recursive: true });
   await writeFile(
     path.join(root, "compositions", "intro.html"),
-    `<!doctype html><html><head><meta charset="utf-8"></head><body><fy-composition width="320" height="180" fps="10" duration-in-frames="10"></fy-composition></body></html>`,
+    `<fy-composition width="320" height="180" fps="10" duration-in-frames="10"></fy-composition>`,
   );
   await writeFile(
     path.join(root, "timelines", "main.json"),

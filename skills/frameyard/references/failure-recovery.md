@@ -10,13 +10,15 @@ Do not claim success after a nonzero exit. Fix the cause, rerun `check`, and onl
 | `CONFIG_NOT_FOUND` | No `video.config.js` found | Run from the project root or pass `--project`. |
 | `CONFIG_INVALID` | Invalid config or composition entry | Fix `video.config.js`; entries must be explicit, local, `.html`, and exist. |
 | `COMPOSITION_NOT_FOUND` | ID is not listed | Add the entry to `video.config.js`. |
-| `COMPOSITION_INVALID` | Invalid doctype, root, metadata, or document structure | Fix the composition document; check `details.line` and `details.attribute`. |
+| `COMPOSITION_INVALID` | Invalid root, metadata, fragment structure, or reserved attribute | Fix the composition fragment; check `details.line` and `details.attribute`. |
+| `COMPOSITION_DOCUMENT_SHELL` | A full document shell is present | Remove `<!doctype>`, `<html>`, `<head>`, and `<body>`; keep the fragment body and top-level metadata. See the 0.8 migration guide. |
+| `IMPORT_MAP_INVALID` | Invalid import map placement, JSON, attributes, or reserved specifier | Keep one or more top-level import maps; remove `frameyard`/`frameyard/` keys and forbidden attributes. |
 | `COMPOSITION_FORMAT_UNRESOLVED` | The composition omits `width`/`height`/`fps` and the project has no `format` | Declare the attributes on `<fy-composition>`, add `format { width, height, fps }` to `video.config.js`, or render through a timeline. |
 | `COMPOSITION_ERROR` | Mount, update, or browser page error | Read the frame location; remove forbidden clocks/randomness or fix the controller. |
 | `COMPOSITION_UPDATE_ASYNC` | `update()` returned a promise | Move async work to `mount()`. |
 | `COMPOSITION_NOT_READY` | `seek`/`settle` before a successful load | Await `load`/`ready`. |
 | `COMPOSITION_DISPOSED` | Operation after host disposal | Reload the composition. |
-| `CONTROLLER_INVALID` | Missing, duplicate, or invalid controller declaration/file/exports | Keep exactly one inline or external controller; verify its exports and path. |
+| `CONTROLLER_INVALID` | Missing, duplicate, non-top-level, or invalid controller declaration/file/exports | Keep exactly one inline or external top-level controller; verify its exports and path. |
 | `BINDING_INVALID` | Unknown `data-fy-*` attribute or malformed path | Fix the attribute name or path. |
 | `BINDING_PATH_MISSING` | Binding path absent from resolved props | Fix the prop or path; use `details.suggestion`. |
 | `BINDING_VALUE_INVALID` | Object/array used where a primitive is required | Use a string/number/boolean or move the logic to a controller. |
@@ -29,10 +31,10 @@ Do not claim success after a nonzero exit. Fix the cause, rerun `check`, and onl
 | `SCRIPT_NOT_ALLOWED` | Executable script other than the controller | Move code into the controller. |
 | `EVENT_HANDLER_NOT_ALLOWED` | Inline `on*` handler or `data-fy-attr-on*` | Remove the handler; use a controller. |
 | `URL_NOT_ALLOWED` | `javascript:` URL | Use a safe URL. |
-| `ELEMENT_NOT_SUPPORTED` | `iframe`, `object`, `embed`, `base`, refresh/CSP meta, `source`, `track`, or declarative shadow DOM | Use supported DOM/SVG/canvas/video sources. |
+| `ELEMENT_NOT_SUPPORTED` | `iframe`, `object`, `embed`, `base`, document-level `<title>`/`<meta>`, refresh/CSP meta, `source`, `track`, or declarative shadow DOM | Use supported DOM/SVG/canvas/video sources. |
 | `ELEMENT_UNKNOWN` | Unknown `fy-*` element | Use `fy-composition`/`fy-transcript` or a normal element. |
 | `CONTENT_OUTSIDE_ROOT` | Visual content outside `<fy-composition>` | Move it inside the root. |
-| `PROPS_INVALID` | Invalid props JSON or `validateProps()` failure | Fix the props file or validator. |
+| `PROPS_INVALID` | Invalid/non-top-level props JSON or `validateProps()` failure | Put the props block at the top level of the fragment; fix the props file or validator. |
 | `FRAME_OUT_OF_RANGE` | Frame outside `0..durationInFrames - 1` | Choose valid frames; a batch error lists every invalid frame and the valid range. |
 | `AUDIO_INVALID` | Bad clip or unreadable/unsupported audio | Use a local project-root-relative file with a decodable audio stream. |
 | `AUDIO_WARNING` | Audio timeline overrun or silent embedded media | Adjust timing/trim or remove the silent source. |
@@ -83,3 +85,16 @@ Report all of:
 - still paths and whether they were viewed;
 - final video path, frame count, and audio/transcript summary;
 - any skipped step or unresolved diagnostic.
+
+## 0.8 fragment migration
+
+0.8 changed compositions from full documents to partial HTML fragments. If `check` reports `COMPOSITION_DOCUMENT_SHELL`:
+
+1. Remove `<!doctype html>`, `<html>`, `<head>`, `<body>`, `<title>`, and `<meta>`.
+2. Keep one top-level `<fy-composition>` root.
+3. Move the props block, the controller, and import maps to the top level.
+4. Keep top-level `<style>` and `<link rel="stylesheet">` as siblings; Frameyard hoists them into the generated head. Styles inside the root stay in the body.
+5. Remove the reserved `data-fy-host` attribute and `data-fy="format"` block.
+6. Run `npx frameyard check <id> --json` again.
+
+See `docs/migration-0.8.md` in the Frameyard repository for before/after examples.

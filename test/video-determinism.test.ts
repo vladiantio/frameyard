@@ -18,11 +18,7 @@ const cli = path.resolve("dist/cli.js");
 function composition(withFade: boolean): string {
   const sceneStyle = withFade ? "        animation: fade-in 1s linear both;\n" : "";
   const sceneAttrs = withFade ? ' data-fy-anim-start="0" data-fy-anim-duration="30"' : "";
-  return `<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <style>
+  return `<style>
       @keyframes fade-in {
         from {
           opacity: 0;
@@ -55,24 +51,16 @@ ${sceneStyle}      }
         transform-origin: center;
       }
     </style>
-  </head>
-  <body>
     <fy-composition width="1920" height="1080" fps="30" duration-in-frames="360">
       <div id="scene"${sceneAttrs}>
         <video id="hero" src="assets/moving.webm" data-fy-audio="off"></video>
       </div>
     </fy-composition>
-  </body>
-</html>
 `;
 }
 
 function mappingComposition(): string {
-  return `<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <style>
+  return `<style>
       html,
       body,
       fy-composition {
@@ -94,15 +82,11 @@ function mappingComposition(): string {
         object-fit: cover;
       }
     </style>
-  </head>
-  <body>
     <fy-composition width="960" height="540" fps="30" duration-in-frames="360">
       <div id="scene">
         <video id="hero" src="assets/code.webm" data-fy-audio="off"></video>
       </div>
     </fy-composition>
-  </body>
-</html>
 `;
 }
 

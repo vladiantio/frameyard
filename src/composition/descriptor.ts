@@ -16,7 +16,7 @@ import { findElements, getAttribute, type ElementMatch } from "./walk.js";
 
 export interface CompositionDescriptor {
   /**
-   * Declared metadata before format resolution. Null when the document does
+   * Declared metadata before format resolution. Null when the source does
    * not declare a usable `duration-in-frames` or declares only one of
    * `width` and `height`.
    */
@@ -32,26 +32,35 @@ export interface CompositionDescriptorResult<Node> {
   diagnostics: CompositionDiagnostic[];
 }
 
+export type CompositionRootScope = "document" | "fragment";
+
 export interface ReadCompositionDescriptorOptions {
-  /** Project-relative path to the composition document, used in diagnostics. */
+  /** Project-relative path to the composition source, used in diagnostics. */
   path: string;
   /**
    * Resolves an external controller's authoring `src` to a project-relative
    * path. The reader stays pure; the caller supplies the path world.
    */
   resolvePath(raw: string): string;
+  /**
+   * Whether the reader is looking at a served HTML document or an authoring
+   * fragment. Document mode requires the root inside `<body>`; fragment mode
+   * requires the root and metadata blocks at the top level.
+   */
+  rootScope?: CompositionRootScope;
 }
 
 function readRoot<Node>(
   adapter: DocumentAdapter<Node>,
   path: string,
+  rootScope: CompositionRootScope,
 ): { root: Node | null; diagnostics: CompositionDiagnostic[] } {
   const diagnostics: CompositionDiagnostic[] = [];
   const roots = findElements(adapter, (node) => adapter.tagName(node) === "fy-composition");
 
   if (roots.length === 0) {
     diagnostics.push(
-      createDiagnostic("error", "COMPOSITION_INVALID", "Composition document must contain one <fy-composition> root.", {
+      createDiagnostic("error", "COMPOSITION_INVALID", "Composition must contain one <fy-composition> root.", {
         path,
       }),
     );
@@ -63,29 +72,39 @@ function readRoot<Node>(
       createDiagnostic(
         "error",
         "COMPOSITION_INVALID",
-        "Composition document must contain exactly one <fy-composition> root.",
+        "Composition must contain exactly one <fy-composition> root.",
         elementDetails(adapter, path, extra.node),
       ),
     );
   }
 
   const first = roots[0] as ElementMatch<Node>;
-  if (!first.ancestors.some((ancestor) => adapter.tagName(ancestor) === "body")) {
-    diagnostics.push(
-      createDiagnostic(
-        "error",
-        "COMPOSITION_INVALID",
-        "The <fy-composition> root must be inside <body>.",
-        elementDetails(adapter, path, first.node),
-      ),
-    );
-  }
   if (first.inTemplate) {
     diagnostics.push(
       createDiagnostic(
         "error",
         "COMPOSITION_INVALID",
         "The <fy-composition> root must not be inside a <template>.",
+        elementDetails(adapter, path, first.node),
+      ),
+    );
+  } else if (rootScope === "fragment") {
+    if (first.ancestors.length > 0) {
+      diagnostics.push(
+        createDiagnostic(
+          "error",
+          "COMPOSITION_INVALID",
+          "The <fy-composition> root must be a top-level element in the composition fragment.",
+          elementDetails(adapter, path, first.node),
+        ),
+      );
+    }
+  } else if (!first.ancestors.some((ancestor) => adapter.tagName(ancestor) === "body")) {
+    diagnostics.push(
+      createDiagnostic(
+        "error",
+        "COMPOSITION_INVALID",
+        "The <fy-composition> root must be inside <body>.",
         elementDetails(adapter, path, first.node),
       ),
     );
@@ -208,6 +227,7 @@ function readMetadata<Node>(
 function readDefaultProps<Node>(
   adapter: DocumentAdapter<Node>,
   path: string,
+  rootScope: CompositionRootScope,
 ): { defaultProps: Readonly<Props>; diagnostics: CompositionDiagnostic[] } {
   const diagnostics: CompositionDiagnostic[] = [];
   const blocks = findElements(
@@ -243,6 +263,15 @@ function readDefaultProps<Node>(
         elementDetails(adapter, path, block.node),
       ),
     );
+  } else if (rootScope === "fragment" && block.ancestors.length > 0) {
+    diagnostics.push(
+      createDiagnostic(
+        "error",
+        "PROPS_INVALID",
+        'The data-fy="props" block must be a top-level element in the composition fragment.',
+        elementDetails(adapter, path, block.node),
+      ),
+    );
   }
 
   try {
@@ -269,6 +298,7 @@ function readController<Node>(
   adapter: DocumentAdapter<Node>,
   path: string,
   resolvePath: (raw: string) => string,
+  rootScope: CompositionRootScope,
 ): { controller: ControllerDeclaration | null; diagnostics: CompositionDiagnostic[] } {
   const diagnostics: CompositionDiagnostic[] = [];
   const blocks = findElements(
@@ -299,6 +329,15 @@ function readController<Node>(
         "error",
         "CONTROLLER_INVALID",
         "The controller block must not be inside a <template>.",
+        elementDetails(adapter, path, block.node),
+      ),
+    );
+  } else if (rootScope === "fragment" && block.ancestors.length > 0) {
+    diagnostics.push(
+      createDiagnostic(
+        "error",
+        "CONTROLLER_INVALID",
+        "The controller block must be a top-level element in the composition fragment.",
         elementDetails(adapter, path, block.node),
       ),
     );
@@ -393,7 +432,8 @@ export function readCompositionDescriptor<Node>(
   adapter: DocumentAdapter<Node>,
   options: ReadCompositionDescriptorOptions,
 ): CompositionDescriptorResult<Node> {
-  const rootRead = readRoot(adapter, options.path);
+  const rootScope = options.rootScope ?? "document";
+  const rootRead = readRoot(adapter, options.path, rootScope);
   const diagnostics = [...rootRead.diagnostics];
 
   let metadata: DeclaredCompositionMetadata | null = null;
@@ -403,10 +443,10 @@ export function readCompositionDescriptor<Node>(
     diagnostics.push(...metadataRead.diagnostics);
   }
 
-  const propsRead = readDefaultProps(adapter, options.path);
+  const propsRead = readDefaultProps(adapter, options.path, rootScope);
   diagnostics.push(...propsRead.diagnostics);
 
-  const controllerRead = readController(adapter, options.path, options.resolvePath);
+  const controllerRead = readController(adapter, options.path, options.resolvePath, rootScope);
   diagnostics.push(...controllerRead.diagnostics);
 
   return {

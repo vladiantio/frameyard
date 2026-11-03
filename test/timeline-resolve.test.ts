@@ -12,13 +12,7 @@ const pixelPng = Buffer.from(
   "base64",
 );
 
-const compositionHtml = `<!doctype html>
-<html>
-  <head><meta charset="utf-8"></head>
-  <body>
-    <fy-composition width="1920" height="1080" fps="30" duration-in-frames="10"></fy-composition>
-  </body>
-</html>
+const compositionHtml = `<fy-composition width="1920" height="1080" fps="30" duration-in-frames="10"></fy-composition>
 `;
 
 interface ProjectOptions {

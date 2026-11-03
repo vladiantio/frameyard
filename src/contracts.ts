@@ -24,7 +24,7 @@ export interface DeclaredFormat {
   fps: number | null;
 }
 
-/** The fixed facts a composition document declares before format resolution. */
+/** The fixed facts a composition fragment declares before format resolution. */
 export interface DeclaredCompositionMetadata {
   format: DeclaredFormat;
   /** Positive integer number of frames in the composition. */
@@ -121,13 +121,13 @@ export interface ControllerDeclaration {
   kind: "inline" | "external";
   /** Project-relative path for external controllers. */
   src?: string;
-  /** Authoring value for external controllers, relative to the composition document. */
+  /** Authoring value for external controllers, relative to the composition URL. */
   rawSrc?: string;
   /** Inline source for inline controllers. */
   source?: string;
-  /** One-based line of the controller block in the composition document. */
+  /** One-based line of the controller block in the composition fragment. */
   line?: number;
-  /** One-based column of the controller block in the composition document. */
+  /** One-based column of the controller block in the composition fragment. */
   column?: number;
 }
 
@@ -135,7 +135,7 @@ export interface CompositionSourceInfo {
   /** Metadata resolved against the project format. */
   metadata: CompositionMetadata;
   /**
-   * The format values the document declares. Missing values were inherited
+   * The format values the fragment declares. Missing values were inherited
    * from the project format to produce `metadata`.
    */
   declaredFormat: DeclaredFormat;

@@ -733,7 +733,7 @@ export async function createFrameyardHost(): Promise<FrameyardHost> {
     });
   }
   if (!(root instanceof HTMLElement)) {
-    throw new FrameyardError("COMPOSITION_INVALID", "Composition document must contain one <fy-composition> root.", {
+    throw new FrameyardError("COMPOSITION_INVALID", "Composition must contain one <fy-composition> root.", {
       diagnostics: read.diagnostics,
     });
   }

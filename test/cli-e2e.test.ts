@@ -11,18 +11,12 @@ import { assertFreshDist } from "./helpers/dist.ts";
 const exec = promisify(execFile);
 const cli = path.resolve("dist/cli.js");
 
-const composition = `<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8">
-    <script type="application/json" data-fy="props">{ "label": "Hello" }</script>
+const composition = `<script type="application/json" data-fy="props">{ "label": "Hello" }</script>
     <style>
       @keyframes move { from { transform: translateX(0px); } to { transform: translateX(40px); } }
       #box { width: 20px; height: 20px; background: #ff5500; animation: move 0.6s linear infinite; }
       #label { color: white; font: 12px monospace; }
     </style>
-  </head>
-  <body>
     <fy-composition width="160" height="90" fps="10" duration-in-frames="6">
       <div id="box" data-frame="-1" data-fy-anim-start="0" data-fy-anim-duration="6"></div>
       <div id="label"></div>
@@ -55,18 +49,10 @@ export default {
   dispose() {},
 };
     </script>
-  </body>
-</html>
 `;
 
-const mediaComposition = `<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8">
-    <script type="application/json" data-fy="props">{ "declaredTone": true }</script>
+const mediaComposition = `<script type="application/json" data-fy="props">{ "declaredTone": true }</script>
     <style>video,canvas{position:absolute;top:0;width:80px;height:90px}video{left:0}canvas{left:80px}</style>
-  </head>
-  <body>
     <fy-composition width="160" height="90" fps="10" duration-in-frames="12">
       <video id="clip" src="assets/clip.webm" data-fy-start="2" data-fy-trim="0.1" data-fy-duration="0.6" data-fy-volume="0.5"></video>
       <canvas id="gl" width="80" height="90"></canvas>
@@ -90,15 +76,9 @@ export default {
   },
 };
     </script>
-  </body>
-</html>
 `;
 
-const webglComposition = `<!doctype html>
-<html>
-  <head><meta charset="utf-8"></head>
-  <body>
-    <fy-composition width="160" height="90" fps="10" duration-in-frames="6">
+const webglComposition = `<fy-composition width="160" height="90" fps="10" duration-in-frames="6">
       <canvas id="gl" width="160" height="90"></canvas>
     </fy-composition>
     <script type="text/fy-controller">
@@ -116,45 +96,25 @@ export default {
   },
 };
     </script>
-  </body>
-</html>
 `;
 
-const longComposition = `<!doctype html>
-<html>
-  <head><meta charset="utf-8"></head>
-  <body>
-    <fy-composition width="160" height="90" fps="10" duration-in-frames="40">
+const longComposition = `<fy-composition width="160" height="90" fps="10" duration-in-frames="40">
       <div style="width: 100%; height: 100%; background: #123456"></div>
     </fy-composition>
-  </body>
-</html>
 `;
 
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
-const missingVideoComposition = `<!doctype html>
-<html>
-  <head><meta charset="utf-8"></head>
-  <body>
-    <fy-composition width="160" height="90" fps="10" duration-in-frames="2">
+const missingVideoComposition = `<fy-composition width="160" height="90" fps="10" duration-in-frames="2">
       <video src="assets/missing.webm"></video>
     </fy-composition>
-  </body>
-</html>
 `;
 
-const htmlComposition = `<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8">
-    <script type="application/json" data-fy="props">{ "label": "HTML" }</script>
+const htmlComposition = `<script type="application/json" data-fy="props">{ "label": "HTML" }</script>
     <style>
       @keyframes move { from { transform: translateX(0px); } to { transform: translateX(40px); } }
       #box { width: 20px; height: 20px; background: #ff5500; animation: move 0.6s linear infinite; }
     </style>
-  </head>
-  <body>
     <fy-composition width="160" height="90" fps="10" duration-in-frames="6">
       <div id="box" data-fy-anim-start="0" data-fy-anim-duration="6"></div>
       <div id="label" data-fy-text="label"></div>
@@ -167,19 +127,18 @@ export default {
   },
 };
     </script>
-  </body>
+`;
+
+const legacyComposition = `<!doctype html>
+<html>
+  <head><meta charset="utf-8"></head>
+  <body><fy-composition width="160" height="90" fps="10" duration-in-frames="2"></fy-composition></body>
 </html>
 `;
 
-const invalidHtmlComposition = `<!doctype html>
-<html>
-  <head><meta charset="utf-8"></head>
-  <body>
-    <fy-composition width="160" height="90" fps="10" duration-in-frames="2">
+const invalidHtmlComposition = `<fy-composition width="160" height="90" fps="10" duration-in-frames="2">
       <div data-fy-txt="label"></div>
     </fy-composition>
-  </body>
-</html>
 `;
 
 let root: string;
@@ -300,7 +259,7 @@ beforeAll(async () => {
   await mkdir(path.join(root, "assets"), { recursive: true });
   await writeFile(
     path.join(root, "video.config.js"),
-    `export default { compositions: { demo: "./compositions/demo.html", media: "./compositions/media.html", webgl: "./compositions/webgl.html", long: "./compositions/long.html", "missing-video": "./compositions/missing-video.html", broken: "./compositions/broken.html", throwing: "./compositions/throwing.html", html: "./compositions/html.html", "html-invalid": "./compositions/html-invalid.html" } };\n`,
+    `export default { compositions: { demo: "./compositions/demo.html", media: "./compositions/media.html", webgl: "./compositions/webgl.html", long: "./compositions/long.html", "missing-video": "./compositions/missing-video.html", broken: "./compositions/broken.html", throwing: "./compositions/throwing.html", html: "./compositions/html.html", "html-invalid": "./compositions/html-invalid.html", legacy: "./compositions/legacy.html" } };\n`,
   );
   await writeFile(path.join(root, "compositions", "demo.html"), composition);
   await writeFile(path.join(root, "compositions", "media.html"), mediaComposition);
@@ -309,26 +268,17 @@ beforeAll(async () => {
   await writeFile(path.join(root, "compositions", "missing-video.html"), missingVideoComposition);
   await writeFile(path.join(root, "compositions", "html.html"), htmlComposition);
   await writeFile(path.join(root, "compositions", "html-invalid.html"), invalidHtmlComposition);
+  await writeFile(path.join(root, "compositions", "legacy.html"), legacyComposition);
   await writeFile(
     path.join(root, "compositions", "broken.html"),
-    `<!doctype html>
-<html>
-  <head><meta charset="utf-8"></head>
-  <body>
-    <fy-composition width="160" height="90" fps="10" duration-in-frames="2">
+    `<fy-composition width="160" height="90" fps="10" duration-in-frames="2">
       <audio src="assets/missing.wav" data-fy-start="0"></audio>
     </fy-composition>
-  </body>
-</html>
 `,
   );
   await writeFile(
     path.join(root, "compositions", "throwing.html"),
-    `<!doctype html>
-<html>
-  <head><meta charset="utf-8"></head>
-  <body>
-    <fy-composition width="160" height="90" fps="10" duration-in-frames="6">
+    `<fy-composition width="160" height="90" fps="10" duration-in-frames="6">
       <div id="box"></div>
     </fy-composition>
     <script type="text/fy-controller">
@@ -338,8 +288,6 @@ export default {
   },
 };
     </script>
-  </body>
-</html>
 `,
   );
   await writeFile(path.join(root, "assets", "tone.wav"), toneWav());
@@ -492,6 +440,29 @@ describe("CLI end-to-end", () => {
             line: expect.any(Number),
             column: expect.any(Number),
             attribute: "data-fy-txt",
+          }),
+        }),
+      ]),
+    );
+  });
+
+  it("fails a legacy full document with COMPOSITION_DOCUMENT_SHELL", async () => {
+    const result = await run(["check", "legacy", "--project", root, "--json"], root);
+    expect(result.code).not.toBe(0);
+    const json = JSON.parse(result.stdout) as Record<string, unknown>;
+    expect(json).toMatchObject({
+      ok: false,
+      command: "check",
+      error: { code: "COMPOSITION_DOCUMENT_SHELL" },
+    });
+    expect(json.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          severity: "error",
+          code: "COMPOSITION_DOCUMENT_SHELL",
+          details: expect.objectContaining({
+            path: "compositions/legacy.html",
+            suggestion: expect.stringContaining("migration-0.8.md"),
           }),
         }),
       ]),
@@ -1474,15 +1445,9 @@ describe("CLI end-to-end", () => {
 });
 
 describe("composition format inheritance", () => {
-  const inheritedComposition = `<!doctype html>
-<html>
-  <head><meta charset="utf-8"></head>
-  <body>
-    <fy-composition duration-in-frames="6">
+  const inheritedComposition = `<fy-composition duration-in-frames="6">
       <div style="width: 100%; height: 100%; background: #123456"></div>
     </fy-composition>
-  </body>
-</html>
 `;
 
   async function createFormatProject(options: { format?: boolean } = {}): Promise<string> {

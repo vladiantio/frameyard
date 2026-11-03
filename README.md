@@ -2,7 +2,7 @@
 
 Frameyard is a local-first framework for building parameterized videos with HTML, CSS, and an optional JavaScript controller, assembling them into timelines, and rendering them deterministically.
 
-The current design is implemented: HTML composition documents, JSON timelines with tracks and clips, nested timelines, static clip blend modes, declarative bindings, CSS animation scheduling, frame-state variables, inline and external controllers, composition and timeline hosts, static validation with structured diagnostics, an interactive preview with a read-only timeline, direct composition rendering, segmented lossless timeline rendering, audio and transcripts, deterministic Chromium capture, FFmpeg output, and the official agent skill.
+The current design is implemented: HTML composition fragments, JSON timelines with tracks and clips, nested timelines, static clip blend modes, declarative bindings, CSS animation scheduling, frame-state variables, inline and external controllers, composition and timeline hosts, static validation with structured diagnostics, an interactive preview with a read-only timeline, direct composition rendering, segmented lossless timeline rendering, audio and transcripts, deterministic Chromium capture, FFmpeg output, and the official agent skill.
 
 ## Requirements
 
@@ -62,37 +62,33 @@ export default {
 };
 ```
 
-A composition is a full HTML document with one `<fy-composition>` root. Metadata, default props, markup, CSS, bindings, audio, transcripts, and an optional controller all live in the document:
+A composition is a partial HTML fragment with one top-level `<fy-composition>` root. Metadata, default props, markup, CSS, bindings, audio, transcripts, and an optional controller all live in the fragment; Frameyard generates the document shell at render time:
 
 ```html
-<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8">
-    <script type="application/json" data-fy="props">
-    { "title": "Hello", "accent": "#b8f36b" }
-    </script>
-    <style>
-      @keyframes fade-up {
-        from { opacity: 0; transform: translateY(24px); }
-        to { opacity: 1; transform: translateY(0); }
-      }
-      #title { animation: fade-up 1s ease-out both; }
-    </style>
-  </head>
-  <body>
-    <fy-composition width="1920" height="1080" fps="30" duration-in-frames="900">
-      <h1 id="title"
-          data-fy-text="title"
-          data-fy-anim-start="0"
-          data-fy-anim-duration="30"></h1>
-      <div id="progress" style="width: calc(var(--fy-progress) * 100%)"></div>
-    </fy-composition>
-  </body>
-</html>
+<script type="application/json" data-fy="props">
+{ "title": "Hello", "accent": "#b8f36b" }
+</script>
+<style>
+  @keyframes fade-up {
+    from { opacity: 0; transform: translateY(24px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  #title { animation: fade-up 1s ease-out both; }
+</style>
+<fy-composition width="1920" height="1080" fps="30" duration-in-frames="900">
+  <h1 id="title"
+      data-fy-text="title"
+      data-fy-anim-start="0"
+      data-fy-anim-duration="30"></h1>
+  <div id="progress" style="width: calc(var(--fy-progress) * 100%)"></div>
+</fy-composition>
 ```
 
-`duration-in-frames` is required. `width`, `height`, and `fps` are optional: a missing value is inherited from the project `format`, and a declared value always wins. Declare `width` and `height` together or not at all. The same document above can therefore be written as `<fy-composition duration-in-frames="900">`, rendering at 1920×1080 and 30 fps because the project fixes that format. Props are JSON-serializable, deep-frozen, and merged shallowly over the `data-fy="props"` defaults. They cannot change metadata.
+Do not add `<!doctype>`, `<html>`, `<head>`, `<body>`, `<title>`, or `<meta>`; the framework owns the document shell, import map, and host runtime. Props, the controller, and import maps are top-level siblings of the root. Top-level `<style>` and `<link rel="stylesheet">` elements are hoisted into the generated head; styles inside the root stay in the body.
+
+An optional top-level `<script type="importmap">` can add bare specifiers for controllers. Frameyard hoists it before the host module; `frameyard` and `frameyard/` specifiers are reserved.
+
+`duration-in-frames` is required. `width`, `height`, and `fps` are optional: a missing value is inherited from the project `format`, and a declared value always wins. Declare `width` and `height` together or not at all. The same fragment above can therefore be written as `<fy-composition duration-in-frames="900">`, rendering at 1920×1080 and 30 fps because the project fixes that format. Props are JSON-serializable, deep-frozen, and merged shallowly over the `data-fy="props"` defaults. They cannot change metadata.
 
 A composition that declares no format values in a project without `format` fails with `COMPOSITION_FORMAT_UNRESOLVED`: declare the attributes or add `format { width, height, fps }` to `video.config.js`. A composition-only project stays valid without `format` as long as its compositions declare their own.
 
@@ -211,7 +207,7 @@ The controller lifecycle is `mount → update → dispose`. `update({ frame, pro
 
 ## Embedded video and WebGL
 
-Embedded videos are declared in the composition document and frame-seeked by the runtime:
+Embedded videos are declared in the composition fragment and frame-seeked by the runtime:
 
 ```html
 <video
@@ -230,7 +226,7 @@ Embedded videos are declared in the composition document and frame-seeked by the
 | `data-fy-duration` | Optional seconds of source to use | rest of source |
 | `data-fy-volume` | Embedded audio volume from `0` to `1` | `1` |
 
-The runtime pauses every video and seeks it to the frame-derived source time. Do not call `play()`, `pause()`, or set `currentTime` in a controller. Videos must be in the composition document's light DOM; shadow roots are not scanned. Video sources are local project-relative files; live streams, remote URLs, and sources that cannot be seeked are not supported. The runtime loads the complete file during the loading phase, so frame production performs no media network requests.
+The runtime pauses every video and seeks it to the frame-derived source time. Do not call `play()`, `pause()`, or set `currentTime` in a controller. Videos must be in the composition fragment's light DOM; shadow roots are not scanned. Video sources are local project-relative files; live streams, remote URLs, and sources that cannot be seeked are not supported. The runtime loads the complete file during the loading phase, so frame production performs no media network requests.
 
 An unmuted `<video>` also contributes its soundtrack to the same timeline as declarative audio clips. Frameyard extracts that track with FFmpeg for production and mirrors it in preview, while keeping the video element itself silent. Set `muted` or `data-fy-audio="off"` to use a video as a visual-only asset. See [`examples/video`](./examples/video) for the same composition driven by a VP9/Opus WebM clip and an H.264/AAC MP4 clip.
 
@@ -378,7 +374,7 @@ Production rendering has two targets.
 A composition renders directly:
 
 1. Static composition validation resolves metadata before launching Chromium.
-2. Chromium navigates to the composition document with the composition host.
+2. Chromium navigates to the served composition document with the composition host.
 3. One session, or several when `--concurrency` is greater than 1, seeks every frame, calls the controller, seeks CSS/WAAPI animations, and waits for embedded media decode and paint.
 4. The viewport is captured through the Chrome DevTools Protocol, piped to FFmpeg, and encoded as H.264, HEVC, or VP9 with AAC or Opus audio.
 
@@ -419,13 +415,13 @@ Deferred from this implementation slice:
 - React or other UI-framework adapters, plugin APIs, and agent-only runtimes
 - TypeScript transpilation for project compositions and npm dependency optimization
 
-See the [design baseline](./docs/v0.1-design.md) for the full product contract, [ADR 0007](./docs/adr/0007-make-html-documents-the-composition-unit.md) for the HTML authoring decision, [ADR 0010](./docs/adr/0010-make-timelines-the-render-unit.md) for timelines, [ADR 0012](./docs/adr/0012-render-timelines-with-segmented-lossless-clip-intermediates.md) for segmented rendering, [ADR 0013](./docs/adr/0013-capture-bounded-multi-frame-stills-for-inspection.md) for bounded multi-frame stills, and the [domain glossary](./GLOSSARY.md) for terminology.
+See the [design baseline](./docs/v0.1-design.md) for the full product contract, [ADR 0007](./docs/adr/0007-make-html-documents-the-composition-unit.md) for the HTML authoring decision, [ADR 0010](./docs/adr/0010-make-timelines-the-render-unit.md) for timelines, [ADR 0012](./docs/adr/0012-render-timelines-with-segmented-lossless-clip-intermediates.md) for segmented rendering, [ADR 0013](./docs/adr/0013-capture-bounded-multi-frame-stills-for-inspection.md) for bounded multi-frame stills, [ADR 0016](./docs/adr/0016-author-compositions-as-html-fragments.md) for fragment composition authoring, the [0.8 migration guide](./docs/migration-0.8.md), and the [domain glossary](./GLOSSARY.md) for terminology.
 
 ## Repository layout
 
 - `src/contracts.ts`: shared composition, props, audio, transcript, and diagnostic contracts
 - `src/bindings.ts`: browser-safe binding path and value semantics
-- `src/composition/`: browser-safe composition document reader, descriptor, per-kind declarations, and adapter contract
+- `src/composition/`: browser-safe composition grammar reader (document and fragment adapters), descriptor, per-kind declarations, and adapter contract
 - `src/html/`: Node-side parse5 adapter and static composition validation
 - `src/transcript.ts`: canonical transcript validation and SRT/VTT formatting
 - `src/runtime/`: browser host, frame clock, deterministic randomness, bindings, media, diagnostics

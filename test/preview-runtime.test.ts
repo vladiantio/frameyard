@@ -14,17 +14,11 @@ const exec = promisify(execFile);
 // millisecond-rounded timestamp instead of the previous one.
 const MEDIA_SEEK_BIAS_SECONDS = 0.001;
 
-const demoHtml = String.raw`<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8">
-    <script type="application/json" data-fy="props">{ "label": "Hello", "color": "#ff0000" }</script>
+const demoHtml = String.raw`<script type="application/json" data-fy="props">{ "label": "Hello", "color": "#ff0000" }</script>
     <style>
       @keyframes slide { from { transform: translateX(0px); } to { transform: translateX(100px); } }
       #box { width: 40px; height: 40px; background: var(--fy-prop-color); animation: slide 2s linear infinite; }
     </style>
-  </head>
-  <body>
     <fy-composition width="200" height="100" fps="10" duration-in-frames="20">
       <div id="box" data-frame="-1" data-fy-anim-start="0" data-fy-anim-duration="20"></div>
       <div id="label"></div>
@@ -62,17 +56,9 @@ export default {
   },
 };
     </script>
-  </body>
-</html>
 `;
 
-const mediaHtml = String.raw`<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8">
-    <style>video,canvas{position:absolute;top:0;width:80px;height:90px}video{left:0}canvas{left:80px}</style>
-  </head>
-  <body>
+const mediaHtml = String.raw`<style>video,canvas{position:absolute;top:0;width:80px;height:90px}video{left:0}canvas{left:80px}</style>
     <fy-composition width="160" height="90" fps="10" duration-in-frames="12">
       <video id="clip" src="assets/clip.webm" data-fy-start="1" data-fy-trim="0.2" data-fy-duration="0.5" data-fy-volume="0.6"></video>
       <canvas id="gl" width="80" height="90"></canvas>
@@ -98,21 +84,13 @@ export default {
   },
 };
     </script>
-  </body>
-</html>
 `;
 
-const htmlComposition = `<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8">
-    <script type="application/json" data-fy="props">{ "title": "HTML", "accent": "#b8f36b" }</script>
+const htmlComposition = `<script type="application/json" data-fy="props">{ "title": "HTML", "accent": "#b8f36b" }</script>
     <style>
       @keyframes move { from { transform: translateX(0px); } to { transform: translateX(40px); } }
       #box { width: 20px; height: 20px; background: var(--fy-prop-accent); animation: move 0.6s linear infinite; }
     </style>
-  </head>
-  <body>
     <fy-composition width="200" height="100" fps="10" duration-in-frames="20">
       <div id="box" data-fy-anim-start="0" data-fy-anim-duration="20"></div>
       <div id="title" data-fy-text="title"></div>
@@ -125,15 +103,9 @@ export default {
   },
 };
     </script>
-  </body>
-</html>
 `;
 
-const diagnosticsHtml = `<!doctype html>
-<html>
-  <head><meta charset="utf-8"></head>
-  <body>
-    <fy-composition width="200" height="100" fps="10" duration-in-frames="20">
+const diagnosticsHtml = `<fy-composition width="200" height="100" fps="10" duration-in-frames="20">
       <div id="box"></div>
     </fy-composition>
     <script type="text/fy-controller">
@@ -143,8 +115,6 @@ export default {
   },
 };
     </script>
-  </body>
-</html>
 `;
 
 let root: string;

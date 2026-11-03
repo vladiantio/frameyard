@@ -28,16 +28,10 @@ export function barcodeCompositionHtml(frames: number = BARCODE.frames): string 
     (_, index) => `<div class="bar" style="left: ${BARCODE.barLeft + index * BARCODE.barWidth}px"></div>`,
   ).join("\n      ");
 
-  return `<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8">
-    <style>
+  return `<style>
       html, body { margin: 0; width: 100%; height: 100%; background: #808080; }
       .bar { position: absolute; top: ${BARCODE.barTop}px; width: ${BARCODE.barWidth}px; height: ${BARCODE.barHeight}px; background: #000; }
     </style>
-  </head>
-  <body>
     <fy-composition width="${BARCODE.width}" height="${BARCODE.height}" fps="${BARCODE.fps}" duration-in-frames="${frames}">
       ${bars}
     </fy-composition>
@@ -54,8 +48,6 @@ export default {
   },
 };
     </script>
-  </body>
-</html>
 `;
 }
 

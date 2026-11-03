@@ -16,6 +16,7 @@ import {
   type TranscriptDeclaration,
 } from "../composition/index.js";
 import {
+  isPlainObject,
   mergeProps,
   type CompositionDiagnostic,
   type CompositionDiagnosticDetails,
@@ -38,19 +39,20 @@ import {
   getAttribute,
   getAttributeLocation,
   getDocumentDoctype,
-  getElementByTagName,
   getElementLocation,
   getNodeLocation,
+  getTextContent,
   hasAttribute,
-  isDescendantOf,
   isElement,
   isTemplate,
   isTextNode,
   parseHtml,
+  parseHtmlFragment,
   walk,
   type HtmlDocument,
   type HtmlElement,
   type HtmlNode,
+  type HtmlRoot,
   type SourceLocation,
 } from "./parse.js";
 
@@ -78,6 +80,11 @@ export interface StaticValidationResult {
   diagnostics: CompositionDiagnostic[];
 }
 
+interface DocumentShellResult {
+  present: boolean;
+  diagnostics: CompositionDiagnostic[];
+}
+
 const VOID_ELEMENTS = new Set([
   "area",
   "base",
@@ -102,7 +109,9 @@ class HtmlCompositionValidator {
   private readonly projectRoot: string;
   private readonly entry: string;
   private readonly compositionDir: string;
-  private readonly document: HtmlDocument;
+  private readonly fragment: HtmlRoot;
+  private readonly shellPresent: boolean;
+  private readonly shellDiagnostics: readonly CompositionDiagnostic[];
   private readonly propsOverrides: unknown;
   private defaultPropsValue: Readonly<Props> = Object.freeze({});
   private props: Readonly<Props>;
@@ -120,23 +129,29 @@ class HtmlCompositionValidator {
   private readonly embeddedAudioClips: ResolvedAudioClip[] = [];
   private readonly transcriptClips: ResolvedTranscriptClip[] = [];
 
-  constructor(options: ValidateHtmlCompositionOptions, document: HtmlDocument) {
+  constructor(options: ValidateHtmlCompositionOptions, fragment: HtmlRoot, shell: DocumentShellResult) {
     this.projectRoot = path.resolve(options.projectRoot);
     this.entry = options.entry.replaceAll("\\", "/");
     this.compositionDir = path.dirname(path.resolve(this.projectRoot, this.entry));
-    this.document = document;
+    this.fragment = fragment;
+    this.shellPresent = shell.present;
+    this.shellDiagnostics = shell.diagnostics;
     this.propsOverrides = options.props;
     this.props = this.defaultPropsValue;
     this.format = options.format;
   }
 
   async run(): Promise<StaticValidationResult> {
-    this.validateDoctype();
+    if (this.shellDiagnostics.length > 0) {
+      this.documentValid = false;
+      this.diagnostics.push(...this.shellDiagnostics);
+    }
 
-    const adapter = createParse5Adapter(this.document);
+    const adapter = createParse5Adapter(this.fragment);
     const read = readCompositionDescriptor(adapter, {
       path: this.entry,
       resolvePath: (raw) => this.resolveControllerPath(raw),
+      rootScope: "fragment",
     });
     this.diagnostics.push(...read.diagnostics);
     this.fixedFactsValid = read.valid;
@@ -304,24 +319,6 @@ class HtmlCompositionValidator {
     });
   }
 
-  private validateDoctype(): void {
-    const doctype = getDocumentDoctype(this.document);
-    if (!doctype) {
-      this.documentValid = false;
-      this.error("COMPOSITION_INVALID", "Composition documents must start with <!doctype html>.", {
-        line: 1,
-        column: 1,
-      });
-      return;
-    }
-    if (doctype.name.toLowerCase() !== "html") {
-      this.documentValid = false;
-      this.error("COMPOSITION_INVALID", "Composition documents must use the HTML doctype.", {
-        ...this.locationDetails(doctype.sourceCodeLocation ?? undefined),
-      });
-    }
-  }
-
   private mergeOverrides(): void {
     try {
       this.props = mergeProps(this.defaultPropsValue, this.propsOverrides);
@@ -367,7 +364,7 @@ class HtmlCompositionValidator {
   }
 
   private validateScripts(): void {
-    for (const element of findElements(this.document, (candidate) => candidate.tagName === "script")) {
+    for (const element of findElements(this.fragment, (candidate) => candidate.tagName === "script")) {
       if (hasAttribute(element, "data-fy-host")) {
         continue;
       }
@@ -381,10 +378,129 @@ class HtmlCompositionValidator {
         this.elementDetails(element, { value: getAttribute(element, "src") }),
       );
     }
+    this.validateImportMaps();
+  }
+
+  private validateImportMaps(): void {
+    const forbiddenAttributes = ["src", "async", "nomodule", "defer", "crossorigin", "integrity", "referrerpolicy"];
+    for (const element of findElements(
+      this.fragment,
+      (candidate) => candidate.tagName === "script" && getAttribute(candidate, "type")?.toLowerCase() === "importmap",
+    )) {
+      if (element.parentNode !== this.fragment) {
+        this.error(
+          "IMPORT_MAP_INVALID",
+          "Import maps must be top-level elements in the composition fragment.",
+          this.elementDetails(element),
+        );
+        continue;
+      }
+
+      for (const attribute of forbiddenAttributes) {
+        if (hasAttribute(element, attribute)) {
+          this.error(
+            "IMPORT_MAP_INVALID",
+            `Import maps cannot specify the "${attribute}" attribute.`,
+            this.attributeDetails(element, attribute),
+          );
+        }
+      }
+
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(getTextContent(element));
+      } catch (error) {
+        this.error(
+          "IMPORT_MAP_INVALID",
+          `Invalid import map JSON: ${errorMessage(error)}`,
+          this.elementDetails(element),
+        );
+        continue;
+      }
+      if (!isPlainObject(parsed)) {
+        this.error("IMPORT_MAP_INVALID", "An import map must be a JSON object.", this.elementDetails(element));
+        continue;
+      }
+      this.validateImportMapObject(parsed, element);
+    }
+  }
+
+  private validateImportMapObject(value: Record<string, unknown>, element: HtmlElement): void {
+    const checkSpecifierMap = (map: unknown, label: string): void => {
+      if (map === undefined) {
+        return;
+      }
+      if (!isPlainObject(map)) {
+        this.error("IMPORT_MAP_INVALID", `Import map "${label}" must be a JSON object.`, this.elementDetails(element));
+        return;
+      }
+      for (const [specifier, target] of Object.entries(map)) {
+        if (specifier.length === 0) {
+          this.error(
+            "IMPORT_MAP_INVALID",
+            `Import map "${label}" contains an empty specifier.`,
+            this.elementDetails(element),
+          );
+          continue;
+        }
+        if (typeof target !== "string") {
+          this.error(
+            "IMPORT_MAP_INVALID",
+            `Import map "${label}" target for "${specifier}" must be a string.`,
+            this.elementDetails(element, { value: specifier }),
+          );
+          continue;
+        }
+        if (specifier.endsWith("/") && !target.endsWith("/")) {
+          this.error(
+            "IMPORT_MAP_INVALID",
+            `Import map prefix "${specifier}" must map to a target ending in "/".`,
+            this.elementDetails(element, { value: specifier }),
+          );
+        }
+        if (isReservedImportSpecifier(specifier)) {
+          this.error(
+            "IMPORT_MAP_INVALID",
+            `Import map specifier "${specifier}" is reserved by Frameyard.`,
+            this.elementDetails(element, { value: specifier, suggestion: "Remove the reserved specifier." }),
+          );
+        }
+      }
+    };
+
+    checkSpecifierMap(value.imports, "imports");
+    if (value.scopes !== undefined) {
+      if (!isPlainObject(value.scopes)) {
+        this.error("IMPORT_MAP_INVALID", 'Import map "scopes" must be a JSON object.', this.elementDetails(element));
+      } else {
+        for (const [scope, map] of Object.entries(value.scopes)) {
+          if (scope.length === 0) {
+            this.error("IMPORT_MAP_INVALID", "Import map scopes contain an empty path.", this.elementDetails(element));
+            continue;
+          }
+          checkSpecifierMap(map, `scopes["${scope}"]`);
+        }
+      }
+    }
+    if (value.integrity !== undefined) {
+      if (!isPlainObject(value.integrity)) {
+        this.error("IMPORT_MAP_INVALID", 'Import map "integrity" must be a JSON object.', this.elementDetails(element));
+      } else {
+        for (const [target, integrity] of Object.entries(value.integrity)) {
+          if (typeof integrity !== "string") {
+            this.error(
+              "IMPORT_MAP_INVALID",
+              `Import map integrity for "${target}" must be a string.`,
+              this.elementDetails(element, { value: target }),
+            );
+          }
+        }
+      }
+    }
   }
 
   private validateUnsupportedElements(): void {
-    walk(this.document, (node) => {
+    walk(this.fragment, (node) => {
       if (!isElement(node)) {
         return;
       }
@@ -417,6 +533,22 @@ class HtmlCompositionValidator {
             `<meta http-equiv="${httpEquiv}"> is not supported in a composition.`,
             this.attributeDetails(node, "http-equiv"),
           );
+        } else if (!this.shellPresent) {
+          this.error(
+            "ELEMENT_NOT_SUPPORTED",
+            "Document-level <meta> is not supported in a composition fragment; the framework owns the document head.",
+            this.elementDetails(node),
+          );
+        }
+        return;
+      }
+      if (tag === "title") {
+        if (!this.shellPresent) {
+          this.error(
+            "ELEMENT_NOT_SUPPORTED",
+            "Document-level <title> is not supported in a composition fragment; the framework owns the document head.",
+            this.elementDetails(node),
+          );
         }
         return;
       }
@@ -435,7 +567,7 @@ class HtmlCompositionValidator {
   }
 
   private validateDocumentAttributes(): void {
-    walk(this.document, (node) => {
+    walk(this.fragment, (node) => {
       if (!isElement(node)) {
         return;
       }
@@ -454,48 +586,69 @@ class HtmlCompositionValidator {
             this.attributeDetails(node, attribute.name, { value: attribute.value }),
           );
         }
+        if (attribute.name === "data-fy-host") {
+          this.error(
+            "COMPOSITION_INVALID",
+            'The "data-fy-host" attribute is reserved for framework-injected elements.',
+            this.attributeDetails(node, attribute.name),
+          );
+        }
+        if (attribute.name === "data-fy") {
+          if (attribute.value === "format") {
+            this.error(
+              "COMPOSITION_INVALID",
+              'data-fy="format" is reserved for framework-injected metadata.',
+              this.attributeDetails(node, attribute.name, { value: attribute.value }),
+            );
+          } else if (attribute.value === "props") {
+            if (node.tagName !== "script" || getAttribute(node, "type")?.toLowerCase() !== "application/json") {
+              this.error(
+                "PROPS_INVALID",
+                'data-fy="props" must be on a <script type="application/json"> block.',
+                this.attributeDetails(node, attribute.name, { value: attribute.value }),
+              );
+            }
+          } else {
+            this.error(
+              "BINDING_INVALID",
+              "data-fy is only valid on a JSON props block.",
+              this.attributeDetails(node, attribute.name, { value: attribute.value }),
+            );
+          }
+        }
       }
     });
   }
 
   private validateOutsideRoot(): void {
-    const body = getElementByTagName(this.document, "body");
     const root = this.root;
-    if (!body || !root) {
+    if (!root) {
       return;
     }
 
-    const inspect = (parent: HtmlElement): void => {
-      for (const child of parent.childNodes) {
-        if (child === root) {
-          continue;
-        }
-        if (isElement(child)) {
-          if (isDescendantOf(root, child)) {
-            inspect(child);
-            continue;
-          }
-          if (NON_VISUAL_ELEMENTS.has(child.tagName)) {
-            continue;
-          }
-          this.warning(
-            "CONTENT_OUTSIDE_ROOT",
-            "Visual content outside <fy-composition> is not captured; move it inside the composition root.",
-            this.elementDetails(child),
-          );
-          continue;
-        }
-        if (isTextNode(child) && child.value.trim().length > 0) {
-          this.warning(
-            "CONTENT_OUTSIDE_ROOT",
-            "Text outside <fy-composition> is not captured; move it inside the composition root.",
-            this.nodeDetails(child),
-          );
-        }
+    for (const child of this.fragment.childNodes) {
+      if (child === root) {
+        continue;
       }
-    };
-
-    inspect(body);
+      if (isElement(child)) {
+        if (NON_VISUAL_ELEMENTS.has(child.tagName)) {
+          continue;
+        }
+        this.warning(
+          "CONTENT_OUTSIDE_ROOT",
+          "Visual content outside <fy-composition> is not captured; move it inside the composition root.",
+          this.elementDetails(child),
+        );
+        continue;
+      }
+      if (isTextNode(child) && child.value.trim().length > 0) {
+        this.warning(
+          "CONTENT_OUTSIDE_ROOT",
+          "Text outside <fy-composition> is not captured; move it inside the composition root.",
+          this.nodeDetails(child),
+        );
+      }
+    }
   }
 
   private validateBindings(element: HtmlElement, repeatDepth: number): void {
@@ -584,16 +737,6 @@ class HtmlCompositionValidator {
     for (const attribute of element.attrs) {
       const name = attribute.name;
       if (name === "data-fy-repeat" || name === "data-fy-if" || name === "data-fy-text") {
-        continue;
-      }
-      if (name === "data-fy") {
-        if (element.tagName !== "script" || getAttribute(element, "type")?.toLowerCase() !== "application/json") {
-          this.error(
-            "BINDING_INVALID",
-            "data-fy is only valid on a JSON props block.",
-            this.attributeDetails(element, name),
-          );
-        }
         continue;
       }
       if (name.startsWith("data-fy-attr-")) {
@@ -803,13 +946,13 @@ class HtmlCompositionValidator {
   private async validateOrdinaryAssets(): Promise<void> {
     const assets: Array<{ element: HtmlElement; attribute: string; value: string }> = [];
 
-    for (const image of findElements(this.document, (element) => element.tagName === "img")) {
+    for (const image of findElements(this.fragment, (element) => element.tagName === "img")) {
       const src = getAttribute(image, "src");
       if (src !== undefined) {
         assets.push({ element: image, attribute: "src", value: src });
       }
     }
-    for (const link of findElements(this.document, (element) => element.tagName === "link")) {
+    for (const link of findElements(this.fragment, (element) => element.tagName === "link")) {
       const rel = getAttribute(link, "rel")?.toLowerCase().split(/\s+/) ?? [];
       if (!rel.includes("stylesheet")) {
         continue;
@@ -905,8 +1048,10 @@ export async function validateHtmlComposition(
   }
 
   let document: HtmlDocument;
+  let fragment: HtmlRoot;
   try {
     document = parseHtml(html);
+    fragment = parseHtmlFragment(html);
   } catch (error) {
     return {
       info: null,
@@ -922,8 +1067,69 @@ export async function validateHtmlComposition(
     };
   }
 
-  const validator = new HtmlCompositionValidator({ ...options, projectRoot }, document);
+  const shell = detectDocumentShell(document, options.entry);
+  const validator = new HtmlCompositionValidator({ ...options, projectRoot }, fragment, shell);
   return validator.run();
+}
+
+function detectDocumentShell(document: HtmlDocument, entry: string): DocumentShellResult {
+  const diagnostics: CompositionDiagnostic[] = [];
+  const path = entry.replaceAll("\\", "/");
+  const suggestion = "Keep only the fragment body and top-level metadata. See docs/migration-0.8.md.";
+  const report = (message: string, element: string, location: SourceLocation | undefined): void => {
+    diagnostics.push({
+      severity: "error",
+      code: "COMPOSITION_DOCUMENT_SHELL",
+      message,
+      details: {
+        path,
+        element,
+        ...locationDetails(location),
+        suggestion,
+      },
+    });
+  };
+
+  const doctype = getDocumentDoctype(document);
+  if (doctype) {
+    report(
+      "Compositions are HTML fragments in Frameyard 0.8; remove the <!doctype html> declaration.",
+      "!doctype",
+      getNodeLocation(doctype),
+    );
+  }
+
+  for (const tag of ["html", "head", "body"] as const) {
+    const explicit = findElements(
+      document,
+      (element) => element.tagName === tag && element.sourceCodeLocation?.startTag !== undefined,
+    )[0];
+    if (explicit) {
+      report(
+        `Compositions are HTML fragments in Frameyard 0.8; remove the <${tag}> wrapper.`,
+        tag,
+        getElementLocation(explicit),
+      );
+    }
+  }
+
+  return { present: diagnostics.length > 0, diagnostics };
+}
+
+function locationDetails(location: SourceLocation | undefined): CompositionDiagnosticDetails {
+  if (!location) {
+    return {};
+  }
+  return {
+    line: location.startLine,
+    column: location.startCol,
+    endLine: location.endLine,
+    endColumn: location.endCol,
+  };
+}
+
+function isReservedImportSpecifier(specifier: string): boolean {
+  return specifier === "frameyard" || specifier.startsWith("frameyard/");
 }
 
 function describeValue(value: unknown): string {

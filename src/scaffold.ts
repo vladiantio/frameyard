@@ -7,7 +7,7 @@ This project produces deterministic, parameterized video with Frameyard. Follow 
 ## Project layout
 
 - \`video.config.js\` explicitly maps project IDs to sources. There is no directory scanning. It declares the project \`format\`, \`compositions\`, and \`timelines\`.
-- \`compositions/\` contains HTML/CSS compositions. An optional controller lives beside the document as a \`.controller.js\` module; import \`frameyard/runtime\` for \`random("stable:key")\` and other browser APIs.
+- \`compositions/\` contains HTML fragments. An optional controller lives beside the fragment as a \`.controller.js\` module; import \`frameyard/runtime\` for \`random("stable:key")\` and other browser APIs.
 - \`timelines/\` contains JSON timeline documents that assemble composition and media clips into one video.
 - \`props/hello.json\` contains composition props; \`props/main.json\` contains timeline clip overrides keyed by composition clip ID.
 - \`out/\` contains rendered MP4s and is gitignored. \`render\` writes \`out/<id>.mp4\` by default.
@@ -18,19 +18,19 @@ This project produces deterministic, parameterized video with Frameyard. Follow 
 
 ## Composition skeleton
 
+A composition is a partial HTML fragment, not a full document. Keep one
+top-level \`<fy-composition>\`; props, the controller, import maps, and styles
+are top-level siblings. Do not add \`<!doctype>\`, \`<html>\`, \`<head>\`,
+\`<body>\`, \`<title>\`, or \`<meta>\`.
+
 \`\`\`html
-<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8">
-    <script type="application/json" data-fy="props">{ "title": "Hello" }</script>
-  </head>
-  <body>
-    <fy-composition width="1280" height="720" fps="30" duration-in-frames="150">
-      <h1 data-fy-text="title"></h1>
-    </fy-composition>
-  </body>
-</html>
+<script type="application/json" data-fy="props">{ "title": "Hello" }</script>
+<style>
+  html, body { margin: 0; width: 100%; height: 100%; }
+</style>
+<fy-composition width="1280" height="720" fps="30" duration-in-frames="150">
+  <h1 data-fy-text="title"></h1>
+</fy-composition>
 \`\`\`
 
 ## Timeline skeleton
@@ -92,7 +92,8 @@ This project produces deterministic, parameterized video with Frameyard. Follow 
 
 ## Controller
 
-Exactly one optional controller is allowed, inline or external:
+Exactly one optional controller is allowed, inline or external, as a top-level
+sibling of \`<fy-composition>\`:
 
 \`\`\`html
 <script type="text/fy-controller">
@@ -121,7 +122,7 @@ export default {
 - Load remote data, fonts, and images before frame production. Network requests are blocked during capture; a \`fetch()\` from \`update()\` is a bug.
 - Redraw Canvas 2D and WebGL from the current frame. Production pins software WebGL for reproducible pixels.
 - Embedded video and audio use local project files and \`data-fy-start\` (frames), \`data-fy-trim\` (seconds), optional \`data-fy-duration\` (seconds), and \`data-fy-volume\` (0-1). Let the runtime seek video; do not call \`play()\`, \`pause()\`, or set \`currentTime\` in \`update()\`.
-- Media and transcript \`src\` values resolve from the project root. The controller \`src\` and ordinary HTML asset URLs resolve relative to the composition document.
+- Media and transcript \`src\` values resolve from the project root. The controller \`src\` and ordinary HTML asset URLs resolve relative to the composition URL.
 
 ## Audio and transcripts
 
@@ -172,7 +173,7 @@ const PROJECT_README = `# My Frameyard project
 
 Coding agents should read \`AGENTS.md\` for the project rules and the check, still, and render workflow.
 
-The reusable composition is a plain HTML document at \`compositions/hello.html\`. The edit is \`timelines/main.timeline.json\`, which places that composition as a clip in the project format. The project format is fixed in \`video.config.js\`.
+The reusable composition is a partial HTML fragment at \`compositions/hello.html\`. The edit is \`timelines/main.timeline.json\`, which places that composition as a clip in the project format. The project format is fixed in \`video.config.js\`.
 
 Start the preview:
 
@@ -232,83 +233,75 @@ const SCAFFOLD_TEMPLATES: Record<string, string> = {
   )}\n`,
   "AGENTS.md": AGENTS_GUIDE,
   "README.md": PROJECT_README,
-  "compositions/hello.html": `<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8">
-    <script type="application/json" data-fy="props">
-    { "title": "Hello, Frameyard", "accent": "#b8f36b" }
-    </script>
-    <style>
-      @keyframes fade-up {
-        from { opacity: 0; transform: translateY(28px); }
-        to { opacity: 1; transform: translateY(0); }
-      }
-      @keyframes drift {
-        from { transform: translate(-120px, -80px); }
-        to { transform: translate(120px, 80px); }
-      }
-      #hello {
-        position: relative;
-        width: 100%;
-        height: 100%;
-        display: grid;
-        place-items: center;
-        overflow: hidden;
-        background: #0b0d10;
-        color: #e8edf3;
-        font-family: Inter, system-ui, sans-serif;
-      }
-      #hello h1 {
-        position: relative;
-        margin: 0;
-        font-size: 96px;
-        letter-spacing: -0.04em;
-        opacity: 0;
-        animation: fade-up 1s cubic-bezier(0.215, 0.61, 0.355, 1) both;
-      }
-      #hello p {
-        position: relative;
-        margin: 18px 0 0;
-        color: #8a97a6;
-        font-size: 26px;
-      }
-      #glow {
-        position: absolute;
-        left: 50%;
-        top: 50%;
-        width: 520px;
-        height: 520px;
-        margin: -260px 0 0 -260px;
-        border-radius: 50%;
-        background: var(--fy-prop-accent);
-        filter: blur(120px);
-        opacity: 0.16;
-        animation: drift 12s ease-in-out infinite alternate;
-      }
-      #sweep {
-        position: absolute;
-        left: 0;
-        bottom: 0;
-        width: calc(var(--fy-progress) * 100%);
-        height: 4px;
-        background: var(--fy-prop-accent);
-      }
-    </style>
-  </head>
-  <body>
-    <fy-composition width="1280" height="720" fps="30" duration-in-frames="150">
-      <div id="hello">
-        <div id="glow"></div>
-        <div style="position: relative; text-align: center">
-          <h1 id="title" data-fy-text="title" data-fy-anim-start="0" data-fy-anim-duration="24"></h1>
-          <p>Deterministic video, authored on the web.</p>
-        </div>
-        <div id="sweep"></div>
-      </div>
-    </fy-composition>
-  </body>
-</html>
+  "compositions/hello.html": `<script type="application/json" data-fy="props">
+  { "title": "Hello, Frameyard", "accent": "#b8f36b" }
+</script>
+<style>
+  @keyframes fade-up {
+    from { opacity: 0; transform: translateY(28px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes drift {
+    from { transform: translate(-120px, -80px); }
+    to { transform: translate(120px, 80px); }
+  }
+  #hello {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+    background: #0b0d10;
+    color: #e8edf3;
+    font-family: Inter, system-ui, sans-serif;
+  }
+  #hello h1 {
+    position: relative;
+    margin: 0;
+    font-size: 96px;
+    letter-spacing: -0.04em;
+    opacity: 0;
+    animation: fade-up 1s cubic-bezier(0.215, 0.61, 0.355, 1) both;
+  }
+  #hello p {
+    position: relative;
+    margin: 18px 0 0;
+    color: #8a97a6;
+    font-size: 26px;
+  }
+  #glow {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 520px;
+    height: 520px;
+    margin: -260px 0 0 -260px;
+    border-radius: 50%;
+    background: var(--fy-prop-accent);
+    filter: blur(120px);
+    opacity: 0.16;
+    animation: drift 12s ease-in-out infinite alternate;
+  }
+  #sweep {
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    width: calc(var(--fy-progress) * 100%);
+    height: 4px;
+    background: var(--fy-prop-accent);
+  }
+</style>
+<fy-composition width="1280" height="720" fps="30" duration-in-frames="150">
+  <div id="hello">
+    <div id="glow"></div>
+    <div style="position: relative; text-align: center">
+      <h1 id="title" data-fy-text="title" data-fy-anim-start="0" data-fy-anim-duration="24"></h1>
+      <p>Deterministic video, authored on the web.</p>
+    </div>
+    <div id="sweep"></div>
+  </div>
+</fy-composition>
 `,
 };
 

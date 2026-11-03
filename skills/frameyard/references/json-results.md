@@ -91,7 +91,7 @@ Static validation diagnostics include source locations. Runtime diagnostics may 
 }
 ```
 
-`entry` is the project-relative HTML path. `controller` is `{ kind: "inline" }`, `{ kind: "external", src }`, or `null`.
+`entry` is the project-relative composition fragment path. `controller` is `{ kind: "inline" }`, `{ kind: "external", src }`, or `null`.
 
 ## still
 

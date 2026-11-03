@@ -8,7 +8,7 @@ import type { CompositionDiagnostic, ControllerDeclaration } from "../contracts.
 import { FrameyardError } from "../errors.js";
 import { validateHtmlComposition } from "../html/validate.js";
 import { loadProject, type Project, type ProjectComposition } from "../project.js";
-import { injectCompositionHost } from "./composition-html.js";
+import { renderCompositionDocument } from "./composition-html.js";
 import { buildTimelinePreviewData } from "./timeline-preview-data.js";
 import { renderTimelinePreviewHtml } from "./timeline-preview-html.js";
 import { renderPreviewHtml } from "./preview-html.js";
@@ -225,7 +225,8 @@ function renderCompositionError(entry: string, diagnostics: CompositionDiagnosti
   const items = diagnostics
     .map((diagnostic) => {
       const location = diagnostic.details?.line ? ` at line ${diagnostic.details.line}` : "";
-      return `<li><code>${escapeHtml(diagnostic.code)}</code> ${escapeHtml(diagnostic.message)}${escapeHtml(location)}</li>`;
+      const suggestion = diagnostic.details?.suggestion ? ` — ${escapeHtml(diagnostic.details.suggestion)}` : "";
+      return `<li><code>${escapeHtml(diagnostic.code)}</code> ${escapeHtml(diagnostic.message)}${escapeHtml(location)}${suggestion}</li>`;
     })
     .join("");
   return `<!doctype html><html><head><meta charset="utf-8"><title>Frameyard composition error</title></head><body><h1>Composition error</h1><p>${escapeHtml(entry)}</p><ul>${items}</ul></body></html>`;
@@ -408,11 +409,11 @@ export async function startPreviewServer(options: PreviewServerOptions): Promise
           return;
         }
 
-        const source = await readFile(composition.absoluteEntry, "utf8");
+        const fragment = await readFile(composition.absoluteEntry, "utf8");
         sendHtml(
           response,
           200,
-          injectCompositionHost({ html: source, ...(project.format ? { format: project.format } : {}) }),
+          renderCompositionDocument({ fragment, ...(project.format ? { format: project.format } : {}) }),
           request.method === "HEAD",
         );
         return;

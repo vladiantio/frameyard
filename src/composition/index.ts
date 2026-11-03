@@ -2,6 +2,7 @@ export { readCompositionDescriptor } from "./descriptor.js";
 export type {
   CompositionDescriptor,
   CompositionDescriptorResult,
+  CompositionRootScope,
   ReadCompositionDescriptorOptions,
 } from "./descriptor.js";
 export { COMPOSITION_FORMAT_UNRESOLVED_MESSAGE, resolveCompositionMetadata } from "./format.js";

@@ -2,15 +2,18 @@
 
 ## Using the old authoring model
 
-- **JavaScript composition modules / `defineComposition`** were removed in 0.4. A composition is a `.html` document listed in `video.config.js`.
+- **JavaScript composition modules / `defineComposition`** were removed in 0.4. A composition is a `.html` fragment listed in `video.config.js`.
 - **`data-frameyard-*`** media attributes were removed in 0.4. Use `data-fy-*`.
 
 ## Document structure
 
-- Missing `<!doctype html>` or missing/multiple `<fy-composition>` roots.
-- Missing `duration-in-frames` on the root. `width`, `height`, and `fps` may be omitted when the project declares `format`, but declaring only one of `width` and `height` is an error.
+- Adding `<!doctype>`, `<html>`, `<head>`, `<body>`, `<title>`, or `<meta>`; compositions are fragments and the framework owns the shell (`COMPOSITION_DOCUMENT_SHELL`).
+- Missing/multiple `<fy-composition>` roots, a root nested inside another element, or missing `duration-in-frames` on the root. `width`, `height`, and `fps` may be omitted when the project declares `format`, but declaring only one of `width` and `height` is an error.
 - Rendering a composition that declares no `width`/`height`/`fps` in a project without `format`; add the attributes or the project `format` (`COMPOSITION_FORMAT_UNRESOLVED`).
-- Missing the `data-fy="props"` block when the composition relies on default props.
+- Missing the top-level `data-fy="props"` block when the composition relies on default props; a nested props block is rejected.
+- Putting props, the controller, or an import map inside `<fy-composition>` instead of at the top level.
+- Using the reserved `data-fy-host` attribute or `data-fy="format"` block.
+- Declaring an import map with `frameyard` or `frameyard/` specifiers; those are reserved (`IMPORT_MAP_INVALID`).
 - Visual content outside `<fy-composition>`; it is not captured.
 - Using `<base>`, refresh/CSP meta tags, `<iframe>`, `<object>`, or `<embed>`.
 
@@ -47,10 +50,10 @@
 
 - Using remote, live, or unseekable media sources.
 - Using `<source>` or `<track>` children; use a local `src` and `<fy-transcript>`.
-- Adding or changing media in `update()`; prepare it in the document or in `mount()`.
+- Adding or changing media in `update()`; prepare it in the fragment or in `mount()`.
 - Calling `play()`, `pause()`, or setting `currentTime` on a video.
 - Assuming media/transcript `src` is document-relative. It is project-root-relative.
-- Assuming the controller `src` is project-root-relative. It is document-relative.
+- Assuming the controller `src` is project-root-relative. It is relative to the composition URL.
 
 ## Timelines
 

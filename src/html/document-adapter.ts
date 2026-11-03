@@ -6,12 +6,12 @@ import {
   getTextContent,
   isElement,
   isTemplate,
-  type HtmlDocument,
   type HtmlNode,
+  type HtmlRoot,
 } from "./parse.js";
 
-/** Adapts a parse5 document to the shared composition reader. */
-export function createParse5Adapter(root: HtmlDocument): DocumentAdapter<HtmlNode> {
+/** Adapts a parse5 document or fragment to the shared composition reader. */
+export function createParse5Adapter(root: HtmlRoot): DocumentAdapter<HtmlNode> {
   return {
     root,
     isElement,

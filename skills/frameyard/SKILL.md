@@ -1,7 +1,7 @@
 ---
 name: frameyard
 description: Create, validate, inspect, and render deterministic Frameyard videos authored with HTML compositions and JSON timelines. Use when a user asks to build or operate a Frameyard project, produce parameterized video, assemble clips into a timeline, add a local TTS or transcription asset through Frameyard's wrappers, or diagnose a Frameyard render. Do not use for general-purpose media generation outside a Frameyard project.
-frameyard-api-version: 0.7.0
+frameyard-api-version: 0.8.0
 ---
 
 # Frameyard
@@ -11,13 +11,13 @@ Use Frameyard's public project format and CLI. Do not introduce an agent-only ru
 ## First decisions
 
 1. Find the project: look for `video.config.js` from the working directory upward, or run `npx frameyard init <directory>` to scaffold one.
-2. Read the `format`, `compositions`, and `timelines` maps in `video.config.js`. Entries are explicit `.html` and `.json` documents; there is no directory scanning.
-3. Read the timeline JSON, the referenced composition HTML, its optional controller, and the props files before changing behavior.
+2. Read the `format`, `compositions`, and `timelines` maps in `video.config.js`. Entries are explicit `.html` composition fragments and `.json` timeline documents; there is no directory scanning.
+3. Read the timeline JSON, the referenced composition fragment, its optional controller, and the props files before changing behavior.
 4. If the task needs speech or transcription, confirm that inference is requested or explicitly approved before producing assets.
 
 ## Workflow
 
-1. **Author compositions** as full HTML documents with one `<fy-composition>` root. Put metadata, default props, markup, CSS animation, bindings, audio, and transcripts in the document. Use an optional controller for Canvas 2D, WebGL, karaoke, or per-frame computation CSS cannot express. Read [deterministic authoring](references/deterministic-authoring.md), [bindings](references/bindings.md), and [controllers](references/controllers.md).
+1. **Author compositions** as partial HTML fragments with one top-level `<fy-composition>` root. Put metadata, default props, markup, CSS animation, bindings, audio, and transcripts in the fragment. Do not add `<!doctype>`, `<html>`, `<head>`, `<body>`, `<title>`, or `<meta>`; Frameyard generates the document shell. Use an optional controller for Canvas 2D, WebGL, karaoke, or per-frame computation CSS cannot express. Read [deterministic authoring](references/deterministic-authoring.md), [bindings](references/bindings.md), and [controllers](references/controllers.md).
 2. **Assemble the timeline** in JSON: project format, video/audio tracks, composition, media, and nested-timeline clips, source ranges, static transforms and blend modes, and audio. Read [timelines](references/timelines.md).
 3. **Provide props** as JSON. Composition props merge over defaults; timeline render props are a map keyed by composition clip ID. Validate domain-specific requirements with a controller's `validateProps()`.
 4. **Produce optional assets** with `npx frameyard tts` and `npx frameyard transcribe`, never with the upstream executables. Read [audio assets](references/audio-assets.md). Do not overwrite or regenerate existing generated assets without permission.
@@ -43,15 +43,16 @@ Never claim success when `check` fails, a still is missing, a render exits nonze
 
 ## Authoring rules
 
-- A composition is a full HTML document with one `<fy-composition duration-in-frames>` root and a `data-fy="props"` default-props block. `width`, `height`, and `fps` are optional and inherit from the project `format`; declare them to override it.
+- A composition is a partial HTML fragment with one top-level `<fy-composition duration-in-frames>` root and a top-level `data-fy="props"` default-props block. Props, the controller, and import maps are top-level siblings of the root; top-level `<style>` and `<link rel="stylesheet">` elements are hoisted into the generated head. Do not use the reserved `data-fy-host` attribute or `data-fy="format"` block. `width`, `height`, and `fps` are optional and inherit from the project `format`; declare them to override it.
 - A timeline is a versioned JSON document with explicit tracks and clips. Sources are composition IDs, nested timeline IDs, or local video/image/audio paths. Timeline frames, sourceIn, and duration are integer frames. No remote URLs.
 - Bindings are explicit: `data-fy-text`, `data-fy-attr-*`, `data-fy-class-*`, `data-fy-if`, and `data-fy-repeat` on `<template>`. Primitive top-level props are also `--fy-prop-<name>` CSS variables.
 - CSS `@keyframes` and the Web Animations API are seeked from the frame clock. `data-fy-anim-start`, `data-fy-anim-duration`, and `data-fy-anim-easing` schedule one animation per element in frames.
 - Frame-state variables on `:root`: `--fy-frame`, `--fy-time`, `--fy-progress`, `--fy-fps`, `--fy-duration`, and `--fy-duration-frames`.
 - A composition has exactly one optional controller, inline or external. It may export `mount`, `update`, `dispose`, and `validateProps`; at least one is required. Use inline for small controllers; extract to an external module for Canvas 2D, WebGL, karaoke, reuse, tests, or a large controller.
 - The controller is the only executable code. Other executable scripts and `on*` handlers are rejected.
-- Media and transcript `src` values resolve from the project root. The controller `src` and ordinary HTML asset URLs resolve relative to the composition document.
+- Media and transcript `src` values resolve from the project root. The controller `src` and ordinary HTML asset URLs resolve relative to the composition URL.
 - Embedded video/audio use `data-fy-start` (frames), `data-fy-trim` (seconds), optional `data-fy-duration` (seconds), and `data-fy-volume` (0-1). Transcripts use `<fy-transcript src words>`.
+- An optional top-level `<script type="importmap">` may add bare specifiers for controllers. Frameyard hoists it before the host module; `frameyard` and `frameyard/` specifiers are reserved.
 
 ## Determinism guardrails
 

@@ -19,7 +19,7 @@ A uniquely identified, reusable video source with a fixed duration in frames, co
 _Avoid_: Scene, template, video
 
 **Declared format**:
-The width, height, and frame rate a composition document writes on its root. A value may be absent, in which case it is inherited; a declared value always wins over the project format.
+The width, height, and frame rate a composition fragment declares on its root. A value may be absent, in which case it is inherited; a declared value always wins over the project format.
 _Avoid_: Composition metadata, defaults
 
 **Resolved format**:
@@ -31,11 +31,11 @@ The resolved dimensions and frame rate plus the duration in frames that define a
 _Avoid_: Render options, props
 
 **Composition descriptor**:
-The fixed facts read from an HTML composition before frame production: declared composition metadata, default props, and the controller declaration. It excludes per-load declarations such as audio clips, transcripts, and animation schedules.
+The fixed facts read from a composition fragment before frame production: declared composition metadata, default props, and the controller declaration. It excludes per-load declarations such as audio clips, transcripts, and animation schedules.
 _Avoid_: Composition config, parsed document
 
 **Composition lifecycle**:
-The host-driven sequence that loads an HTML composition, seeks it to frames, and releases it.
+The host-driven sequence that loads a composition fragment, seeks it to frames, and releases it.
 _Avoid_: Render loop, playback lifecycle
 
 **Controller lifecycle**:
@@ -47,23 +47,27 @@ A specific version of a composition's source and metadata.
 _Avoid_: Build, release
 
 **HTML composition**:
-A composition whose source is an HTML document.
-_Avoid_: HTML template, page
+A composition whose source is a partial HTML fragment.
+_Avoid_: HTML document, page
+
+**Composition fragment**:
+The authoring source of an HTML composition: body content with one top-level `<fy-composition>` root, plus optional top-level props, controller, import maps, and styles. Frameyard generates the document shell.
+_Avoid_: HTML document, page
 
 **Transparent composition**:
 A composition that does not paint a background, so a timeline clip can reveal the layers below it.
 _Avoid_: Alpha composition, overlay
 
 **Composition controller**:
-An optional JavaScript controller, either inline in the composition document or in an external module, that performs per-frame computation an HTML composition's declarative HTML and CSS cannot express.
+An optional JavaScript controller, either inline in the composition fragment or in an external module, that performs per-frame computation an HTML composition's declarative HTML and CSS cannot express.
 _Avoid_: Composition module, plugin
 
 **Inline controller**:
-A composition controller whose source is embedded in the composition document.
+A composition controller whose source is embedded in the composition fragment.
 _Avoid_: Embedded script
 
 **External controller**:
-A composition controller whose source is a separate JavaScript module referenced by the composition document.
+A composition controller whose source is a separate JavaScript module referenced by the composition fragment.
 _Avoid_: Controller file
 
 **Declarative binding**:
@@ -237,7 +241,7 @@ _Avoid_: Live audio
 ### Rendering
 
 **Composition host**:
-The injected runtime that loads an HTML composition, applies its bindings, and exposes its frame clock to preview and render.
+The injected runtime that loads a composition fragment, applies its bindings, and exposes its frame clock to preview and render.
 _Avoid_: Preview runtime, render runtime
 
 **Timeline host**:
@@ -265,7 +269,7 @@ A validation operation that first runs static validation, then loads a timeline 
 _Avoid_: Test render, dry run
 
 **Static composition validation**:
-The Node-side validation of a composition document's metadata, bindings, controller declaration, scripts, and asset references before browser frame production.
+The Node-side validation of a composition fragment's metadata, bindings, controller declaration, scripts, and asset references before browser frame production.
 _Avoid_: Lint, preflight
 
 **Static timeline validation**:

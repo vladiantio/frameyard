@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Frameyard is a local-first framework for deterministic, parameterized videos authored with HTML compositions and JSON timelines. The 0.6 design is implemented: HTML composition documents, JSON timelines with tracks/clips and nested timelines, declarative bindings, CSS animation scheduling, frame-state variables, inline and external controllers, composition and timeline hosts, static validation, interactive preview with a read-only timeline, direct composition rendering, segmented lossless timeline rendering, audio and transcripts, Chromium capture, FFmpeg output, provenance manifests, and the official agent skill.
+Frameyard is a local-first framework for deterministic, parameterized videos authored with HTML compositions and JSON timelines. The 0.8 design is implemented: HTML composition fragments, JSON timelines with tracks/clips and nested timelines, declarative bindings, CSS animation scheduling, frame-state variables, inline and external controllers, composition and timeline hosts, static validation, interactive preview with a read-only timeline, direct composition rendering, segmented lossless timeline rendering, audio and transcripts, Chromium capture, FFmpeg output, provenance manifests, and the official agent skill.
 
 ## Read first
 
@@ -64,9 +64,9 @@ A full 30-second demo timeline render is segmented and uses 8 workers by default
 | --- | --- |
 | `src/contracts.ts` | Shared composition, metadata, props, audio, transcript, diagnostic, controller, and host contracts |
 | `src/bindings.ts` | Browser-safe binding path validation, resolution, and value coercion |
-| `src/composition/` | Browser-safe composition document reader, descriptor, declared-format resolution against the project format, per-kind declarations, adapter contract, and path rules |
-| `src/html/parse.ts` | Node-only parse5 document helpers and source locations |
-| `src/html/document-adapter.ts` | parse5 adapter for the composition document reader |
+| `src/composition/` | Browser-safe composition grammar reader (document and fragment scopes), descriptor, declared-format resolution against the project format, per-kind declarations, adapter contract, and path rules |
+| `src/html/parse.ts` | Node-only parse5 document and fragment helpers, and source locations |
+| `src/html/document-adapter.ts` | parse5 adapter for the composition grammar reader |
 | `src/html/validate.ts` | Static composition validation and diagnostic extraction |
 | `src/html/index.ts` | Node-only HTML validation exports |
 | `src/transcript.ts` | Canonical transcript validation and SRT/VTT formatting (browser-safe) |
@@ -108,7 +108,7 @@ A full 30-second demo timeline render is segmented and uses 8 workers by default
 | `examples/blend/` | Static CSS blend modes on composition and video timeline clips |
 | `test/` | Public-seam tests |
 
-Per-frame path: `src/renderer/browser.ts` `openCompositionSession` navigates to the composition document, waits for `window.__fy`, calls `load`, then `seek`/`settle`/capture. `src/runtime/host.ts` applies bindings, imports the controller, mounts it, prepares media, sets frame-state variables, calls `update`, seeks animations, and settles media. `src/renderer/index.ts` merges static and runtime diagnostics into the result.
+Per-frame path: `src/renderer/browser.ts` `openCompositionSession` navigates to the served composition URL, waits for `window.__fy`, calls `load`, then `seek`/`settle`/capture. `src/runtime/host.ts` applies bindings, imports the controller, mounts it, prepares media, sets frame-state variables, calls `update`, seeks animations, and settles media. `src/renderer/index.ts` merges static and runtime diagnostics into the result.
 
 Timeline path: `src/timeline/resolve.ts` resolves the JSON and references; `src/timeline/plan.ts` splits segments and active layers; `src/renderer/timeline.ts` captures composition/nested ranges with `openCompositionSession({ transparentBackground: true })`, encodes FFV1, composites with FFmpeg, concatenates, mixes audio, publishes atomically, and cleans scratch. Preview uses `src/preview/timeline-host.ts` with a bounded lazy layer pool.
 
@@ -116,7 +116,8 @@ Timeline path: `src/timeline/resolve.ts` resolves the JSON and references; `src/
 
 ### Authoring
 
-- A composition is a full HTML document with one `<fy-composition>` root. `video.config.js` explicitly maps IDs to `.html` entries; there is no directory scanning. JavaScript composition modules are rejected.
+- A composition is a partial HTML fragment with one top-level `<fy-composition>` root. `video.config.js` explicitly maps IDs to `.html` entries; there is no directory scanning. JavaScript composition modules are rejected.
+- The framework generates the document shell (`<!doctype>`, `<html>`, `<head>`, `<body>`, charset, title, import map, sizing style, format block, and host module). Authors must not declare those elements. Props blocks, the controller, and import maps are top-level siblings; top-level `<style>` and `<link rel="stylesheet">` are hoisted into the generated head. The reserved `data-fy-host` attribute and `data-fy="format"` block are framework-only.
 - Metadata (`width`, `height`, `fps`, `duration-in-frames`) is fixed on the root. `duration-in-frames` is required; `width`, `height`, and `fps` are optional and inherit the project `format` when absent (declared values win, `width`/`height` are declared together). Props cannot change metadata.
 - The resolved format is part of the immutable frame environment. A composition that omits format values in a project without `format` fails with `COMPOSITION_FORMAT_UNRESOLVED`.
 - Default props are a `data-fy="props"` JSON block. Props are JSON, deep-frozen, and merged shallowly over defaults.
@@ -124,7 +125,7 @@ Timeline path: `src/timeline/resolve.ts` resolves the JSON and references; `src/
 - The `fy` prefix is the authoring namespace: `fy-composition`, `fy-transcript`, `data-fy-*`, `--fy-*`, `text/fy-controller`. The package, CLI, config, manifest, server route, import specifier, and error codes remain `frameyard`.
 - A composition has exactly one optional controller, inline or external. It may export `mount`, `update`, `dispose`, and `validateProps`; at least one is required; `mount` and `update` are optional for validation-only controllers.
 - The controller is the only executable code. Other executable `<script>` elements, `on*` handlers, `javascript:` URLs, and unsupported visual elements (`iframe`, `object`, `embed`) are rejected.
-- Media and transcript `src` values resolve from the project root. The controller `src` and ordinary HTML asset URLs resolve relative to the composition document.
+- Media and transcript `src` values resolve from the project root. The controller `src` and ordinary HTML asset URLs resolve relative to the composition URL.
 - `mount()` may await loading work. `update({ frame, props })` is synchronous and seek-safe. `dispose()` releases resources. Keep mutable state in module scope, not on `this`.
 
 ### Timelines
@@ -143,16 +144,16 @@ Timeline path: `src/timeline/resolve.ts` resolves the JSON and references; `src/
 - `update()` must not depend on previously visited frames. Declarative bindings apply once per load; controller-created DOM is not re-bound.
 - Animation drivers are `update()`, runtime-seeked CSS/WAAPI, and `data-fy-anim-*` scheduling. `Math.random()`, `Date.now()`, `performance.now()`, timers, independent `requestAnimationFrame` loops, CSS transitions, and wall-clock reads are not animation inputs. Use `random("stable:key")`.
 - Frame-state variables (`--fy-frame`, `--fy-time`, `--fy-progress`, `--fy-fps`, `--fy-duration`, `--fy-duration-frames`) are set on `document.documentElement` before controller `update`; animations are sought after `update`.
-- Embedded `<video>` and `<audio>` are declared in the composition HTML with `data-fy-*` attributes. The host loads local files during the loading phase, pauses them, and seeks video after each `update()`; `settle()` waits for decode and paint.
+- Embedded `<video>` and `<audio>` are declared in the composition fragment with `data-fy-*` attributes. The host loads local files during the loading phase, pauses them, and seeks video after each `update()`; `settle()` waits for decode and paint.
 - WebGL canvases must be redrawn from the current frame. Production sessions pin SwiftShader so pixels do not depend on the host GPU.
 - Remote data, fonts, and images belong in the loading phase. Network requests are blocked during capture; a `fetch()` from `update()` is a bug.
 - Verify determinism at the capture boundary: compare captured PNG pixels or `still` output, not MP4 hashes. Encoded bytes are not a reproducibility guarantee; see `docs/v0.1-design.md` §3.
 
 ### Static validation and diagnostics
 
-- `src/html/validate.ts` parses composition HTML with parse5 and reports all static diagnostics in source order. It is Node-only. `src/contracts.ts`, `src/bindings.ts`, `src/composition/`, and `src/runtime/` must stay free of `node:` imports; `pnpm typecheck:browser` enforces it.
+- `src/html/validate.ts` parses composition fragments with parse5 (and detects legacy document shells) and reports all static diagnostics in source order. It is Node-only. `src/contracts.ts`, `src/bindings.ts`, `src/composition/`, and `src/runtime/` must stay free of `node:` imports; `pnpm typecheck:browser` enforces it.
 - `check`, `still`, and `render` run static validation before Chromium. Static errors fail without launching a browser; warnings allow frame evaluation. `dev` validates on composition request.
-- A composition that omits `width`/`height`/`fps` in a project without `format` is not a document error: validation reports `formatUnresolved`, and the command fails with `COMPOSITION_FORMAT_UNRESOLVED`.
+- A composition that omits `width`/`height`/`fps` in a project without `format` is not a fragment error: validation reports `formatUnresolved`, and the command fails with `COMPOSITION_FORMAT_UNRESOLVED`.
 - Diagnostics carry `severity`, `code`, `message`, and optional `details` with `path`, `line`, `column`, `element`, `attribute`, `value`, and `suggestion`. Error envelopes carry optional `error.details` and top-level `diagnostics`.
 - Unknown `data-fy-*` attributes, repeat misuse, controller declaration errors, executable scripts, event handlers, `javascript:` URLs, unsupported elements, and missing media/transcript references are errors. Missing binding paths and animation mismatches are warnings.
 - The result schemas expose `entry`, `controller`, and top-level `diagnostics` for composition `check`, `still`, and `render`. Timeline results expose `timeline`, `format`, `tracks`, `clips`, and `diagnostics`; audio/transcript warnings are `AUDIO_WARNING`/`TRANSCRIPT_WARNING` diagnostics, not nested string arrays.
@@ -160,7 +161,7 @@ Timeline path: `src/timeline/resolve.ts` resolves the JSON and references; `src/
 
 ### Host, preview, and rendering
 
-- The preview server serves composition HTML at its real project path and injects the framework import map, sizing style, and host module only for configured composition entries.
+- The preview server serves configured composition fragments at their real project path, wraps them in the fixed document shell, hoists top-level import maps and styles, and injects the framework import map, sizing style, and host module.
 - Inline controllers are served through the virtual URL `<composition>?__fy-controller`; the host imports either that URL or the external `src`. A composition has exactly one controller.
 - `window.__fy` exposes `ready`, `metadata`, `defaultProps`, `props`, `controller`, `audioClips`, `embeddedAudioClips`, `transcriptClips`, `diagnostics`, `frame`, `load`, `seek`, `settle`, and `dispose`.
 - Manual mode (`?__fy-manual`) waits for `load` and hides the root until the first successful load. Auto mode loads defaults and seeks frame 0. `load` validates props before disposing, restores the pristine DOM snapshot, re-applies bindings, remounts the controller, and prepares media.
@@ -195,14 +196,14 @@ Timeline path: `src/timeline/resolve.ts` resolves the JSON and references; `src/
 
 - **Contracts, props, audio, transcripts, diagnostics, host types** → `src/contracts.ts`, `src/transcript.ts`, `src/index.ts`; extend `test/contracts.test.ts`, `test/transcript.test.ts`.
 - **Binding semantics** → `src/bindings.ts`, `src/runtime/bindings.ts`; extend `test/bindings.test.ts`, `test/host-runtime.test.ts`.
-- **Composition document reading** → `src/composition/`, `src/html/document-adapter.ts`; extend `test/composition-document.test.ts`, `test/static-validation.test.ts`.
+- **Composition grammar reading** → `src/composition/`, `src/html/document-adapter.ts`; extend `test/composition-document.test.ts`, `test/static-validation.test.ts`.
 - **HTML parsing and static validation** → `src/html/parse.ts`, `src/html/validate.ts`; extend `test/static-validation.test.ts`, `test/server-html.test.ts`.
 - **Host runtime** → `src/runtime/host.ts`, `src/runtime/media.ts`, `src/runtime/diagnostics.ts`; extend `test/host-runtime.test.ts`.
 - **Timeline schema and resolution** → `src/timeline/schema.ts`, `src/timeline/resolve.ts`, `src/timeline/plan.ts`; extend `test/timeline-schema.test.ts`, `test/timeline-resolve.test.ts`, `test/timeline-plan.test.ts`. Document contract fields in `skills/frameyard/references/timelines.md`; other docs link to it.
 - **Timeline rendering** → `src/renderer/timeline.ts`, `src/renderer/ffmpeg.ts`, `src/renderer/browser.ts`; extend `test/timeline-render.test.ts` with per-frame mapping coverage for every affected layer kind (video, composition, nested timeline), and verify artifacts with FFprobe.
 - **Preview** → `src/preview/main.ts`, `src/server/preview-html.ts`; extend the HTML iframe case in `test/preview-runtime.test.ts`.
 - **Timeline preview** → `src/preview/timeline-main.ts`, `src/preview/timeline-host.ts`, `src/preview/timeline-data.ts`, `src/server/timeline-preview-*.ts`; extend `test/timeline-preview.test.ts`, `test/timeline-preview-runtime.test.ts`; keep `docs/preview-testing.md` in step with the embedded host API.
-- **Server routes, host injection, inline controller, `project.json`, timeline preview/data** → `src/server/server.ts`, `src/server/composition-html.ts`; extend `test/project-server.test.ts`, `test/server-html.test.ts`, `test/timeline-preview.test.ts`.
+- **Server routes, document shell generation, inline controller, `project.json`, timeline preview/data** → `src/server/server.ts`, `src/server/composition-html.ts`; extend `test/project-server.test.ts`, `test/server-html.test.ts`, `test/timeline-preview.test.ts`.
 - **Chromium capture, audio/transcript inspection, FFmpeg** → `src/renderer/`; extend `test/cli-e2e.test.ts`, `test/video-determinism.test.ts`, and verify artifacts with FFprobe.
 - **CLI commands, flags, and their result contracts** → `src/cli.ts`; update `README.md` (commands table, options, non-goals), `docs/v0.1-design.md` §5-§6 and non-goals, `GLOSSARY.md`, `skills/frameyard/SKILL.md` and its references (`json-results`, `diagnostics`, `failure-recovery`, `common-mistakes`, `deterministic-authoring`, `timelines`), `src/scaffold.ts`, and `CHANGELOG.md`; extend `test/cli-e2e.test.ts` and `test/docs.test.ts`.
 - **Static validation integration and result schemas** → `src/renderer/index.ts`, `src/renderer/timeline.ts`, `src/cli.ts`; extend `test/cli-e2e.test.ts`, `test/agent-workflow.test.ts`, `test/timeline-render.test.ts`.
@@ -221,8 +222,8 @@ Test at public seams, not private helpers:
 
 - `test/contracts.test.ts`: composition metadata, props, JSON serialization, audio clips, transcript requirements, diagnostics.
 - `test/bindings.test.ts`: binding path syntax, resolution, repeat scope, value coercion, suggestions.
-- `test/static-validation.test.ts`: HTML metadata, defaults, bindings, scripts, controllers, media, transcripts, source locations, diagnostics.
-- `test/server-html.test.ts`: `.html` entries, host injection, virtual inline controller, static error pages, `project.json` diagnostics.
+- `test/static-validation.test.ts`: fragment metadata, defaults, bindings, scripts, controllers, import maps, document-shell rejection, media, transcripts, source locations, diagnostics.
+- `test/server-html.test.ts`: `.html` entries, fragment wrapping and head ordering, virtual inline controller, static error pages, `project.json` diagnostics.
 - `test/host-runtime.test.ts`: host bindings, repeat/if/class, animation scheduling, frame variables, inline/external controllers, props validation, load atomicity, dispose, diagnostics, auto mode, media settle.
 - `test/random.test.ts`: frame/time conversion and stateless keyed deterministic randomness.
 - `test/project-server.test.ts`: config loading, static routes, import map, ranges, traversal rejection.
@@ -268,7 +269,8 @@ Prefer one failing public-behavior test, then the minimal implementation. Every 
 - **Diagnostics are best-effort**: the host wraps common forbidden clocks/randomness in `mount`/`update`, but does not police every third-party library perfectly.
 - **`project.json` is derived from explicit config**, not scanning. New `.html` compositions must be listed in `video.config.js`.
 - **Path containment** is lexical throughout the server, project loader, and media resolver. The preview server binds loopback by default; treat project roots as trusted.
-- **Media/transcript paths** resolve from the project root. Controller `src` and ordinary HTML asset URLs resolve from the composition document.
+- **Media/transcript paths** resolve from the project root. Controller `src` and ordinary HTML asset URLs resolve from the composition URL.
 - **Full-scene fades over video**: Chromium can reuse the load frame in interactive preview after a large seek. Fade overlay layers instead. Capture sessions keep the composition hidden until the first seek, and `test/video-determinism.test.ts` covers that path.
 - **Pixel diffs**: use `pnpm compare-stills` for decoded-pixel checks; ImageMagick `compare` can report color-profile noise on identical PNGs.
+- **Legacy full documents** fail with `COMPOSITION_DOCUMENT_SHELL`; keep the migration guide and its suggestion in sync with the shell rules. The wrapper hoists top-level import maps after the framework map and top-level styles after the host style, so authors can still override the host sizing style.
 - **Inline controllers** are served through `<composition>?__fy-controller`; a literal `</script>` in inline source must be escaped. Exactly one controller is allowed.

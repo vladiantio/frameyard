@@ -36,17 +36,17 @@ export default {
 };
 ```
 
-Exactly one controller is allowed. Inline source is served through a virtual module URL, so relative imports and `import.meta.url` work like an external module. A literal `</script>` inside inline source must be escaped.
+Exactly one controller is allowed, and it must be a top-level sibling of `<fy-composition>` in the fragment. Inline source is served through a virtual module URL, so relative imports and `import.meta.url` work like an external module. A literal `</script>` inside inline source must be escaped.
 
 ## Lifecycle
 
 - `mount({ root, props })` runs once per load and may be asynchronous. Use it to query the root, create canvases, and start loading local data.
 - `update({ frame, props, root })` runs on every seek. It must be synchronous and seek-safe: derive the frame from `frame` and `props` only.
-- `dispose()` releases resources and resets module-scope state. The host calls it before remounting or disposing the document.
+- `dispose()` releases resources and resets module-scope state. The host calls it before remounting or disposing the composition host.
 - `validateProps(props)` is optional and synchronous. Return an array of human-readable errors, or `void`.
 - A validation-only controller may export just `validateProps`.
 
-Keep mutable state in module scope, never on `this`. The controller module is imported once per document; `load` remounts it without re-importing, so `dispose` must reset module state.
+Keep mutable state in module scope, never on `this`. The controller module is imported once per page; `load` remounts it without re-importing, so `dispose` must reset module state.
 
 ## Props validation
 
@@ -105,7 +105,7 @@ Never use `Math.random()`, `Date.now()`, `performance.now()`, timers, independen
 
 Prefer declarative `<video>`/`<audio>` elements with `data-fy-*` attributes. The host pauses and seeks them; do not call `play()`, `pause()`, or set `currentTime` in `update()`. Media created by the controller is allowed in `mount`; media added or changed in `update` cannot be prepared without network access.
 
-Media and transcript `src` values resolve from the project root. The controller `src` resolves relative to the composition document.
+Media and transcript `src` values resolve from the project root. The controller `src` resolves relative to the composition URL.
 
 ## Karaoke
 

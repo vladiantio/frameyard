@@ -259,28 +259,16 @@ beforeAll(async () => {
   );
   await writeFile(
     path.join(root, "compositions", "checked.html"),
-    `<!doctype html>
-<html>
-  <head><meta charset="utf-8"></head>
-  <body>
-    <fy-composition width="160" height="90" fps="10" duration-in-frames="2">
+    `<fy-composition width="160" height="90" fps="10" duration-in-frames="2">
       <fy-transcript src="transcripts/checked.json"></fy-transcript>
     </fy-composition>
-  </body>
-</html>
 `,
   );
   await writeFile(
     path.join(root, "compositions", "karaoke.html"),
-    `<!doctype html>
-<html>
-  <head><meta charset="utf-8"></head>
-  <body>
-    <fy-composition width="160" height="90" fps="10" duration-in-frames="2">
+    `<fy-composition width="160" height="90" fps="10" duration-in-frames="2">
       <fy-transcript src="transcripts/no-words.json" words></fy-transcript>
     </fy-composition>
-  </body>
-</html>
 `,
   );
   const source = {

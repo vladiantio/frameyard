@@ -9,13 +9,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 const exec = promisify(execFile);
 const cli = path.resolve("dist/cli.js");
 
-const composition = `<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8">
-    <script type="application/json" data-fy="props">{ "title": "Agent workflow" }</script>
-  </head>
-  <body>
+const composition = `<script type="application/json" data-fy="props">{ "title": "Agent workflow" }</script>
     <fy-composition width="160" height="90" fps="10" duration-in-frames="3">
       <div id="label"></div>
       <canvas id="canvas" width="160" height="90"></canvas>
@@ -36,8 +30,6 @@ export default {
   },
 };
     </script>
-  </body>
-</html>
 `;
 
 let root: string;

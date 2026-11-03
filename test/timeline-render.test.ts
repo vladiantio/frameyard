@@ -29,21 +29,13 @@ function renderTimelineForTest(options: Parameters<typeof renderTimeline>[0]) {
   return renderTimeline({ encoder: "software", ...options });
 }
 
-const compositionHtml = `<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8">
-    <style>
+const compositionHtml = `<style>
       html, body { margin: 0; width: 100%; height: 100%; background: #e23b3b; }
       .dot { position: absolute; left: calc(var(--fy-progress) * 100%); top: 50%; width: 30px; height: 30px; border-radius: 50%; background: #b8f36b; }
     </style>
-  </head>
-  <body>
     <fy-composition width="320" height="180" fps="10" duration-in-frames="10">
       <div class="dot"></div>
     </fy-composition>
-  </body>
-</html>
 `;
 
 const inheritedCompositionHtml = compositionHtml.replace(
@@ -51,11 +43,7 @@ const inheritedCompositionHtml = compositionHtml.replace(
   '<fy-composition duration-in-frames="10">',
 );
 
-const throwingCompositionHtml = `<!doctype html>
-<html>
-  <head><meta charset="utf-8"></head>
-  <body>
-    <fy-composition width="320" height="180" fps="10" duration-in-frames="10">
+const throwingCompositionHtml = `<fy-composition width="320" height="180" fps="10" duration-in-frames="10">
       <div class="dot"></div>
     </fy-composition>
     <script type="text/fy-controller">
@@ -65,8 +53,6 @@ export default {
   },
 };
     </script>
-  </body>
-</html>
 `;
 
 async function createProject(compositionSource = compositionHtml): Promise<{ root: string; outPath: string }> {
@@ -507,16 +493,8 @@ describe("timeline rendering media and alpha", () => {
     const root = await customRoot();
     await writeFile(
       path.join(root, "compositions", "base.html"),
-      `<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8">
-    <style>html, body { margin: 0; width: 100%; height: 100%; background: #e23b3b; }</style>
-  </head>
-  <body>
+      `<style>html, body { margin: 0; width: 100%; height: 100%; background: #e23b3b; }</style>
     <fy-composition width="320" height="180" fps="10" duration-in-frames="10"></fy-composition>
-  </body>
-</html>
 `,
     );
     await exec("ffmpeg", [
@@ -714,18 +692,10 @@ describe("timeline rendering media and alpha", () => {
     );
     await writeFile(
       path.join(root, "compositions", "intro.html"),
-      `<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8">
-    <style>html, body { margin: 0; width: 100%; height: 100%; background: #202830; }</style>
-  </head>
-  <body>
+      `<style>html, body { margin: 0; width: 100%; height: 100%; background: #202830; }</style>
     <fy-composition width="320" height="180" fps="10" duration-in-frames="10">
       <audio src="assets/chime.wav" data-fy-start="0" data-fy-duration="0.6"></audio>
     </fy-composition>
-  </body>
-</html>
 `,
     );
     await writeFile(
@@ -777,35 +747,19 @@ describe("timeline rendering media and alpha", () => {
     );
     await writeFile(
       path.join(root, "compositions", "base.html"),
-      `<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8">
-    <style>html, body { margin: 0; width: 100%; height: 100%; background: #e23b3b; }</style>
-  </head>
-  <body>
+      `<style>html, body { margin: 0; width: 100%; height: 100%; background: #e23b3b; }</style>
     <fy-composition width="320" height="180" fps="10" duration-in-frames="10"></fy-composition>
-  </body>
-</html>
 `,
     );
     await writeFile(
       path.join(root, "compositions", "overlay.html"),
-      `<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8">
-    <style>
+      `<style>
       html, body { margin: 0; width: 100%; height: 100%; background: transparent; }
       .dot { position: absolute; left: 140px; top: 70px; width: 40px; height: 40px; background: #b8f36b; }
     </style>
-  </head>
-  <body>
     <fy-composition width="320" height="180" fps="10" duration-in-frames="10">
       <div class="dot"></div>
     </fy-composition>
-  </body>
-</html>
 `,
     );
     await writeFile(
@@ -867,11 +821,11 @@ describe("nested timeline rendering", () => {
     );
     await writeFile(
       path.join(root, "compositions", "base.html"),
-      `<!doctype html><html><head><meta charset="utf-8"><style>html, body { margin: 0; width: 100%; height: 100%; background: #e23b3b; }</style></head><body><fy-composition width="320" height="180" fps="10" duration-in-frames="10"></fy-composition></body></html>`,
+      `<style>html, body { margin: 0; width: 100%; height: 100%; background: #e23b3b; }</style><fy-composition width="320" height="180" fps="10" duration-in-frames="10"></fy-composition>`,
     );
     await writeFile(
       path.join(root, "compositions", "overlay.html"),
-      `<!doctype html><html><head><meta charset="utf-8"><style>html, body { margin: 0; width: 100%; height: 100%; background: transparent; } .dot { position: absolute; left: 140px; top: 70px; width: 40px; height: 40px; background: #b8f36b; }</style></head><body><fy-composition width="320" height="180" fps="10" duration-in-frames="10"><div class="dot"></div></fy-composition></body></html>`,
+      `<style>html, body { margin: 0; width: 100%; height: 100%; background: transparent; } .dot { position: absolute; left: 140px; top: 70px; width: 40px; height: 40px; background: #b8f36b; }</style><fy-composition width="320" height="180" fps="10" duration-in-frames="10"><div class="dot"></div></fy-composition>`,
     );
     await writeFile(
       path.join(root, "timelines", "lower.json"),
@@ -1282,11 +1236,11 @@ describe("timeline blend modes", () => {
     const root = await customRoot();
     await writeFile(
       path.join(root, "compositions", "base.html"),
-      `<!doctype html><html><head><meta charset="utf-8"><style>html, body { margin: 0; width: 100%; height: 100%; background: #336699; }</style></head><body><fy-composition width="320" height="180" fps="10" duration-in-frames="20"></fy-composition></body></html>`,
+      `<style>html, body { margin: 0; width: 100%; height: 100%; background: #336699; }</style><fy-composition width="320" height="180" fps="10" duration-in-frames="20"></fy-composition>`,
     );
     await writeFile(
       path.join(root, "compositions", "top.html"),
-      `<!doctype html><html><head><meta charset="utf-8"><style>html, body { margin: 0; width: 100%; height: 100%; background: #ff8800; }</style></head><body><fy-composition width="320" height="180" fps="10" duration-in-frames="20"></fy-composition></body></html>`,
+      `<style>html, body { margin: 0; width: 100%; height: 100%; background: #ff8800; }</style><fy-composition width="320" height="180" fps="10" duration-in-frames="20"></fy-composition>`,
     );
     await writeFile(
       path.join(root, "timelines", "main.json"),
@@ -1470,7 +1424,7 @@ describe("timeline blend modes", () => {
     await solidPng(path.join(root, "assets", "green.png"), "0x00ff00", "320x180");
     await writeFile(
       path.join(root, "compositions", "base.html"),
-      `<!doctype html><html><head><meta charset="utf-8"><style>html, body { margin: 0; width: 100%; height: 100%; background: #ff0000; }</style></head><body><fy-composition width="320" height="180" fps="10" duration-in-frames="1"></fy-composition></body></html>`,
+      `<style>html, body { margin: 0; width: 100%; height: 100%; background: #ff0000; }</style><fy-composition width="320" height="180" fps="10" duration-in-frames="1"></fy-composition>`,
     );
     await writeFile(
       path.join(root, "timelines", "nested.json"),
@@ -1565,7 +1519,7 @@ describe("timeline blend modes", () => {
     ]);
     await writeFile(
       path.join(root, "compositions", "top.html"),
-      `<!doctype html><html><head><meta charset="utf-8"><style>html, body { margin: 0; width: 100%; height: 100%; background: #ff8800; }</style></head><body><fy-composition width="320" height="180" fps="10" duration-in-frames="10"></fy-composition></body></html>`,
+      `<style>html, body { margin: 0; width: 100%; height: 100%; background: #ff8800; }</style><fy-composition width="320" height="180" fps="10" duration-in-frames="10"></fy-composition>`,
     );
     await writeFile(
       path.join(root, "timelines", "nested.json"),

@@ -8,10 +8,19 @@ Frameyard uses `0.x` versions until the composition, configuration, CLI,
 JSON-result, transcript, and skill contracts stabilize. Before `1.0.0`, a
 contract change may ship in a minor release and is called out explicitly below.
 
-## [Unreleased]
+## [0.8.0] - 2026-11-03
 
 ### Changed
 
+- Compositions are partial HTML fragments instead of full HTML documents.
+  Authors keep one top-level `<fy-composition>` root plus top-level props,
+  controller, import maps, and styles; Frameyard generates the document shell,
+  import map, sizing style, format block, and host runtime. A legacy full
+  document fails with `COMPOSITION_DOCUMENT_SHELL`. See ADR 0016 and
+  [migration-0.8](./docs/migration-0.8.md).
+- Top-level author import maps are validated and hoisted after the framework
+  map; `frameyard` and `frameyard/` specifiers are reserved and invalid maps
+  report `IMPORT_MAP_INVALID`.
 - `<fy-composition>` keeps `duration-in-frames` required but makes `width`,
   `height`, and `fps` optional. An omitted value is inherited from the project
   `format`; a declared value wins, and `width`/`height` must be declared
@@ -70,6 +79,7 @@ contract change may ship in a minor release and is called out explicitly below.
   layer iframes reach the preview transport, while text entry does not step
   frames across iframe boundaries.
 
+[0.8.0]: https://github.com/vladiantio/frameyard/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/vladiantio/frameyard/compare/v0.6.0...v0.7.0
 
 ## [0.6.0] - 2026-11-01

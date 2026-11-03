@@ -46,11 +46,7 @@ const FORMAT = { width: 1920, height: 1080, fps: 30 };
 const FRAMES = 100;
 const SAMPLE_FRAME = 50;
 
-const BASE_COMPOSITION = `<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8">
-    <style>
+const BASE_COMPOSITION = `<style>
       html, body { margin: 0; width: 100%; height: 100%; background: #0b1016; overflow: hidden; }
       .stage { position: relative; width: 100%; height: 100%; overflow: hidden; }
       .grid {
@@ -71,8 +67,6 @@ const BASE_COMPOSITION = `<!doctype html>
       }
       .rail { position: absolute; left: 90px; right: 90px; top: 54%; height: 1px; background: #ffffff22; }
     </style>
-  </head>
-  <body>
     <fy-composition width="1920" height="1080" fps="30" duration-in-frames="300">
       <div class="stage">
         <div class="grid"></div>
@@ -82,15 +76,9 @@ const BASE_COMPOSITION = `<!doctype html>
         <div class="bar"></div>
       </div>
     </fy-composition>
-  </body>
-</html>
 `;
 
-const OVERLAY_COMPOSITION = `<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8">
-    <style>
+const OVERLAY_COMPOSITION = `<style>
       html, body { margin: 0; width: 100%; height: 100%; background: transparent; overflow: hidden; }
       .badge {
         position: absolute; left: 50%; top: 50%;
@@ -105,14 +93,10 @@ const OVERLAY_COMPOSITION = `<!doctype html>
         padding: 8px 16px; font: 800 22px/1 system-ui, sans-serif;
       }
     </style>
-  </head>
-  <body>
     <fy-composition width="640" height="360" fps="30" duration-in-frames="300">
       <div class="badge"></div>
       <div class="label">OVERLAY</div>
     </fy-composition>
-  </body>
-</html>
 `;
 
 const TOP_HOST = `<!doctype html>

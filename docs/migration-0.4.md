@@ -1,5 +1,7 @@
 # Migrating to Frameyard 0.4
 
+> Historical guide. Frameyard 0.8 changed compositions from full HTML documents to partial fragments; see [migration-0.8](./migration-0.8.md) for the current authoring shape.
+
 0.4 replaces JavaScript composition modules with declarative HTML documents. The CLI commands, props files, audio and transcript asset formats, rendering pipeline, and determinism guarantees are unchanged. This guide maps the old authoring surface to the new one.
 
 ## 1. Change the config entry
@@ -153,7 +155,7 @@ After:
 <fy-transcript src="assets/voice.transcript.json" words></fy-transcript>
 ```
 
-Audio, video, and `<fy-transcript>` `src` values resolve from the project root. The controller `src` and ordinary HTML assets (`img`, stylesheets) resolve relative to the composition document.
+Audio, video, and `<fy-transcript>` `src` values resolve from the project root. The controller `src` and ordinary HTML assets (`img`, stylesheets) resolve relative to the composition URL.
 
 ## 7. Rename media attributes
 

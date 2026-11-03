@@ -147,7 +147,7 @@ function controllerBlock(options: { src?: string; source?: string; location?: So
 const resolvePath = (raw: string): string => `compositions/${raw.replace(/^\.\//, "")}`;
 const options = { path: "compositions/hello.html", resolvePath };
 
-describe("composition document reader", () => {
+describe("composition grammar reader", () => {
   it("reads metadata, default props, and an external controller", () => {
     const root = element("fy-composition", {
       attributes: defaultMetadata,
@@ -721,6 +721,79 @@ describe("composition document reader", () => {
     );
     expect(result.diagnostics).toContainEqual(
       expect.objectContaining({ code: "TRANSCRIPT_INVALID", message: expect.stringContaining("local project file") }),
+    );
+  });
+
+  it("reads a top-level fragment root, props block, and controller", () => {
+    const root = element("fy-composition", {
+      attributes: defaultMetadata,
+      location: location(3, 1),
+    });
+    const fragment: FakeDocument = {
+      kind: "document",
+      children: [
+        propsBlock('{"title":"Hello"}', location(1, 1)),
+        root,
+        controllerBlock({ src: "./hello.controller.js", location: location(5, 1) }),
+      ],
+    };
+    const result = readCompositionDescriptor(adapterFor(fragment), { ...options, rootScope: "fragment" });
+
+    expect(result.valid).toBe(true);
+    expect(result.diagnostics).toEqual([]);
+    expect(result.root).toBe(root);
+    expect(result.descriptor.defaultProps).toEqual({ title: "Hello" });
+    expect(result.descriptor.controller).toMatchObject({ kind: "external", rawSrc: "./hello.controller.js" });
+  });
+
+  it("rejects nested fragment roots and metadata blocks", () => {
+    const nestedRoot: FakeDocument = {
+      kind: "document",
+      children: [
+        element("div", {
+          children: [element("fy-composition", { attributes: defaultMetadata, location: location(3, 3) })],
+        }),
+      ],
+    };
+    const rootResult = readCompositionDescriptor(adapterFor(nestedRoot), { ...options, rootScope: "fragment" });
+    expect(rootResult.valid).toBe(false);
+    expect(rootResult.diagnostics).toContainEqual(
+      expect.objectContaining({ code: "COMPOSITION_INVALID", message: expect.stringContaining("top-level element") }),
+    );
+
+    const nestedProps: FakeDocument = {
+      kind: "document",
+      children: [
+        element("fy-composition", {
+          attributes: defaultMetadata,
+          location: location(3, 1),
+          children: [propsBlock('{"title":"Hello"}', location(4, 3))],
+        }),
+      ],
+    };
+    const propsResult = readCompositionDescriptor(adapterFor(nestedProps), { ...options, rootScope: "fragment" });
+    expect(propsResult.valid).toBe(false);
+    expect(propsResult.diagnostics).toContainEqual(
+      expect.objectContaining({ code: "PROPS_INVALID", message: expect.stringContaining("top-level element") }),
+    );
+
+    const nestedController: FakeDocument = {
+      kind: "document",
+      children: [
+        element("fy-composition", {
+          attributes: defaultMetadata,
+          location: location(3, 1),
+          children: [controllerBlock({ source: "export default {};", location: location(4, 3) })],
+        }),
+      ],
+    };
+    const controllerResult = readCompositionDescriptor(adapterFor(nestedController), {
+      ...options,
+      rootScope: "fragment",
+    });
+    expect(controllerResult.valid).toBe(false);
+    expect(controllerResult.diagnostics).toContainEqual(
+      expect.objectContaining({ code: "CONTROLLER_INVALID", message: expect.stringContaining("top-level element") }),
     );
   });
 });

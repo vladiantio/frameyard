@@ -7,18 +7,10 @@ import { startPreviewServer, type PreviewServer } from "../src/server/server.ts"
 
 let root: string;
 
-const compositionSource = `<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8">
-    <script type="application/json" data-fy="props">{ "title": "Alpha" }</script>
-  </head>
-  <body>
+const compositionSource = `<script type="application/json" data-fy="props">{ "title": "Alpha" }</script>
     <fy-composition width="320" height="180" fps="10" duration-in-frames="5">
       <h1 data-fy-text="title"></h1>
     </fy-composition>
-  </body>
-</html>
 `;
 
 beforeAll(async () => {
@@ -81,7 +73,7 @@ describe("project configuration", () => {
     }
   });
 
-  it("rejects missing composition documents", async () => {
+  it("rejects missing composition entries", async () => {
     const bad = await mkdtemp(path.join(tmpdir(), "frameyard-missing-"));
     try {
       await writeFile(
@@ -170,7 +162,7 @@ describe("preview server", () => {
     });
   });
 
-  it("serves composition documents with the host injected", async () => {
+  it("serves composition fragments with the document shell", async () => {
     const documentResponse = await fetch(new URL("/compositions/alpha.html", server.url));
     const assetResponse = await fetch(new URL("/assets/hello.txt", server.url));
 
@@ -243,13 +235,7 @@ describe("preview server", () => {
 });
 
 describe("composition format inheritance", () => {
-  const inheritedSource = `<!doctype html>
-<html>
-  <head><meta charset="utf-8"></head>
-  <body>
-    <fy-composition duration-in-frames="5"><h1>Hello</h1></fy-composition>
-  </body>
-</html>
+  const inheritedSource = `<fy-composition duration-in-frames="5"><h1>Hello</h1></fy-composition>
 `;
 
   async function serveProject(config: string): Promise<{ root: string; server: PreviewServer }> {
@@ -281,7 +267,7 @@ describe("composition format inheritance", () => {
     }
   });
 
-  it("injects the project format into served composition documents", async () => {
+  it("injects the project format into the served document shell", async () => {
     const { root: projectRoot, server } = await serveProject(
       'export default { format: { width: 640, height: 360, fps: 24 }, compositions: { plain: "./compositions/plain.html" } };\n',
     );

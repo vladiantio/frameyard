@@ -5,7 +5,7 @@ export const COMPOSITION_FORMAT_UNRESOLVED_MESSAGE =
 
 /**
  * Resolves declared composition metadata against a project format. Declared
- * values always win; the project format only fills what the document omits.
+ * values always win; the project format only fills what the fragment omits.
  * Returns null when a value is neither declared nor available from the
  * project, which makes the composition unrenderable in that context.
  */

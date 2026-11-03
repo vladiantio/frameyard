@@ -31,7 +31,7 @@ describe("timeline project configuration", () => {
         timelines: { main: "./timelines/main.json" },
       };\n`,
       {
-        "compositions/intro.html": "<!doctype html><html></html>",
+        "compositions/intro.html": '<fy-composition duration-in-frames="1"></fy-composition>',
         "timelines/main.json": '{"version":1,"tracks":[],"clips":[]}',
       },
     );
@@ -70,7 +70,7 @@ describe("timeline project configuration", () => {
 
   it("keeps composition-only projects valid without a format", async () => {
     const root = await project(`export default { compositions: { demo: "./demo.html" } };\n`, {
-      "demo.html": "<!doctype html><html></html>",
+      "demo.html": '<fy-composition duration-in-frames="1"></fy-composition>',
     });
 
     const loaded = await loadProject(root);
@@ -115,7 +115,7 @@ describe("timeline project configuration", () => {
         compositions: { main: "./main.html" },
         timelines: { main: "./main.json" },
       };\n`,
-      { "main.html": "<!doctype html><html></html>", "main.json": "{}" },
+      { "main.html": '<fy-composition duration-in-frames="1"></fy-composition>', "main.json": "{}" },
     );
 
     await expect(loadProject(root)).rejects.toMatchObject({ code: "CONFIG_INVALID" });

@@ -30,8 +30,7 @@ afterAll(async () => {
   await rm(root, { recursive: true, force: true });
 });
 
-function documentHtml(options: { root?: string; head?: string; body?: string; doctype?: string } = {}): string {
-  const doctype = options.doctype ?? "<!doctype html>";
+function fragmentHtml(options: { root?: string; top?: string; body?: string; props?: string | false } = {}): string {
   const rootMarkup =
     options.root ??
     `<fy-composition width="320" height="180" fps="10" duration-in-frames="5">
@@ -44,19 +43,25 @@ function documentHtml(options: { root?: string; head?: string; body?: string; do
       <fy-transcript src="assets/voice.transcript.json" words></fy-transcript>
     </fy-composition>`;
 
-  return `${doctype}
+  const props =
+    options.props === false
+      ? ""
+      : (options.props ??
+        `<script type="application/json" data-fy="props">
+  { "title": "Hello", "accent": "#b8f36b", "show": true, "items": [{ "label": "A" }, { "label": "B" }] }
+  </script>`);
+
+  return `${props}
+  ${options.top ?? ""}
+  ${rootMarkup}
+  ${options.body ?? '<script type="text/fy-controller" src="./hello.controller.js"></script>'}`;
+}
+
+function documentHtml(options: { root?: string; top?: string; body?: string } = {}): string {
+  return `<!doctype html>
 <html>
-  <head>
-    <meta charset="utf-8">
-    <script type="application/json" data-fy="props">
-    { "title": "Hello", "accent": "#b8f36b", "show": true, "items": [{ "label": "A" }, { "label": "B" }] }
-    </script>
-    ${options.head ?? ""}
-  </head>
-  <body>
-    ${rootMarkup}
-    ${options.body ?? '<script type="text/fy-controller" src="./hello.controller.js"></script>'}
-  </body>
+  <head><meta charset="utf-8"></head>
+  <body>${fragmentHtml(options)}</body>
 </html>`;
 }
 
@@ -73,7 +78,7 @@ async function validate(
 
 describe("HTML composition static validation", () => {
   it("validates a complete composition and resolves metadata, controller, and clips", async () => {
-    const result = await validate("valid", documentHtml());
+    const result = await validate("valid", fragmentHtml());
 
     expect(result.info).not.toBeNull();
     expect(result.diagnostics.filter((diagnostic) => diagnostic.severity === "error")).toEqual([]);
@@ -102,23 +107,34 @@ describe("HTML composition static validation", () => {
     expect(result.info?.transcriptClips).toEqual([{ src: "assets/voice.transcript.json", words: true }]);
   });
 
-  it("reports a missing doctype and returns no info", async () => {
-    const result = await validate("no-doctype", documentHtml({ doctype: "" }));
+  it("accepts a fragment without a document shell", async () => {
+    const result = await validate("fragment", fragmentHtml());
+
+    expect(result.info).not.toBeNull();
+    expect(result.diagnostics).not.toContainEqual(expect.objectContaining({ code: "COMPOSITION_DOCUMENT_SHELL" }));
+  });
+
+  it("rejects a full document with COMPOSITION_DOCUMENT_SHELL and no info", async () => {
+    const result = await validate("full-document", documentHtml());
 
     expect(result.info).toBeNull();
     expect(result.diagnostics).toContainEqual(
       expect.objectContaining({
         severity: "error",
-        code: "COMPOSITION_INVALID",
-        details: expect.objectContaining({ line: 1 }),
+        code: "COMPOSITION_DOCUMENT_SHELL",
+        details: expect.objectContaining({
+          path: "compositions/full-document.html",
+          suggestion: expect.stringContaining("migration-0.8.md"),
+        }),
       }),
     );
+    expect(result.diagnostics.filter((diagnostic) => diagnostic.code === "COMPOSITION_DOCUMENT_SHELL")).toHaveLength(4);
   });
 
   it("reports invalid metadata with an attribute location", async () => {
     const result = await validate(
       "bad-metadata",
-      documentHtml({
+      fragmentHtml({
         root: '<fy-composition width="0" height="180" fps="10" duration-in-frames="5"></fy-composition>',
       }),
     );
@@ -136,7 +152,7 @@ describe("HTML composition static validation", () => {
   it("inherits width, height, and fps from the project format", async () => {
     const result = await validate(
       "inherited-format",
-      documentHtml({ root: '<fy-composition duration-in-frames="5"></fy-composition>' }),
+      fragmentHtml({ root: '<fy-composition duration-in-frames="5"></fy-composition>' }),
       undefined,
       { width: 640, height: 360, fps: 24 },
     );
@@ -150,7 +166,7 @@ describe("HTML composition static validation", () => {
   it("prefers declared format values over the project format", async () => {
     const result = await validate(
       "declared-format",
-      documentHtml({ root: '<fy-composition width="320" height="180" duration-in-frames="5"></fy-composition>' }),
+      fragmentHtml({ root: '<fy-composition width="320" height="180" duration-in-frames="5"></fy-composition>' }),
       undefined,
       { width: 640, height: 360, fps: 24 },
     );
@@ -162,7 +178,7 @@ describe("HTML composition static validation", () => {
   it("flags an unresolved format without a document diagnostic", async () => {
     const result = await validate(
       "unresolved-format",
-      documentHtml({ root: '<fy-composition duration-in-frames="5"></fy-composition>' }),
+      fragmentHtml({ root: '<fy-composition duration-in-frames="5"></fy-composition>' }),
     );
 
     expect(result.info).toBeNull();
@@ -173,7 +189,7 @@ describe("HTML composition static validation", () => {
   it("rejects declaring width without height", async () => {
     const result = await validate(
       "half-format",
-      documentHtml({ root: '<fy-composition width="320" duration-in-frames="5"></fy-composition>' }),
+      fragmentHtml({ root: '<fy-composition width="320" duration-in-frames="5"></fy-composition>' }),
       undefined,
       { width: 640, height: 360, fps: 24 },
     );
@@ -192,7 +208,7 @@ describe("HTML composition static validation", () => {
   it("warns on missing binding paths with a suggestion", async () => {
     const result = await validate(
       "missing-path",
-      documentHtml({
+      fragmentHtml({
         root: '<fy-composition width="320" height="180" fps="10" duration-in-frames="5"><h1 data-fy-text="titel"></h1></fy-composition>',
       }),
     );
@@ -209,7 +225,7 @@ describe("HTML composition static validation", () => {
   it("validates attribute and class bindings", async () => {
     const result = await validate(
       "attr-class",
-      documentHtml({
+      fragmentHtml({
         root: `<fy-composition width="320" height="180" fps="10" duration-in-frames="5">
           <div data-fy-class-active="show" data-fy-attr-title="title"></div>
         </fy-composition>`,
@@ -222,7 +238,7 @@ describe("HTML composition static validation", () => {
   it("resolves props-bound media sources", async () => {
     const result = await validate(
       "bound-media",
-      documentHtml({
+      fragmentHtml({
         root: '<fy-composition width="320" height="180" fps="10" duration-in-frames="5"><audio data-fy-attr-src="voice"></audio></fy-composition>',
       }),
       { voice: "assets/tone.wav" },
@@ -234,7 +250,7 @@ describe("HTML composition static validation", () => {
   it("rejects event handler bindings, root conditionals, and text on void elements", async () => {
     const result = await validate(
       "bad-targets",
-      documentHtml({
+      fragmentHtml({
         root: `<fy-composition width="320" height="180" fps="10" duration-in-frames="5" data-fy-if="show">
           <div data-fy-attr-onclick="show"></div>
           <img data-fy-text="title">
@@ -250,7 +266,7 @@ describe("HTML composition static validation", () => {
   it("rejects invalid repeat paths, animation values, and media attributes on non-media", async () => {
     const result = await validate(
       "bad-attributes",
-      documentHtml({
+      fragmentHtml({
         root: `<fy-composition width="320" height="180" fps="10" duration-in-frames="5">
           <template data-fy-repeat="missing"></template>
           <h1 data-fy-anim-start="-1"></h1>
@@ -267,7 +283,7 @@ describe("HTML composition static validation", () => {
   it("rejects unknown data-fy attributes", async () => {
     const result = await validate(
       "unknown-attribute",
-      documentHtml({
+      fragmentHtml({
         root: '<fy-composition width="320" height="180" fps="10" duration-in-frames="5"><h1 data-fy-txt="title"></h1></fy-composition>',
       }),
     );
@@ -284,7 +300,7 @@ describe("HTML composition static validation", () => {
   it("rejects repeat misuse", async () => {
     const result = await validate(
       "bad-repeat",
-      documentHtml({
+      fragmentHtml({
         root: `<fy-composition width="320" height="180" fps="10" duration-in-frames="5">
           <div data-fy-repeat="items"></div>
           <template data-fy-repeat="items"><template data-fy-repeat="items"></template></template>
@@ -301,7 +317,7 @@ describe("HTML composition static validation", () => {
   it("rejects executable scripts, event handlers, and javascript URLs", async () => {
     const result = await validate(
       "scripts",
-      documentHtml({
+      fragmentHtml({
         root: `<fy-composition width="320" height="180" fps="10" duration-in-frames="5">
           <div onclick="alert(1)"><a href="javascript:alert(1)">x</a></div>
         </fy-composition>`,
@@ -317,8 +333,8 @@ describe("HTML composition static validation", () => {
   it("rejects unsupported visual elements and document features", async () => {
     const result = await validate(
       "unsupported",
-      documentHtml({
-        head: '<base href="/"><meta http-equiv="refresh" content="0">',
+      fragmentHtml({
+        top: '<base href="/"><meta http-equiv="refresh" content="0">',
         root: '<fy-composition width="320" height="180" fps="10" duration-in-frames="5"><iframe src="x"></iframe></fy-composition>',
       }),
     );
@@ -337,7 +353,7 @@ describe("HTML composition static validation", () => {
   it("supports inline controllers and reports their source location", async () => {
     const result = await validate(
       "inline-controller",
-      documentHtml({
+      fragmentHtml({
         body: `<script type="text/fy-controller">
 export default {
   mount() {},
@@ -355,7 +371,7 @@ export default {
   it("rejects a controller with both inline source and src", async () => {
     const result = await validate(
       "both-controllers",
-      documentHtml({
+      fragmentHtml({
         body: '<script type="text/fy-controller" src="./hello.controller.js">export default {};</script>',
       }),
     );
@@ -367,7 +383,7 @@ export default {
   it("rejects a missing external controller file", async () => {
     const result = await validate(
       "missing-controller",
-      documentHtml({ body: '<script type="text/fy-controller" src="./missing.js"></script>' }),
+      fragmentHtml({ body: '<script type="text/fy-controller" src="./missing.js"></script>' }),
     );
 
     expect(result.info).toBeNull();
@@ -377,7 +393,7 @@ export default {
   it("rejects missing or remote media and transcripts", async () => {
     const result = await validate(
       "missing-media",
-      documentHtml({
+      fragmentHtml({
         root: `<fy-composition width="320" height="180" fps="10" duration-in-frames="5">
           <audio src="assets/missing.wav"></audio>
           <audio src="https://example.com/tone.wav"></audio>
@@ -393,13 +409,172 @@ export default {
   it("warns on visual content outside the composition root", async () => {
     const result = await validate(
       "outside-root",
-      documentHtml({
+      fragmentHtml({
         body: '<p>Outside</p><script type="text/fy-controller" src="./hello.controller.js"></script>',
       }),
     );
 
     expect(result.diagnostics).toContainEqual(
       expect.objectContaining({ severity: "warning", code: "CONTENT_OUTSIDE_ROOT" }),
+    );
+  });
+
+  it("requires the composition root to be top-level", async () => {
+    const result = await validate(
+      "nested-root",
+      fragmentHtml({
+        root: '<div><fy-composition width="320" height="180" fps="10" duration-in-frames="5"></fy-composition></div>',
+      }),
+    );
+
+    expect(result.info).toBeNull();
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: "COMPOSITION_INVALID",
+        message: expect.stringContaining("top-level element"),
+      }),
+    );
+  });
+
+  it("requires the props block to be top-level", async () => {
+    const result = await validate(
+      "nested-props",
+      fragmentHtml({
+        props: false,
+        root: `<fy-composition width="320" height="180" fps="10" duration-in-frames="5">
+          <script type="application/json" data-fy="props">{ "title": "Hello" }</script>
+        </fy-composition>`,
+      }),
+    );
+
+    expect(result.info).toBeNull();
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: "PROPS_INVALID",
+        message: expect.stringContaining("top-level element"),
+      }),
+    );
+  });
+
+  it("requires the controller block to be top-level", async () => {
+    const result = await validate(
+      "nested-controller",
+      fragmentHtml({
+        body: "",
+        root: `<fy-composition width="320" height="180" fps="10" duration-in-frames="5">
+          <script type="text/fy-controller">export default { update() {} };</script>
+        </fy-composition>`,
+      }),
+    );
+
+    expect(result.info).toBeNull();
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: "CONTROLLER_INVALID",
+        message: expect.stringContaining("top-level element"),
+      }),
+    );
+  });
+
+  it("accepts a top-level import map", async () => {
+    const result = await validate(
+      "import-map",
+      fragmentHtml({
+        top: '<script type="importmap">{"imports":{"demo-lib":"./demo-lib.js"}}</script>',
+      }),
+    );
+
+    expect(result.diagnostics.filter((diagnostic) => diagnostic.severity === "error")).toEqual([]);
+  });
+
+  it("rejects nested import maps", async () => {
+    const result = await validate(
+      "nested-import-map",
+      fragmentHtml({
+        root: `<fy-composition width="320" height="180" fps="10" duration-in-frames="5">
+          <script type="importmap">{"imports":{"demo-lib":"./demo-lib.js"}}</script>
+        </fy-composition>`,
+      }),
+    );
+
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: "IMPORT_MAP_INVALID",
+        message: expect.stringContaining("top-level"),
+      }),
+    );
+  });
+
+  it("rejects invalid import map JSON and reserved specifiers", async () => {
+    const invalidJson = await validate(
+      "invalid-import-map",
+      fragmentHtml({ top: '<script type="importmap">{</script>' }),
+    );
+    expect(invalidJson.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: "IMPORT_MAP_INVALID",
+        message: expect.stringContaining("Invalid import map JSON"),
+      }),
+    );
+
+    const reserved = await validate(
+      "reserved-import-map",
+      fragmentHtml({
+        top: '<script type="importmap">{"imports":{"frameyard/runtime":"./runtime.js"}}</script>',
+      }),
+    );
+    expect(reserved.diagnostics).toContainEqual(
+      expect.objectContaining({ code: "IMPORT_MAP_INVALID", message: expect.stringContaining("reserved") }),
+    );
+
+    const forbidden = await validate(
+      "import-map-src",
+      fragmentHtml({ top: '<script type="importmap" src="./map.json"></script>' }),
+    );
+    expect(forbidden.diagnostics).toContainEqual(
+      expect.objectContaining({ code: "IMPORT_MAP_INVALID", message: expect.stringContaining('"src" attribute') }),
+    );
+  });
+
+  it("rejects document-level title and meta elements", async () => {
+    const result = await validate(
+      "document-level-elements",
+      fragmentHtml({ top: '<title>Hello</title><meta name="theme-color" content="#000">' }),
+    );
+
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: "ELEMENT_NOT_SUPPORTED",
+        details: expect.objectContaining({ element: "title" }),
+      }),
+    );
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: "ELEMENT_NOT_SUPPORTED",
+        details: expect.objectContaining({ element: "meta" }),
+      }),
+    );
+  });
+
+  it("reserves data-fy-host and data-fy=format", async () => {
+    const result = await validate(
+      "reserved-attributes",
+      fragmentHtml({
+        top: '<script type="application/json" data-fy="format" data-fy-host>{"width":1}</script>',
+      }),
+    );
+
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: "COMPOSITION_INVALID",
+        message: expect.stringContaining("data-fy-host"),
+      }),
+    );
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: "COMPOSITION_INVALID",
+        message: expect.stringContaining('data-fy="format"'),
+      }),
     );
   });
 });

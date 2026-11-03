@@ -1,63 +1,55 @@
-<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <style>
-      html,
-      body,
-      fy-composition {
-        margin: 0;
-        width: 100%;
-        height: 100%;
-        background: transparent;
-      }
-      fy-composition {
-        display: block;
-        overflow: hidden;
-      }
-      .scene {
-        position: relative;
-        width: 100%;
-        height: 100%;
-        overflow: hidden;
-        isolation: isolate;
-      }
-      .blob {
-        position: absolute;
-        border-radius: 50%;
-        filter: blur(78px);
-        opacity: 0.9;
-      }
-      .pink {
-        left: 6%;
-        top: -18%;
-        width: 980px;
-        height: 980px;
-        background: radial-gradient(circle, rgba(255, 64, 164, 0.92), rgba(255, 64, 164, 0) 68%);
-      }
-      .blue {
-        right: -12%;
-        top: 4%;
-        width: 1180px;
-        height: 1180px;
-        background: radial-gradient(circle, rgba(46, 146, 255, 0.88), rgba(46, 146, 255, 0) 68%);
-      }
-      .amber {
-        left: 30%;
-        bottom: -30%;
-        width: 900px;
-        height: 900px;
-        background: radial-gradient(circle, rgba(255, 186, 72, 0.7), rgba(255, 186, 72, 0) 70%);
-      }
-    </style>
-  </head>
-  <body>
-    <fy-composition width="1920" height="1080" fps="30" duration-in-frames="360">
-      <div class="scene">
-        <div class="blob pink"></div>
-        <div class="blob blue"></div>
-        <div class="blob amber"></div>
-      </div>
-    </fy-composition>
-  </body>
-</html>
+<style>
+  html,
+  body,
+  fy-composition {
+    margin: 0;
+    width: 100%;
+    height: 100%;
+    background: transparent;
+  }
+  fy-composition {
+    display: block;
+    overflow: hidden;
+  }
+  .scene {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    isolation: isolate;
+  }
+  .blob {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(78px);
+    opacity: 0.9;
+  }
+  .pink {
+    left: 6%;
+    top: -18%;
+    width: 980px;
+    height: 980px;
+    background: radial-gradient(circle, rgba(255, 64, 164, 0.92), rgba(255, 64, 164, 0) 68%);
+  }
+  .blue {
+    right: -12%;
+    top: 4%;
+    width: 1180px;
+    height: 1180px;
+    background: radial-gradient(circle, rgba(46, 146, 255, 0.88), rgba(46, 146, 255, 0) 68%);
+  }
+  .amber {
+    left: 30%;
+    bottom: -30%;
+    width: 900px;
+    height: 900px;
+    background: radial-gradient(circle, rgba(255, 186, 72, 0.7), rgba(255, 186, 72, 0) 70%);
+  }
+</style>
+<fy-composition width="1920" height="1080" fps="30" duration-in-frames="360">
+  <div class="scene">
+    <div class="blob pink"></div>
+    <div class="blob blue"></div>
+    <div class="blob amber"></div>
+  </div>
+</fy-composition>

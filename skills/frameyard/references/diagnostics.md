@@ -8,12 +8,13 @@ Frameyard reports composition problems as structured diagnostics before and duri
 
 Static validation covers:
 
-- doctype, root count, metadata (including `width`/`height` pairing), and default-props JSON
+- fragment structure, root count and placement, metadata (including `width`/`height` pairing), default-props JSON, and import maps
 - controller declaration and file existence
 - executable scripts, `on*` handlers, `javascript:` URLs, and unsupported visual elements
 - unknown `data-fy-*` attributes, binding paths, `if`/`repeat` placement, and animation attributes
 - audio/video/transcript references and ordinary image/stylesheet assets
 - visual content outside `<fy-composition>`
+- document-level `<title>`/`<meta>` elements, the reserved `data-fy-host` attribute, and non-top-level props, controllers, or import maps
 
 ## Diagnostic shape
 
@@ -40,7 +41,9 @@ Static validation covers:
 
 | Code | Severity | Meaning |
 | --- | --- | --- |
-| `COMPOSITION_INVALID` | error | Missing/invalid doctype, root, metadata, or document structure |
+| `COMPOSITION_INVALID` | error | Missing/invalid root, metadata, fragment structure, or reserved attributes |
+| `COMPOSITION_DOCUMENT_SHELL` | error | A full document shell (`<!doctype>`, `<html>`, `<head>`, or `<body>`) is present; compositions are fragments |
+| `IMPORT_MAP_INVALID` | error | Invalid import map placement, JSON, attributes, or reserved `frameyard` specifiers |
 | `COMPOSITION_FORMAT_UNRESOLVED` | error | The composition omits `width`/`height`/`fps` and the project has no `format`; this is a command error, not a document diagnostic |
 | `PROPS_INVALID` | error | Invalid default props JSON, invalid overrides, or `validateProps` failure |
 | `CONTROLLER_INVALID` | error | Missing/duplicate/both-inline-and-external controller, missing file, or invalid exports |

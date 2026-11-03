@@ -1,9 +1,11 @@
-import { parse, type DefaultTreeAdapterTypes } from "parse5";
+import { defaultTreeAdapter, html, parse, parseFragment, type DefaultTreeAdapterTypes } from "parse5";
 import type { SourceLocation } from "../composition/adapter.js";
 
 export type { SourceLocation } from "../composition/adapter.js";
 
 export type HtmlDocument = DefaultTreeAdapterTypes.Document;
+export type HtmlDocumentFragment = DefaultTreeAdapterTypes.DocumentFragment;
+export type HtmlRoot = HtmlDocument | HtmlDocumentFragment;
 export type HtmlElement = DefaultTreeAdapterTypes.Element;
 export type HtmlTemplate = DefaultTreeAdapterTypes.Template;
 export type HtmlNode = DefaultTreeAdapterTypes.Node;
@@ -13,6 +15,16 @@ export type HtmlDocumentType = DefaultTreeAdapterTypes.DocumentType;
 
 export function parseHtml(html: string): HtmlDocument {
   return parse(html, { sourceCodeLocationInfo: true });
+}
+
+/**
+ * Parses an authoring fragment in the browser's body context. Leading
+ * `<style>`, `<script>`, and `<link>` siblings stay in the fragment instead of
+ * being hoisted into an implicit `<head>`.
+ */
+export function parseHtmlFragment(source: string): HtmlDocumentFragment {
+  const context = defaultTreeAdapter.createElement("body", html.NS.HTML, []);
+  return parseFragment(context, source, { sourceCodeLocationInfo: true });
 }
 
 export function isElement(node: HtmlNode): node is HtmlElement {
@@ -75,9 +87,9 @@ export function walk(node: HtmlNode, visit: (node: HtmlNode) => void): void {
   }
 }
 
-export function findElements(document: HtmlDocument, predicate: (element: HtmlElement) => boolean): HtmlElement[] {
+export function findElements(root: HtmlRoot, predicate: (element: HtmlElement) => boolean): HtmlElement[] {
   const elements: HtmlElement[] = [];
-  walk(document, (node) => {
+  walk(root, (node) => {
     if (isElement(node) && predicate(node)) {
       elements.push(node);
     }
@@ -89,8 +101,8 @@ export function getDocumentDoctype(document: HtmlDocument): HtmlDocumentType | u
   return document.childNodes.find((node): node is HtmlDocumentType => node.nodeName === "#documentType");
 }
 
-export function getElementByTagName(document: HtmlDocument, tagName: string): HtmlElement | undefined {
-  return findElements(document, (element) => element.tagName === tagName)[0];
+export function getElementByTagName(root: HtmlRoot, tagName: string): HtmlElement | undefined {
+  return findElements(root, (element) => element.tagName === tagName)[0];
 }
 
 export function isDescendantOf(node: HtmlNode, ancestor: HtmlElement): boolean {

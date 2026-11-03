@@ -1,6 +1,6 @@
 # Deterministic HTML authoring
 
-Frameyard compositions are full HTML documents. The preview server injects the framework import map and composition host; do not add a bundling step. Optional controllers are native JavaScript modules that import bare `frameyard/runtime`.
+Frameyard compositions are partial HTML fragments. The preview server wraps them in the document shell and injects the framework import map and composition host; do not add a bundling step. Optional controllers are native JavaScript modules that import bare `frameyard/runtime`.
 
 ## Project configuration
 
@@ -14,42 +14,36 @@ export default {
 };
 ```
 
-There is no directory scanning. A new composition document is invisible until it is listed. Entries must be `.html` files; JavaScript composition modules are rejected.
+There is no directory scanning. A new composition fragment is invisible until it is listed. Entries must be `.html` files; JavaScript composition modules are rejected.
 
 ## Composition shape
 
 ```html
-<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8">
-    <script type="application/json" data-fy="props">
-    { "title": "Hello", "accent": "#b8f36b" }
-    </script>
-    <style>
-      @keyframes fade-up {
-        from { opacity: 0; transform: translateY(24px); }
-        to { opacity: 1; transform: translateY(0); }
-      }
-      #title { animation: fade-up 1s ease-out both; }
-    </style>
-  </head>
-  <body>
-    <fy-composition width="1920" height="1080" fps="30" duration-in-frames="900">
-      <h1 id="title"
-          data-fy-text="title"
-          data-fy-anim-start="0"
-          data-fy-anim-duration="30"></h1>
-      <div style="width: calc(var(--fy-progress) * 100%)"></div>
-    </fy-composition>
-  </body>
-</html>
+<script type="application/json" data-fy="props">
+{ "title": "Hello", "accent": "#b8f36b" }
+</script>
+<style>
+  @keyframes fade-up {
+    from { opacity: 0; transform: translateY(24px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  #title { animation: fade-up 1s ease-out both; }
+</style>
+<fy-composition width="1920" height="1080" fps="30" duration-in-frames="900">
+  <h1 id="title"
+      data-fy-text="title"
+      data-fy-anim-start="0"
+      data-fy-anim-duration="30"></h1>
+  <div style="width: calc(var(--fy-progress) * 100%)"></div>
+</fy-composition>
 ```
 
 - `duration-in-frames` is required on the root. `width`, `height`, and `fps` are optional: a missing value inherits the project `format`, and a declared value wins. Declare `width` and `height` together or not at all.
-- The `data-fy="props"` block is a JSON object. External props merge shallowly over it and are deep-frozen.
-- There is exactly one `<fy-composition>` root, inside `<body>`.
-- A doctype is required. Unsupported document features such as `<base>`, refresh/CSP meta tags, `<iframe>`, `<object>`, and `<embed>` are rejected.
+- The `data-fy="props"` block is a top-level JSON object. External props merge shallowly over it and are deep-frozen.
+- There is exactly one `<fy-composition>` root, and it must be a top-level element in the fragment.
+- Do not add `<!doctype>`, `<html>`, `<head>`, `<body>`, `<title>`, or `<meta>`; Frameyard owns the shell. Props, the controller, and import maps are top-level siblings of the root. Top-level `<style>` and `<link rel="stylesheet">` elements are hoisted into the generated head; styles inside the root stay in the body.
+- An optional top-level `<script type="importmap">` adds bare specifiers for controllers. `frameyard` and `frameyard/` specifiers are reserved.
+- The reserved `data-fy-host` attribute and `data-fy="format"` block are framework-only. Unsupported features such as `<base>`, refresh/CSP meta tags, `<iframe>`, `<object>`, and `<embed>` are rejected.
 
 ## Bindings
 
@@ -126,7 +120,7 @@ External for a reusable or complex controller:
 - A validation-only controller may export just `validateProps(props)`.
 - Inline source is served through a virtual module URL, so relative imports and `import.meta.url` work like an external module. A literal `</script>` inside inline source must be escaped.
 - The controller is the only executable code. Other executable `<script>` elements and `on*` handlers are rejected.
-- Controller `src` resolves relative to the composition document. Media and transcript `src` values resolve from the project root.
+- Controller `src` resolves relative to the composition URL. Media and transcript `src` values resolve from the project root.
 - Keep mutable state in module scope, never on `this`. Reset it in `dispose()`.
 
 ## Forbidden animation inputs
@@ -167,7 +161,7 @@ Do not preserve and accumulate WebGL drawing across frames unless that accumulat
 
 ## Embedded video and audio
 
-Declare local media in the composition document:
+Declare local media in the composition fragment:
 
 ```html
 <video
@@ -210,7 +204,7 @@ Declare canonical transcript requirements with:
 
 Remote data, images, fonts, and other assets must resolve during the loading phase before frame production. The production browser blocks network requests after loading begins. A fetch from `update()` is a bug.
 
-Images declared in the document are awaited by the host. Static fonts should be loaded with `document.fonts.ready` or an explicit `FontFace` before frame production.
+Images declared in the fragment are awaited by the host. Static fonts should be loaded with `document.fonts.ready` or an explicit `FontFace` before frame production.
 
 ## Validation and inspection
 

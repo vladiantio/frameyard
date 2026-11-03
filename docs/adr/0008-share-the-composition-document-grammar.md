@@ -1,6 +1,6 @@
 # Share the composition document grammar
 
-**Status:** Accepted
+**Status:** Accepted. Amended by [ADR-0016](./0016-author-compositions-as-html-fragments.md): the shared reader takes a document or fragment root scope.
 **Date:** 2026-10-30
 
 Static composition validation and the composition host will read the HTML composition grammar through one browser-safe module with two adapters: parse5 for Node-side validation and the DOM for the host. The reader returns a composition descriptor of fixed facts (metadata, default props, and the controller declaration) and per-kind declarations (animation, media, and transcripts) at the host's existing lifecycle points; it stays pure, leaving path resolution, filesystem checks, and transcript parsing to the validator. Controller `src` remains project-relative in public results, with the authoring value retained as `rawSrc` for the host's module import. This keeps static validation and frame production from drifting while preserving ADR-0007's split between Node-side validation and browser frame production.

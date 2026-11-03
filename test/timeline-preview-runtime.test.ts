@@ -17,13 +17,7 @@ let root: string;
 let server: PreviewServer;
 let browser: Browser;
 
-const composition = `<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8">
-    <style>html, body { margin: 0; width: 100%; height: 100%; background: #123; }</style>
-  </head>
-  <body>
+const composition = `<style>html, body { margin: 0; width: 100%; height: 100%; background: #123; }</style>
     <fy-composition width="320" height="180" fps="10" duration-in-frames="10">
       <div id="box" data-frame="-1" style="width: 40px; height: 40px; background: #b8f36b"></div>
     </fy-composition>
@@ -34,8 +28,6 @@ export default {
   update({ frame }) { box.dataset.frame = String(frame); },
 };
     </script>
-  </body>
-</html>
 `;
 
 beforeAll(async () => {

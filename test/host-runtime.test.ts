@@ -17,19 +17,13 @@ let root: string;
 let server: PreviewServer;
 let browser: Browser;
 
-const helloHtml = `<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8">
-    <script type="application/json" data-fy="props">
+const helloHtml = `<script type="application/json" data-fy="props">
     { "title": "Hello", "accent": "#b8f36b", "show": true, "items": [{ "label": "A" }, { "label": "B" }] }
     </script>
     <style>
       @keyframes slide { from { transform: translateX(0px); } to { transform: translateX(100px); } }
       #box { width: 40px; height: 40px; background: var(--fy-prop-accent); animation: slide 2s linear infinite; }
     </style>
-  </head>
-  <body>
     <fy-composition width="200" height="100" fps="10" duration-in-frames="20">
       <div id="box" data-fy-anim-start="0" data-fy-anim-duration="20"></div>
       <h1 id="title" data-fy-text="title"></h1>
@@ -43,20 +37,12 @@ const helloHtml = `<!doctype html>
       <audio src="assets/tone.wav" data-fy-start="2" data-fy-trim="0.1" data-fy-volume="0.5"></audio>
       <fy-transcript src="assets/voice.json" words></fy-transcript>
     </fy-composition>
-  </body>
-</html>
 `;
 
-const controllerHtml = `<!doctype html>
-<html>
-  <head><meta charset="utf-8"></head>
-  <body>
-    <fy-composition width="200" height="100" fps="10" duration-in-frames="20">
+const controllerHtml = `<fy-composition width="200" height="100" fps="10" duration-in-frames="20">
       <div id="box"></div>
     </fy-composition>
     <script type="text/fy-controller" src="./controller.js"></script>
-  </body>
-</html>
 `;
 
 const controllerJs = `import { random } from "frameyard/runtime";
@@ -83,11 +69,7 @@ export default {
 };
 `;
 
-const inlineHtml = `<!doctype html>
-<html>
-  <head><meta charset="utf-8"></head>
-  <body>
-    <fy-composition width="200" height="100" fps="10" duration-in-frames="20">
+const inlineHtml = `<fy-composition width="200" height="100" fps="10" duration-in-frames="20">
       <div id="box"></div>
     </fy-composition>
     <script type="text/fy-controller">
@@ -100,15 +82,9 @@ export default {
   },
 };
     </script>
-  </body>
-</html>
 `;
 
-const diagnosticsHtml = `<!doctype html>
-<html>
-  <head><meta charset="utf-8"></head>
-  <body>
-    <fy-composition width="200" height="100" fps="10" duration-in-frames="20">
+const diagnosticsHtml = `<fy-composition width="200" height="100" fps="10" duration-in-frames="20">
       <div id="box" data-fy-anim-start="0"></div>
     </fy-composition>
     <script type="text/fy-controller">
@@ -119,32 +95,32 @@ export default {
   },
 };
     </script>
-  </body>
-</html>
 `;
 
-const mediaHtml = `<!doctype html>
-<html>
-  <head><meta charset="utf-8"></head>
-  <body>
-    <fy-composition width="160" height="90" fps="10" duration-in-frames="12">
+const mediaHtml = `<fy-composition width="160" height="90" fps="10" duration-in-frames="12">
       <video id="clip" src="assets/clip.webm" data-fy-start="1" data-fy-trim="0.2" data-fy-duration="0.5" data-fy-volume="0.6"></video>
     </fy-composition>
-  </body>
-</html>
 `;
 
-const boundHtml = `<!doctype html>
-<html>
-  <head><meta charset="utf-8"></head>
-  <body>
-    <fy-composition width="160" height="90" fps="10" duration-in-frames="12">
+const boundHtml = `<fy-composition width="160" height="90" fps="10" duration-in-frames="12">
       <audio data-fy-attr-src="voice"></audio>
       <fy-transcript data-fy-attr-src="transcript"></fy-transcript>
     </fy-composition>
-  </body>
-</html>
 `;
+
+const importMapHtml = `<script type="importmap">{"imports":{"demo-lib":"./demo-lib.js"}}</script>
+<fy-composition width="200" height="100" fps="10" duration-in-frames="2"></fy-composition>
+<script type="text/fy-controller">
+import { label } from "demo-lib";
+export default {
+  update({ root }) {
+    root.dataset.label = label;
+  },
+};
+</script>
+`;
+
+const demoLibJs = `export const label = "mapped";\n`;
 
 beforeAll(async () => {
   root = await mkdtemp(path.join(tmpdir(), "frameyard-host-"));
@@ -159,6 +135,7 @@ beforeAll(async () => {
       diagnostics: "./compositions/diagnostics.html",
       media: "./compositions/media.html",
       bound: "./compositions/bound.html",
+      "import-map": "./compositions/import-map.html",
     } };\n`,
   );
   await writeFile(path.join(root, "compositions", "hello.html"), helloHtml);
@@ -168,17 +145,12 @@ beforeAll(async () => {
   await writeFile(path.join(root, "compositions", "diagnostics.html"), diagnosticsHtml);
   await writeFile(path.join(root, "compositions", "media.html"), mediaHtml);
   await writeFile(path.join(root, "compositions", "bound.html"), boundHtml);
+  await writeFile(path.join(root, "compositions", "import-map.html"), importMapHtml);
+  await writeFile(path.join(root, "compositions", "demo-lib.js"), demoLibJs);
   await writeFile(
     path.join(root, "broken.html"),
-    `<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8">
-    <script type="module" src="/__frameyard/framework/runtime/host.js"></script>
-  </head>
-  <body><p>No composition root.</p></body>
-</html>
-`,
+    `<script type="module" src="/__frameyard/framework/runtime/host.js"></script>
+  <p>No composition root.</p>`,
   );
   await writeFile(path.join(root, "assets", "tone.wav"), "");
   await writeFile(
@@ -450,6 +422,17 @@ describe("browser composition host", () => {
       (api.seek as (frame: number) => void)(3);
     });
     expect(await page.evaluate(() => (document.querySelector("#box") as HTMLElement).dataset.frame)).toBe("3");
+    await page.close();
+  });
+
+  it("resolves author import maps before importing the controller", async () => {
+    const page = await openHost("import-map.html");
+    await host(page, async (api) => {
+      await (api.load as (options?: { props?: unknown }) => Promise<void>)();
+    });
+
+    const label = await page.evaluate(() => (document.querySelector("fy-composition") as HTMLElement).dataset.label);
+    expect(label).toBe("mapped");
     await page.close();
   });
 

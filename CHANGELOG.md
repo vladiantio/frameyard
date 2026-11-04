@@ -55,6 +55,12 @@ contract change may ship in a minor release and is called out explicitly below.
 
 ### Added
 
+- Visual timeline clips accept a static `blend` mode with the 12 separable CSS
+  modes (`normal` through `exclusion`); `hue`, `saturation`, `color`, and
+  `luminosity` are rejected because they need cross-channel math. Preview
+  applies `mix-blend-mode` and stacks layers by track; production uses an
+  alpha-aware FFmpeg composite. Nested timelines blend as flattened groups.
+  See ADR 0014 and `examples/blend/`.
 - `examples/static/` demonstrates a timeless composition rendered to PNG and
   reused as a timeline image.
 - `examples/blend/compositions/backdrop.html` demonstrates an inherited

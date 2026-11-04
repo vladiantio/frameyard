@@ -1,0 +1,84 @@
+<style>
+  html,
+  body {
+    margin: 0;
+    width: 100%;
+    height: 100%;
+    background: #05070d;
+  }
+  fy-composition {
+    display: block;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+  }
+  .scene {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background:
+      radial-gradient(980px 680px at 76% 22%, rgba(43, 104, 210, 0.42), transparent 63%),
+      radial-gradient(760px 520px at 12% 88%, rgba(255, 158, 74, 0.13), transparent 66%),
+      linear-gradient(148deg, #07101d 0%, #0a1628 50%, #05070d 100%);
+  }
+  .grid {
+    position: absolute;
+    inset: -1px;
+    background-image:
+      linear-gradient(rgba(154, 192, 255, 0.07) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(154, 192, 255, 0.07) 1px, transparent 1px);
+    background-size: 64px 64px;
+    -webkit-mask-image: radial-gradient(ellipse at 50% 44%, #000 20%, transparent 78%);
+    mask-image: radial-gradient(ellipse at 50% 44%, #000 20%, transparent 78%);
+  }
+  .ring {
+    position: absolute;
+    right: -140px;
+    top: 50%;
+    width: 720px;
+    height: 720px;
+    border: 1px solid rgba(160, 205, 255, 0.12);
+    border-radius: 50%;
+    transform: translateY(-50%);
+  }
+  .ring::before,
+  .ring::after {
+    content: "";
+    position: absolute;
+    border: 1px solid rgba(255, 179, 71, 0.09);
+    border-radius: 50%;
+  }
+  .ring::before {
+    inset: 110px;
+  }
+  .ring::after {
+    inset: 230px;
+    border-color: rgba(127, 214, 255, 0.08);
+  }
+  .beam {
+    position: absolute;
+    left: 58%;
+    top: -20%;
+    width: 1px;
+    height: 140%;
+    background: linear-gradient(180deg, transparent, rgba(127, 214, 255, 0.16), transparent);
+    transform: rotate(18deg);
+  }
+  .vignette {
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(ellipse at 52% 44%, transparent 30%, rgba(5, 7, 13, 0.4) 72%, rgba(5, 7, 13, 0.85) 100%),
+      linear-gradient(90deg, rgba(5, 7, 13, 0.35), transparent 28%, transparent 72%, rgba(5, 7, 13, 0.4));
+    pointer-events: none;
+  }
+</style>
+<fy-composition>
+  <div class="scene">
+    <div class="grid"></div>
+    <div class="ring"></div>
+    <div class="beam"></div>
+    <div class="vignette"></div>
+  </div>
+</fy-composition>

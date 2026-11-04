@@ -1,0 +1,52 @@
+{
+  "version": 1,
+  "name": "Nested timelines: A full, B full, A as a group",
+  "durationInFrames": 360,
+  "background": "#05070d",
+  "tracks": [
+    { "id": "v1", "kind": "video", "name": "Chapter A · full frame" },
+    { "id": "v2", "kind": "video", "name": "Chapter B · full frame" },
+    { "id": "v3", "kind": "video", "name": "Chapter A · group transform" },
+    { "id": "v4", "kind": "video", "name": "Overlay" }
+  ],
+  "clips": [
+    {
+      "id": "chapter-a-full",
+      "track": "v1",
+      "source": { "kind": "timeline", "id": "chapter-a" },
+      "start": 0,
+      "duration": 120
+    },
+    {
+      "id": "chapter-b-full",
+      "track": "v2",
+      "source": { "kind": "timeline", "id": "chapter-b" },
+      "start": 120,
+      "duration": 120
+    },
+    {
+      "id": "chapter-a-group",
+      "track": "v3",
+      "source": { "kind": "timeline", "id": "chapter-a" },
+      "start": 240,
+      "duration": 120,
+      "transform": {
+        "fit": "cover",
+        "width": 480,
+        "height": 270,
+        "x": 360,
+        "y": 180,
+        "rotation": 0,
+        "opacity": 1
+      },
+      "audio": { "muted": true }
+    },
+    {
+      "id": "overlay",
+      "track": "v4",
+      "source": { "kind": "composition", "id": "overlay" },
+      "start": 0,
+      "duration": 360
+    }
+  ]
+}

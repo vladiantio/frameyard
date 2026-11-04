@@ -8,6 +8,14 @@ Frameyard uses `0.x` versions until the composition, configuration, CLI,
 JSON-result, transcript, and skill contracts stabilize. Before `1.0.0`, a
 contract change may ship in a minor release and is called out explicitly below.
 
+## [Unreleased]
+
+### Added
+
+- `examples/nested/` places two inner timelines in an outer timeline as
+  full-frame and transformed group clips, with nested audio and a static
+  inherited-format backdrop.
+
 ## [0.8.0] - 2026-11-03
 
 ### Changed
@@ -376,3 +384,4 @@ contract change may ship in a minor release and is called out explicitly below.
   test suite, design baseline, and architecture decision records.
 
 [0.1.0]: https://github.com/vladiantio/frameyard/releases/tag/v0.1.0
+[Unreleased]: https://github.com/vladiantio/frameyard/compare/v0.8.0...HEAD

@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "name": "Chapter B: the same structure, different props",
+  "tracks": [
+    { "id": "v1", "kind": "video", "name": "Backdrop" },
+    { "id": "v2", "kind": "video", "name": "Card" },
+    { "id": "a1", "kind": "audio", "name": "Pulse" }
+  ],
+  "clips": [
+    {
+      "id": "backdrop",
+      "track": "v1",
+      "source": { "kind": "composition", "id": "backdrop" },
+      "start": 0,
+      "duration": 120
+    },
+    {
+      "id": "card",
+      "track": "v2",
+      "source": { "kind": "composition", "id": "card" },
+      "start": 0,
+      "duration": 120,
+      "props": {
+        "chapter": "02",
+        "kicker": "Chapter two · inner timeline",
+        "title": "Nested, then reused.",
+        "note": "The same chapter plays again as a 480×270 group, and every layer moves together.",
+        "accent": "#7fd6ff"
+      }
+    },
+    {
+      "id": "pulse",
+      "track": "a1",
+      "source": { "kind": "audio", "src": "assets/pulse.wav" },
+      "start": 24,
+      "audio": { "gain": 0.45 }
+    }
+  ]
+}

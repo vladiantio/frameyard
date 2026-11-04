@@ -1,0 +1,275 @@
+<script type="application/json" data-fy="props">
+  {
+    "chapter": "01",
+    "kicker": "Chapter one · inner timeline",
+    "title": "A sequence, not a clip.",
+    "note": "This chapter is a timeline: a static backdrop, this animated card, and a local pulse.",
+    "accent": "#ffb347"
+  }
+</script>
+<style>
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY(30px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  @keyframes slide {
+    from {
+      opacity: 0;
+      transform: translateX(28px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+  @keyframes dial {
+    from {
+      transform: rotate(-46deg);
+    }
+    to {
+      transform: rotate(314deg);
+    }
+  }
+  @keyframes glow {
+    0%,
+    100% {
+      opacity: 0.4;
+      transform: scale(0.94);
+    }
+    50% {
+      opacity: 0.78;
+      transform: scale(1.06);
+    }
+  }
+  html,
+  body,
+  fy-composition {
+    margin: 0;
+    width: 100%;
+    height: 100%;
+    background: transparent;
+  }
+  fy-composition {
+    display: block;
+    overflow: hidden;
+  }
+  .scene {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    color: #eef4ff;
+    font-family: Inter, "Helvetica Neue", ui-sans-serif, system-ui, sans-serif;
+  }
+  .glow {
+    position: absolute;
+    right: 150px;
+    top: 210px;
+    width: 440px;
+    height: 440px;
+    border-radius: 50%;
+    background: radial-gradient(circle, var(--fy-prop-accent), transparent 68%);
+    filter: blur(90px);
+    opacity: 0.2;
+    animation: glow 1s ease-in-out both;
+  }
+  .panel {
+    position: absolute;
+    left: 84px;
+    top: 148px;
+    width: 760px;
+    box-sizing: border-box;
+    padding: 38px 44px 32px;
+    border: 1px solid rgba(168, 204, 255, 0.22);
+    border-radius: 26px;
+    background: linear-gradient(135deg, rgba(6, 12, 24, 0.9), rgba(7, 14, 27, 0.58));
+    box-shadow: 0 42px 130px rgba(0, 0, 0, 0.45);
+    animation: rise 1s cubic-bezier(0.215, 0.61, 0.355, 1) both;
+  }
+  .panel::before {
+    content: "";
+    position: absolute;
+    inset: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 18px;
+    pointer-events: none;
+  }
+  .eyebrow {
+    color: var(--fy-prop-accent);
+    font-family: ui-monospace, "SFMono-Regular", "Cascadia Code", monospace;
+    font-size: 13px;
+    font-weight: 650;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+  }
+  .title {
+    margin: 18px 0 0;
+    max-width: 660px;
+    font-size: 88px;
+    font-weight: 660;
+    letter-spacing: -0.055em;
+    line-height: 0.96;
+  }
+  .note {
+    margin: 22px 0 0;
+    max-width: 604px;
+    color: #a9b8d0;
+    font-size: 22px;
+    font-weight: 420;
+    line-height: 1.5;
+  }
+  .panel-foot {
+    display: flex;
+    justify-content: space-between;
+    gap: 18px;
+    margin-top: 30px;
+    color: #73839a;
+    font-family: ui-monospace, "SFMono-Regular", "Cascadia Code", monospace;
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+  .progress {
+    height: 3px;
+    margin-top: 16px;
+    overflow: hidden;
+    border-radius: 99px;
+    background: rgba(220, 235, 255, 0.14);
+  }
+  .progress .fill {
+    width: calc(var(--fy-progress) * 100%);
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, var(--fy-prop-accent), #eef4ff);
+    box-shadow: 0 0 16px var(--fy-prop-accent);
+  }
+  .index {
+    position: absolute;
+    right: 74px;
+    top: 126px;
+    width: 300px;
+    text-align: right;
+    animation: slide 1s cubic-bezier(0.215, 0.61, 0.355, 1) both;
+  }
+  .number {
+    color: var(--fy-prop-accent);
+    font-size: 230px;
+    font-weight: 680;
+    letter-spacing: -0.08em;
+    line-height: 0.8;
+    opacity: 0.18;
+  }
+  .index-label {
+    margin-top: 14px;
+    color: #8a9ab2;
+    font-family: ui-monospace, "SFMono-Regular", "Cascadia Code", monospace;
+    font-size: 12px;
+    letter-spacing: 0.26em;
+    text-transform: uppercase;
+  }
+  .dial {
+    position: absolute;
+    right: 154px;
+    top: 382px;
+    width: 190px;
+    height: 190px;
+    border: 1px solid rgba(168, 204, 255, 0.24);
+    border-radius: 50%;
+    background: rgba(6, 12, 24, 0.4);
+    animation: rise 1s cubic-bezier(0.215, 0.61, 0.355, 1) both;
+  }
+  .dial::before {
+    content: "";
+    position: absolute;
+    inset: 22px;
+    border: 1px dashed rgba(168, 204, 255, 0.2);
+    border-radius: 50%;
+  }
+  .dial-hand {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 82px;
+    height: 2px;
+    border-radius: 99px;
+    background: var(--fy-prop-accent);
+    box-shadow: 0 0 18px var(--fy-prop-accent);
+    transform-origin: 0 50%;
+    animation: dial 1s linear both;
+  }
+  .dial-core {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    text-align: center;
+  }
+  .dial-kicker {
+    color: var(--fy-prop-accent);
+    font-family: ui-monospace, "SFMono-Regular", "Cascadia Code", monospace;
+    font-size: 10px;
+    font-weight: 650;
+    letter-spacing: 0.24em;
+  }
+  .dial-copy {
+    color: #95a5bd;
+    font-size: 13px;
+    letter-spacing: 0.02em;
+  }
+  .corner-label {
+    position: absolute;
+    left: 84px;
+    bottom: 60px;
+    color: #73839a;
+    font-family: ui-monospace, "SFMono-Regular", "Cascadia Code", monospace;
+    font-size: 12px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+  }
+  .corner-label b {
+    color: var(--fy-prop-accent);
+    font-weight: 600;
+  }
+</style>
+<fy-composition width="1280" height="720" fps="30" duration-in-frames="120">
+  <div class="scene">
+    <div class="glow" data-fy-anim-start="0" data-fy-anim-duration="120"></div>
+    <div
+      class="panel"
+      data-fy-anim-start="0"
+      data-fy-anim-duration="18"
+      data-fy-anim-easing="cubic-bezier(0.215, 0.61, 0.355, 1)"
+    >
+      <div class="eyebrow" data-fy-text="kicker"></div>
+      <h1 class="title" data-fy-text="title"></h1>
+      <p class="note" data-fy-text="note"></p>
+      <div class="panel-foot">
+        <span>Inner timeline</span>
+        <span>120 frames · 4.00 s</span>
+        <span>Local clock</span>
+      </div>
+      <div class="progress"><div class="fill"></div></div>
+    </div>
+    <div class="index" data-fy-anim-start="6" data-fy-anim-duration="24">
+      <div class="number" data-fy-text="chapter"></div>
+      <div class="index-label">Chapter</div>
+    </div>
+    <div class="dial" data-fy-anim-start="8" data-fy-anim-duration="28">
+      <div class="dial-hand" data-fy-anim-start="18" data-fy-anim-duration="102"></div>
+      <div class="dial-core">
+        <span class="dial-kicker">Nested</span>
+        <span class="dial-copy">one level deeper</span>
+      </div>
+    </div>
+    <div class="corner-label">A <b>timeline</b> inside a timeline</div>
+  </div>
+</fy-composition>

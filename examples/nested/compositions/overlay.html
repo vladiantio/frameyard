@@ -1,0 +1,307 @@
+<script type="application/json" data-fy="props">
+  {
+    "kicker": "Frameyard / Nested timelines",
+    "meta": "Reel 02 · 12.0 s · 30 fps",
+    "pipLabel": "01 · same nested timeline · 480×270 group",
+    "pipNote": "sourceIn 0 · 120 frames · audio muted",
+    "accent": "#ffb347"
+  }
+</script>
+<style>
+  @keyframes pip-in {
+    from {
+      opacity: 0;
+      transform: translateY(14px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  html,
+  body,
+  fy-composition {
+    margin: 0;
+    width: 100%;
+    height: 100%;
+    background: transparent;
+  }
+  fy-composition {
+    display: block;
+    overflow: hidden;
+  }
+  .scene {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    color: #eef4ff;
+    font-family: Inter, "Helvetica Neue", ui-sans-serif, system-ui, sans-serif;
+  }
+  .kicker {
+    position: absolute;
+    left: 64px;
+    top: 50px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    color: #7fd6ff;
+    font-family: ui-monospace, "SFMono-Regular", "Cascadia Code", monospace;
+    font-size: 13px;
+    font-weight: 650;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+  }
+  .kicker::before {
+    content: "";
+    width: 8px;
+    height: 8px;
+    background: var(--fy-prop-accent);
+    box-shadow: 0 0 16px var(--fy-prop-accent);
+  }
+  .segments {
+    position: absolute;
+    right: 64px;
+    top: 44px;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    font-family: ui-monospace, "SFMono-Regular", "Cascadia Code", monospace;
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+  .segment {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #8696ae;
+  }
+  .segment::before {
+    content: "";
+    width: 18px;
+    height: 2px;
+    background: currentColor;
+    opacity: 0.55;
+  }
+  .segment b {
+    color: #eef4ff;
+    font-weight: 600;
+  }
+  .segment.a {
+    color: var(--fy-prop-accent);
+  }
+  .segment.b {
+    color: #7fd6ff;
+  }
+  .rule {
+    position: absolute;
+    left: 64px;
+    right: 64px;
+    top: 92px;
+    height: 1px;
+    background: linear-gradient(
+      90deg,
+      rgba(168, 204, 255, 0.32),
+      rgba(168, 204, 255, 0.12) 48%,
+      rgba(168, 204, 255, 0.28)
+    );
+  }
+  .pip-chrome {
+    position: absolute;
+    inset: 0;
+    animation: pip-in 1s cubic-bezier(0.215, 0.61, 0.355, 1) both;
+  }
+  .pip-label {
+    position: absolute;
+    left: 760px;
+    top: 348px;
+    padding: 8px 12px 9px;
+    border-left: 2px solid var(--fy-prop-accent);
+    background: rgba(5, 7, 13, 0.72);
+    color: #ffd9a3;
+    font-family: ui-monospace, "SFMono-Regular", "Cascadia Code", monospace;
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+  .pip-label small {
+    display: block;
+    margin-top: 6px;
+    color: #7f90a8;
+    font-size: 10px;
+    letter-spacing: 0.12em;
+  }
+  .pip-box {
+    position: absolute;
+    left: 760px;
+    top: 405px;
+    width: 480px;
+    height: 270px;
+    box-sizing: border-box;
+    border: 1px solid rgba(238, 244, 255, 0.42);
+    box-shadow:
+      0 30px 90px rgba(0, 0, 0, 0.42),
+      0 0 0 6px rgba(5, 7, 13, 0.18);
+    pointer-events: none;
+  }
+  .pip-box::before,
+  .pip-box::after {
+    content: "";
+    position: absolute;
+    width: 26px;
+    height: 26px;
+    border: 2px solid var(--fy-prop-accent);
+  }
+  .pip-box::before {
+    left: -2px;
+    top: -2px;
+    border-right: 0;
+    border-bottom: 0;
+  }
+  .pip-box::after {
+    right: -2px;
+    bottom: -2px;
+    border-left: 0;
+    border-top: 0;
+  }
+  .foot {
+    position: absolute;
+    left: 64px;
+    bottom: 38px;
+    color: #73839a;
+    font-family: ui-monospace, "SFMono-Regular", "Cascadia Code", monospace;
+    font-size: 12px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+  .outro {
+    position: absolute;
+    left: 64px;
+    top: 196px;
+    width: 580px;
+    animation: pip-in 1s cubic-bezier(0.215, 0.61, 0.355, 1) both;
+  }
+  .outro-kicker {
+    color: var(--fy-prop-accent);
+    font-family: ui-monospace, "SFMono-Regular", "Cascadia Code", monospace;
+    font-size: 12px;
+    font-weight: 650;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+  }
+  .outro h2 {
+    margin: 16px 0 0;
+    color: #eef4ff;
+    font-size: 58px;
+    font-weight: 660;
+    letter-spacing: -0.045em;
+    line-height: 0.97;
+  }
+  .outro p {
+    width: 540px;
+    margin: 20px 0 0;
+    color: #a9b8d0;
+    font-size: 20px;
+    font-weight: 420;
+    line-height: 1.5;
+  }
+  .outro-stats {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    width: 540px;
+    margin-top: 26px;
+    color: #73839a;
+    font-family: ui-monospace, "SFMono-Regular", "Cascadia Code", monospace;
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+  .outro-stats div {
+    display: flex;
+    justify-content: space-between;
+    gap: 18px;
+    padding: 8px 0;
+    border-top: 1px solid rgba(168, 204, 255, 0.14);
+  }
+  .outro-stats b {
+    color: #eef4ff;
+    font-weight: 600;
+  }
+  .foot b {
+    color: #eef4ff;
+    font-weight: 600;
+  }
+  .clock {
+    position: absolute;
+    right: 64px;
+    top: 68px;
+    color: #7f90a8;
+    font-family: ui-monospace, "SFMono-Regular", "Cascadia Code", monospace;
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+  .clock b {
+    color: var(--fy-prop-accent);
+    font-weight: 600;
+  }
+  .frame-counter::after {
+    counter-reset: fy-frame var(--fy-frame);
+    content: counter(fy-frame);
+  }
+  .progress {
+    position: absolute;
+    left: 64px;
+    right: 64px;
+    bottom: 20px;
+    height: 2px;
+    overflow: hidden;
+    background: rgba(220, 235, 255, 0.12);
+  }
+  .progress .fill {
+    width: calc(var(--fy-progress) * 100%);
+    height: 100%;
+    background: linear-gradient(90deg, var(--fy-prop-accent), #7fd6ff);
+    box-shadow: 0 0 14px var(--fy-prop-accent);
+  }
+</style>
+<fy-composition width="1280" height="720" fps="30" duration-in-frames="360">
+  <div class="scene">
+    <div class="kicker" data-fy-text="kicker"></div>
+    <div class="segments">
+      <span class="segment a"><b>01</b> full</span>
+      <span class="segment b"><b>02</b> full</span>
+      <span class="segment a"><b>01</b> group</span>
+    </div>
+    <div class="rule"></div>
+
+    <div class="pip-chrome" data-fy-anim-start="240" data-fy-anim-duration="24">
+      <div class="pip-label">
+        <span data-fy-text="pipLabel"></span>
+        <small data-fy-text="pipNote"></small>
+      </div>
+      <div class="pip-box"></div>
+    </div>
+
+    <div class="outro" data-fy-anim-start="246" data-fy-anim-duration="24">
+      <div class="outro-kicker">Chapter A · third placement</div>
+      <h2>One timeline,<br />inside another.</h2>
+      <p>
+        The two inner chapters play full frame first. Here chapter A returns as a 480×270 group on track v3, with its
+        pulse muted.
+      </p>
+      <div class="outro-stats">
+        <div><span>Group transform</span><b>480×270</b></div>
+        <div><span>Source range</span><b>0–119</b></div>
+        <div><span>Nested audio</span><b>Muted</b></div>
+      </div>
+    </div>
+
+    <div class="foot">One outer timeline · <b>two inner timelines</b> · three placements</div>
+    <div class="clock">Project frame <b class="frame-counter"></b> / 359</div>
+    <div class="progress"><div class="fill"></div></div>
+  </div>
+</fy-composition>

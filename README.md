@@ -44,7 +44,7 @@ npx frameyard still main --frame 0,118-126 --out out/stills
 
 The scaffold wraps its composition in `timelines/main.timeline.json`. `render` writes the video to `out/main.mp4` in the project by default; pass `--out <file.mp4>` to choose another path. The composition remains renderable on its own with `npx frameyard render hello --props props/hello.json`. The scaffold's `.gitignore` ignores `out/`.
 
-The 30-second reference composition lives in [`examples/demo`](./examples/demo), a focused WebGL shader example lives in [`examples/webgl`](./examples/webgl), the video example in [`examples/video`](./examples/video) includes two embedded-video compositions plus WebM and MP4 timelines that place the clips on tracks under a transparent HTML overlay, [`examples/blend`](./examples/blend) demonstrates static CSS blend modes on composition and video clips, and [`examples/static`](./examples/static) shows a timeless composition rendered as a PNG and reused as a timeline image. Each README has the commands for running it from a repository checkout.
+The 30-second reference composition lives in [`examples/demo`](./examples/demo), a focused WebGL shader example lives in [`examples/webgl`](./examples/webgl), the video example in [`examples/video`](./examples/video) includes two embedded-video compositions plus WebM and MP4 timelines that place the clips on tracks under a transparent HTML overlay, [`examples/blend`](./examples/blend) demonstrates static CSS blend modes on composition and video clips, [`examples/nested`](./examples/nested) repeats two inner timelines inside an outer timeline as full-frame and transformed group clips, and [`examples/static`](./examples/static) shows a timeless composition rendered as a PNG and reused as a timeline image. Each README has the commands for running it from a repository checkout.
 
 ## Project format
 
@@ -141,7 +141,7 @@ A timeline is a JSON document that places composition and media clips on video a
 - Visual clips support static `fit`, `width`/`height` (an explicit box), `x`, `y`, `scale`, `rotation`, `opacity`, and `blend`. `fit` applies inside the box; `width` and `height` go together and are mutually exclusive with `scale`. `blend` is a CSS `mix-blend-mode` value with source-alpha semantics, from `normal` (the default) through `multiply`, `screen`, `overlay`, the light/dodge/burn family, `difference`, and `exclusion`; `hue`, `saturation`, `color`, and `luminosity` are rejected. No keyframes, transitions, or other effects.
 - Video, composition, and nested-timeline clips contribute audio automatically unless muted. Timeline audio clips live on audio tracks.
 - A composition that declares an `fps` must match the project fps; an undeclared `fps` inherits it. Different sizes are fitted by the clip. Clips on one track cannot overlap.
-- Nested timelines are rendered as groups, so the parent clip's opacity, transform, and blend mode apply to the whole nested result. A blend inside a nested timeline sees only that timeline's own backdrop; a transparent nested timeline does not see the parent's layers.
+- Nested timelines are rendered as groups, so the parent clip's opacity, transform, and blend mode apply to the whole nested result. A blend inside a nested timeline sees only that timeline's own backdrop; a transparent nested timeline does not see the parent's layers. See [`examples/nested`](./examples/nested).
 
 ### Bindings
 
@@ -442,6 +442,7 @@ See the [design baseline](./docs/v0.1-design.md) for the full product contract, 
 - `examples/webgl/`: the focused WebGL shader example
 - `examples/video/`: embedded-video compositions and WebM/MP4 timelines with video clips under a transparent HTML overlay
 - `examples/blend/`: composition and video clips composited with static CSS blend modes
+- `examples/nested/`: two inner timelines placed in an outer timeline as full-frame and transformed group clips
 - `examples/static/`: a timeless composition rendered as a PNG and reused as a timeline image
 - `bench/fixtures/`: controlled HTML compositions for the render benchmark
 - `scripts/`: benchmark, release checks, versioning, and git-hook installation

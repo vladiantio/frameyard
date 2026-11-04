@@ -35,13 +35,15 @@ pnpm test test/contracts.test.ts       # one test file, builds first
 pnpm bench                             # seek/capture/encode/full-render timings
 pnpm bench:static                      # animated composition vs the same visual as a static PNG
 pnpm compare-stills a.png b.png        # exact decoded-pixel diff; exits nonzero on any difference
+pnpm check:changelog                   # commits since the last tag touch CHANGELOG.md or declare Changelog: skip
+pnpm verify-package                    # packed tarball contains every required path and bin target
 ```
 
-`pnpm install` installs the local git hooks: pre-commit runs `pnpm check:static` and the unit tests; pre-push runs the full suite. `pnpm check` remains the single entry point CI and the release workflow share; `pnpm check:preview` is a local subset for preview-only UI work, not a CI replacement. Add new checks to `package.json`, not to the workflow files. Lint and formatting use `oxlint` and `oxfmt`; configuration lives in `.oxlintrc.json` and `.oxfmtrc.json`.
+`pnpm install` installs the local git hooks: pre-commit runs `pnpm check:static` and the unit tests; pre-push runs the full suite unless the exact tree already passed `pnpm check` (the stamp lives in `.git`). A commit-msg hook warns when a user-facing commit does not stage `CHANGELOG.md`. `pnpm check` remains the single entry point CI and the release workflow share; `pnpm check:preview` is a local subset for preview-only UI work, not a CI replacement. Add new checks to `package.json`, not to the workflow files. Lint and formatting use `oxlint` and `oxfmt`; configuration lives in `.oxlintrc.json` and `.oxfmtrc.json`.
 
 Browser and CLI tests spawn `dist/cli.js`, so run one file with `pnpm test <file>`; a bare `pnpm vitest run <file>` skips the build and tests the previous binary. After edits limited to docs, the skill, or scaffold prose, `pnpm check:static` plus `pnpm vitest run test/docs.test.ts test/skill.test.ts test/scaffold.test.ts` covers the change; reserve the full `pnpm check` for the final state.
 
-Releases are tag-driven. Read `RELEASING.md` before publishing. `pnpm set-version <version>` updates the package, runtime, and skill versions together; `pnpm set-version --check` verifies they agree; `pnpm retag-release <version>` recovers an unpublished tag after a failed release.
+Releases are tag-driven. Read `RELEASING.md` before publishing. Feature and fix commits add a `CHANGELOG.md` entry under `## [Unreleased]` or declare `Changelog: skip`; `pnpm check:changelog` and `pnpm verify-release` enforce coverage, and `[Unreleased]` must be empty at tag time. `pnpm set-version <version>` updates the package, runtime, and skill versions together; `pnpm set-version --check` verifies they agree; `pnpm verify-package` checks the packed tarball; `pnpm retag-release <version>` recovers an unpublished tag after a failed release.
 
 Reference project:
 
@@ -227,8 +229,8 @@ Timeline path: `src/timeline/resolve.ts` resolves the JSON and references; `src/
 - **Agent skill contract** → `skills/frameyard/`, `package.json`; extend `test/skill.test.ts`.
 - **Reference behavior** → `examples/demo/`, `examples/webgl/`, `examples/video/`, `examples/blend/`, `examples/keyframes/`, `examples/nested/`, and `examples/static/`; keep their README commands working. The demo includes a timeline wrapping its composition; the video example includes WebM and MP4 timelines with video clips under a transparent overlay composition; the blend example sequences static blend modes on composition and video clips; the keyframes example animates one timeline clip through every presentation channel; the nested example places two inner timelines in an outer timeline as full-frame and transformed group clips with nested audio; the static example renders a timeless composition to PNG and reuses it as a timeline image. Extend `test/examples.test.ts` when the example set or entry layout changes.
 - **Performance benchmarks** → `scripts/bench-render.mjs`, `bench/fixtures/`, `bench/keyframe-timeline.mjs`, `bench/README.md`; keep `pnpm bench` representative of the composition capture path and the keyframe timeline script representative of the animated composite path. Timeline benchmark scripts are temporary measurement tools; the production projection is in ADR 0012.
-- **Lint and formatting** → `.oxlintrc.json`, `.oxfmtrc.json`, `package.json`, `.githooks/pre-commit`, and CI/release workflows; run `pnpm check:static`.
-- **Release checks and versioning** → `scripts/set-version.mjs`, `scripts/verify-release.mjs`, `scripts/retag-release.mjs`, `RELEASING.md`, `.github/workflows/release.yml`; run `pnpm verify-release` after tagging.
+- **Lint and formatting** → `.oxlintrc.json`, `.oxfmtrc.json`, `package.json`, `.githooks/pre-commit`, `.githooks/commit-msg`, and CI/release workflows; run `pnpm check:static`.
+- **Release checks and versioning** → `scripts/set-version.mjs`, `scripts/verify-release.mjs`, `scripts/check-changelog.mjs`, `scripts/verify-package.mjs`, `scripts/check-stamp.mjs`, `scripts/retag-release.mjs`, `RELEASING.md`, `.github/workflows/release.yml`; run `pnpm verify-release` after tagging.
 
 ## Testing
 
@@ -255,7 +257,7 @@ Test at public seams, not private helpers:
 - `test/real-integrations.test.ts`: opt-in real-model checks enabled by `FRAMEYARD_REAL_INTEGRATIONS=1` and explicit model paths.
 - `test/skill.test.ts`: skill layout discovery, frontmatter name, single skill, contents, API version, package inclusion, thin wrapper.
 - `test/docs.test.ts`: user-facing command examples use `npx frameyard`; scaffold markdown commands and package scripts are real; the still frame cap matches `src/cli.ts`; every test file is listed in this section.
-- `test/release.test.ts`: CI, release workflow, and pre-commit hook share `pnpm check`; release metadata verification.
+- `test/release.test.ts`: CI, release workflow, and hooks share `pnpm check`; changelog coverage, empty `[Unreleased]`, package contents, runner pinning, release metadata verification, and the pre-push stamp.
 - `test/scaffold.test.ts`: scaffold file generation, package manifest, project-name normalization.
 
 Prefer one failing public-behavior test, then the minimal implementation. Every behavior named in a commit message needs a test that fails without the change. Use real Chromium and FFmpeg for production-path behavior; mock only external model executables. Run the verification command scoped by `Before finishing`. Browser/CLI tests are intentionally sequential (`fileParallelism: false`).
@@ -265,7 +267,7 @@ Prefer one failing public-behavior test, then the minimal implementation. Every 
 - Verify proportionally to the change:
   - Preview-only UI (`src/preview/`, `src/server/preview-html.ts`, `src/server/timeline-preview-*.ts`, and their tests): run `pnpm check:preview` (static checks plus the preview test files). Do not run the full `pnpm check` unless the change also reaches shared code.
   - Anything else, including contracts, runtime, renderer, CLI, timelines, determinism, release configuration, or docs consumed by those: run `pnpm check`.
-  - Before pushing or publishing, `pnpm check` must pass regardless; the pre-push hook runs the full suite.
+  - Before pushing or publishing, `pnpm check` must pass regardless; the pre-push hook runs the full suite when the tree did not already pass `pnpm check`.
 - If capture, encoding, or audio changed, render a small fixture and verify the artifact with FFprobe; render the example whose composition changed.
 - If public behavior changed, update `README.md` and, for contract changes, the design baseline or an ADR.
 - If the output format or container changed, grep the docs for the old format noun (`final MP4`, `partial MP4`) before finishing.

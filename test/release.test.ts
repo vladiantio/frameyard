@@ -35,26 +35,35 @@ async function git(cwd: string, args: string[]): Promise<string> {
 
 let fixture: string | undefined;
 
-async function createReleaseFixture(version = "1.2.3"): Promise<string> {
+function releaseChangelog(version: string): string {
+  return `## [${version}] - 2026-10-30\n\n[${version}]: https://example.com/compare\n`;
+}
+
+async function createReleaseFixture(version = "1.2.3", changelog = releaseChangelog(version)): Promise<string> {
   const root = await mkdtemp(path.join(tmpdir(), "frameyard-release-"));
   await mkdir(path.join(root, "scripts"), { recursive: true });
   await mkdir(path.join(root, "src"), { recursive: true });
   await mkdir(path.join(root, "skills", "frameyard"), { recursive: true });
-  await writeFile(path.join(root, "package.json"), `${JSON.stringify({ name: "frameyard", version }, null, 2)}\n`);
+  await mkdir(path.join(root, "dist"), { recursive: true });
+  await writeFile(
+    path.join(root, "package.json"),
+    `${JSON.stringify({ name: "frameyard", version, files: ["dist"], bin: { frameyard: "./dist/cli.js" } }, null, 2)}\n`,
+  );
   await writeFile(path.join(root, "src", "version.ts"), `export const VERSION = "${version}";\n`);
   await writeFile(path.join(root, "skills", "frameyard", "SKILL.md"), `---\nframeyard-api-version: ${version}\n---\n`);
-  await writeFile(
-    path.join(root, "CHANGELOG.md"),
-    `## [${version}] - 2026-10-30\n\n[${version}]: https://example.com/compare\n`,
-  );
-  await writeFile(
-    path.join(root, "scripts", "set-version.mjs"),
-    await readFile(path.join(repoRoot, "scripts", "set-version.mjs")),
-  );
-  await writeFile(
-    path.join(root, "scripts", "verify-release.mjs"),
-    await readFile(path.join(repoRoot, "scripts", "verify-release.mjs")),
-  );
+  await writeFile(path.join(root, "CHANGELOG.md"), changelog);
+  await writeFile(path.join(root, "LICENSE"), "MIT\n");
+  await writeFile(path.join(root, "dist", "cli.js"), "#!/usr/bin/env node\n");
+
+  for (const script of [
+    "set-version.mjs",
+    "verify-release.mjs",
+    "check-changelog.mjs",
+    "verify-package.mjs",
+    "check-stamp.mjs",
+  ]) {
+    await writeFile(path.join(root, "scripts", script), await readFile(path.join(repoRoot, "scripts", script)));
+  }
 
   await git(root, ["init", "-b", "main"]);
   await git(root, ["config", "user.email", "release@example.com"]);
@@ -73,6 +82,24 @@ async function verify(root: string, tag: string): Promise<RunResult> {
   return run(process.execPath, ["scripts/verify-release.mjs", "--ci"], root, {
     GITHUB_REF_NAME: tag,
   });
+}
+
+async function verifyStamp(root: string, tag?: string): Promise<RunResult> {
+  const head = await git(root, ["rev-parse", "HEAD"]);
+  const refs = [`${head} ${head} refs/heads/main ${head}`];
+  if (tag) {
+    const tagSha = await git(root, ["rev-parse", tag]);
+    refs.push(`${tagSha} ${tagSha} refs/tags/${tag} ${tagSha}`);
+  }
+  return run("sh", ["-c", `node scripts/check-stamp.mjs verify <<'EOF'\n${refs.join("\n")}\nEOF`], root);
+}
+
+async function commitFile(root: string, file: string, content: string, message: string, body?: string): Promise<void> {
+  await writeFile(path.join(root, file), content);
+  await git(root, ["add", file]);
+  const args = ["commit", "-m", message];
+  if (body) args.push("-m", body);
+  await git(root, args);
 }
 
 afterEach(async () => {
@@ -124,6 +151,43 @@ describe("release guardrails", () => {
     expect(releasing).toContain("pnpm retag-release");
     expect(releasing).toContain("Protect release tags");
   });
+
+  it("pins the CI and release runners", async () => {
+    for (const workflow of WORKFLOWS) {
+      const runners = (await readFile(workflow, "utf8"))
+        .split("\n")
+        .map((line) => line.trim())
+        .filter((line) => line.startsWith("runs-on:"));
+      expect(runners.length).toBeGreaterThan(0);
+      expect(runners.every((line) => line === "runs-on: ubuntu-24.04")).toBe(true);
+    }
+  });
+
+  it("checks changelog coverage in CI", async () => {
+    const workflow = await readFile(".github/workflows/ci.yml", "utf8");
+    expect(workflow).toContain("node scripts/check-changelog.mjs");
+    expect(workflow).toContain("fetch-depth: 0");
+  });
+
+  it("warns when a user-facing commit does not stage the changelog", async () => {
+    const hook = await readFile(".githooks/commit-msg", "utf8");
+    expect(hook).toContain("CHANGELOG.md");
+    expect(hook).toContain("Changelog: skip");
+  });
+
+  it("reuses a passing check on push", async () => {
+    const manifest = JSON.parse(await readFile("package.json", "utf8")) as {
+      scripts?: Record<string, string>;
+    };
+    expect(manifest.scripts?.check).toContain("node scripts/check-stamp.mjs record");
+    const hook = await readFile(".githooks/pre-push", "utf8");
+    expect(hook).toContain("node scripts/check-stamp.mjs verify");
+    expect(hook).toContain("pnpm test");
+  });
+
+  it("wires the package verifier into the release workflow", async () => {
+    expect(await readFile(".github/workflows/release.yml", "utf8")).toContain("node scripts/verify-package.mjs");
+  });
 });
 
 describe("verify-release --ci", () => {
@@ -147,5 +211,121 @@ describe("verify-release --ci", () => {
     const result = await verify(fixture, "v9.9.9");
     expect(result.code).not.toBe(0);
     expect(result.stderr).toContain("does not match package.json version");
+  });
+
+  it("rejects a tag while [Unreleased] has entries", async () => {
+    fixture = await createReleaseFixture(
+      "1.2.3",
+      `## [Unreleased]\n\n### Added\n\n- pending\n\n## [1.2.3] - 2026-10-30\n\n[1.2.3]: https://example.com/compare\n`,
+    );
+    const result = await verify(fixture, "v1.2.3");
+    expect(result.code).not.toBe(0);
+    expect(result.stderr).toContain("still has entries under [Unreleased]");
+  });
+
+  it("accepts an empty [Unreleased] section", async () => {
+    fixture = await createReleaseFixture(
+      "1.2.3",
+      `## [Unreleased]\n\n### Added\n\n## [1.2.3] - 2026-10-30\n\n[1.2.3]: https://example.com/compare\n`,
+    );
+    const result = await verify(fixture, "v1.2.3");
+    expect(result.code, result.stderr).toBe(0);
+  });
+
+  it("verifies the package for a local release", async () => {
+    fixture = await createReleaseFixture();
+    const result = await run(process.execPath, ["scripts/verify-release.mjs"], fixture);
+    expect(result.code, result.stderr).toBe(0);
+    expect(result.stdout).toContain("complete package");
+  });
+
+  it("rejects a package missing a required path", async () => {
+    fixture = await createReleaseFixture();
+    await rm(path.join(fixture, "dist", "cli.js"));
+    const result = await run(process.execPath, ["scripts/verify-package.mjs"], fixture);
+    expect(result.code).not.toBe(0);
+    expect(result.stderr).toContain("package is missing");
+  });
+});
+
+describe("check-changelog", () => {
+  it("rejects a user-facing commit that does not update CHANGELOG.md", async () => {
+    fixture = await createReleaseFixture();
+    await commitFile(fixture, "feature.txt", "feature\n", "feat(core): add feature");
+    const result = await run(
+      process.execPath,
+      ["scripts/check-changelog.mjs", "--previous", "v1.2.3", "--to", "HEAD"],
+      fixture,
+    );
+    expect(result.code).not.toBe(0);
+    expect(result.stderr).toContain("feat(core): add feature");
+  });
+
+  it("accepts a user-facing commit that updates CHANGELOG.md", async () => {
+    fixture = await createReleaseFixture();
+    const changelog = `${await readFile(path.join(fixture, "CHANGELOG.md"), "utf8")}- feature\n`;
+    await writeFile(path.join(fixture, "feature.txt"), "feature\n");
+    await writeFile(path.join(fixture, "CHANGELOG.md"), changelog);
+    await git(fixture, ["add", "feature.txt", "CHANGELOG.md"]);
+    await git(fixture, ["commit", "-m", "feat(core): add feature"]);
+    const result = await run(
+      process.execPath,
+      ["scripts/check-changelog.mjs", "--previous", "v1.2.3", "--to", "HEAD"],
+      fixture,
+    );
+    expect(result.code, result.stderr).toBe(0);
+  });
+
+  it("accepts Changelog: skip in the commit body", async () => {
+    fixture = await createReleaseFixture();
+    await commitFile(fixture, "feature.txt", "feature\n", "feat(core): add feature", "Changelog: skip");
+    const result = await run(
+      process.execPath,
+      ["scripts/check-changelog.mjs", "--previous", "v1.2.3", "--to", "HEAD"],
+      fixture,
+    );
+    expect(result.code, result.stderr).toBe(0);
+  });
+
+  it("ignores non-user-facing commits", async () => {
+    fixture = await createReleaseFixture();
+    await commitFile(fixture, "docs.txt", "docs\n", "docs: add note");
+    const result = await run(
+      process.execPath,
+      ["scripts/check-changelog.mjs", "--previous", "v1.2.3", "--to", "HEAD"],
+      fixture,
+    );
+    expect(result.code, result.stderr).toBe(0);
+  });
+});
+
+describe("check-stamp", () => {
+  it("reuses a check for the same tree after a commit", async () => {
+    fixture = await createReleaseFixture();
+    const changelog = `${await readFile(path.join(fixture, "CHANGELOG.md"), "utf8")}- pending\n`;
+    await writeFile(path.join(fixture, "CHANGELOG.md"), changelog);
+    const record = await run(process.execPath, ["scripts/check-stamp.mjs", "record"], fixture);
+    expect(record.code, record.stderr).toBe(0);
+    expect(record.stdout).toContain("recorded a passing check");
+
+    await git(fixture, ["add", "CHANGELOG.md"]);
+    await git(fixture, ["commit", "-m", "docs: update changelog"]);
+    await git(fixture, ["tag", "-a", "v1.2.4", "-m", "frameyard v1.2.4"]);
+    const result = await verifyStamp(fixture, "v1.2.4");
+    expect(result.code, result.stderr).toBe(0);
+  });
+
+  it("refuses the stamp when the tree changed", async () => {
+    fixture = await createReleaseFixture();
+    const changelog = `${await readFile(path.join(fixture, "CHANGELOG.md"), "utf8")}- pending\n`;
+    await writeFile(path.join(fixture, "CHANGELOG.md"), changelog);
+    const record = await run(process.execPath, ["scripts/check-stamp.mjs", "record"], fixture);
+    expect(record.code, record.stderr).toBe(0);
+    await git(fixture, ["add", "CHANGELOG.md"]);
+    await git(fixture, ["commit", "-m", "docs: update changelog"]);
+
+    await writeFile(path.join(fixture, "CHANGELOG.md"), `${changelog}- more\n`);
+    const result = await verifyStamp(fixture);
+    expect(result.code).not.toBe(0);
   });
 });

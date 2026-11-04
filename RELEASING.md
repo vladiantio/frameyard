@@ -18,8 +18,11 @@ Frameyard stays on `0.x` until its public contracts stabilize. See
 
 - Never move or reuse a published version.
 - The annotated tag must be exactly `v` plus the `package.json` version.
-- Every release updates [`CHANGELOG.md`](./CHANGELOG.md). Add a dated version
-  section and record contract changes explicitly.
+- Every release updates [`CHANGELOG.md`](./CHANGELOG.md). Feature and fix
+  commits add their entry under `## [Unreleased]` (or declare `Changelog: skip`
+  in the commit body), and the release moves those entries into the dated
+  version section. `pnpm verify-release` checks the commits since the previous
+  tag and refuses a tag while `[Unreleased]` still has entries.
 - The npm package, `src/version.ts`, and `skills/frameyard/SKILL.md` must all report the
   same version. `pnpm set-version` and `pnpm set-version --check` enforce this.
 
@@ -34,7 +37,7 @@ first publish is therefore manual:
 cd "$(git rev-parse --show-toplevel)"
 npm login
 pnpm check
-pnpm pack --dry-run --json
+pnpm verify-package
 test "$(git branch --show-current)" = "main" || { echo "publish from main"; exit 1; }
 test -z "$(git status --porcelain)" || { echo "working tree is dirty"; exit 1; }
 pnpm publish --no-git-checks --access public
@@ -88,25 +91,30 @@ OIDC token with `id-token: write` and publishes with provenance.
    pnpm set-version --check
    ```
 
-3. Update `CHANGELOG.md`: add the new version section with today's date, list
-   the changes, and add the comparison link. The tag is the source of truth for
-   what shipped; start from the commits since the last one:
+3. Update `CHANGELOG.md`: move the `## [Unreleased]` entries into a new dated
+   version section, add the comparison link, and leave `[Unreleased]` empty.
+   The tag is the source of truth for what shipped; start from the commits since
+   the last one, including their bodies:
 
    ```sh
-   git log --oneline $(git describe --tags --abbrev=0)..HEAD
+   git log --format='%h %s%n%b' $(git describe --tags --abbrev=0)..HEAD
    ```
+
+   `pnpm check:changelog` fails when a `feat`, `fix`, `perf`, or breaking commit
+   since the previous tag neither touched `CHANGELOG.md` nor declared
+   `Changelog: skip` in its body.
 
 4. Run the release checks locally:
 
    ```sh
    pnpm check
-   pnpm pack --dry-run --json
+   pnpm verify-package
    ```
 
    `pnpm check` runs the script syntax checks, lint, formatting, typechecks,
-   and the full suite. The `--json` output lists the tarball contents; confirm
-   it contains `dist/`, `docs/`, `examples/`, `skills/`, `README.md`,
-   `CHANGELOG.md`, `GLOSSARY.md`, and the license.
+   and the full suite. `pnpm verify-package` packs the project in memory and
+   fails if any `package.json` `files` entry, `LICENSE`, or `bin` target is
+   missing.
 
 5. Commit and tag locally:
 
@@ -124,7 +132,9 @@ OIDC token with `id-token: write` and publishes with provenance.
 
    It checks that the version locations agree, the tag is annotated and points
    at `HEAD`, `CHANGELOG.md` has a dated section and comparison link for the
-   version, the branch is `main`, and the working tree is clean.
+   version with no remaining `[Unreleased]` entries, every user-facing commit
+   since the previous tag has changelog coverage, the branch is `main`, the
+   working tree is clean, and the packed package contains every required path.
 
 7. Push and watch the `Release` workflow:
 
@@ -134,13 +144,16 @@ OIDC token with `id-token: write` and publishes with provenance.
    gh run watch <run-id> --compact --interval 30
    ```
 
+   The pre-push hook reuses a passing `pnpm check` for the same tree; it runs
+   the full suite only when the tree changed after the check.
+
    The workflow runs `node scripts/verify-release.mjs --ci`, which repeats the
    local metadata checks and also confirms the tag is reachable from
-   `origin/main`. It then runs `pnpm check`, inspects the package, publishes
-   with provenance, and creates the GitHub Release. CI and the release workflow
-   share the same `pnpm check` command; add new checks to `package.json`, not
-   to the workflow files. If the run fails, `gh run view <run-id> --log-failed`
-   prints only the failed step.
+   `origin/main`. It then runs `pnpm check`, verifies the package contents,
+   publishes with provenance, and creates the GitHub Release. CI and the release
+   workflow share the same `pnpm check` command; add new checks to
+   `package.json`, not to the workflow files. If the run fails,
+   `gh run view <run-id> --log-failed` prints only the failed step.
 
 8. Verify the published result:
 

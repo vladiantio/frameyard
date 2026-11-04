@@ -10,7 +10,7 @@ concurrency:
 
 jobs:
   publish:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     environment: npm
     permissions:
@@ -51,8 +51,8 @@ jobs:
       - name: Check
         run: pnpm check
 
-      - name: Inspect package contents
-        run: pnpm pack --dry-run
+      - name: Verify package contents
+        run: node scripts/verify-package.mjs
 
       - name: Publish to npm
         run: |

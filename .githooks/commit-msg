@@ -1,0 +1,25 @@
+#!/bin/sh
+set -eu
+
+message_file="$1"
+subject=$(head -n 1 "$message_file")
+
+case "$subject" in
+  chore\(release\):*) exit 0 ;;
+esac
+
+if ! printf '%s\n' "$subject" | grep -Eq '^(feat|fix|perf)(\([^)]+\))?!?:'; then
+  exit 0
+fi
+
+if git diff --cached --name-only | grep -qx 'CHANGELOG.md'; then
+  exit 0
+fi
+
+if grep -qi '^Changelog: skip$' "$message_file"; then
+  exit 0
+fi
+
+echo "frameyard: note: this user-facing commit does not stage CHANGELOG.md." >&2
+echo "Add an entry under ## [Unreleased], or include 'Changelog: skip' in the commit body." >&2
+exit 0

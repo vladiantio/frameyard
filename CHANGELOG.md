@@ -12,9 +12,20 @@ contract change may ship in a minor release and is called out explicitly below.
 
 ### Added
 
+- Timeline clips animate `x`, `y`, `scale`, `rotation`, and `opacity` with
+  clip-local `keyframes`, CSS easing, preview markers, and FFmpeg expressions.
+  Animated opacity composes through blend modes. See
+  `docs/adr/0018-animate-timeline-clips-with-keyframes.md` and
+  `examples/keyframes/`.
 - `examples/nested/` places two inner timelines in an outer timeline as
   full-frame and transformed group clips, with nested audio and a static
   inherited-format backdrop.
+
+### Fixed
+
+- Rotated timeline clips keep their full corners. Keyed rotation uses a
+  segment-stable diagonal bound; static rotation uses its exact rotated
+  bounding box.
 
 ## [0.8.0] - 2026-11-03
 

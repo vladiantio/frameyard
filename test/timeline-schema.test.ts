@@ -284,6 +284,246 @@ describe("timeline schema", () => {
     }
   });
 
+  it("accepts keyframe tracks and normalizes easing", () => {
+    const value = validTimeline();
+    (value.clips as Record<string, unknown>[])[0]!.keyframes = {
+      opacity: [
+        { frame: 0, value: 0 },
+        { frame: 10, value: 1, easing: " ease-out " },
+      ],
+      x: [
+        { frame: 0, value: -10 },
+        { frame: 20, value: 0 },
+      ],
+    };
+
+    const parsed = parseTimelineDocument(value);
+
+    expect(parsed.diagnostics).toEqual([]);
+    expect(parsed.timeline?.clips[0]?.keyframes).toEqual({
+      opacity: [
+        { frame: 0, value: 0 },
+        { frame: 10, value: 1, easing: "ease-out" },
+      ],
+      x: [
+        { frame: 0, value: -10 },
+        { frame: 20, value: 0 },
+      ],
+    });
+  });
+
+  it("accepts keyframes on every visual source and alongside an explicit box", () => {
+    const value = validTimeline();
+    (value.clips as Record<string, unknown>[])[1]!.keyframes = {
+      rotation: [
+        { frame: 0, value: 0 },
+        { frame: 10, value: 90 },
+      ],
+    };
+    (value.clips as Record<string, unknown>[])[0]!.transform = { width: 80, height: 45 };
+    (value.clips as Record<string, unknown>[])[0]!.keyframes = {
+      x: [
+        { frame: 0, value: -10 },
+        { frame: 30, value: 0 },
+      ],
+      opacity: [
+        { frame: 0, value: 0 },
+        { frame: 30, value: 1 },
+      ],
+    };
+    (value.clips as Record<string, unknown>[]).push({
+      id: "nested",
+      track: "v1",
+      source: { kind: "timeline", id: "lower-third" },
+      start: 210,
+      duration: 30,
+      keyframes: {
+        scale: [
+          { frame: 0, value: 0.5 },
+          { frame: 30, value: 1 },
+        ],
+      },
+    });
+
+    const parsed = parseTimelineDocument(value);
+
+    expect(parsed.diagnostics).toEqual([]);
+    expect(parsed.timeline?.clips[0]?.keyframes?.opacity).toHaveLength(2);
+    expect(parsed.timeline?.clips[1]?.keyframes?.rotation).toHaveLength(2);
+    expect(parsed.timeline?.clips[4]?.keyframes?.scale).toHaveLength(2);
+  });
+
+  it("rejects malformed keyframe tracks", () => {
+    const cases: Array<[string, unknown]> = [
+      ["empty object", {}],
+      [
+        "unknown channel",
+        {
+          blur: [
+            { frame: 0, value: 0 },
+            { frame: 1, value: 1 },
+          ],
+        },
+      ],
+      ["not an array", { opacity: {} }],
+      ["one key", { opacity: [{ frame: 0, value: 0 }] }],
+      [
+        "negative frame",
+        {
+          opacity: [
+            { frame: -1, value: 0 },
+            { frame: 1, value: 1 },
+          ],
+        },
+      ],
+      [
+        "fractional frame",
+        {
+          opacity: [
+            { frame: 0.5, value: 0 },
+            { frame: 1, value: 1 },
+          ],
+        },
+      ],
+      [
+        "duplicate frame",
+        {
+          opacity: [
+            { frame: 0, value: 0 },
+            { frame: 0, value: 1 },
+          ],
+        },
+      ],
+      [
+        "missing value",
+        {
+          opacity: [{ frame: 0 }, { frame: 1, value: 1 }],
+        },
+      ],
+      [
+        "non-finite value",
+        {
+          opacity: [
+            { frame: 0, value: 0 },
+            { frame: 1, value: Number.POSITIVE_INFINITY },
+          ],
+        },
+      ],
+      [
+        "opacity range",
+        {
+          opacity: [
+            { frame: 0, value: 0 },
+            { frame: 1, value: 1.5 },
+          ],
+        },
+      ],
+      [
+        "negative scale",
+        {
+          scale: [
+            { frame: 0, value: -1 },
+            { frame: 1, value: 1 },
+          ],
+        },
+      ],
+      [
+        "invalid easing",
+        {
+          opacity: [
+            { frame: 0, value: 0, easing: "easeIn" },
+            { frame: 1, value: 1 },
+          ],
+        },
+      ],
+      [
+        "unknown key field",
+        {
+          opacity: [
+            { frame: 0, value: 0, curve: "linear" },
+            { frame: 1, value: 1 },
+          ],
+        },
+      ],
+      [
+        "non-string easing",
+        {
+          opacity: [
+            { frame: 0, value: 0, easing: 3 },
+            { frame: 1, value: 1 },
+          ],
+        },
+      ],
+    ];
+
+    for (const [name, keyframes] of cases) {
+      const value = validTimeline();
+      (value.clips as Record<string, unknown>[])[0]!.keyframes = keyframes;
+      expect(codes(value), name).toContain("TIMELINE_CLIP_INVALID");
+    }
+  });
+
+  it("rejects keyframes on audio clips", () => {
+    const value = validTimeline();
+    (value.clips as Record<string, unknown>[])[3]!.keyframes = {
+      opacity: [
+        { frame: 0, value: 0 },
+        { frame: 10, value: 1 },
+      ],
+    };
+
+    expect(codes(value)).toContain("TIMELINE_CLIP_INVALID");
+  });
+
+  it("rejects keyed channels that are also explicit static transform fields", () => {
+    const value = validTimeline();
+    (value.clips as Record<string, unknown>[])[2]!.keyframes = {
+      x: [
+        { frame: 0, value: -10 },
+        { frame: 10, value: 0 },
+      ],
+    };
+
+    expect(codes(value)).toContain("TIMELINE_CLIP_INVALID");
+  });
+
+  it("rejects keyed scale with an explicit transform box", () => {
+    const value = validTimeline();
+    ((value.clips as Record<string, unknown>[])[2]!.transform as Record<string, unknown>) = {
+      width: 80,
+      height: 45,
+    };
+    (value.clips as Record<string, unknown>[])[2]!.keyframes = {
+      scale: [
+        { frame: 0, value: 0.5 },
+        { frame: 10, value: 1 },
+      ],
+    };
+
+    expect(codes(value)).toContain("TIMELINE_CLIP_INVALID");
+  });
+
+  it("does not treat default transform values as keyed-channel conflicts", () => {
+    const value = validTimeline();
+    delete (value.clips as Record<string, unknown>[])[0]!.transform;
+    (value.clips as Record<string, unknown>[])[0]!.keyframes = {
+      x: [
+        { frame: 0, value: 0 },
+        { frame: 10, value: 10 },
+      ],
+      scale: [
+        { frame: 0, value: 0.5 },
+        { frame: 10, value: 1 },
+      ],
+      opacity: [
+        { frame: 0, value: 0 },
+        { frame: 10, value: 1 },
+      ],
+    };
+
+    expect(parseTimelineDocument(value).diagnostics).toEqual([]);
+  });
+
   it("rejects invalid transform and audio values", () => {
     const transform = validTimeline();
     ((transform.clips as Record<string, unknown>[])[2]!.transform as Record<string, unknown>).opacity = 1.5;

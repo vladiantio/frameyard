@@ -1,0 +1,60 @@
+{
+  "version": 1,
+  "name": "Keyframes",
+  "background": "#080b10",
+  "tracks": [
+    { "id": "v1", "kind": "video" },
+    { "id": "v2", "kind": "video" }
+  ],
+  "clips": [
+    {
+      "id": "backdrop",
+      "track": "v1",
+      "source": { "kind": "composition", "id": "backdrop" },
+      "start": 0,
+      "duration": 180,
+      "sourceIn": 0
+    },
+    {
+      "id": "card",
+      "track": "v2",
+      "source": { "kind": "composition", "id": "card" },
+      "start": 0,
+      "duration": 180,
+      "sourceIn": 0,
+      "blend": "screen",
+      "keyframes": {
+        "opacity": [
+          { "frame": 0, "value": 0 },
+          { "frame": 24, "value": 1, "easing": "ease-out" },
+          { "frame": 150, "value": 1 },
+          { "frame": 180, "value": 0, "easing": "ease-in" }
+        ],
+        "x": [
+          { "frame": 0, "value": -120, "easing": "ease-out" },
+          { "frame": 24, "value": 0 },
+          { "frame": 150, "value": 0 },
+          { "frame": 180, "value": 120, "easing": "ease-in" }
+        ],
+        "y": [
+          { "frame": 0, "value": 48, "easing": "ease-out" },
+          { "frame": 24, "value": 0 },
+          { "frame": 150, "value": 0 },
+          { "frame": 180, "value": -32, "easing": "ease-in" }
+        ],
+        "scale": [
+          { "frame": 0, "value": 0.42, "easing": "ease-out" },
+          { "frame": 24, "value": 0.5 },
+          { "frame": 150, "value": 0.5 },
+          { "frame": 180, "value": 0.46, "easing": "ease-in" }
+        ],
+        "rotation": [
+          { "frame": 0, "value": -8, "easing": "ease-out" },
+          { "frame": 24, "value": 0 },
+          { "frame": 150, "value": 0 },
+          { "frame": 180, "value": 8, "easing": "ease-in" }
+        ]
+      }
+    }
+  ]
+}

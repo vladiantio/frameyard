@@ -1,0 +1,60 @@
+<style>
+  html,
+  body {
+    margin: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #080b10;
+  }
+  .backdrop {
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(circle at 24% 18%, rgba(95, 214, 255, 0.22), transparent 34%),
+      radial-gradient(circle at 78% 76%, rgba(184, 243, 107, 0.16), transparent 32%),
+      linear-gradient(145deg, #0a1018 0%, #0b1119 52%, #070a0f 100%);
+  }
+  .grid {
+    position: absolute;
+    inset: -20%;
+    background-image:
+      linear-gradient(rgba(120, 150, 180, 0.08) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(120, 150, 180, 0.08) 1px, transparent 1px);
+    background-size: 48px 48px;
+    transform: perspective(900px) rotateX(62deg) translateY(18%);
+    transform-origin: center bottom;
+  }
+  .glow {
+    position: absolute;
+    width: 520px;
+    height: 520px;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(184, 243, 107, 0.14), transparent 64%);
+  }
+  .title {
+    position: absolute;
+    left: 56px;
+    bottom: 48px;
+    color: #dce8f5;
+    font:
+      620 22px/1.2 Inter,
+      ui-sans-serif,
+      system-ui,
+      -apple-system,
+      "Segoe UI",
+      sans-serif;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    opacity: 0.82;
+  }
+</style>
+<fy-composition width="1280" height="720">
+  <div class="backdrop"></div>
+  <div class="grid"></div>
+  <div class="glow"></div>
+  <div class="title">Timeline keyframes</div>
+</fy-composition>

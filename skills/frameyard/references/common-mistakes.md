@@ -66,6 +66,18 @@
 - Omitting `duration` on a static composition clip, or setting `sourceIn` above 0. A static source has no intrinsic duration or frames.
 - Expecting a static composition clip to contribute audio or transcripts. It is visual-only.
 
+## Timeline keyframes
+
+- Treating `frame` as a timeline frame or a source frame. Keyframe frames are clip-local; `0` is the clip start boundary and `duration` is the end boundary.
+- Expecting keyframes to extend a clip. A key past `duration` is a `TIMELINE_CLIP_OUT_OF_RANGE` error; declare a longer clip instead.
+- Declaring the same channel as a scalar in `transform` and as a keyframe track. Keyed channels and static channels are separate; defaults do not conflict.
+- Combining `keyframes.scale` with a `transform.width`/`height` box. Use a keyed scale without a box, or keep the box and animate `x`, `y`, `rotation`, and `opacity`.
+- Putting keyframes on an audio clip. Only visual clips have presentation channels.
+- Using seconds instead of integer clip-local frames, or putting keys out of order.
+- Expecting the final key’s `easing` to do anything. Easing belongs to the interval after a key; the last key has no following interval.
+- Expecting preview and encoded keyframe motion to match exactly. Preview uses the exact CSS curve; production approximates it in FFmpeg and may differ by a subpixel.
+- Expecting an animated `blend` mode. Blend remains static; only `opacity` can animate the layer’s contribution to a blend.
+
 ## Static compositions
 
 - Expecting `update()` or `--fy-*` frame-state variables to run. A static composition only runs `mount()` and prop validation; use CSS, markup, or mount-time canvas drawing.

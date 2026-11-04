@@ -19,6 +19,7 @@ const examples = [
   { project: "video", id: "video-timeline", frame: 210, timeline: true },
   { project: "video", id: "video-timeline-mp4", frame: 210, timeline: true },
   { project: "blend", id: "blend-timeline", frame: 285, timeline: true },
+  { project: "keyframes", id: "keyframes", frame: 90, timeline: true },
   { project: "nested", id: "chapter-a", frame: 60, timeline: true },
   { project: "nested", id: "nested-reel", frame: 300, timeline: true },
   { project: "static", id: "still", frame: 0 },

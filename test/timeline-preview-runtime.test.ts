@@ -205,11 +205,54 @@ beforeAll(async () => {
     )}\n`,
   );
   await writeFile(
+    path.join(root, "timelines", "motion.json"),
+    `${JSON.stringify(
+      {
+        version: 1,
+        tracks: [{ id: "v1", kind: "video" }],
+        clips: [
+          {
+            id: "intro",
+            track: "v1",
+            source: { kind: "composition", id: "intro" },
+            start: 0,
+            duration: 10,
+            keyframes: {
+              opacity: [
+                { frame: 0, value: 0 },
+                { frame: 5, value: 0.5 },
+                { frame: 10, value: 1 },
+              ],
+              x: [
+                { frame: 0, value: -30 },
+                { frame: 10, value: 0 },
+              ],
+              y: [
+                { frame: 0, value: 0 },
+                { frame: 10, value: 20 },
+              ],
+              scale: [
+                { frame: 0, value: 0.5 },
+                { frame: 10, value: 1 },
+              ],
+              rotation: [
+                { frame: 0, value: 0 },
+                { frame: 10, value: 90 },
+              ],
+            },
+          },
+        ],
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  await writeFile(
     path.join(root, "video.config.js"),
     `export default {
       format: { width: 320, height: 180, fps: 10 },
       compositions: { intro: "./compositions/intro.html", still: "./compositions/still.html" },
-      timelines: { main: "./timelines/main.json", static: "./timelines/static.json", sized: "./timelines/sized.json", video: "./timelines/video.json", blend: "./timelines/blend.json" },
+      timelines: { main: "./timelines/main.json", static: "./timelines/static.json", sized: "./timelines/sized.json", video: "./timelines/video.json", blend: "./timelines/blend.json", motion: "./timelines/motion.json" },
     };\n`,
   );
   server = await startPreviewServer({ projectRoot: root, port: 0 });
@@ -298,6 +341,64 @@ describe("timeline preview runtime", () => {
       expect(frameBox?.width).toBeCloseTo(160, 5);
       expect(frameBox?.height).toBeCloseTo(90, 5);
       expect(await wrapper.evaluate((element) => getComputedStyle(element).overflow)).toBe("hidden");
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+
+  it("applies keyframed presentation on every seek", async () => {
+    const page = await browser.newPage({ viewport: { width: 640, height: 360 } });
+    try {
+      await openEmbeddedTimeline(page, new URL("/__frameyard/timeline/motion?__fy-embed=1", server.url).href);
+      await loadTimeline(page);
+
+      const read = () =>
+        page.locator('[data-clip="intro"]').evaluate((element) => ({
+          opacity: (element as HTMLElement).style.opacity,
+          transform: (element as HTMLElement).style.transform,
+        }));
+
+      await seekTimeline(page, 0);
+      expect(await read()).toEqual({
+        opacity: "0",
+        transform: "translate(-50%, -50%) translate(-30px, 0px) rotate(0deg) scale(0.5)",
+      });
+
+      await seekTimeline(page, 5);
+      await waitForFrame(page, 5);
+      expect(await read()).toEqual({
+        opacity: "0.5",
+        transform: "translate(-50%, -50%) translate(-15px, 10px) rotate(45deg) scale(0.75)",
+      });
+
+      await seekTimeline(page, 9);
+      await waitForFrame(page, 9);
+      const opacity = await page
+        .locator('[data-clip="intro"]')
+        .evaluate((element) => Number.parseFloat((element as HTMLElement).style.opacity));
+      expect(opacity).toBeCloseTo(0.9, 6);
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+
+  it("renders keyframe markers and seeks from a marker", async () => {
+    const page = await browser.newPage({ viewport: { width: 1000, height: 700 } });
+    try {
+      await page.goto(new URL("/__frameyard/timeline/motion", server.url).href, {
+        waitUntil: "domcontentloaded",
+      });
+      await page.waitForFunction(() => document.querySelectorAll(".keyframe-marker").length === 3);
+      await waitForFrame(page, 0);
+
+      const marker = page.locator('.keyframe-marker[data-frame="5"]');
+      expect(await marker.getAttribute("title")).toContain("opacity 0.5");
+      await marker.click();
+      await waitForFrame(page, 5);
+      expect(await page.locator("#frame").textContent()).toBe("5");
+      expect(
+        await page.locator('[data-clip="intro"]').evaluate((element) => (element as HTMLElement).style.opacity),
+      ).toBe("0.5");
     } finally {
       await page.close();
     }

@@ -2,6 +2,7 @@
 
 **Status:** Accepted
 **Date:** 2026-10-31
+**Amended by:** [ADR-0018](0018-animate-timeline-clips-with-keyframes.md) (timeline clip keyframes)
 
 Frameyard will render timelines as its primary output unit. A timeline is a project-local JSON document with a project-fixed width, height, and frame rate, ordered video and audio tracks, and clips sourced from HTML compositions, local media, or other timelines. A composition remains the reusable HTML authoring unit and becomes a clip source whose source range and props are fixed by each clip. Standalone composition renders remain supported on the existing direct path.
 
@@ -19,6 +20,6 @@ Frameyard will render timelines as its primary output unit. A timeline is a proj
 - A composition used in a timeline must share the project frame rate exactly; a different size is fitted and transformed by the clip.
 - Timeline duration is derived from the last clip end, with an optional override. A timeline with no clips is invalid; an audio-only timeline is valid and renders black video with audio.
 - Nested timelines are visual and audio sources, are cycle-checked, and do not accept prop overrides for their internal compositions in 0.6.
-- Timeline clips use static fit, position, scale, rotation, and opacity. Transitions, keyframes, effects, track solo/hidden, and audio fades are deferred.
+- Timeline clips use static fit, position, scale, rotation, and opacity by default; clip keyframes are added by ADR 0018. Transitions, effects, track solo/hidden, and audio fades are deferred.
 - Composition rendering keeps its existing result schema; timeline rendering returns a new timeline result schema.
 - The design baseline, glossary, agent skill, scaffold, examples, and tests gain timeline language; existing composition projects remain valid without migration.

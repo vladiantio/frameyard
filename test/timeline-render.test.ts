@@ -1650,3 +1650,634 @@ describe("timeline blend modes", () => {
     }
   }, 120_000);
 });
+
+describe("timeline keyframe rendering", () => {
+  async function keyframeImage(filePath: string, color: string, size = "40x40"): Promise<void> {
+    await exec("ffmpeg", [
+      "-y",
+      "-v",
+      "error",
+      "-f",
+      "lavfi",
+      "-i",
+      `color=c=${color}:s=${size}:d=1`,
+      "-frames:v",
+      "1",
+      filePath,
+    ]);
+  }
+
+  async function writeMainTimeline(
+    root: string,
+    timeline: unknown,
+    compositions?: Record<string, string>,
+  ): Promise<void> {
+    await writeFile(path.join(root, "timelines", "main.json"), `${JSON.stringify(timeline, null, 2)}\n`);
+    await writeFile(
+      path.join(root, "video.config.js"),
+      `export default {
+        format: { width: 320, height: 180, fps: 10 },
+        compositions: ${JSON.stringify(compositions ?? {})},
+        timelines: { main: "./timelines/main.json" },
+      };\n`,
+    );
+  }
+
+  async function extractFrame(videoPath: string, frame: number, outputPath: string): Promise<void> {
+    await exec("ffmpeg", [
+      "-v",
+      "error",
+      "-y",
+      "-i",
+      videoPath,
+      "-vf",
+      `select=eq(n\\,${frame})`,
+      "-frames:v",
+      "1",
+      outputPath,
+    ]);
+  }
+
+  it("renders keyframed position and opacity across independent segments", async () => {
+    const root = await customRoot();
+    await mkdir(path.join(root, "out"), { recursive: true });
+    await keyframeImage(path.join(root, "assets", "green.png"), "0xb8f36b");
+    await writeMainTimeline(root, {
+      version: 1,
+      background: "#000000",
+      tracks: [{ id: "v1", kind: "video" }],
+      clips: [
+        {
+          id: "marker",
+          track: "v1",
+          source: { kind: "image", src: "assets/green.png" },
+          start: 0,
+          duration: 20,
+          transform: { fit: "contain", width: 40, height: 40 },
+          keyframes: {
+            x: [
+              { frame: 0, value: 0 },
+              { frame: 19, value: 100 },
+            ],
+            y: [
+              { frame: 0, value: 0 },
+              { frame: 19, value: 50 },
+            ],
+            opacity: [
+              { frame: 0, value: 1 },
+              { frame: 19, value: 0.5 },
+            ],
+          },
+        },
+      ],
+    });
+    const project = await loadProject(root);
+    const outPath = path.join(root, "out", "main.mp4");
+
+    const checked = await checkTimeline({ project, timelineId: "main" });
+    expect(checked.framesChecked).toBe(20);
+    expect(checked.diagnostics.filter((diagnostic) => diagnostic.severity === "error")).toEqual([]);
+
+    const result = await renderTimelineForTest({
+      project,
+      timelineId: "main",
+      outPath,
+      workers: 2,
+      maxSegmentFrames: 5,
+    });
+    expect(result.segments).toBe(4);
+    expect(result.framesRendered).toBe(20);
+
+    const frame0 = path.join(root, "out", "frame-0.png");
+    const frame19 = path.join(root, "out", "frame-19.png");
+    await extractFrame(outPath, 0, frame0);
+    await extractFrame(outPath, 19, frame19);
+
+    const start = await mediaPixel(frame0, 160, 90);
+    expect(start[1]).toBeGreaterThan(start[0] + 40);
+    expect(start[1]).toBeGreaterThan(start[2] + 40);
+
+    const moved = await mediaPixel(frame19, 260, 140);
+    const movedAway = await mediaPixel(frame19, 160, 90);
+    expect(moved[1]).toBeGreaterThan(moved[0] + 20);
+    expect(movedAway[1]).toBeLessThan(30);
+
+    const stillPath = path.join(root, "out", "still-19.png");
+    await captureTimelineStill({ project, timelineId: "main", frame: 19, outPath: stillPath });
+    const still = await mediaPixel(stillPath, 260, 140);
+    expect(Math.abs((still[1] as number) - (moved[1] as number))).toBeLessThanOrEqual(10);
+
+    const singleSegmentPath = path.join(root, "out", "single.mp4");
+    await renderTimelineForTest({
+      project,
+      timelineId: "main",
+      outPath: singleSegmentPath,
+      workers: 1,
+      maxSegmentFrames: 20,
+    });
+    const singleFrame = path.join(root, "out", "single-19.png");
+    await extractFrame(singleSegmentPath, 19, singleFrame);
+    const single = await mediaPixel(singleFrame, 260, 140);
+    expect(Math.abs((single[1] as number) - (moved[1] as number))).toBeLessThanOrEqual(10);
+  }, 120_000);
+
+  it("applies keyframed opacity before a blend mode", async () => {
+    const root = await customRoot();
+    await mkdir(path.join(root, "out"), { recursive: true });
+    const basePath = path.join(root, "assets", "base.png");
+    const sourcePath = path.join(root, "assets", "source.png");
+    await keyframeImage(basePath, "0x336699", "64x64");
+    await keyframeImage(sourcePath, "0xff8800", "64x64");
+    const backdrop = await mediaPixel(basePath, 32, 32);
+    const source = await mediaPixel(sourcePath, 32, 32);
+    await writeMainTimeline(root, {
+      version: 1,
+      tracks: [
+        { id: "v1", kind: "video" },
+        { id: "v2", kind: "video" },
+      ],
+      clips: [
+        {
+          id: "base",
+          track: "v1",
+          source: { kind: "image", src: "assets/base.png" },
+          start: 0,
+          duration: 10,
+          transform: { fit: "stretch" },
+        },
+        {
+          id: "top",
+          track: "v2",
+          source: { kind: "image", src: "assets/source.png" },
+          start: 0,
+          duration: 10,
+          transform: { fit: "stretch" },
+          blend: "screen",
+          keyframes: {
+            opacity: [
+              { frame: 0, value: 0 },
+              { frame: 10, value: 1 },
+            ],
+          },
+        },
+      ],
+    });
+    const project = await loadProject(root);
+    const outPath = path.join(root, "out", "main.mp4");
+    await renderTimelineForTest({ project, timelineId: "main", outPath, workers: 2, maxSegmentFrames: 5 });
+
+    const frame0 = path.join(root, "out", "blend-0.png");
+    const frame9 = path.join(root, "out", "blend-9.png");
+    await extractFrame(outPath, 0, frame0);
+    await extractFrame(outPath, 9, frame9);
+
+    const transparent = await mediaPixel(frame0, 160, 90);
+    for (let channel = 0; channel < 3; channel += 1) {
+      expect(Math.abs((transparent[channel] as number) - (backdrop[channel] as number))).toBeLessThanOrEqual(4);
+    }
+
+    const ninety = await mediaPixel(frame9, 160, 90);
+    for (let channel = 0; channel < 3; channel += 1) {
+      const blended = cssBlend("screen", backdrop[channel] as number, source[channel] as number);
+      const expected = Math.round(0.9 * blended + 0.1 * (backdrop[channel] as number));
+      expect(Math.abs((ninety[channel] as number) - expected), `channel ${channel}`).toBeLessThanOrEqual(5);
+    }
+  }, 120_000);
+
+  it("renders a hold easing as a step", async () => {
+    const root = await customRoot();
+    await mkdir(path.join(root, "out"), { recursive: true });
+    await keyframeImage(path.join(root, "assets", "green.png"), "0xb8f36b", "320x180");
+    await writeMainTimeline(root, {
+      version: 1,
+      background: "#000000",
+      tracks: [{ id: "v1", kind: "video" }],
+      clips: [
+        {
+          id: "card",
+          track: "v1",
+          source: { kind: "image", src: "assets/green.png" },
+          start: 0,
+          duration: 10,
+          transform: { fit: "stretch" },
+          keyframes: {
+            opacity: [
+              { frame: 0, value: 0, easing: "hold" },
+              { frame: 5, value: 1 },
+            ],
+          },
+        },
+      ],
+    });
+    const project = await loadProject(root);
+    const outPath = path.join(root, "out", "main.mp4");
+    await renderTimelineForTest({ project, timelineId: "main", outPath, workers: 1, maxSegmentFrames: 5 });
+
+    const frame4 = path.join(root, "out", "hold-4.png");
+    const frame5 = path.join(root, "out", "hold-5.png");
+    await extractFrame(outPath, 4, frame4);
+    await extractFrame(outPath, 5, frame5);
+
+    const before = await mediaPixel(frame4, 160, 90);
+    const after = await mediaPixel(frame5, 160, 90);
+    expect(before[1]).toBeLessThan(30);
+    expect(after[1]).toBeGreaterThan(after[0] + 40);
+  }, 120_000);
+
+  it("applies keyframes to a video clip", async () => {
+    const root = await customRoot();
+    await mkdir(path.join(root, "out"), { recursive: true });
+    await exec("ffmpeg", [
+      "-y",
+      "-v",
+      "error",
+      "-f",
+      "lavfi",
+      "-i",
+      "color=c=#b8f36b:s=160x90:r=10:d=1",
+      "-c:v",
+      "libx264",
+      "-pix_fmt",
+      "yuv420p",
+      path.join(root, "assets", "green.mp4"),
+    ]);
+    await writeMainTimeline(root, {
+      version: 1,
+      background: "#000000",
+      tracks: [{ id: "v1", kind: "video" }],
+      clips: [
+        {
+          id: "video",
+          track: "v1",
+          source: { kind: "video", src: "assets/green.mp4" },
+          start: 0,
+          duration: 10,
+          sourceIn: 0,
+          transform: { fit: "contain", width: 160, height: 90 },
+          audio: { muted: true },
+          keyframes: {
+            x: [
+              { frame: 0, value: 0 },
+              { frame: 9, value: 100 },
+            ],
+          },
+        },
+      ],
+    });
+    const project = await loadProject(root);
+    const outPath = path.join(root, "out", "main.mp4");
+    await renderTimelineForTest({ project, timelineId: "main", outPath, workers: 1, maxSegmentFrames: 5 });
+
+    const frame0 = path.join(root, "out", "video-0.png");
+    const frame9 = path.join(root, "out", "video-9.png");
+    await extractFrame(outPath, 0, frame0);
+    await extractFrame(outPath, 9, frame9);
+
+    const start = await mediaPixel(frame0, 100, 90);
+    const moved = await mediaPixel(frame9, 260, 90);
+    const original = await mediaPixel(frame9, 100, 90);
+    expect(start[1]).toBeGreaterThan(start[0] + 40);
+    expect(moved[1]).toBeGreaterThan(moved[0] + 40);
+    expect(original[1]).toBeLessThan(30);
+  }, 120_000);
+
+  it("keeps the full rectangle visible through a 360-degree rotation", async () => {
+    const root = await customRoot();
+    await mkdir(path.join(root, "out"), { recursive: true });
+    const sourcePath = path.join(root, "assets", "rectangle.png");
+    await exec("ffmpeg", [
+      "-y",
+      "-v",
+      "error",
+      "-f",
+      "lavfi",
+      "-i",
+      "color=c=#b8f36b:s=120x60:d=1",
+      "-frames:v",
+      "1",
+      sourcePath,
+    ]);
+    await writeMainTimeline(root, {
+      version: 1,
+      background: "#000000",
+      tracks: [{ id: "v1", kind: "video" }],
+      clips: [
+        {
+          id: "rotated",
+          track: "v1",
+          source: { kind: "image", src: "assets/rectangle.png" },
+          start: 0,
+          duration: 360,
+          transform: { fit: "contain", width: 120, height: 60 },
+          keyframes: {
+            rotation: [
+              { frame: 0, value: 0 },
+              { frame: 360, value: 360 },
+            ],
+          },
+        },
+      ],
+    });
+    const project = await loadProject(root);
+    const outPath = path.join(root, "out", "rotation.mp4");
+    await renderTimelineForTest({
+      project,
+      timelineId: "main",
+      outPath,
+      workers: 2,
+      maxSegmentFrames: 60,
+    });
+
+    const { stdout } = await exec(
+      "ffmpeg",
+      ["-v", "error", "-i", outPath, "-vf", "format=rgb24", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
+      { encoding: "buffer", maxBuffer: 64 * 1024 * 1024 },
+    );
+    const buffer = stdout as unknown as Buffer;
+    const width = 320;
+    const height = 180;
+    const channels = 3;
+    const frameBytes = width * height * channels;
+    expect(buffer.length).toBe(360 * frameBytes);
+
+    const sourceWidth = 120;
+    const sourceHeight = 60;
+    // Without the expanded rotate bound FFmpeg clips to the 120x60 input box;
+    // at 45 degrees the visible height would be 60 instead of roughly 127.
+    for (let frame = 0; frame < 360; frame += 1) {
+      const radians = (frame * Math.PI) / 180;
+      const expectedWidth = sourceWidth * Math.abs(Math.cos(radians)) + sourceHeight * Math.abs(Math.sin(radians));
+      const expectedHeight = sourceWidth * Math.abs(Math.sin(radians)) + sourceHeight * Math.abs(Math.cos(radians));
+      let minX = width;
+      let maxX = -1;
+      let minY = height;
+      let maxY = -1;
+      for (let y = 0; y < height; y += 1) {
+        for (let x = 0; x < width; x += 1) {
+          const offset = frame * frameBytes + (y * width + x) * channels;
+          const red = buffer[offset] as number;
+          const green = buffer[offset + 1] as number;
+          const blue = buffer[offset + 2] as number;
+          if (green > 100 && green > red + 30 && green > blue + 30) {
+            minX = Math.min(minX, x);
+            maxX = Math.max(maxX, x);
+            minY = Math.min(minY, y);
+            maxY = Math.max(maxY, y);
+          }
+        }
+      }
+      expect(maxX, `frame ${frame} has visible green pixels`).toBeGreaterThanOrEqual(0);
+      const actualWidth = maxX - minX + 1;
+      const actualHeight = maxY - minY + 1;
+      expect(Math.abs(actualWidth - expectedWidth), `frame ${frame} width`).toBeLessThanOrEqual(4);
+      expect(Math.abs(actualHeight - expectedHeight), `frame ${frame} height`).toBeLessThanOrEqual(4);
+      expect(Math.abs((minX + maxX) / 2 - width / 2), `frame ${frame} center x`).toBeLessThanOrEqual(3);
+      expect(Math.abs((minY + maxY) / 2 - height / 2), `frame ${frame} center y`).toBeLessThanOrEqual(3);
+    }
+  }, 120_000);
+
+  it("keeps static rotated corners inside the expanded layer", async () => {
+    const root = await customRoot();
+    await mkdir(path.join(root, "out"), { recursive: true });
+    await keyframeImage(path.join(root, "assets", "green.png"), "0xb8f36b", "100x100");
+    await writeMainTimeline(root, {
+      version: 1,
+      background: "#000000",
+      tracks: [{ id: "v1", kind: "video" }],
+      clips: [
+        {
+          id: "rotated",
+          track: "v1",
+          source: { kind: "image", src: "assets/green.png" },
+          start: 0,
+          duration: 10,
+          transform: { fit: "contain", width: 100, height: 100, rotation: 45 },
+        },
+      ],
+    });
+    const project = await loadProject(root);
+    const stillPath = path.join(root, "out", "static-corners.png");
+    await captureTimelineStill({ project, timelineId: "main", frame: 0, outPath: stillPath });
+
+    const corner = await mediaPixel(stillPath, 225, 90);
+    const center = await mediaPixel(stillPath, 160, 90);
+    expect(corner[1]).toBeGreaterThan(corner[0] + 40);
+    expect(center[1]).toBeGreaterThan(center[0] + 40);
+  }, 120_000);
+
+  it("keeps rotated corners inside the expanded layer", async () => {
+    const root = await customRoot();
+    await mkdir(path.join(root, "out"), { recursive: true });
+    await keyframeImage(path.join(root, "assets", "green.png"), "0xb8f36b", "100x100");
+    await writeMainTimeline(root, {
+      version: 1,
+      background: "#000000",
+      tracks: [{ id: "v1", kind: "video" }],
+      clips: [
+        {
+          id: "rotated",
+          track: "v1",
+          source: { kind: "image", src: "assets/green.png" },
+          start: 0,
+          duration: 10,
+          transform: { fit: "contain", width: 100, height: 100 },
+          keyframes: {
+            rotation: [
+              { frame: 0, value: 0 },
+              { frame: 9, value: 45 },
+            ],
+          },
+        },
+      ],
+    });
+    const project = await loadProject(root);
+    const outPath = path.join(root, "out", "main.mp4");
+    await renderTimelineForTest({ project, timelineId: "main", outPath, workers: 1, maxSegmentFrames: 5 });
+
+    const frame0 = path.join(root, "out", "corners-0.png");
+    const frame9 = path.join(root, "out", "corners-9.png");
+    await extractFrame(outPath, 0, frame0);
+    await extractFrame(outPath, 9, frame9);
+
+    const before = await mediaPixel(frame0, 225, 90);
+    const rotated = await mediaPixel(frame9, 225, 90);
+    expect(before[1]).toBeLessThan(30);
+    expect(rotated[1]).toBeGreaterThan(rotated[0] + 40);
+  }, 120_000);
+
+  it("applies parent keyframes to a nested timeline group", async () => {
+    const root = await customRoot();
+    await mkdir(path.join(root, "out"), { recursive: true });
+    await keyframeImage(path.join(root, "assets", "green.png"), "0xb8f36b", "320x180");
+    await writeFile(
+      path.join(root, "timelines", "inner.json"),
+      `${JSON.stringify(
+        {
+          version: 1,
+          background: "#000000",
+          tracks: [{ id: "v1", kind: "video" }],
+          clips: [
+            {
+              id: "green",
+              track: "v1",
+              source: { kind: "image", src: "assets/green.png" },
+              start: 0,
+              duration: 10,
+              transform: { fit: "stretch" },
+            },
+          ],
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    await writeMainTimeline(root, {
+      version: 1,
+      background: "#000000",
+      tracks: [{ id: "v1", kind: "video" }],
+      clips: [
+        {
+          id: "nested",
+          track: "v1",
+          source: { kind: "timeline", id: "inner" },
+          start: 0,
+          duration: 10,
+          sourceIn: 0,
+          keyframes: {
+            x: [
+              { frame: 0, value: 0 },
+              { frame: 9, value: 160 },
+            ],
+          },
+        },
+      ],
+    });
+    await writeFile(
+      path.join(root, "video.config.js"),
+      `export default {
+        format: { width: 320, height: 180, fps: 10 },
+        timelines: { main: "./timelines/main.json", inner: "./timelines/inner.json" },
+      };\n`,
+    );
+    const project = await loadProject(root);
+    const outPath = path.join(root, "out", "main.mp4");
+    await renderTimelineForTest({ project, timelineId: "main", outPath, workers: 1, maxSegmentFrames: 5 });
+
+    const frame0 = path.join(root, "out", "nested-0.png");
+    const frame9 = path.join(root, "out", "nested-9.png");
+    await extractFrame(outPath, 0, frame0);
+    await extractFrame(outPath, 9, frame9);
+
+    const start = await mediaPixel(frame0, 80, 90);
+    const moved = await mediaPixel(frame9, 240, 90);
+    const original = await mediaPixel(frame9, 80, 90);
+    expect(start[1]).toBeGreaterThan(start[0] + 40);
+    expect(moved[1]).toBeGreaterThan(moved[0] + 40);
+    expect(original[1]).toBeLessThan(30);
+  }, 120_000);
+
+  it("renders keyframed scale, including zero", async () => {
+    const root = await customRoot();
+    await mkdir(path.join(root, "out"), { recursive: true });
+    await keyframeImage(path.join(root, "assets", "green.png"), "0xb8f36b");
+    await writeMainTimeline(root, {
+      version: 1,
+      background: "#000000",
+      tracks: [{ id: "v1", kind: "video" }],
+      clips: [
+        {
+          id: "scaled",
+          track: "v1",
+          source: { kind: "image", src: "assets/green.png" },
+          start: 0,
+          duration: 10,
+          keyframes: {
+            scale: [
+              { frame: 0, value: 0 },
+              { frame: 9, value: 2 },
+            ],
+          },
+        },
+      ],
+    });
+    const project = await loadProject(root);
+    const outPath = path.join(root, "out", "main.mp4");
+    await renderTimelineForTest({ project, timelineId: "main", outPath, workers: 1, maxSegmentFrames: 5 });
+
+    const frame0 = path.join(root, "out", "scale-0.png");
+    const frame9 = path.join(root, "out", "scale-9.png");
+    await extractFrame(outPath, 0, frame0);
+    await extractFrame(outPath, 9, frame9);
+
+    const zeroCenter = await mediaPixel(frame0, 160, 90);
+    const zeroEdge = await mediaPixel(frame0, 280, 90);
+    const scaledCenter = await mediaPixel(frame9, 160, 90);
+    const scaledEdge = await mediaPixel(frame9, 280, 90);
+    expect(zeroCenter[1]).toBeLessThan(30);
+    expect(zeroEdge[1]).toBeLessThan(30);
+    expect(scaledCenter[1]).toBeGreaterThan(scaledCenter[0] + 40);
+    expect(scaledEdge[1]).toBeGreaterThan(scaledEdge[0] + 40);
+  }, 120_000);
+
+  it("renders keyframed rotation", async () => {
+    const root = await customRoot();
+    await mkdir(path.join(root, "out"), { recursive: true });
+    const dotFilter = `format=rgba,geq=r='if(gte(X,70)*lt(X,90)*gte(Y,45)*lt(Y,55),184,0)':g='if(gte(X,70)*lt(X,90)*gte(Y,45)*lt(Y,55),243,0)':b='if(gte(X,70)*lt(X,90)*gte(Y,45)*lt(Y,55),107,0)':a='if(gte(X,70)*lt(X,90)*gte(Y,45)*lt(Y,55),255,0)'`;
+    await exec("ffmpeg", [
+      "-y",
+      "-v",
+      "error",
+      "-f",
+      "lavfi",
+      "-i",
+      "color=c=black:s=100x100:d=1",
+      "-vf",
+      dotFilter,
+      "-frames:v",
+      "1",
+      path.join(root, "assets", "dot.png"),
+    ]);
+    await writeMainTimeline(root, {
+      version: 1,
+      background: "#000000",
+      tracks: [{ id: "v1", kind: "video" }],
+      clips: [
+        {
+          id: "rotated",
+          track: "v1",
+          source: { kind: "image", src: "assets/dot.png" },
+          start: 0,
+          duration: 10,
+          transform: { fit: "contain", width: 100, height: 100 },
+          keyframes: {
+            rotation: [
+              { frame: 0, value: 0 },
+              { frame: 9, value: 90 },
+            ],
+          },
+        },
+      ],
+    });
+    const project = await loadProject(root);
+    const outPath = path.join(root, "out", "main.mp4");
+    await renderTimelineForTest({ project, timelineId: "main", outPath, workers: 1, maxSegmentFrames: 5 });
+
+    const frame0 = path.join(root, "out", "rotation-0.png");
+    const frame9 = path.join(root, "out", "rotation-9.png");
+    await extractFrame(outPath, 0, frame0);
+    await extractFrame(outPath, 9, frame9);
+
+    const rotationStart = await mediaPixel(frame0, 190, 90);
+    const rotationStartCenter = await mediaPixel(frame0, 160, 90);
+    expect(rotationStart[1]).toBeGreaterThan(rotationStart[0] + 40);
+    expect(rotationStartCenter[1]).toBeLessThan(30);
+
+    const rotationEndOriginal = await mediaPixel(frame9, 190, 90);
+    expect(rotationEndOriginal[1]).toBeLessThan(30);
+    const rotationEndPerpendicularA = await mediaPixel(frame9, 160, 120);
+    const rotationEndPerpendicularB = await mediaPixel(frame9, 160, 60);
+    expect(Math.max(rotationEndPerpendicularA[1], rotationEndPerpendicularB[1])).toBeGreaterThan(
+      rotationEndPerpendicularA[0] + 40,
+    );
+  }, 120_000);
+});

@@ -99,6 +99,24 @@ source. Results are written to `<output>/result.json`. The full 60-minute
 production gate is a separate CLI render; use a composition-heavy timeline and
 `node dist/cli.js render <id> --workers <n> --scratch <dir>`.
 
+## Keyframe timeline benchmark
+
+`node bench/keyframe-timeline.mjs` generates a 1280×720, 30 fps timeline with a
+full-frame image backdrop and a static composition card animated through `x`,
+`y`, `scale`, `rotation`, and `opacity` with a `screen` blend. It renders with
+the production segmented pipeline and reports wall time, segment count, and
+output bytes.
+
+```sh
+pnpm build
+node bench/keyframe-timeline.mjs --frames 300 --max-segment-frames 60 --workers 2
+```
+
+Use `--work`, `--output`, `--frames`, `--workers`, and `--max-segment-frames` to
+point at another disk or workload. This is a measurement tool for the keyframe
+composite path, not a CI gate; run it on the reference machine when evaluating a
+change to the expression or mask implementation.
+
 ## Browser-flag experiments
 
 `--browser-arg <flag>` adds a Chromium flag for one benchmark run, and

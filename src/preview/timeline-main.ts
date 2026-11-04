@@ -1,4 +1,5 @@
 import { createTimelineHost, type TimelineHost } from "./timeline-host.js";
+import { keyframeChannelsAt, keyframeMarkerFrames } from "../timeline/keyframes.js";
 import type { TimelinePreviewAudioClip, TimelinePreviewClip, TimelinePreviewData } from "./timeline-data.js";
 
 interface TimelineHostApi {
@@ -117,8 +118,23 @@ function renderTracks(data: TimelinePreviewData): { playheads: HTMLDivElement[];
       element.style.left = `${(clip.start / data.durationInFrames) * 100}%`;
       element.style.width = `${(clip.duration / data.durationInFrames) * 100}%`;
       const blendLabel = clip.blend === "normal" ? "" : ` · ${clip.blend}`;
-      element.textContent = `${clip.id}${blendLabel}`;
-      element.title = `${clip.id} · ${clip.source.kind} · ${clip.start}..${clip.end}${blendLabel}`;
+      const label = document.createElement("span");
+      label.className = "clip-label";
+      label.textContent = `${clip.id}${blendLabel}`;
+      element.append(label);
+      const keyframeFrames = keyframeMarkerFrames(clip.keyframes);
+      for (const frame of keyframeFrames) {
+        const marker = document.createElement("span");
+        marker.className = "keyframe-marker";
+        marker.dataset.frame = String(clip.start + frame);
+        marker.style.left = `${clip.duration > 0 ? (frame / clip.duration) * 100 : 0}%`;
+        const channels = keyframeChannelsAt(clip.keyframes, frame)
+          .map((entry) => `${entry.channel} ${entry.value}`)
+          .join(", ");
+        marker.title = `Keyframe ${frame}${channels.length > 0 ? ` · ${channels}` : ""}`;
+        element.append(marker);
+      }
+      element.title = `${clip.id} · ${clip.source.kind} · ${clip.start}..${clip.end}${blendLabel}${keyframeFrames.length > 0 ? ` · ${keyframeFrames.length} keyframe${keyframeFrames.length === 1 ? "" : "s"}` : ""}`;
       lane.append(element);
     }
 
@@ -350,6 +366,18 @@ async function main(): Promise<void> {
       void renderFrame(target);
     }
   };
+
+  for (const marker of document.querySelectorAll<HTMLElement>(".keyframe-marker")) {
+    marker.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const frame = Number(marker.dataset.frame);
+      if (!Number.isFinite(frame)) {
+        return;
+      }
+      stopPlayback();
+      void renderFrame(frame);
+    });
+  }
 
   const isTextEntry = (target: EventTarget | null): boolean => {
     // Keys forwarded from layer iframes carry elements from another realm,

@@ -151,8 +151,24 @@ How a clip source's natural frame is fitted into the project frame or an explici
 _Avoid_: Resize mode, object-fit
 
 **Clip transform**:
-The static size, position, rotation, and opacity applied to a visual clip. Size is either an explicit `width`/`height` box or a `scale` multiplier.
+The size, position, rotation, and opacity applied to a visual clip. Size is either an explicit `width`/`height` box or a `scale` multiplier. Static transform values and keyframe tracks are separate; a keyed channel cannot also be a static scalar.
 _Avoid_: Effect, animation
+
+**Clip keyframes**:
+A per-channel animation on a visual clip's presentation: `x`, `y`, `scale`, `rotation`, or `opacity`. Keys use clip-local integer frames and hold before the first and after the last key.
+_Avoid_: CSS keyframes, composition animation
+
+**Keyframe**:
+One `{ frame, value, easing? }` entry in a clip keyframe track. `frame` is clip-local; `easing` applies to the interval after it.
+_Avoid_: Marker, cue
+
+**Keyframe track**:
+The ordered keyframes for one presentation channel. Keys are strictly increasing and stay within the clip's `0..duration` range.
+_Avoid_: Animation curve, property lane
+
+**Easing**:
+A CSS timing function that shapes the interval between two timeline keyframes. Preview evaluates it exactly; production approximates it in the FFmpeg filter graph.
+_Avoid_: Interpolation, curve
 
 **Blend mode**:
 The static CSS `mix-blend-mode` a visual clip applies against the accumulated backdrop of all lower layers and the timeline background. It respects the clip's source alpha and is not animated.

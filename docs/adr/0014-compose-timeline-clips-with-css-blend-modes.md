@@ -2,10 +2,11 @@
 
 **Status:** Accepted
 **Date:** 2026-11-03
+**Amended by:** [ADR-0018](0018-animate-timeline-clips-with-keyframes.md) (clip keyframes; blend modes remain static)
 
 Visual timeline clips may declare a static `blend` mode. The mode is a CSS `mix-blend-mode` value and composites the clip against the accumulated backdrop of all lower layers and the timeline background. The clip's source alpha gates the blend: transparent pixels leave the backdrop unchanged. The supported modes are `normal`, `multiply`, `screen`, `overlay`, `darken`, `lighten`, `color-dodge`, `color-burn`, `hard-light`, `soft-light`, `difference`, and `exclusion`. `hue`, `saturation`, `color`, and `luminosity` require cross-channel math and are rejected at validation. `blend` is a top-level clip field, omitted means `normal`, and the timeline document stays at version 1.
 
-Preview applies `mix-blend-mode` to the clip's DOM wrapper. Production applies FFmpeg's `blend` filter with the source alpha mask, then composites the blended result source-over. Chromium/CSS is the reference; FFmpeg is an approximation. The existing guarantee remains: parity is at clip capture, not at the final encoded pixel. Blend modes are static; there are no keyframes or animated blend modes.
+Preview applies `mix-blend-mode` to the clip's DOM wrapper. Production applies FFmpeg's `blend` filter with the source alpha mask, then composites the blended result source-over. Chromium/CSS is the reference; FFmpeg is an approximation. The existing guarantee remains: parity is at clip capture, not at the final encoded pixel. Blend modes are static; there are no animated blend modes.
 
 ## Context
 

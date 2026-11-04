@@ -61,11 +61,41 @@ beforeAll(async () => {
     )}\n`,
   );
   await writeFile(
+    path.join(root, "timelines", "motion.json"),
+    `${JSON.stringify(
+      {
+        version: 1,
+        tracks: [{ id: "v1", kind: "video" }],
+        clips: [
+          {
+            id: "intro",
+            track: "v1",
+            source: { kind: "composition", id: "intro" },
+            start: 0,
+            duration: 10,
+            keyframes: {
+              opacity: [
+                { frame: 0, value: 0 },
+                { frame: 10, value: 1, easing: "ease-out" },
+              ],
+              x: [
+                { frame: 0, value: -20 },
+                { frame: 10, value: 0 },
+              ],
+            },
+          },
+        ],
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  await writeFile(
     path.join(root, "video.config.js"),
     `export default {
       format: { width: 320, height: 180, fps: 10 },
       compositions: { intro: "./compositions/intro.html", still: "./compositions/still.html" },
-      timelines: { main: "./timelines/main.json", static: "./timelines/static.json" },
+      timelines: { main: "./timelines/main.json", motion: "./timelines/motion.json", static: "./timelines/static.json" },
     };\n`,
   );
   server = await startPreviewServer({ projectRoot: root, port: 0, host: "127.0.0.1" });
@@ -112,6 +142,26 @@ describe("timeline preview server", () => {
     ]);
   });
 
+  it("publishes keyframe tracks for the preview host", async () => {
+    const response = await fetch(new URL("/__frameyard/timeline/motion.json", server.url));
+
+    expect(response.status).toBe(200);
+    const data = (await response.json()) as { clips: Array<Record<string, unknown>> };
+    expect(data.clips[0]).toMatchObject({
+      id: "intro",
+      keyframes: {
+        opacity: [
+          { frame: 0, value: 0 },
+          { frame: 10, value: 1, easing: "ease-out" },
+        ],
+        x: [
+          { frame: 0, value: -20 },
+          { frame: 10, value: 0 },
+        ],
+      },
+    });
+  });
+
   it("publishes static composition sources without a duration", async () => {
     const response = await fetch(new URL("/__frameyard/timeline/static.json", server.url));
 
@@ -138,6 +188,7 @@ describe("timeline preview server", () => {
     expect(html).toContain('data-embed="0"');
     expect(html).toContain("/__frameyard/framework/preview/timeline-main.js");
     expect(html).toContain("timeline");
+    expect(html).toContain(".keyframe-marker");
 
     const embed = await fetch(new URL("/__frameyard/timeline/main?__fy-embed=1", server.url));
     expect(embed.status).toBe(200);

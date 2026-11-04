@@ -1,4 +1,5 @@
 import { nextPaint, waitForVideoPaint } from "../runtime/video.js";
+import { evaluatePresentation } from "../timeline/keyframes.js";
 import type {
   TimelinePreviewClip,
   TimelinePreviewData,
@@ -94,6 +95,13 @@ function fitScale(
     ? Math.min(box.width / source.width, box.height / source.height)
     : Math.max(box.width / source.width, box.height / source.height);
   return { x: raw, y: raw };
+}
+
+function applyClipPresentation(wrapper: HTMLDivElement, clip: TimelinePreviewClip, frame: number): void {
+  const values = evaluatePresentation(clip.transform, clip.keyframes, frame - clip.start);
+  const scale = clip.transform.width === undefined ? values.scale : 1;
+  wrapper.style.opacity = String(values.opacity);
+  wrapper.style.transform = `translate(-50%, -50%) translate(${values.x}px, ${values.y}px) rotate(${values.rotation}deg) scale(${scale})`;
 }
 
 function waitFor<T>(predicate: () => T | undefined, timeout = 30_000): Promise<T> {
@@ -216,7 +224,6 @@ export function createTimelineHost(
     const size = sourceSize(source, data);
     const box = clipBox(clip.transform, stageSize);
     const fit = fitScale(clip.transform, size, box);
-    const scale = clip.transform.width === undefined ? clip.transform.scale : 1;
     const wrapper = document.createElement("div");
     wrapper.className = "timeline-layer";
     wrapper.dataset.clip = clip.id;
@@ -224,8 +231,7 @@ export function createTimelineHost(
     wrapper.style.height = `${box.height}px`;
     wrapper.style.overflow = "hidden";
     wrapper.style.display = "none";
-    wrapper.style.opacity = String(clip.transform.opacity);
-    wrapper.style.transform = `translate(-50%, -50%) translate(${clip.transform.x}px, ${clip.transform.y}px) rotate(${clip.transform.rotation}deg) scale(${scale})`;
+    applyClipPresentation(wrapper, clip, clip.start);
     // Layers are created on first activation, so DOM order is not track order.
     wrapper.style.zIndex = String(trackOrder.get(clip.track) ?? 0);
     wrapper.style.mixBlendMode = clip.blend === "normal" ? "" : clip.blend;
@@ -330,6 +336,7 @@ export function createTimelineHost(
       layer.lastActive = frame;
       layer.wrapper.style.display = "block";
       const clip = layer.clip;
+      applyClipPresentation(layer.wrapper, clip, frame);
       const localFrame = clip.sourceIn + (frame - clip.start);
       if (clip.source.kind === "composition" || clip.source.kind === "timeline") {
         const contentWindow = (layer.element as HTMLIFrameElement).contentWindow as unknown as FrameyardFrame | null;

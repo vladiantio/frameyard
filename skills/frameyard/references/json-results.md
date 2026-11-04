@@ -51,7 +51,7 @@ Additional fields are command-specific and stable within the 0.8 contract. `chec
 }
 ```
 
-Static validation diagnostics include source locations. Runtime diagnostics may include a `frame`. Audio and transcript warnings use `AUDIO_WARNING` and `TRANSCRIPT_WARNING`; controller clock/randomness and CSS transition warnings use `DETERMINISM_WARNING`. See [diagnostics](diagnostics.md) for the code table.
+Static validation diagnostics include source locations. Runtime diagnostics may include a `frame`. Timeline diagnostics add `timeline`, `clip`, `track`, `jsonPath`, and, for keyframe errors, `channel` and the zero-based `keyframe` index. Audio and transcript warnings use `AUDIO_WARNING` and `TRANSCRIPT_WARNING`; controller clock/randomness and CSS transition warnings use `DETERMINISM_WARNING`. See [diagnostics](diagnostics.md) for the code table.
 
 ## check
 

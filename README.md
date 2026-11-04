@@ -44,7 +44,7 @@ npx frameyard still main --frame 0,118-126 --out out/stills
 
 The scaffold wraps its composition in `timelines/main.timeline.json`. `render` writes the video to `out/main.mp4` in the project by default; pass `--out <file.mp4>` to choose another path. The composition remains renderable on its own with `npx frameyard render hello --props props/hello.json`. The scaffold's `.gitignore` ignores `out/`.
 
-The 30-second reference composition lives in [`examples/demo`](./examples/demo), a focused WebGL shader example lives in [`examples/webgl`](./examples/webgl), the video example in [`examples/video`](./examples/video) includes two embedded-video compositions plus WebM and MP4 timelines that place the clips on tracks under a transparent HTML overlay, [`examples/blend`](./examples/blend) demonstrates static CSS blend modes on composition and video clips, [`examples/nested`](./examples/nested) repeats two inner timelines inside an outer timeline as full-frame and transformed group clips, and [`examples/static`](./examples/static) shows a timeless composition rendered as a PNG and reused as a timeline image. Each README has the commands for running it from a repository checkout.
+The 30-second reference composition lives in [`examples/demo`](./examples/demo), a focused WebGL shader example lives in [`examples/webgl`](./examples/webgl), the video example in [`examples/video`](./examples/video) includes two embedded-video compositions plus WebM and MP4 timelines that place the clips on tracks under a transparent HTML overlay, [`examples/blend`](./examples/blend) demonstrates static CSS blend modes on composition and video clips, [`examples/keyframes`](./examples/keyframes) animates one timeline clip through every presentation channel, [`examples/nested`](./examples/nested) repeats two inner timelines inside an outer timeline as full-frame and transformed group clips, and [`examples/static`](./examples/static) shows a timeless composition rendered as a PNG and reused as a timeline image. Each README has the commands for running it from a repository checkout.
 
 ## Project format
 
@@ -138,7 +138,8 @@ A timeline is a JSON document that places composition and media clips on video a
 - Sources are `composition` + `id`, `timeline` + `id`, or `video`/`image`/`audio` + project-relative `src`.
 - `start`, `sourceIn`, and `duration` use timeline frames. Omitted durations use the rest of the source; image clips and static composition clips require a duration.
 - Composition clips can fix `props`, trim the source range, and repeat the same composition with different settings. A static composition clip must use `sourceIn: 0`, has no intrinsic duration, and contributes no audio or transcripts.
-- Visual clips support static `fit`, `width`/`height` (an explicit box), `x`, `y`, `scale`, `rotation`, `opacity`, and `blend`. `fit` applies inside the box; `width` and `height` go together and are mutually exclusive with `scale`. `blend` is a CSS `mix-blend-mode` value with source-alpha semantics, from `normal` (the default) through `multiply`, `screen`, `overlay`, the light/dodge/burn family, `difference`, and `exclusion`; `hue`, `saturation`, `color`, and `luminosity` are rejected. No keyframes, transitions, or other effects.
+- Visual clips support static `fit`, `width`/`height` (an explicit box), `x`, `y`, `scale`, `rotation`, `opacity`, and `blend`. `fit` applies inside the box; `width` and `height` go together and are mutually exclusive with `scale`. `blend` is a CSS `mix-blend-mode` value with source-alpha semantics, from `normal` (the default) through `multiply`, `screen`, `overlay`, the light/dodge/burn family, `difference`, and `exclusion`; `hue`, `saturation`, `color`, and `luminosity` are rejected. Rotation preserves the full rotated bounds instead of clipping corners.
+- Visual clips may animate `x`, `y`, `scale`, `rotation`, and `opacity` with `keyframes`: per-channel arrays of `{ "frame", "value", "easing"? }` in clip-local frames. Keys hold before the first and after the last key; a keyed channel cannot also be an explicit scalar in `transform`. Easings are the CSS timing functions, with `hold` as a `steps(1, end)` shorthand. `keyframes.scale` cannot be combined with a `width`/`height` box. See [`examples/keyframes`](./examples/keyframes).
 - Video, composition, and nested-timeline clips contribute audio automatically unless muted. Timeline audio clips live on audio tracks.
 - A composition that declares an `fps` must match the project fps; an undeclared `fps` inherits it. Different sizes are fitted by the clip. Clips on one track cannot overlap.
 - Nested timelines are rendered as groups, so the parent clip's opacity, transform, and blend mode apply to the whole nested result. A blend inside a nested timeline sees only that timeline's own backdrop; a transparent nested timeline does not see the parent's layers. See [`examples/nested`](./examples/nested).
@@ -385,7 +386,7 @@ A timeline renders through segments:
 1. Static timeline validation resolves references, media, nested timelines, durations, props, audio, and overlaps.
 2. The timeline is split at active-layer changes and a maximum segment duration.
 3. In parallel workers, Chromium captures active composition and nested-timeline clips to alpha-preserving FFV1 intermediates. A static composition is captured once per props variant as a transparent PNG and reused as an image layer across segments.
-4. FFmpeg applies fit, static transforms, opacity, video/image decoding, and audio mixing, and encodes each segment as H.264, HEVC, or VP9.
+4. FFmpeg applies fit, presentation keyframes, opacity, video/image decoding, and audio mixing, and encodes each segment as H.264, HEVC, or VP9.
 5. Segments are concatenated in timeline order without re-encoding and the global audio mix is muxed into the final output.
 
 Composition concurrency changes scheduling only. Timeline workers process independent segments; output order and captured composition frames remain deterministic. `check` and `still` use the same clip capture and composite path as their target. A multi-frame `still` captures sequentially, reuses one preview server, and its frames are pixel-identical to capturing each frame separately. A static composition render performs one capture and does not seek frames.
@@ -400,7 +401,7 @@ For a repeatable local measurement of seek, capture, encode, and full-render tim
 
 Deferred from this implementation slice:
 
-- Timeline transitions, filters, keyframes, masks, and audio fades
+- Timeline transitions, animated blend modes, filters, masks, and audio fades
 - Full visual timeline editing, drag-and-drop, trim handles, and undo/redo
 - Timeline-level variables and prop overrides inside nested timelines
 - Per-timeline formats and frame-rate conversion/retiming
@@ -442,6 +443,7 @@ See the [design baseline](./docs/v0.1-design.md) for the full product contract, 
 - `examples/webgl/`: the focused WebGL shader example
 - `examples/video/`: embedded-video compositions and WebM/MP4 timelines with video clips under a transparent HTML overlay
 - `examples/blend/`: composition and video clips composited with static CSS blend modes
+- `examples/keyframes/`: one timeline clip animated through position, scale, rotation, and opacity
 - `examples/nested/`: two inner timelines placed in an outer timeline as full-frame and transformed group clips
 - `examples/static/`: a timeless composition rendered as a PNG and reused as a timeline image
 - `bench/fixtures/`: controlled HTML compositions for the render benchmark

@@ -1,7 +1,9 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { writeFile } from "node:fs/promises";
 import { FrameyardError } from "../errors.js";
-import type { BlendMode } from "../timeline/schema.js";
+import { evaluatePresentation } from "../timeline/keyframes.js";
+import type { BlendMode, TimelineKeyframes, TimelineTransform } from "../timeline/schema.js";
+import { keyframeChannelExpression } from "./keyframe-expressions.js";
 
 const STDERR_LIMIT = 16 * 1024;
 
@@ -751,6 +753,10 @@ export interface TimelineCompositeLayer {
   blend: BlendMode;
   /** Absolute source frame at the segment start, for video inputs. */
   sourceStartFrame?: number;
+  /** Per-channel presentation animation, evaluated in clip-local frames. */
+  keyframes?: TimelineKeyframes;
+  /** Timeline frame where the clip starts. Defaults to 0. */
+  clipStart?: number;
 }
 
 function ffmpegBackgroundColor(value: string): string {
@@ -796,8 +802,45 @@ function fitFilter(layer: TimelineCompositeLayer, stageWidth: number, stageHeigh
   return `scale=${fittedWidth}:${fittedHeight},pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=black@0`;
 }
 
-function layerFilter(layer: TimelineCompositeLayer, stageWidth: number, stageHeight: number, fps: number): string {
-  const filters = [
+function layerTransform(layer: TimelineCompositeLayer): TimelineTransform {
+  return {
+    fit: layer.fit,
+    x: layer.x,
+    y: layer.y,
+    ...(layer.width !== undefined && layer.height !== undefined ? { width: layer.width, height: layer.height } : {}),
+    scale: layer.scale,
+    rotation: layer.rotation,
+    opacity: layer.opacity,
+  };
+}
+
+function hasKeyframe(layer: TimelineCompositeLayer, channel: "x" | "y" | "scale" | "rotation" | "opacity"): boolean {
+  return layer.keyframes?.[channel] !== undefined;
+}
+
+/** False when a keyed layer is invisible for every frame of the range. */
+function isLayerVisibleInRange(layer: TimelineCompositeLayer, frameOffset: number, frames: number): boolean {
+  if (!hasKeyframe(layer, "opacity") && !hasKeyframe(layer, "scale")) {
+    return layer.opacity > 0 && layer.scale > 0;
+  }
+  const transform = layerTransform(layer);
+  const clipStart = layer.clipStart ?? 0;
+  for (let index = 0; index < frames; index += 1) {
+    const values = evaluatePresentation(transform, layer.keyframes, frameOffset + index - clipStart);
+    if (values.opacity > 0 && values.scale > 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function baseLayerFilters(
+  layer: TimelineCompositeLayer,
+  stageWidth: number,
+  stageHeight: number,
+  fps: number,
+): string[] {
+  return [
     // Matroska and WebM timestamps can be quantized to milliseconds. Normalize
     // every timed layer to the project frame rate before overlay framesync so
     // it does not duplicate or drop frames. Still images are already static.
@@ -805,16 +848,130 @@ function layerFilter(layer: TimelineCompositeLayer, stageWidth: number, stageHei
     fitFilter(layer, stageWidth, stageHeight),
     "format=rgba",
   ];
-  if (layer.scale !== 1) {
-    filters.push(`scale=iw*${formatNumber(layer.scale)}:ih*${formatNumber(layer.scale)}`);
+}
+
+/** Dimensions entering the rotate filter for this layer. */
+function rotationInputSize(
+  layer: TimelineCompositeLayer,
+  stageWidth: number,
+  stageHeight: number,
+): { width: number; height: number } {
+  const width = layer.width ?? stageWidth;
+  const height = layer.height ?? stageHeight;
+  if (layer.keyframes?.scale !== undefined) {
+    // Animated scale is applied after rotation, keeping the rotate input fixed.
+    return { width, height };
   }
-  if (layer.rotation !== 0) {
-    filters.push(`rotate=angle=${formatNumber(layer.rotation)}*PI/180:fillcolor=black@0`);
+  return {
+    width: Math.max(1, Math.ceil(width * layer.scale)),
+    height: Math.max(1, Math.ceil(height * layer.scale)),
+  };
+}
+
+function rotatedBounds(width: number, height: number, degrees: number): { width: number; height: number } {
+  const radians = (degrees * Math.PI) / 180;
+  const cosine = Math.abs(Math.cos(radians));
+  const sine = Math.abs(Math.sin(radians));
+  // Two extra pixels absorb filter rounding and anti-aliased edge pixels.
+  return {
+    width: Math.max(1, Math.ceil(width * cosine + height * sine) + 2),
+    height: Math.max(1, Math.ceil(width * sine + height * cosine) + 2),
+  };
+}
+
+/**
+ * FFmpeg's rotate filter clips to a fixed output size. A keyed rotation uses a
+ * square diagonal bound so every segment uses the same size and corners stay
+ * visible at any angle. Static rotation uses its exact bounding box.
+ */
+function rotationOutputSize(
+  layer: TimelineCompositeLayer,
+  stageWidth: number,
+  stageHeight: number,
+): { width: number; height: number } {
+  const input = rotationInputSize(layer, stageWidth, stageHeight);
+  if (layer.keyframes?.rotation) {
+    const diagonal = Math.max(1, Math.ceil(Math.hypot(input.width, input.height)) + 2);
+    return { width: diagonal, height: diagonal };
   }
-  if (layer.opacity < 1) {
+  return rotatedBounds(input.width, input.height, layer.rotation);
+}
+
+function needsOpacityMask(layer: TimelineCompositeLayer): boolean {
+  return hasKeyframe(layer, "opacity") || hasKeyframe(layer, "scale");
+}
+
+/**
+ * Presentation filters after the optional opacity mask. Animated scale is
+ * applied after rotation because uniform scale and rotation commute; rotation
+ * then keeps a fixed input size for the rotate filter.
+ */
+function presentationLayerFilters(
+  layer: TimelineCompositeLayer,
+  stageWidth: number,
+  stageHeight: number,
+  frameOffset: number,
+): string[] {
+  const filters: string[] = [];
+  const clipStart = layer.clipStart ?? 0;
+  const frameOptions = { frameVariable: "n" as const, frameOffset, clipStart };
+  const scaleKeys = layer.keyframes?.scale;
+  const rotationKeys = layer.keyframes?.rotation;
+  const opacityKeys = layer.keyframes?.opacity;
+
+  const addRotation = (): void => {
+    if (rotationKeys || layer.rotation !== 0) {
+      const output = rotationOutputSize(layer, stageWidth, stageHeight);
+      const outputSize = `ow=${output.width}:oh=${output.height}`;
+      if (rotationKeys) {
+        const angle = keyframeChannelExpression("rotation", rotationKeys, frameOptions);
+        filters.push(`rotate=angle='(${angle})*PI/180':fillcolor=black@0:${outputSize}`);
+      } else {
+        filters.push(`rotate=angle=${formatNumber(layer.rotation)}*PI/180:fillcolor=black@0:${outputSize}`);
+      }
+    }
+  };
+
+  if (scaleKeys) {
+    addRotation();
+    const scale = keyframeChannelExpression("scale", scaleKeys, frameOptions);
+    filters.push(`scale=w='max(1,iw*(${scale}))':h='max(1,ih*(${scale}))':eval=frame`);
+  } else {
+    if (layer.scale !== 1) {
+      filters.push(`scale=iw*${formatNumber(layer.scale)}:ih*${formatNumber(layer.scale)}`);
+    }
+    addRotation();
+  }
+
+  if (!opacityKeys && !scaleKeys && layer.opacity < 1) {
     filters.push(`colorchannelmixer=aa=${formatNumber(layer.opacity)}`);
   }
-  return filters.join(",");
+  return filters;
+}
+
+/** Builds the animated alpha mask at the fitted box size. */
+function opacityMaskFilter(options: {
+  layer: TimelineCompositeLayer;
+  stageWidth: number;
+  stageHeight: number;
+  frameOffset: number;
+  inputIndex: number;
+  outputLabel: string;
+}): string {
+  const { layer, stageWidth, stageHeight, frameOffset, inputIndex, outputLabel } = options;
+  const clipStart = layer.clipStart ?? 0;
+  const frameOptions = { frameVariable: "N" as const, frameOffset, clipStart };
+  const opacityKeys = layer.keyframes?.opacity;
+  const scaleKeys = layer.keyframes?.scale;
+  const opacity = opacityKeys
+    ? keyframeChannelExpression("opacity", opacityKeys, frameOptions)
+    : formatNumber(layer.opacity);
+  const scale = scaleKeys ? keyframeChannelExpression("scale", scaleKeys, frameOptions) : undefined;
+  const visible = scale !== undefined ? `if(gt(${scale},0),1,0)` : "1";
+  const alpha = `min(1,max(0,(${opacity})*(${visible})))`;
+  const width = layer.width ?? stageWidth;
+  const height = layer.height ?? stageHeight;
+  return `[${inputIndex}:v]format=rgba,geq=r=0:g=0:b=0:a='255*${alpha}',scale=${width}:${height}:flags=neighbor,format=rgba[${outputLabel}]`;
 }
 
 /** W3C soft-light in 0-255 space; FFmpeg's native mode uses a different formula. */
@@ -854,8 +1011,17 @@ function blendSpec(mode: Exclude<BlendMode, "normal">): BlendSpec {
   };
 }
 
-function placementFilter(layer: TimelineCompositeLayer): string {
-  return `x=(main_w-overlay_w)/2+${formatNumber(layer.x)}:y=(main_h-overlay_h)/2+${formatNumber(layer.y)}`;
+function placementFilter(layer: TimelineCompositeLayer, frameOffset: number): string {
+  const clipStart = layer.clipStart ?? 0;
+  const frameOptions = { frameVariable: "n" as const, frameOffset, clipStart };
+  const xKeys = layer.keyframes?.x;
+  const yKeys = layer.keyframes?.y;
+  const x = xKeys ? keyframeChannelExpression("x", xKeys, frameOptions) : formatNumber(layer.x);
+  const y = yKeys ? keyframeChannelExpression("y", yKeys, frameOptions) : formatNumber(layer.y);
+  if (!xKeys && !yKeys) {
+    return `x=(main_w-overlay_w)/2+${x}:y=(main_h-overlay_h)/2+${y}`;
+  }
+  return `x='(main_w-overlay_w)/2+(${x})':y='(main_h-overlay_h)/2+(${y})':eval=frame`;
 }
 
 interface CompositeGraph {
@@ -874,6 +1040,7 @@ function buildCompositeGraph(options: {
   height: number;
   fps: number;
   frames: number;
+  frameOffset: number;
   background: string;
   layers: readonly TimelineCompositeLayer[];
   /** Segment mode trims video and loops images for the full segment duration. */
@@ -897,7 +1064,7 @@ function buildCompositeGraph(options: {
   let includedIndex = 0;
 
   const blendedLayers = options.layers.filter(
-    (layer) => layer.blend !== "normal" && layer.opacity > 0 && layer.scale > 0,
+    (layer) => layer.blend !== "normal" && isLayerVisibleInRange(layer, options.frameOffset, options.frames),
   );
   const canvasLabels: string[] = [];
   if (blendedLayers.length > 0) {
@@ -921,8 +1088,21 @@ function buildCompositeGraph(options: {
   let canvasIndex = 0;
 
   for (const layer of options.layers) {
-    if (layer.opacity <= 0 || layer.scale <= 0) {
+    if (!isLayerVisibleInRange(layer, options.frameOffset, options.frames)) {
       continue;
+    }
+
+    const masked = needsOpacityMask(layer);
+    let maskInput = 0;
+    if (masked) {
+      args.push(
+        "-f",
+        "lavfi",
+        "-i",
+        `color=c=black@0.0:s=1x1:r=${formatNumber(options.fps)}:d=${formatNumber(durationSeconds)}`,
+      );
+      inputIndex += 1;
+      maskInput = inputIndex;
     }
 
     if (layer.kind === "video") {
@@ -954,12 +1134,32 @@ function buildCompositeGraph(options: {
 
     inputIndex += 1;
     includedIndex += 1;
-    filters.push(
-      `[${inputIndex}:v]${layerFilter(layer, options.width, options.height, options.fps)}[l${includedIndex}]`,
-    );
+    const layerInput = inputIndex;
+    const base = baseLayerFilters(layer, options.width, options.height, options.fps);
+    const presentation = presentationLayerFilters(layer, options.width, options.height, options.frameOffset);
+    if (masked) {
+      filters.push(`[${layerInput}:v]${base.join(",")}[v${includedIndex}]`);
+      filters.push(
+        opacityMaskFilter({
+          layer,
+          stageWidth: options.width,
+          stageHeight: options.height,
+          frameOffset: options.frameOffset,
+          inputIndex: maskInput,
+          outputLabel: `km${includedIndex}`,
+        }),
+      );
+      filters.push(
+        `[v${includedIndex}][km${includedIndex}]blend=c0_mode=normal:c1_mode=normal:c2_mode=normal:c3_mode=multiply${presentation.length > 0 ? `,${presentation.join(",")}` : ""}[l${includedIndex}]`,
+      );
+    } else {
+      filters.push(`[${layerInput}:v]${[...base, ...presentation].join(",")}[l${includedIndex}]`);
+    }
 
     if (layer.blend === "normal") {
-      filters.push(`[${current}][l${includedIndex}]overlay=${placementFilter(layer)}:format=auto[b${includedIndex}]`);
+      filters.push(
+        `[${current}][l${includedIndex}]overlay=${placementFilter(layer, options.frameOffset)}:format=auto[b${includedIndex}]`,
+      );
       current = `b${includedIndex}`;
       continue;
     }
@@ -967,7 +1167,7 @@ function buildCompositeGraph(options: {
     const canvas = canvasLabels[canvasIndex] as string;
     canvasIndex += 1;
     filters.push(
-      `[${canvas}][l${includedIndex}]overlay=${placementFilter(layer)}:format=auto,format=rgba,split=2[pb${includedIndex}][pm${includedIndex}]`,
+      `[${canvas}][l${includedIndex}]overlay=${placementFilter(layer, options.frameOffset)}:format=auto,format=rgba,split=2[pb${includedIndex}][pm${includedIndex}]`,
     );
     filters.push(`[${current}]format=rgba,split=3[bc${includedIndex}][bm${includedIndex}][bo${includedIndex}]`);
     filters.push(`[bm${includedIndex}]alphaextract,format=rgba[mask${includedIndex}]`);
@@ -1024,6 +1224,8 @@ export async function compositeTimelineSegment(options: {
   /** CSS color, "black", or "transparent" for nested timelines. */
   background: string;
   layers: readonly TimelineCompositeLayer[];
+  /** Absolute timeline frame of the first output frame. Defaults to 0. */
+  frameOffset?: number;
   /** Segment payload: lossless FFV1 intermediates or a delivery codec. */
   codec: VideoCodec | "ffv1";
   /** Encoder for delivery codecs; defaults to `libx264`. */
@@ -1037,6 +1239,7 @@ export async function compositeTimelineSegment(options: {
     height: options.height,
     fps: options.fps,
     frames: options.frames,
+    frameOffset: options.frameOffset ?? 0,
     background: options.background,
     layers: options.layers,
     segment: true,
@@ -1155,6 +1358,8 @@ export async function compositeTimelineFrame(options: {
   fps: number;
   background: string;
   layers: readonly TimelineCompositeLayer[];
+  /** Absolute timeline frame being captured. Defaults to 0. */
+  frameOffset?: number;
   signal?: AbortSignal;
 }): Promise<void> {
   const graph = buildCompositeGraph({
@@ -1162,6 +1367,7 @@ export async function compositeTimelineFrame(options: {
     height: options.height,
     fps: options.fps,
     frames: 1,
+    frameOffset: options.frameOffset ?? 0,
     background: options.background,
     layers: options.layers,
     segment: false,

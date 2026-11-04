@@ -121,6 +121,10 @@ export interface CompositionDiagnosticDetails {
   timeline?: string;
   track?: string;
   clip?: string;
+  /** Timeline keyframe channel when the diagnostic targets one. */
+  channel?: string;
+  /** Zero-based keyframe index when the diagnostic targets one. */
+  keyframe?: number;
   /** JSON Pointer-like path such as `$.clips[2].duration`. */
   jsonPath?: string;
   composition?: string;

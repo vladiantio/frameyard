@@ -92,6 +92,7 @@ export async function buildTimelinePreviewData(
     sourceIn: clip.sourceIn,
     ...(clip.props !== undefined ? { props: clip.props } : {}),
     transform: clip.transform ?? { fit: "contain", x: 0, y: 0, scale: 1, rotation: 0, opacity: 1 },
+    ...(clip.keyframes !== undefined ? { keyframes: clip.keyframes } : {}),
     blend: clip.blend ?? "normal",
     audio: clip.audio ?? { muted: false, gain: 1 },
   }));

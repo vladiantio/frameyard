@@ -6,6 +6,7 @@ import {
   type Props,
 } from "../contracts.js";
 import type { FrameyardErrorCode } from "../errors.js";
+import { EASING_GRAMMAR, parseEasing } from "./easing.js";
 
 export type TimelineTrackKind = "video" | "audio";
 export type TimelineSourceKind = "composition" | "timeline" | "video" | "image" | "audio";
@@ -74,6 +75,22 @@ export interface TimelineClipAudio {
   gain: number;
 }
 
+export interface TimelineKeyframe {
+  /** Clip-local integer frame. `0` is the clip start; `duration` is the end boundary. */
+  frame: number;
+  value: number;
+  /** CSS timing function for the interval after this key. Defaults to `linear`. */
+  easing?: string;
+}
+
+export type TimelineKeyframeTrack = TimelineKeyframe[];
+
+export const KEYFRAME_CHANNELS = ["x", "y", "scale", "rotation", "opacity"] as const;
+
+export type TimelineKeyframeChannel = (typeof KEYFRAME_CHANNELS)[number];
+
+export type TimelineKeyframes = Partial<Record<TimelineKeyframeChannel, TimelineKeyframeTrack>>;
+
 export interface TimelineClip {
   id: string;
   track: string;
@@ -84,6 +101,8 @@ export interface TimelineClip {
   sourceIn: number;
   props?: Props;
   transform?: TimelineTransform;
+  /** Per-channel presentation animation, evaluated in clip-local frames. */
+  keyframes?: TimelineKeyframes;
   /** CSS blend mode against the accumulated backdrop. Defaults to `normal`. */
   blend?: BlendMode;
   audio?: TimelineClipAudio;
@@ -243,6 +262,134 @@ function parseTransform(
     transform[key] = field;
   }
   return transform;
+}
+
+function parseKeyframes(
+  value: unknown,
+  path: string,
+  add: (
+    code: FrameyardErrorCode,
+    message: string,
+    path: string,
+    details?: Partial<CompositionDiagnosticDetails>,
+  ) => void,
+  transform: unknown,
+): TimelineKeyframes {
+  if (!isPlainObject(value)) {
+    add("TIMELINE_CLIP_INVALID", "Clip keyframes must be an object.", path);
+    return {};
+  }
+
+  for (const key of unknownKeys(value, KEYFRAME_CHANNELS)) {
+    add("TIMELINE_CLIP_INVALID", `Unknown clip keyframes channel "${key}".`, jsonPath(path, key));
+  }
+  if (Object.keys(value).length === 0) {
+    add("TIMELINE_CLIP_INVALID", "Clip keyframes must declare at least one channel.", path);
+    return {};
+  }
+
+  const transformObject = isPlainObject(transform) ? transform : undefined;
+  const explicitTransformKeys = new Set(transformObject ? Object.keys(transformObject) : []);
+  const hasTransformBox = transformObject?.width !== undefined && transformObject?.height !== undefined;
+  const keyframes: TimelineKeyframes = {};
+
+  for (const channel of KEYFRAME_CHANNELS) {
+    const rawTrack = value[channel];
+    if (rawTrack === undefined) {
+      continue;
+    }
+    const channelPath = jsonPath(path, channel);
+    if (explicitTransformKeys.has(channel)) {
+      add(
+        "TIMELINE_CLIP_INVALID",
+        `Clip keyframes.${channel} cannot be combined with transform.${channel}.`,
+        channelPath,
+      );
+    }
+    if (channel === "scale" && hasTransformBox) {
+      add(
+        "TIMELINE_CLIP_INVALID",
+        "Clip keyframes.scale cannot be combined with transform.width and transform.height.",
+        channelPath,
+      );
+    }
+    if (!Array.isArray(rawTrack)) {
+      add("TIMELINE_CLIP_INVALID", `Clip keyframes.${channel} must be an array.`, channelPath);
+      continue;
+    }
+    if (rawTrack.length < 2) {
+      add("TIMELINE_CLIP_INVALID", `Clip keyframes.${channel} must declare at least two keyframes.`, channelPath);
+    }
+
+    const track: TimelineKeyframe[] = [];
+    let previousFrame = -1;
+    for (const [index, rawKey] of rawTrack.entries()) {
+      const keyPath = jsonPath(channelPath, index);
+      if (!isPlainObject(rawKey)) {
+        add("TIMELINE_CLIP_INVALID", "Keyframe must be an object.", keyPath);
+        continue;
+      }
+      for (const key of unknownKeys(rawKey, ["frame", "value", "easing"])) {
+        add("TIMELINE_CLIP_INVALID", `Unknown keyframe field "${key}".`, jsonPath(keyPath, key));
+      }
+
+      const frame = rawKey.frame;
+      const frameValid = isInteger(frame) && frame >= 0;
+      if (!frameValid) {
+        add("TIMELINE_CLIP_INVALID", "Keyframe frame must be a non-negative integer.", jsonPath(keyPath, "frame"));
+      } else if (frame <= previousFrame) {
+        add(
+          "TIMELINE_CLIP_INVALID",
+          `Keyframe frames in keyframes.${channel} must be strictly increasing.`,
+          jsonPath(keyPath, "frame"),
+        );
+      } else {
+        previousFrame = frame;
+      }
+
+      const keyValue = rawKey.value;
+      let numericValue: number | undefined;
+      if (!isFiniteNumber(keyValue)) {
+        add("TIMELINE_CLIP_INVALID", "Keyframe value must be a finite number.", jsonPath(keyPath, "value"));
+      } else if (channel === "scale" && keyValue < 0) {
+        add("TIMELINE_CLIP_INVALID", "Keyframe scale must be zero or greater.", jsonPath(keyPath, "value"));
+      } else if (channel === "opacity" && (keyValue < 0 || keyValue > 1)) {
+        add("TIMELINE_CLIP_INVALID", "Keyframe opacity must be between 0 and 1.", jsonPath(keyPath, "value"));
+      } else {
+        numericValue = keyValue;
+      }
+
+      let easing: string | undefined;
+      if (rawKey.easing !== undefined) {
+        if (typeof rawKey.easing !== "string" || rawKey.easing.trim().length === 0) {
+          add("TIMELINE_CLIP_INVALID", "Keyframe easing must be a non-empty string.", jsonPath(keyPath, "easing"));
+        } else if (parseEasing(rawKey.easing) === null) {
+          add(
+            "TIMELINE_CLIP_INVALID",
+            `Keyframe easing "${rawKey.easing}" is not supported. Use ${EASING_GRAMMAR}.`,
+            jsonPath(keyPath, "easing"),
+            { value: rawKey.easing, suggestion: `Use ${EASING_GRAMMAR}.` },
+          );
+        } else {
+          easing = rawKey.easing.trim();
+        }
+      }
+
+      if (frameValid && numericValue !== undefined) {
+        track.push({
+          frame,
+          value: numericValue,
+          ...(easing !== undefined ? { easing } : {}),
+        });
+      }
+    }
+
+    if (track.length > 0) {
+      keyframes[channel] = track;
+    }
+  }
+
+  return keyframes;
 }
 
 function parseAudio(
@@ -468,6 +615,7 @@ export function parseTimelineDocument(value: unknown, context: DiagnosticContext
       "sourceIn",
       "props",
       "transform",
+      "keyframes",
       "blend",
       "audio",
     ])) {
@@ -579,6 +727,27 @@ export function parseTimelineDocument(value: unknown, context: DiagnosticContext
       transform = { fit: "contain", x: 0, y: 0, scale: 1, rotation: 0, opacity: 1 };
     }
 
+    let keyframes: TimelineKeyframes | undefined;
+    if (rawClip.keyframes !== undefined) {
+      if (!visual) {
+        add(
+          "TIMELINE_CLIP_INVALID",
+          "keyframes is only valid on visual clips.",
+          jsonPath(path, "keyframes"),
+          clipDetails,
+        );
+      } else {
+        keyframes = parseKeyframes(
+          rawClip.keyframes,
+          jsonPath(path, "keyframes"),
+          (code, message, errorPath, errorDetails) => {
+            add(code, message, errorPath, { ...clipDetails, ...errorDetails });
+          },
+          rawClip.transform,
+        );
+      }
+    }
+
     let blend: BlendMode | undefined;
     if (rawClip.blend !== undefined) {
       if (!visual) {
@@ -643,6 +812,7 @@ export function parseTimelineDocument(value: unknown, context: DiagnosticContext
       sourceIn,
       ...(props !== undefined ? { props } : {}),
       ...(transform !== undefined ? { transform } : {}),
+      ...(keyframes !== undefined ? { keyframes } : {}),
       ...(blend !== undefined ? { blend } : {}),
       ...(audio !== undefined ? { audio } : {}),
     });

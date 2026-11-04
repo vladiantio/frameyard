@@ -312,6 +312,68 @@ describe("timeline resolution", () => {
     expect(resolved.diagnostics.some((diagnostic) => diagnostic.code === "TIMELINE_CLIP_OUT_OF_RANGE")).toBe(true);
   });
 
+  it("rejects keyframes beyond the resolved clip duration", async () => {
+    const project = await createProject({
+      timeline: timeline([
+        {
+          id: "intro",
+          track: "v1",
+          source: { kind: "composition", id: "intro" },
+          start: 0,
+          duration: 10,
+          keyframes: {
+            opacity: [
+              { frame: 0, value: 0 },
+              { frame: 11, value: 1 },
+            ],
+          },
+        },
+      ]),
+    });
+
+    const resolved = await resolveMain(project);
+
+    expect(resolved.timeline).toBeNull();
+    expect(resolved.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: "TIMELINE_CLIP_OUT_OF_RANGE",
+        details: expect.objectContaining({
+          clip: "intro",
+          track: "v1",
+          channel: "opacity",
+          keyframe: 1,
+          frame: 11,
+          jsonPath: "$.clips[0].keyframes.opacity[1].frame",
+        }),
+      }),
+    );
+  });
+
+  it("accepts a keyframe exactly at the clip end boundary", async () => {
+    const project = await createProject({
+      timeline: timeline([
+        {
+          id: "intro",
+          track: "v1",
+          source: { kind: "composition", id: "intro" },
+          start: 0,
+          duration: 10,
+          keyframes: {
+            opacity: [
+              { frame: 0, value: 0 },
+              { frame: 10, value: 1 },
+            ],
+          },
+        },
+      ]),
+    });
+
+    const resolved = await resolveMain(project);
+
+    expect(resolved.diagnostics.filter((diagnostic) => diagnostic.severity === "error")).toEqual([]);
+    expect(resolved.timeline?.clips[0]?.keyframes?.opacity).toHaveLength(2);
+  });
+
   it("rejects missing media and media kind mismatches", async () => {
     const missing = await createProject({
       timeline: timeline([

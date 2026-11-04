@@ -35,6 +35,8 @@ import {
   type VideoEncoderName,
 } from "./ffmpeg.js";
 import { inspectTranscriptClips, type TranscriptInspection } from "./transcripts.js";
+import { evaluatePresentation } from "../timeline/keyframes.js";
+import { KEYFRAME_CHANNELS, type TimelineTransform } from "../timeline/schema.js";
 import { planTimelineRender, type TimelineRenderSegment } from "../timeline/plan.js";
 import {
   resolveProjectTimeline,
@@ -735,6 +737,8 @@ async function processTimelineSegment(options: {
       rotation: transform.rotation,
       opacity: transform.opacity,
       blend: clip.blend ?? "normal",
+      ...(clip.keyframes !== undefined ? { keyframes: clip.keyframes } : {}),
+      clipStart: clip.start,
     };
 
     if (source.kind === "composition") {
@@ -838,6 +842,7 @@ async function processTimelineSegment(options: {
     background,
     layers,
     codec,
+    frameOffset: segment.start,
     ...(options.container !== undefined ? { container: options.container } : {}),
     ...(options.encoder !== undefined ? { encoder: options.encoder } : {}),
     ...(options.signal ? { signal: options.signal } : {}),
@@ -856,6 +861,40 @@ interface TimelineCheckContext {
   depth: number;
 }
 
+function checkKeyframeEvaluation(timeline: ResolvedTimeline, segments: readonly TimelineRenderSegment[]): void {
+  const fallback: TimelineTransform = { fit: "contain", x: 0, y: 0, scale: 1, rotation: 0, opacity: 1 };
+  for (const segment of segments) {
+    for (const layer of segment.layers) {
+      const keyframes = layer.clip.keyframes;
+      if (!keyframes) {
+        continue;
+      }
+      const transform = layer.clip.transform ?? fallback;
+      for (let frame = segment.start; frame < segment.end; frame += 1) {
+        const values = evaluatePresentation(transform, keyframes, frame - layer.clip.start);
+        for (const channel of KEYFRAME_CHANNELS) {
+          if (!Number.isFinite(values[channel])) {
+            throw new FrameyardError(
+              "TIMELINE_CLIP_INVALID",
+              `Clip "${layer.clip.id}" keyframes.${channel} produced a non-finite value at timeline frame ${frame}.`,
+              {
+                details: {
+                  timeline: timeline.id,
+                  clip: layer.clip.id,
+                  track: layer.clip.track,
+                  channel,
+                  frame: frame - layer.clip.start,
+                  timelineFrame: frame,
+                },
+              },
+            );
+          }
+        }
+      }
+    }
+  }
+}
+
 async function checkResolvedTimelineRange(options: {
   timeline: ResolvedTimeline;
   startFrame: number;
@@ -868,6 +907,7 @@ async function checkResolvedTimelineRange(options: {
   const { timeline, startFrame, endFrame, context } = options;
   const plan = planTimelineRender(timeline, { startFrame, endFrame });
   const diagnostics: CompositionDiagnostic[] = [];
+  checkKeyframeEvaluation(timeline, plan.segments);
   const targets = new Map<
     string,
     { source: ResolvedCompositionSource; clip: ResolvedTimelineClip; validation: StaticValidationResult }
@@ -1143,6 +1183,8 @@ async function renderResolvedTimelineFrame(options: {
       rotation: transform.rotation,
       opacity: transform.opacity,
       blend: clip.blend ?? "normal",
+      ...(clip.keyframes !== undefined ? { keyframes: clip.keyframes } : {}),
+      clipStart: clip.start,
     };
 
     if (source.kind === "composition") {
@@ -1234,6 +1276,7 @@ async function renderResolvedTimelineFrame(options: {
     fps: timeline.format.fps,
     background: options.background,
     layers,
+    frameOffset: frame,
     ...(context.signal ? { signal: context.signal } : {}),
   });
   return diagnostics;

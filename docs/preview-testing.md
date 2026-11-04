@@ -28,6 +28,10 @@ expose the same seek/settle contract the renderer uses.
 - A static composition source carries `static: true` and no
   `durationInFrames`. The host loads the layer once and skips per-frame seek;
   the layer remains visible while the timeline playhead moves.
+- A keyframed clip updates the layer wrapper's inline `opacity` and `transform`
+  on every seek. Assert those styles or the rendered stage after `settle()`.
+  Markers are `.keyframe-marker` elements with a `data-frame` absolute timeline
+  frame and a channel/value tooltip; clicking one seeks the playhead.
 
 ## Waiting for a frame
 

@@ -67,9 +67,10 @@ are top-level siblings. Do not add \`<!doctype>\`, \`<html>\`, \`<head>\`,
 - \`start\`, \`sourceIn\`, and \`duration\` use timeline frames. Omitted durations use the rest of the source; image clips require a duration.
 - Composition clips may declare \`props\`; the same composition can appear multiple times with different props, trims, and transforms. A static composition clip needs an explicit \`duration\` and \`sourceIn: 0\`, and contributes no audio.
 - Visual clips support static \`transform\` values: \`fit\` (\`contain\`, \`cover\`, \`stretch\`), \`width\`/\`height\` (an explicit box, both together), \`x\`, \`y\`, \`scale\`, \`rotation\`, and \`opacity\`. \`width\`/\`height\` are mutually exclusive with \`scale\`.
+- Visual clips may animate \`x\`, \`y\`, \`scale\`, \`rotation\`, and \`opacity\` with \`keyframes\`: per-channel arrays of \`{ "frame", "value", "easing"? }\` in clip-local frames. A keyed channel cannot also be an explicit scalar in \`transform\`, and \`keyframes.scale\` cannot be combined with a \`width\`/\`height\` box. Easing uses CSS timing functions, defaulting to \`linear\`.
 - Visual clips may declare a static \`blend\` mode from the separable CSS set (\`normal\`, \`multiply\`, \`screen\`, \`overlay\`, \`darken\`, \`lighten\`, \`color-dodge\`, \`color-burn\`, \`hard-light\`, \`soft-light\`, \`difference\`, \`exclusion\`); omitted means \`normal\`.
 - Video and audio clips are muted with \`audio.muted\`; \`audio.gain\` is 0-1. Composition audio is included automatically.
-- Tracks composite from bottom to top. Clips on the same track cannot overlap. No transitions or keyframes.
+- Tracks composite from bottom to top. Clips on the same track cannot overlap. Transitions are deferred.
 - Project \`format\` fixes width, height, and fps for every timeline and fills those values for compositions that omit them. Animated composition fps must match the project; different composition sizes are fitted by the clip. A static composition has no fps.
 
 ## Bindings

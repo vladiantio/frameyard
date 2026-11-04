@@ -99,6 +99,12 @@ CSS `@keyframes` and the Web Animations API are paused and seeked by the runtime
 - The root exposes `--fy-frame`, `--fy-time`, `--fy-progress`, `--fy-fps`, `--fy-duration`, and `--fy-duration-frames`. Use them in `calc()` for simple computed motion and progress bars.
 - Do not use CSS transitions. They are diagnosed as non-deterministic.
 
+## Timeline clip keyframes
+
+CSS `@keyframes` animate elements *inside* a composition. A timeline clip's `keyframes` animate the clip's placement in the edit: `x`, `y`, `scale`, `rotation`, and `opacity`. The two mechanisms compose: a composition may animate internally while its timeline clip also fades or moves.
+
+Timeline keyframes use clip-local integer frames, not composition frames or seconds. Keyframe values are derived only from the integer frame and the declared easing, so they are seek-safe. Preview evaluates the exact CSS timing function; production generates per-frame FFmpeg expressions and approximates the curve. See [timelines](timelines.md) for the contract.
+
 ## Controllers
 
 An optional controller handles Canvas 2D, WebGL, karaoke, and per-frame computation CSS cannot express.

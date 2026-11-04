@@ -35,7 +35,7 @@ Static validation covers:
 }
 ```
 
-`details` may include `path`, `line`, `column`, `endLine`, `endColumn`, `element`, `attribute`, `value`, `suggestion`, `frame`, and `controller`.
+`details` may include `path`, `line`, `column`, `endLine`, `endColumn`, `element`, `attribute`, `value`, `suggestion`, `frame`, and `controller`. Timeline diagnostics may also include `timeline`, `clip`, `track`, `channel`, `keyframe`, `jsonPath`, `timelineFrame`, `sourceFrame`, and `nesting`; keyframe errors use `channel`, the zero-based `keyframe` index, and the clip-local `frame`.
 
 ## Common codes
 

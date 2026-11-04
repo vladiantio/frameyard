@@ -672,6 +672,39 @@ function resolveClipDuration(
   return clip.duration;
 }
 
+function validateKeyframeBounds(options: {
+  clip: TimelineClip;
+  duration: number;
+  clipIndex: number;
+  timelineId: string;
+  nesting: string[];
+  diagnostics: CompositionDiagnostic[];
+}): void {
+  const { clip, duration, clipIndex, timelineId, nesting, diagnostics } = options;
+  for (const [channel, track] of Object.entries(clip.keyframes ?? {})) {
+    for (const [keyIndex, key] of (track ?? []).entries()) {
+      if (key.frame > duration) {
+        addError(
+          diagnostics,
+          "TIMELINE_CLIP_OUT_OF_RANGE",
+          `Clip "${clip.id}" keyframes.${channel}[${keyIndex}] uses frame ${key.frame}, beyond the clip duration ${duration}.`,
+          {
+            timeline: timelineId,
+            clip: clip.id,
+            track: clip.track,
+            nesting,
+            channel,
+            keyframe: keyIndex,
+            frame: key.frame,
+            jsonPath: `$.clips[${clipIndex}].keyframes.${channel}[${keyIndex}].frame`,
+            suggestion: "Keyframe frames must stay within the clip's 0..duration range.",
+          },
+        );
+      }
+    }
+  }
+}
+
 async function resolveTimelineInternal(options: {
   project: Project;
   timeline: ProjectTimeline;
@@ -699,7 +732,7 @@ async function resolveTimelineInternal(options: {
 
   const clips: ResolvedTimelineClip[] = [];
   const usedOverrides = new Set<string>();
-  for (const rawClip of document.clips) {
+  for (const [clipIndex, rawClip] of document.clips.entries()) {
     let clip = rawClip;
     if (propsOverrides && rawClip.source.kind === "composition" && propsOverrides[rawClip.id] !== undefined) {
       try {
@@ -735,6 +768,14 @@ async function resolveTimelineInternal(options: {
     if (duration === null) {
       continue;
     }
+    validateKeyframeBounds({
+      clip,
+      duration,
+      clipIndex,
+      timelineId: context.timelineId,
+      nesting: context.nesting,
+      diagnostics,
+    });
 
     clips.push({
       ...clip,

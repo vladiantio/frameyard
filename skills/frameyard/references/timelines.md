@@ -42,7 +42,13 @@ export default {
       "sourceIn": 0,
       "props": { "title": "Hello" },
       "blend": "screen",
-      "transform": { "fit": "contain", "x": 0, "y": 0, "scale": 1, "rotation": 0, "opacity": 1 },
+      "transform": { "fit": "contain", "x": 0, "y": 0, "scale": 1, "rotation": 0 },
+      "keyframes": {
+        "opacity": [
+          { "frame": 0, "value": 0 },
+          { "frame": 20, "value": 1, "easing": "ease-out" }
+        ]
+      },
       "audio": { "muted": false, "gain": 1 }
     },
     {
@@ -69,7 +75,7 @@ export default {
 - `tracks` and `clips` are required. Track order is bottom-to-top for video and irrelevant for audio.
 - `background` is an optional color; the final video composites over black.
 - `durationInFrames` is optional. The duration is derived from the latest clip end unless declared; a declared duration may extend but not cut clips.
-- Unknown fields are errors. Blend modes are static per clip; no transitions, keyframes, other effects, or track solo/visibility.
+- Unknown fields are errors. Blend modes are static per clip; there are no transitions, animated blend modes, other effects, or track solo/visibility.
 
 ## Sources
 
@@ -104,7 +110,42 @@ Visual clips accept a static transform:
 - `opacity`: 0–1.
 - `blend`: CSS `mix-blend-mode`, defaulting to `normal`. Supported values are `normal`, `multiply`, `screen`, `overlay`, `darken`, `lighten`, `color-dodge`, `color-burn`, `hard-light`, `soft-light`, `difference`, and `exclusion`. `hue`, `saturation`, `color`, and `luminosity` are rejected.
 
-A blend mode composites the clip against everything below it in the stage, including the timeline background, and only where the clip's source alpha is non-zero. A composition or nested timeline that paints an opaque background blocks the lower layers; source alpha is what lets a blend reach them. A top-level timeline with no declared background renders over black; a nested or embedded timeline stays transparent. Blend modes are static; there are no keyframes or animated transforms.
+A blend mode composites the clip against everything below it in the stage, including the timeline background, and only where the clip's source alpha is non-zero. A composition or nested timeline that paints an opaque background blocks the lower layers; source alpha is what lets a blend reach them. A top-level timeline with no declared background renders over black; a nested or embedded timeline stays transparent. Blend modes are static; there are no animated blend modes.
+
+Rotation keeps the full rotated bounds. Production expands the rotate filter's output to a fixed bound: static rotation uses its exact rotated bounding box, while keyed rotation uses the diagonal of the fitted box so every segment uses the same size. The filter fills the padding with transparent pixels, so rotated corners are visible instead of being cut off.
+
+## Keyframes
+
+Visual clips may animate `x`, `y`, `scale`, `rotation`, and `opacity` with a top-level `keyframes` object keyed by channel:
+
+```json
+"keyframes": {
+  "opacity": [
+    { "frame": 0, "value": 0 },
+    { "frame": 24, "value": 1, "easing": "ease-out" },
+    { "frame": 120, "value": 1 },
+    { "frame": 150, "value": 0, "easing": "ease-in" }
+  ],
+  "x": [
+    { "frame": 0, "value": -80, "easing": "ease-out" },
+    { "frame": 24, "value": 0 }
+  ]
+}
+```
+
+- `frame` is clip-local. `0` is the clip's start boundary and `duration` is its end boundary. Moving `start` moves the animation with the clip; `sourceIn` does not shift it.
+- Keys are integers in `0..duration`, strictly increasing, with at least two per channel and a required `value`.
+- A channel holds its first value before the first key and its last value after the last key. Keyframes never extend a clip's duration.
+- `easing` applies to the interval after that key. It defaults to `linear`; the final key's easing has no effect.
+- Supported easings are `linear`, `ease`, `ease-in`, `ease-out`, `ease-in-out`, `step-start`, `step-end`, `hold`, `cubic-bezier(x1, y1, x2, y2)`, and `steps(n, jump-start|jump-end|jump-none|jump-both)`.
+- A channel cannot also be an explicitly declared scalar in `transform`. Defaults do not conflict; unkeyed channels keep their `transform` value.
+- `opacity` values are `0..1` and `scale` values are `>= 0`. Interpolated opacity and scale are clamped after easing; `x`, `y`, and `rotation` may overshoot.
+- `keyframes.scale` cannot be combined with a `transform.width`/`height` box.
+- `keyframes` is only valid on visual clips. A static composition is captured once as an image and then animated like any other visual layer.
+
+Preview evaluates keyframes on every seek with the exact CSS timing function. Production generates per-frame FFmpeg expressions from the same evaluator and uses an alpha mask for animated opacity. Floating-point easing in the filter graph approximates the CSS curve; parity remains at clip capture, not at the final encoded pixel. Fractional `x`/`y` values may differ by a subpixel between preview and production.
+
+The read-only timeline preview draws a marker for each distinct keyframe frame on a clip. Hovering a marker lists the channels at that frame; clicking it seeks the playhead there.
 
 ## Audio
 
@@ -133,15 +174,16 @@ npx frameyard render main --props props/main.json --workers 8 --scratch /path/to
 - `--container <mp4|mov|mkv|webm>` selects the delivery container (default `mp4`); `--codec <h264|hevc|vp9>` selects the codec, and `--encoder <auto|software|nvenc|qsv>` selects how it is encoded. MP4 and MOV hold H.264/HEVC with AAC; MKV holds all three; WebM holds VP9 with Opus and defaults to VP9. `auto` is the default and probes NVENC, then Quick Sync, then software; `software` forces `libx264`, `libx265`, or `libvpx-vp9`. FFV1 intermediates stay lossless and software-encoded, HEVC keeps the `hvc1` tag in MP4/MOV, and the output extension must match the container.
 - `--concurrency` is composition-only.
 - `render` defaults to `out/<timeline-id>.mp4`.
-- `check` evaluates every timeline frame and every animated composition frame; a static composition layer is inspected once and not seeked per frame. `still` captures one or more requested frames through the same clip capture and composite path; a multi-frame still resolves the timeline, starts one server, and reuses one scratch directory. The `--frame` spec and 32-frame cap are the same as for compositions.
+- `check` evaluates every timeline frame and every animated composition frame; a static composition layer is inspected once and not seeked per frame. It also evaluates every keyframe channel at every timeline frame. `still` captures one or more requested frames through the same clip capture and composite path; a multi-frame still resolves the timeline, starts one server, and reuses one scratch directory. The `--frame` spec and 32-frame cap are the same as for compositions.
 - `npx frameyard dev` lists timelines in the preview; the timeline view has a program monitor, read-only tracks and clips, playhead, playback, audio controls, and diagnostics.
 
 ## Determinism and performance
 
-- A timeline frame derives only from its active clips, their composition frames, props, assets, and the render plan.
+- A timeline frame derives only from its active clips, their composition frames, keyframe values, props, assets, and the render plan.
 - Composition frames are captured with Chromium; transparent compositions preserve alpha.
 - Timeline production captures active composition and nested-timeline clips to lossless FFV1, composites segments with FFmpeg, concatenates the ordered segments, and mixes audio once.
-- Preview composites in Chromium with CSS `mix-blend-mode`; production composites with FFmpeg's `blend` and `maskedmerge`. CSS is the reference; small scaling, alpha, color, and blend-math differences are expected. Parity is guaranteed at clip capture, not at final encoded pixels.
+- Keyframe values are evaluated against absolute timeline frames, so segment boundaries do not change them. Position, scale, and rotation use per-frame filter expressions; animated opacity uses an alpha mask. Animated opacity and animated scale add a mask/scale pass per affected layer.
+- Preview composites in Chromium with CSS `mix-blend-mode`; production composites with FFmpeg's `blend` and `maskedmerge`. CSS is the reference; small scaling, alpha, color, blend-math, and subpixel-position differences are expected. Easing curves in the filter graph approximate the CSS curve; parity is guaranteed at clip capture, not at final encoded pixels.
 - Alpha-correct blending costs roughly 1.7× per blended 1080p layer in the production composite. Budget for it when a timeline stacks several blended layers.
 - Final output bytes are not a reproducibility guarantee.
 - Long timelines are segmented and bounded. The reference target and measured worst cases are documented in `docs/adr/0012-render-timelines-with-segmented-lossless-clip-intermediates.md`.

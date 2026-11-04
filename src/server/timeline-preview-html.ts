@@ -148,9 +148,16 @@ export function renderTimelinePreviewHtml(timelineId: string, options: { embed?:
         position: absolute; top: 3px; bottom: 3px; border-radius: 4px;
         background: linear-gradient(180deg, #2a4058, #1d2c3d);
         border: 1px solid #3b5672; color: #dce8f5;
-        font: 10px/1 var(--mono); padding: 6px 7px; overflow: hidden;
-        white-space: nowrap; text-overflow: ellipsis;
+        font: 10px/1 var(--mono); padding: 6px 7px; overflow: visible;
+        white-space: nowrap;
       }
+      .clip-label { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .keyframe-marker {
+        position: absolute; top: 50%; width: 6px; height: 6px;
+        background: var(--accent); border: 1px solid #0d1116; border-radius: 1px;
+        transform: translate(-50%, -50%) rotate(45deg); cursor: pointer; z-index: 2;
+      }
+      .keyframe-marker:hover { background: #ffffff; }
       .clip.composition { background: linear-gradient(180deg, #314a33, #203120); border-color: #4d704d; }
       .clip.audio { background: linear-gradient(180deg, #4a3b22, #302516); border-color: #6e5631; }
       .clip.nested { background: linear-gradient(180deg, #443152, #2c2036); border-color: #63477a; }

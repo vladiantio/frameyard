@@ -1,0 +1,99 @@
+<style>
+  html,
+  body {
+    margin: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: transparent;
+  }
+  .card {
+    position: absolute;
+    inset: 0;
+    border: 1px solid rgba(184, 243, 107, 0.5);
+    border-radius: 28px;
+    background:
+      linear-gradient(135deg, rgba(184, 243, 107, 0.18), rgba(95, 214, 255, 0.06) 54%, rgba(8, 11, 16, 0.9)),
+      rgba(10, 16, 24, 0.82);
+    box-shadow:
+      0 0 0 1px rgba(184, 243, 107, 0.08) inset,
+      0 42px 120px rgba(0, 0, 0, 0.55);
+    overflow: hidden;
+  }
+  .card::before {
+    content: "";
+    position: absolute;
+    inset: -40% -10%;
+    background: radial-gradient(circle at 22% 26%, rgba(184, 243, 107, 0.32), transparent 36%);
+  }
+  .eyebrow {
+    position: absolute;
+    left: 48px;
+    top: 44px;
+    color: #b8f36b;
+    font:
+      600 15px/1 Inter,
+      ui-sans-serif,
+      system-ui,
+      sans-serif;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+  }
+  .heading {
+    position: absolute;
+    left: 48px;
+    right: 48px;
+    top: 92px;
+    color: #f2f7fb;
+    font:
+      680 64px/1.02 Inter,
+      ui-sans-serif,
+      system-ui,
+      sans-serif;
+    letter-spacing: -0.035em;
+  }
+  .rule {
+    position: absolute;
+    left: 48px;
+    right: 48px;
+    bottom: 96px;
+    height: 1px;
+    background: linear-gradient(90deg, rgba(184, 243, 107, 0.6), rgba(95, 214, 255, 0.18), transparent);
+  }
+  .meta {
+    position: absolute;
+    left: 48px;
+    bottom: 52px;
+    color: rgba(220, 232, 245, 0.72);
+    font:
+      500 18px/1.4 Inter,
+      ui-sans-serif,
+      system-ui,
+      sans-serif;
+  }
+  .badge {
+    position: absolute;
+    right: 48px;
+    bottom: 48px;
+    padding: 10px 16px;
+    border: 1px solid rgba(184, 243, 107, 0.44);
+    border-radius: 999px;
+    color: #b8f36b;
+    font:
+      600 14px/1 Inter,
+      ui-sans-serif,
+      system-ui,
+      sans-serif;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+</style>
+<fy-composition width="640" height="360">
+  <div class="card">
+    <div class="eyebrow">Frameyard</div>
+    <div class="heading">Animate the edit,<br />not the composition.</div>
+    <div class="rule"></div>
+    <div class="meta">One clip. Five channels. Four keys.</div>
+    <div class="badge">Keyframes</div>
+  </div>
+</fy-composition>

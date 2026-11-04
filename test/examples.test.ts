@@ -23,6 +23,7 @@ const examples = [
   { project: "nested", id: "chapter-a", frame: 60, timeline: true },
   { project: "nested", id: "nested-reel", frame: 300, timeline: true },
   { project: "transitions", id: "transitions", frame: 52, timeline: true },
+  { project: "transitions", id: "audio-crossfade", frame: 52, timeline: true },
   { project: "static", id: "still", frame: 0 },
   { project: "static", id: "still-timeline", frame: 45, timeline: true },
 ];

@@ -175,15 +175,19 @@ The static CSS `mix-blend-mode` a visual clip applies against the accumulated ba
 _Avoid_: Filter, effect, composite mode
 
 **Transition**:
-A declared dissolve between two clips on one video track, written as `{ from, to, kind: "dissolve", easing? }` in the timeline's `transitions` array. The clips overlap; an overlap without a declared transition is still an error.
-_Avoid_: Overlap, crossfade (use crossfade only for the audio ramp)
+A declared handoff between two clips on one track, written as `{ from, to, kind, easing? }` in the timeline's `transitions` array. `dissolve` is a visual fade on a video track; `crossfade` is an audio gain ramp on an audio track. The clips overlap; an overlap without a declared transition is still an error.
+_Avoid_: Overlap
+
+**Crossfade**:
+The audio-track transition kind. It ramps the outgoing audio clip down and the incoming clip up with equal power and changes no pixels.
+_Avoid_: Dissolve, fade
 
 **Transition window**:
-The overlap `to.start .. from.end` where both clips are active. The incoming clip composites above the outgoing clip with `opacity × eased progress`, evaluated at absolute timeline frames.
+The overlap `to.start .. from.end` where both clips are active. During a dissolve the incoming clip composites above the outgoing clip with `opacity × eased progress`, evaluated at absolute timeline frames.
 _Avoid_: Handle, overlap region
 
 **Equal-power crossfade**:
-The audio gain curve inside a transition: the outgoing clip ramps as `sqrt(1 - t)` and the incoming clip as `sqrt(t)` after easing, keeping perceived loudness steady.
+The audio gain curve inside either transition kind: the outgoing clip ramps as `sqrt(1 - t)` and the incoming clip as `sqrt(t)` after easing, keeping perceived loudness steady.
 _Avoid_: Linear fade
 
 **Nested timeline**:

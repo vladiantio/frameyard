@@ -7,5 +7,6 @@ export default {
   },
   timelines: {
     transitions: "./timelines/transitions.timeline.json",
+    "audio-crossfade": "./timelines/audio-crossfade.timeline.json",
   },
 };

@@ -58,7 +58,7 @@ export interface ResolvedTimelineClip extends Omit<TimelineClip, "source" | "dur
 export interface ResolvedTimelineTransition {
   from: string;
   to: string;
-  kind: "dissolve";
+  kind: "dissolve" | "crossfade";
   easing?: string;
   track: string;
   /** Inclusive first timeline frame; equals the incoming clip start. */
@@ -857,12 +857,24 @@ async function resolveTimelineInternal(options: {
       continue;
     }
     const track = trackById.get(from.track);
-    if (!track || track.kind !== "video") {
+    if (!track) {
+      continue;
+    }
+    if (transition.kind === "dissolve" && track.kind !== "video") {
       addError(
         diagnostics,
         "TIMELINE_TRANSITION_AUDIO_TRACK",
-        `Transition "${from.id}" → "${to.id}" is on audio track "${from.track}"; only video tracks support transitions.`,
-        { ...details, track: from.track },
+        `Dissolve "${from.id}" → "${to.id}" is on audio track "${from.track}"; use kind "crossfade" for audio clips.`,
+        { ...details, track: from.track, suggestion: 'Use "kind": "crossfade".' },
+      );
+      continue;
+    }
+    if (transition.kind === "crossfade" && track.kind !== "audio") {
+      addError(
+        diagnostics,
+        "TIMELINE_TRANSITION_VIDEO_TRACK",
+        `Crossfade "${from.id}" → "${to.id}" is on video track "${from.track}"; use kind "dissolve" for visual clips.`,
+        { ...details, track: from.track, suggestion: 'Use "kind": "dissolve".' },
       );
       continue;
     }

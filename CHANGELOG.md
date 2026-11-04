@@ -19,6 +19,11 @@ contract change may ship in a minor release and is called out explicitly below.
   read-only band. Undeclared overlap stays an error. See
   `docs/adr/0019-make-same-track-overlap-the-transition-window.md` and
   `examples/transitions/`.
+- Audio clips on an audio track may crossfade through the same `transitions`
+  array with `kind: "crossfade"`. The kind/track matrix is explicit: `dissolve`
+  is video-only, `crossfade` is audio-only. See
+  `docs/adr/0020-crossfade-audio-clips-on-audio-tracks.md` and the
+  `audio-crossfade` timeline in `examples/transitions/`.
 - Timeline clips animate `x`, `y`, `scale`, `rotation`, and `opacity` with
   clip-local `keyframes`, CSS easing, preview markers, and FFmpeg expressions.
   Animated opacity composes through blend modes. See

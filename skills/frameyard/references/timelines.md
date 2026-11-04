@@ -149,7 +149,7 @@ The read-only timeline preview draws a marker for each distinct keyframe frame o
 
 ## Transitions
 
-A timeline may declare a `transitions` array. Each entry pairs two clips on one video track across their overlap:
+A timeline may declare a `transitions` array. Each entry pairs two clips on one track across their overlap:
 
 ```json
 "clips": [
@@ -161,18 +161,39 @@ A timeline may declare a `transitions` array. Each entry pairs two clips on one 
 ]
 ```
 
-- `from` and `to` must be clip IDs on the same **video** track. Audio tracks do not support transitions.
-- `kind` is required and must be `dissolve`. Other kinds are rejected.
+- `from` and `to` must be clip IDs on the same track. A transition never spans tracks.
+- `kind` is required. `dissolve` is a visual fade on a video track and also crossfades the audio the two clips contribute. `crossfade` is an audio gain ramp on an audio track. Using the wrong kind for the track is an error.
 - `easing` defaults to `linear` and accepts the same CSS timing functions as keyframes, including `hold` and `steps(...)`.
-- There is no `duration`. The window is the overlap `to.start .. from.end`. Move `to.start` earlier to lengthen the dissolve; the outgoing clip's declared duration already covers its side, so no media handles are needed.
+- There is no `duration`. The window is the overlap `to.start .. from.end`. Move `to.start` earlier to lengthen the transition; the outgoing clip's declared duration already covers its side, so no media handles are needed.
 - Valid geometry is `from.start < to.start < from.end < to.end`. The incoming clip must start inside the outgoing clip and end after it. Reversed order, a contained clip, a touching or later start, and cross-track pairs are errors.
 - A clip may be the `to` of one transition and the `from` of the next, so transitions chain. A clip may not participate twice on the same side, and the same pair may not be declared twice.
-- Overlap without a declared transition is still `TIMELINE_CLIP_OVERLAP`. A third clip that overlaps either side is an error, so at most two clips are active on a video track.
-- During the window the incoming clip composites directly above the outgoing clip with alpha `clipOpacity × eased progress`. Its static or keyframed `opacity` multiplies the transition. `blend` works normally because transition alpha is part of the source alpha.
-- Contributed audio crossfades with equal power: the outgoing clip ramps as `sqrt(1 - t)` and the incoming as `sqrt(t)`, after easing. `audio.muted` still zeroes its side. Transitions on a nested-timeline clip fade that group's audio.
-- Preview stacks the incoming layer above the outgoing layer, applies the same alpha, ramps `<audio>` volume during playback, and draws a read-only hatched band over the overlap.
+- Overlap without a declared transition is still `TIMELINE_CLIP_OVERLAP`. A third clip that overlaps either side is an error, so at most two clips are active on a track.
+- During a dissolve the incoming clip composites directly above the outgoing clip with alpha `clipOpacity × eased progress`. Its static or keyframed `opacity` multiplies the transition. `blend` works normally because transition alpha is part of the source alpha.
+- Both kinds use equal power: the outgoing clip ramps as `sqrt(1 - t)` and the incoming as `sqrt(t)`, after easing. For a dissolve this applies to contributed audio; for a crossfade it applies to the two audio clips. `audio.muted` still zeroes its side. Transitions on a nested-timeline clip fade that group's audio.
+- Preview stacks the incoming visual layer above the outgoing layer, applies the same alpha, ramps `<audio>` volume during playback, and draws a read-only hatched band over the overlap on either track.
 
-`check` exposes the resolved transition count and validates every window. `still` and `render` share the composite path, so a still captured inside a dissolve matches the rendered frame. See `examples/transitions`.
+`check` exposes the resolved transition count and validates every window. `still` and `render` share the composite path, so a still captured inside a dissolve matches the rendered frame. A crossfade changes no pixels. See `examples/transitions`.
+
+### Audio on the timeline
+
+Audio can live directly on an audio track and still crossfade:
+
+```json
+"tracks": [
+  { "id": "v1", "kind": "video" },
+  { "id": "a1", "kind": "audio" }
+],
+"clips": [
+  { "id": "bed", "track": "v1", "source": { "kind": "composition", "id": "bed" }, "start": 0, "duration": 105 },
+  { "id": "chord-a", "track": "a1", "source": { "kind": "audio", "src": "assets/a.wav" }, "start": 0, "duration": 60 },
+  { "id": "chord-b", "track": "a1", "source": { "kind": "audio", "src": "assets/b.wav" }, "start": 45, "duration": 60 }
+],
+"transitions": [
+  { "from": "chord-a", "to": "chord-b", "kind": "crossfade", "easing": "linear" }
+]
+```
+
+Mute composition audio with `audio.muted: true` when the sound comes from audio-track clips, so it does not play twice. `examples/transitions` has an `audio-crossfade` timeline that pairs a visual dissolve with an audio crossfade over the same 15 frames.
 
 ## Audio
 

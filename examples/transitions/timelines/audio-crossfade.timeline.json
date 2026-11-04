@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "name": "Audio crossfade",
+  "tracks": [
+    { "id": "v1", "kind": "video" },
+    { "id": "a1", "kind": "audio", "gain": 1 }
+  ],
+  "clips": [
+    {
+      "id": "alpha",
+      "track": "v1",
+      "source": { "kind": "composition", "id": "alpha" },
+      "start": 0,
+      "duration": 60,
+      "audio": { "muted": true }
+    },
+    {
+      "id": "beta",
+      "track": "v1",
+      "source": { "kind": "composition", "id": "beta" },
+      "start": 45,
+      "duration": 60,
+      "audio": { "muted": true }
+    },
+    {
+      "id": "chord-alpha",
+      "track": "a1",
+      "source": { "kind": "audio", "src": "assets/alpha.wav" },
+      "start": 0,
+      "duration": 60
+    },
+    {
+      "id": "chord-beta",
+      "track": "a1",
+      "source": { "kind": "audio", "src": "assets/beta.wav" },
+      "start": 45,
+      "duration": 60
+    }
+  ],
+  "transitions": [
+    { "from": "alpha", "to": "beta", "kind": "dissolve", "easing": "ease-in-out" },
+    { "from": "chord-alpha", "to": "chord-beta", "kind": "crossfade", "easing": "linear" }
+  ]
+}

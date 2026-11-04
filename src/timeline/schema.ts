@@ -109,13 +109,14 @@ export interface TimelineClip {
 }
 
 /** Transition kinds that both preview and production can reproduce exactly. */
-export const TRANSITION_KINDS = ["dissolve"] as const;
+export const TRANSITION_KINDS = ["dissolve", "crossfade"] as const;
 
 export type TransitionKind = (typeof TRANSITION_KINDS)[number];
 
 /**
- * A dissolve across the overlap of two clips on one video track. The window is
- * `[to.start, from.end)`; the overlap geometry is the single source of truth.
+ * A transition across the overlap of two clips on one track. `dissolve` is a
+ * visual fade on a video track and also crossfades contributed audio;
+ * `crossfade` is an audio gain ramp between two audio-track clips.
  */
 export interface TimelineTransition {
   from: string;
@@ -557,7 +558,7 @@ function parseTransitions(
     if (raw.kind !== undefined) {
       if (typeof raw.kind !== "string" || !(TRANSITION_KINDS as readonly string[]).includes(raw.kind)) {
         add(
-          "TIMELINE_TRANSITION_NOT_DISSOLVE",
+          "TIMELINE_TRANSITION_KIND",
           `Transition kind must be one of: ${TRANSITION_KINDS.join(", ")}.`,
           jsonPath(entryPath, "kind"),
           { ...details, ...(typeof raw.kind === "string" ? { value: raw.kind } : {}) },
@@ -566,7 +567,7 @@ function parseTransitions(
         kind = raw.kind as TransitionKind;
       }
     } else {
-      add("TIMELINE_TRANSITION_NOT_DISSOLVE", "Transition kind is required.", jsonPath(entryPath, "kind"), details);
+      add("TIMELINE_TRANSITION_KIND", "Transition kind is required.", jsonPath(entryPath, "kind"), details);
     }
 
     let easing: string | undefined;

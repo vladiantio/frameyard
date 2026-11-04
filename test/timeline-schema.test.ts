@@ -115,6 +115,16 @@ describe("timeline schema", () => {
     ]);
   });
 
+  it("parses audio crossfade transitions", () => {
+    const value = validTimeline();
+    value.transitions = [{ from: "intro", to: "broll", kind: "crossfade" }];
+
+    const parsed = parseTimelineDocument(value);
+
+    expect(parsed.diagnostics).toEqual([]);
+    expect(parsed.timeline?.transitions).toEqual([{ from: "intro", to: "broll", kind: "crossfade" }]);
+  });
+
   it("rejects transition shape errors, unsupported kinds, and duplicates", () => {
     const unknownField = validTimeline();
     unknownField.transitions = [{ from: "intro", to: "broll", kind: "dissolve", duration: 10 }];
@@ -122,7 +132,7 @@ describe("timeline schema", () => {
 
     const unknownKind = validTimeline();
     unknownKind.transitions = [{ from: "intro", to: "broll", kind: "wipe" }];
-    expect(codes(unknownKind)).toContain("TIMELINE_TRANSITION_NOT_DISSOLVE");
+    expect(codes(unknownKind)).toContain("TIMELINE_TRANSITION_KIND");
 
     const badEasing = validTimeline();
     badEasing.transitions = [{ from: "intro", to: "broll", kind: "dissolve", easing: "bounce" }];

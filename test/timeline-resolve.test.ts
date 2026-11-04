@@ -570,6 +570,26 @@ describe("timeline resolution", () => {
     ]);
   });
 
+  it("resolves a crossfade between two audio clips", async () => {
+    const project = await createProject({
+      timeline: timeline(
+        [
+          { id: "a", track: "a1", source: { kind: "audio", src: "assets/chime.wav" }, start: 0, duration: 10 },
+          { id: "b", track: "a1", source: { kind: "audio", src: "assets/chime.wav" }, start: 6, duration: 10 },
+        ],
+        [{ id: "a1", kind: "audio" }],
+        { transitions: [{ from: "a", to: "b", kind: "crossfade" }] },
+      ),
+    });
+
+    const resolved = await resolveMain(project);
+
+    expect(resolved.diagnostics.filter((diagnostic) => diagnostic.severity === "error")).toEqual([]);
+    expect(resolved.timeline?.transitions).toEqual([
+      { from: "a", to: "b", kind: "crossfade", track: "a1", start: 6, end: 10 },
+    ]);
+  });
+
   it("rejects an overlap that no declared transition covers", async () => {
     const project = await createProject({
       timeline: timeline(
@@ -678,6 +698,20 @@ describe("timeline resolution", () => {
     const reversedCodes = (await resolveMain(reversed)).diagnostics.map((diagnostic) => diagnostic.code);
     expect(reversedCodes).toContain("TIMELINE_TRANSITION_GEOMETRY");
     expect(reversedCodes).not.toContain("TIMELINE_CLIP_OVERLAP");
+
+    const crossfadeOnVideo = await createProject({
+      timeline: timeline(
+        [
+          { id: "a", track: "v1", source: { kind: "composition", id: "intro" }, start: 0, duration: 10 },
+          { id: "b", track: "v1", source: { kind: "composition", id: "intro" }, start: 5, duration: 10 },
+        ],
+        undefined,
+        { transitions: [{ from: "a", to: "b", kind: "crossfade" }] },
+      ),
+    });
+    expect((await resolveMain(crossfadeOnVideo)).diagnostics.map((diagnostic) => diagnostic.code)).toContain(
+      "TIMELINE_TRANSITION_VIDEO_TRACK",
+    );
   });
 
   it("rejects duplicate and unsupported transitions at parse time", async () => {
@@ -709,7 +743,7 @@ describe("timeline resolution", () => {
       ),
     });
     expect((await resolveMain(unsupported)).diagnostics.map((diagnostic) => diagnostic.code)).toContain(
-      "TIMELINE_TRANSITION_NOT_DISSOLVE",
+      "TIMELINE_TRANSITION_KIND",
     );
   });
 

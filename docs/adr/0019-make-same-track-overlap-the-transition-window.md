@@ -2,6 +2,7 @@
 
 **Status:** Accepted
 **Date:** 2026-11-04
+**Amended by:** [ADR 0020](./0020-crossfade-audio-clips-on-audio-tracks.md) adds the `crossfade` kind for audio tracks; the audio-track prohibition in this record is superseded.
 
 A timeline may declare a `transitions` array. Each entry names a `from` clip, a `to` clip, and a `kind`. A dissolve requires the two clips to overlap on one video track; the overlap `[to.start, from.end)` is the transition window. Only the incoming clip carries animated alpha, `opacity × eased progress`, and both clips' contributed audio crossfades with equal power. The annotation is explicit: an overlap without a declared transition is still `TIMELINE_CLIP_OVERLAP`. The timeline document version remains 1.
 
@@ -24,8 +25,8 @@ The renderer is segmented: every segment has a fixed layer set, and the segment 
 
 ## Consequences
 
-- `transitions` entries are `{ from, to, kind, easing? }`. `kind` is required and must be `dissolve`; `easing` defaults to `linear` and uses the keyframe CSS timing-function grammar. There is no `duration`: the overlap is the single source of truth. A clip may be the `to` of one transition and the `from` of another, but not twice on the same side.
-- Valid geometry is `from.start < to.start < from.end < to.end`. Anything else is `TIMELINE_TRANSITION_GEOMETRY` (ordering or containment) or `TIMELINE_TRANSITION_NOT_OVERLAPPING` (touching or later). Reference errors are `TIMELINE_TRANSITION_UNKNOWN_CLIP`, `TIMELINE_TRANSITION_WRONG_TRACK`, and `TIMELINE_TRANSITION_AUDIO_TRACK`; duplicate participation is `TIMELINE_TRANSITION_DUPLICATE`; an unsupported kind is `TIMELINE_TRANSITION_NOT_DISSOLVE`. Structural entry errors use `TIMELINE_TRANSITION_INVALID`.
+- `transitions` entries are `{ from, to, kind, easing? }`. `kind` is required and must be `dissolve` (ADR 0020 extends the accepted kinds with `crossfade` for audio tracks); `easing` defaults to `linear` and uses the keyframe CSS timing-function grammar. There is no `duration`: the overlap is the single source of truth. A clip may be the `to` of one transition and the `from` of another, but not twice on the same side.
+- Valid geometry is `from.start < to.start < from.end < to.end`. Anything else is `TIMELINE_TRANSITION_GEOMETRY` (ordering or containment) or `TIMELINE_TRANSITION_NOT_OVERLAPPING` (touching or later). Reference errors are `TIMELINE_TRANSITION_UNKNOWN_CLIP`, `TIMELINE_TRANSITION_WRONG_TRACK`, and `TIMELINE_TRANSITION_AUDIO_TRACK`; duplicate participation is `TIMELINE_TRANSITION_DUPLICATE`; an unsupported kind is `TIMELINE_TRANSITION_KIND`. Structural entry errors use `TIMELINE_TRANSITION_INVALID`.
 - The pairwise overlap rule now allows only declared pairs on the same track. A third clip that overlaps either side is still an error, so at most two clips are active on a video track at any frame.
 - During the window the incoming clip composites above the outgoing clip on the same track. Its alpha is `clipOpacity × t`, where `t = clamp(ease((frame - to.start) / (from.end - to.start)))`. Clip opacity may be static or keyframed and multiplies rather than being overridden. Blend modes compose with transition alpha because it is the same multiplier the keyed-opacity mask already applies.
 - Production adds the transition factor to the existing `geq` alpha mask (`N + frameOffset` evaluates absolute frames) and does not split segments at transition edges: the edges are already clip boundaries. Segments chopped by `maxSegmentFrames` produce identical values.

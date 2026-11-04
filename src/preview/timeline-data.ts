@@ -80,7 +80,7 @@ export interface TimelinePreviewTrack {
 export interface TimelinePreviewTransition {
   from: string;
   to: string;
-  kind: "dissolve";
+  kind: "dissolve" | "crossfade";
   easing?: string;
   track: string;
   /** Inclusive first timeline frame. */

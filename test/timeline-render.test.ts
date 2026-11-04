@@ -2493,4 +2493,49 @@ describe("timeline transitions", () => {
     expect(middleDb - startDb).toBeGreaterThan(2);
     expect(middleDb - startDb).toBeLessThan(3.6);
   }, 180_000);
+
+  it("crossfades two audio clips that live directly on an audio track", async () => {
+    const root = await customRoot();
+    await mkdir(path.join(root, "out"), { recursive: true });
+    await solidImage(path.join(root, "assets", "bed.png"), "0x102030");
+    await exec("ffmpeg", [
+      "-y",
+      "-v",
+      "error",
+      "-f",
+      "lavfi",
+      "-i",
+      "sine=frequency=60:duration=3:sample_rate=48000",
+      "-ac",
+      "2",
+      path.join(root, "assets", "tone.wav"),
+    ]);
+    await writeTimeline(root, {
+      version: 1,
+      tracks: [
+        { id: "v1", kind: "video" },
+        { id: "a1", kind: "audio", gain: 1 },
+      ],
+      clips: [
+        { id: "bed", track: "v1", source: { kind: "image", src: "assets/bed.png" }, start: 0, duration: 16 },
+        { id: "a", track: "a1", source: { kind: "audio", src: "assets/tone.wav" }, start: 0, duration: 10 },
+        { id: "b", track: "a1", source: { kind: "audio", src: "assets/tone.wav" }, start: 6, duration: 10 },
+      ],
+      transitions: [{ from: "a", to: "b", kind: "crossfade" }],
+    });
+    const project = await loadProject(root);
+    const outPath = path.join(root, "out", "main.mp4");
+
+    const checked = await checkTimeline({ project, timelineId: "main" });
+    expect(checked.transitions).toBe(1);
+    expect(checked.diagnostics.filter((diagnostic) => diagnostic.severity === "error")).toEqual([]);
+
+    const result = await renderTimelineForTest({ project, timelineId: "main", outPath, workers: 1 });
+    expect(result.audio.clips).toBe(2);
+
+    const startDb = await meanVolume(outPath, 0.05, 0.15);
+    const middleDb = await meanVolume(outPath, 0.85, 0.95);
+    expect(middleDb - startDb).toBeGreaterThan(2);
+    expect(middleDb - startDb).toBeLessThan(3.6);
+  }, 180_000);
 });

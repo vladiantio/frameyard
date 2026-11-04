@@ -195,6 +195,7 @@ A successful render means the final path exists and was published atomically. A 
 {
   "ok": true,
   "command": "tts",
+  "engine": "qwen",
   "path": "/absolute/path/assets/voice.wav",
   "bytes": 480000,
   "sha256": "64-character hex digest",
@@ -207,7 +208,7 @@ A successful render means the final path exists and was published atomically. A 
 }
 ```
 
-`language` is omitted when it was not supplied.
+`engine` is `qwen` or `supertonic`. `language` is omitted when it was not supplied; Supertonic always supplies it. `device` is present only for qwen.
 
 ## transcribe
 
@@ -275,6 +276,12 @@ Doctor reports findings rather than throwing for environment problems. `ok: true
       "status": "missing",
       "requested": false,
       "referenceRevision": "..."
+    },
+    "sherpaOnnxTts": {
+      "name": "sherpa-onnx-offline-tts",
+      "status": "missing",
+      "requested": false,
+      "referenceRevision": "..."
     }
   },
   "models": [
@@ -290,4 +297,4 @@ Doctor reports findings rather than throwing for environment problems. `ok: true
 }
 ```
 
-`models` is populated only for model paths passed explicitly with `--talker-model`, `--codec-model`, or `--model`. `healthy: false` exits `1`. Missing optional integrations do not fail, but a found executable with incompatible capabilities does.
+`models` is populated only for model paths passed explicitly with `--talker-model`, `--codec-model`, `--model-dir`, or `--model`. A Supertonic `--model-dir` reports one entry with role `supertonic`; `tts` provenance records the seven individual model files. `healthy: false` exits `1`. Missing optional integrations do not fail, but a found executable with incompatible capabilities does.

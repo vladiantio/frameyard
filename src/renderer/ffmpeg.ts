@@ -456,10 +456,10 @@ export interface MixClip {
   volumeEnvelopes?: AudioVolumeEnvelope[];
 }
 
-/** Normalizes any decodable source to the 16 kHz mono PCM WAV that whisper.cpp expects. */
-export async function normalizeAudioForTranscription(options: {
+async function normalizeAudio(options: {
   inputPath: string;
   outputPath: string;
+  sampleRate: number;
   signal?: AbortSignal;
 }): Promise<void> {
   await runCaptured(
@@ -478,13 +478,31 @@ export async function normalizeAudioForTranscription(options: {
       "-ac",
       "1",
       "-ar",
-      "16000",
+      String(options.sampleRate),
       "-c:a",
       "pcm_s16le",
       options.outputPath,
     ],
     { signal: options.signal },
   );
+}
+
+/** Normalizes any decodable source to the 16 kHz mono PCM WAV that whisper.cpp expects. */
+export async function normalizeAudioForTranscription(options: {
+  inputPath: string;
+  outputPath: string;
+  signal?: AbortSignal;
+}): Promise<void> {
+  await normalizeAudio({ ...options, sampleRate: 16_000 });
+}
+
+/** Normalizes generated speech to the 24 kHz mono PCM WAV that Frameyard publishes. */
+export async function normalizeSpeechAudio(options: {
+  inputPath: string;
+  outputPath: string;
+  signal?: AbortSignal;
+}): Promise<void> {
+  await normalizeAudio({ ...options, sampleRate: 24_000 });
 }
 
 export async function mixAudioTimeline(options: {

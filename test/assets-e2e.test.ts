@@ -74,6 +74,80 @@ if (process.env.FAKE_TTS_SLEEP) {
 }
 `;
 
+const fakeSherpaOnnxTts = String.raw`#!/usr/bin/env node
+const fs = require("node:fs");
+const args = process.argv.slice(2);
+
+if (args.includes("--help")) {
+  process.stdout.write(
+    [
+      "Offline/Non-streaming text-to-speech with sherpa-onnx",
+      "Supertonic TTS:",
+      " --supertonic-duration-predictor   : ./model/duration_predictor.int8.onnx",
+      " --supertonic-text-encoder         : ./model/text_encoder.int8.onnx",
+      " --supertonic-vector-estimator     : ./model/vector_estimator.int8.onnx",
+      " --supertonic-vocoder              : ./model/vocoder.int8.onnx",
+      " --supertonic-tts-json             : ./model/tts.json",
+      " --supertonic-unicode-indexer      : ./model/unicode_indexer.bin",
+      " --supertonic-voice-style          : ./model/voice.bin",
+      " --sid                             : 0",
+      " --lang                            : en",
+      " --output-filename                 : ./generated.wav",
+      "",
+    ].join("\n"),
+  );
+  process.exit(0);
+}
+
+function flagValue(flag) {
+  const prefix = flag + "=";
+  const inline = args.find((argument) => argument.startsWith(prefix));
+  if (inline !== undefined) return inline.slice(prefix.length);
+  const index = args.indexOf(flag);
+  return index === -1 ? undefined : args[index + 1];
+}
+
+const out = flagValue("--output-filename");
+if (!out) process.exit(2);
+const text = args[args.length - 1];
+if (process.env.FAKE_SHERPA_LOG) {
+  fs.writeFileSync(process.env.FAKE_SHERPA_LOG, JSON.stringify({ args, text }));
+}
+if (process.env.FAKE_SHERPA_FAIL === "1") {
+  fs.writeFileSync(out, "partial");
+  process.exit(3);
+}
+
+function writeWav() {
+  const sampleRate = 44100;
+  const seconds = 0.25;
+  const samples = Math.floor(sampleRate * seconds);
+  const dataSize = samples * 2;
+  const buffer = Buffer.alloc(44 + dataSize);
+  buffer.write("RIFF", 0);
+  buffer.writeUInt32LE(36 + dataSize, 4);
+  buffer.write("WAVE", 8);
+  buffer.write("fmt ", 12);
+  buffer.writeUInt32LE(16, 16);
+  buffer.writeUInt16LE(1, 20);
+  buffer.writeUInt16LE(1, 22);
+  buffer.writeUInt32LE(sampleRate, 24);
+  buffer.writeUInt32LE(sampleRate * 2, 28);
+  buffer.writeUInt16LE(2, 32);
+  buffer.writeUInt16LE(16, 34);
+  buffer.write("data", 36);
+  buffer.writeUInt32LE(dataSize, 40);
+  const amplitude = 1000 + text.length;
+  for (let index = 0; index < samples; index += 1) {
+    buffer.writeInt16LE(Math.round(Math.sin((2 * Math.PI * 220 * index) / sampleRate) * amplitude), 44 + index * 2);
+  }
+  fs.writeFileSync(out, buffer);
+  process.stderr.write("fake sherpa-onnx-offline-tts complete\n");
+}
+
+writeWav();
+`;
+
 const fakeWhisperCli = String.raw`#!/usr/bin/env node
 const fs = require("node:fs");
 const args = process.argv.slice(2);
@@ -245,12 +319,40 @@ beforeAll(async () => {
 
   await writeFile(path.join(bin, "qwen-tts"), fakeQwenTts);
   await writeFile(path.join(bin, "whisper-cli"), fakeWhisperCli);
+  await writeFile(path.join(bin, "sherpa-onnx-offline-tts"), fakeSherpaOnnxTts);
   await chmod(path.join(bin, "qwen-tts"), 0o755);
   await chmod(path.join(bin, "whisper-cli"), 0o755);
+  await chmod(path.join(bin, "sherpa-onnx-offline-tts"), 0o755);
 
   await writeFile(path.join(root, "models", "talker.gguf"), "fake talker model");
   await writeFile(path.join(root, "models", "codec.gguf"), "fake codec model");
   await writeFile(path.join(root, "models", "whisper.bin"), "fake whisper model");
+  const supertonicDir = path.join(root, "models", "supertonic");
+  await mkdir(supertonicDir, { recursive: true });
+  for (const name of [
+    "duration_predictor.int8.onnx",
+    "text_encoder.int8.onnx",
+    "vector_estimator.int8.onnx",
+    "vocoder.int8.onnx",
+    "tts.json",
+    "unicode_indexer.bin",
+    "voice.bin",
+  ]) {
+    await writeFile(path.join(supertonicDir, name), `fake ${name}`);
+  }
+  const supertonicFp32Dir = path.join(root, "models", "supertonic-fp32");
+  await mkdir(supertonicFp32Dir, { recursive: true });
+  for (const name of [
+    "duration_predictor.onnx",
+    "text_encoder.onnx",
+    "vector_estimator.onnx",
+    "vocoder.onnx",
+    "tts.json",
+    "unicode_indexer.bin",
+    "voice.bin",
+  ]) {
+    await writeFile(path.join(supertonicFp32Dir, name), `fake fp32 ${name}`);
+  }
   await writeFile(path.join(root, "assets", "source.wav"), toneWav());
   await writeFile(path.join(root, "script.txt"), "Hello from Frameyard.");
   await writeFile(
@@ -389,6 +491,320 @@ describe("local asset production", () => {
     });
     const models = artifact?.models as Array<Record<string, unknown>> | undefined;
     expect(models?.map((model) => model.role)).toEqual(["talker", "codec"]);
+  });
+
+  it("synthesizes Supertonic speech, normalizes it to 24 kHz mono, and records provenance", async () => {
+    const log = path.join(logDir, "supertonic.json");
+    const result = await run(
+      [
+        "tts",
+        "--engine",
+        "supertonic",
+        "--speaker",
+        "3",
+        "--model-dir",
+        "models/supertonic",
+        "--language",
+        "es",
+        "--text-file",
+        "script.txt",
+        "--out",
+        "generated/supertonic.wav",
+        "--json",
+      ],
+      { env: { PATH: `${bin}${path.delimiter}${process.env.PATH ?? ""}`, FAKE_SHERPA_LOG: log } },
+    );
+
+    expect(result.code).toBe(0);
+    const json = JSON.parse(result.stdout) as Record<string, unknown>;
+    expect(json).toMatchObject({
+      ok: true,
+      command: "tts",
+      engine: "supertonic",
+      sampleRate: 24_000,
+      channels: 1,
+      speaker: "3",
+      language: "es",
+    });
+
+    const invocation = JSON.parse(await readFile(log, "utf8")) as {
+      args: string[];
+      text: string;
+    };
+    expect(invocation.args).toEqual(
+      expect.arrayContaining([
+        `--supertonic-duration-predictor=${path.join(root, "models", "supertonic", "duration_predictor.int8.onnx")}`,
+        `--supertonic-text-encoder=${path.join(root, "models", "supertonic", "text_encoder.int8.onnx")}`,
+        `--supertonic-vector-estimator=${path.join(root, "models", "supertonic", "vector_estimator.int8.onnx")}`,
+        `--supertonic-vocoder=${path.join(root, "models", "supertonic", "vocoder.int8.onnx")}`,
+        `--supertonic-tts-json=${path.join(root, "models", "supertonic", "tts.json")}`,
+        `--supertonic-unicode-indexer=${path.join(root, "models", "supertonic", "unicode_indexer.bin")}`,
+        `--supertonic-voice-style=${path.join(root, "models", "supertonic", "voice.bin")}`,
+        "--sid=3",
+        "--lang=es",
+      ]),
+    );
+    expect(invocation.args.slice(-2)).toEqual(["--", "Hello from Frameyard."]);
+    expect(invocation.text).toBe("Hello from Frameyard.");
+
+    const output = await readFile(path.join(root, "generated", "supertonic.wav"));
+    expect(json.sha256).toBe(sha256(output));
+    const probe = await exec("ffprobe", [
+      "-v",
+      "error",
+      "-select_streams",
+      "a:0",
+      "-show_entries",
+      "stream=sample_rate,channels,codec_name",
+      "-of",
+      "json",
+      path.join(root, "generated", "supertonic.wav"),
+    ]);
+    const stream = (JSON.parse(probe.stdout) as { streams: Array<Record<string, unknown>> }).streams[0];
+    expect(stream).toMatchObject({ sample_rate: "24000", channels: 1, codec_name: "pcm_s16le" });
+
+    const manifest = await readManifest();
+    const artifact = artifacts(manifest).find((entry) => entry.path === "generated/supertonic.wav");
+    expect(artifact).toMatchObject({
+      kind: "audio",
+      operation: "tts",
+      sha256: sha256(output),
+      bytes: output.length,
+      generator: {
+        name: "frameyard",
+        command: "tts",
+        integration: "sherpa-onnx",
+        referenceRevision: "af2d8d81dbfa61c4cea4c568da78f3982edca005",
+      },
+      parameters: {
+        engine: "supertonic",
+        speaker: "3",
+        language: "es",
+        format: "wav16",
+        sampleRate: 24_000,
+        channels: 1,
+        sourceSampleRate: 44_100,
+        sourceChannels: 1,
+        modelFiles: 7,
+        modelArchive: "sherpa-onnx-supertonic-3-tts-int8-2026-05-11",
+      },
+    });
+    const models = artifact?.models as Array<Record<string, unknown>> | undefined;
+    const expectedModels = [
+      ["duration-predictor", "duration_predictor.int8.onnx"],
+      ["text-encoder", "text_encoder.int8.onnx"],
+      ["vector-estimator", "vector_estimator.int8.onnx"],
+      ["vocoder", "vocoder.int8.onnx"],
+      ["tts-json", "tts.json"],
+      ["unicode-indexer", "unicode_indexer.bin"],
+      ["voice-style", "voice.bin"],
+    ];
+    expect(models?.map((model) => [model.role, model.sha256])).toEqual(
+      expectedModels.map(([role, name]) => [role, sha256(`fake ${name}`)]),
+    );
+  });
+
+  it("marks a non-int8 Supertonic directory as custom archive provenance", async () => {
+    const result = await run(
+      [
+        "tts",
+        "--engine",
+        "supertonic",
+        "--speaker",
+        "0",
+        "--model-dir",
+        "models/supertonic-fp32",
+        "--language",
+        "es",
+        "--out",
+        "generated/supertonic-fp32.wav",
+        "--json",
+      ],
+      { input: "Text.", env: { PATH: `${bin}${path.delimiter}${process.env.PATH ?? ""}` } },
+    );
+
+    expect(result.code).toBe(0);
+    const manifest = await readManifest();
+    const artifact = artifacts(manifest).find((entry) => entry.path === "generated/supertonic-fp32.wav");
+    expect(artifact?.parameters).toMatchObject({ modelArchive: "custom" });
+  });
+
+  it("reports a missing Supertonic model file without publishing an artifact", async () => {
+    const result = await run(
+      [
+        "tts",
+        "--engine",
+        "supertonic",
+        "--speaker",
+        "0",
+        "--model-dir",
+        "models/supertonic-missing",
+        "--language",
+        "es",
+        "--out",
+        "assets/missing-supertonic.wav",
+        "--json",
+      ],
+      { input: "Text.", env: { PATH: `${bin}${path.delimiter}${process.env.PATH ?? ""}` } },
+    );
+
+    expect(result.code).not.toBe(0);
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      ok: false,
+      command: "tts",
+      error: { code: "ASSET_NOT_FOUND" },
+    });
+    await expect(stat(path.join(root, "assets", "missing-supertonic.wav"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
+  it("reports a missing Supertonic executable", async () => {
+    const result = await run(
+      [
+        "tts",
+        "--engine",
+        "supertonic",
+        "--speaker",
+        "0",
+        "--model-dir",
+        "models/supertonic",
+        "--language",
+        "es",
+        "--executable",
+        "/nonexistent/sherpa-onnx-offline-tts",
+        "--out",
+        "assets/missing-executable.wav",
+        "--json",
+      ],
+      { input: "Text." },
+    );
+
+    expect(result.code).not.toBe(0);
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      ok: false,
+      command: "tts",
+      error: { code: "EXECUTABLE_NOT_FOUND" },
+    });
+  });
+
+  it("passes Supertonic text that starts with a dash after the option terminator", async () => {
+    const log = path.join(logDir, "supertonic-dash.json");
+    const result = await run(
+      [
+        "tts",
+        "--engine",
+        "supertonic",
+        "--speaker",
+        "0",
+        "--model-dir",
+        "models/supertonic",
+        "--language",
+        "es",
+        "--out",
+        "generated/supertonic-dash.wav",
+        "--json",
+      ],
+      {
+        input: "--leading dashes",
+        env: { PATH: `${bin}${path.delimiter}${process.env.PATH ?? ""}`, FAKE_SHERPA_LOG: log },
+      },
+    );
+
+    expect(result.code).toBe(0);
+    const invocation = JSON.parse(await readFile(log, "utf8")) as { args: string[]; text: string };
+    expect(invocation.args.slice(-2)).toEqual(["--", "--leading dashes"]);
+    expect(invocation.text).toBe("--leading dashes");
+  });
+
+  it("rejects engine-specific flags and invalid Supertonic values", async () => {
+    const env = { PATH: `${bin}${path.delimiter}${process.env.PATH ?? ""}` };
+    const base = [
+      "tts",
+      "--engine",
+      "supertonic",
+      "--speaker",
+      "0",
+      "--model-dir",
+      "models/supertonic",
+      "--out",
+      "assets/invalid.wav",
+      "--json",
+    ];
+
+    const qwenFlag = await run([...base, "--language", "es", "--talker-model", "models/talker.gguf"], {
+      input: "Text.",
+      env,
+    });
+    expect(qwenFlag.code).not.toBe(0);
+    expect(JSON.parse(qwenFlag.stdout)).toMatchObject({
+      ok: false,
+      command: "tts",
+      error: { code: "USAGE" },
+    });
+
+    const missingLanguage = await run(base, { input: "Text.", env });
+    expect(missingLanguage.code).not.toBe(0);
+    expect(JSON.parse(missingLanguage.stdout)).toMatchObject({
+      ok: false,
+      command: "tts",
+      error: { code: "USAGE" },
+    });
+
+    const invalidLanguage = await run([...base, "--language", "xx"], { input: "Text.", env });
+    expect(invalidLanguage.code).not.toBe(0);
+    expect(JSON.parse(invalidLanguage.stdout)).toMatchObject({
+      ok: false,
+      command: "tts",
+      error: { code: "USAGE" },
+    });
+
+    const invalidSpeaker = await run([...base, "--speaker", "vivian", "--language", "es"], {
+      input: "Text.",
+      env,
+    });
+    expect(invalidSpeaker.code).not.toBe(0);
+    expect(JSON.parse(invalidSpeaker.stdout)).toMatchObject({
+      ok: false,
+      command: "tts",
+      error: { code: "USAGE" },
+    });
+
+    for (const forbidden of ["--style", "--device"]) {
+      const result = await run([...base, "--language", "es", forbidden, "calm"], { input: "Text.", env });
+      expect(result.code).not.toBe(0);
+      expect(JSON.parse(result.stdout)).toMatchObject({
+        ok: false,
+        command: "tts",
+        error: { code: "USAGE" },
+      });
+    }
+
+    const qwenModelDir = await run(
+      [
+        "tts",
+        "--engine",
+        "qwen",
+        "--speaker",
+        "vivian",
+        "--talker-model",
+        "models/talker.gguf",
+        "--codec-model",
+        "models/codec.gguf",
+        "--model-dir",
+        "models/supertonic",
+        "--out",
+        "assets/invalid.wav",
+        "--json",
+      ],
+      { input: "Text.", env },
+    );
+    expect(qwenModelDir.code).not.toBe(0);
+    expect(JSON.parse(qwenModelDir.stdout)).toMatchObject({
+      ok: false,
+      command: "tts",
+      error: { code: "USAGE" },
+    });
   });
 
   it("reads text from stdin and honors --force", async () => {
@@ -893,6 +1309,46 @@ describe("doctor", () => {
     const videoEncoders = checks.find((check) => check.name === "ffmpeg-video-encoders");
     expect(videoEncoders).toMatchObject({ required: false });
     expect(String(videoEncoders?.detail)).toContain("libx264");
+  });
+
+  it("reports the sherpa-onnx integration and Supertonic model directory", async () => {
+    const result = await run(
+      [
+        "doctor",
+        "--sherpa-onnx-tts",
+        path.join(bin, "sherpa-onnx-offline-tts"),
+        "--model-dir",
+        "models/supertonic",
+        "--json",
+      ],
+      { env: { PATH: `${bin}${path.delimiter}${process.env.PATH ?? ""}` } },
+    );
+
+    expect(result.code).toBe(0);
+    const json = JSON.parse(result.stdout) as Record<string, unknown>;
+    expect(json).toMatchObject({
+      ok: true,
+      command: "doctor",
+      healthy: true,
+      integrations: {
+        sherpaOnnxTts: {
+          name: "sherpa-onnx-offline-tts",
+          status: "ok",
+          requested: true,
+          referenceRevision: expect.any(String),
+        },
+      },
+    });
+    expect(json.models).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          role: "supertonic",
+          status: "ok",
+          bytes: expect.any(Number),
+          sha256: expect.any(String),
+        }),
+      ]),
+    );
   });
 
   it("exits nonzero when required tools are missing", async () => {

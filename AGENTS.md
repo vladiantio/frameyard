@@ -63,7 +63,7 @@ node dist/cli.js doctor
 
 Documentation command examples: runnable examples in `README.md`, `skills/frameyard/`, the `init` scaffold, and `init --json` `next` use `npx frameyard`; repository-internal commands (this file, `examples/*/README.md`, and README's `Development` section) use `node dist/cli.js` after `pnpm build`. Command reference tables and `--help` usage lines keep the bare `frameyard` name. `test/docs.test.ts` enforces the user-facing rule, including the generated scaffold markdown in `src/scaffold.ts`; `test/examples.test.ts` enforces the example README rule.
 
-A full 30-second demo timeline render is segmented and uses 8 workers by default; `--scratch <dir>` selects the FFV1 intermediate directory. Composition renders are sequential unless `--concurrency <n>` (1-16) is passed. Run `pnpm bench` for current composition timings; the timeline benchmark scripts under `bench/` are measurement tools, not production code; pass `--work`, `--project`, `--output`, and `--scratch` instead of editing paths. The test fixtures render tiny compositions/timelines. TTS and transcription tests use fake `qwen-tts` and `whisper-cli` executables; real-model tests are opt-in.
+A full 30-second demo timeline render is segmented and uses 8 workers by default; `--scratch <dir>` selects the FFV1 intermediate directory. Composition renders are sequential unless `--concurrency <n>` (1-16) is passed. Run `pnpm bench` for current composition timings; the timeline benchmark scripts under `bench/` are measurement tools, not production code; pass `--work`, `--project`, `--output`, and `--scratch` instead of editing paths. The test fixtures render tiny compositions/timelines. TTS and transcription tests use fake `qwen-tts`, `sherpa-onnx-offline-tts`, and `whisper-cli` executables; real-model tests are opt-in.
 
 ## Architecture
 
@@ -107,7 +107,7 @@ A full 30-second demo timeline render is segmented and uses 8 workers by default
 | `src/renderer/transcripts.ts` | Transcript validation and inspection |
 | `src/renderer/ffmpeg.ts` | FFmpeg probing, encoding, FFV1, segment/frame composite, concat, mux, and offline audio mixing |
 | `src/renderer/keyframe-expressions.ts` | FFmpeg keyframe expressions with the adaptive easing approximation |
-| `src/assets/` | TTS/transcription wrappers, executable resolution, atomic publishing, provenance |
+| `src/assets/` | TTS (qwentts.cpp and sherpa-onnx Supertonic) and transcription wrappers, executable resolution, atomic publishing, provenance |
 | `src/doctor.ts` | Environment, integration, and manifest inspection |
 | `src/project.ts` | `video.config.js` loading: project format, explicit `.html` compositions, `.json` timelines |
 | `src/scaffold.ts` | `init` timeline-first scaffold: composition, timeline, config, props, README, agent guide |
@@ -191,7 +191,7 @@ Timeline path: `src/timeline/resolve.ts` resolves the JSON and references; `src/
 ### Generated assets
 
 - Speech synthesis and transcription are explicit operations outside rendering. Never invoke them from `mount()`, `update()`, or frame production.
-- Use the `tts` and `transcribe` wrappers; never call `qwen-tts` or `whisper-cli` directly from framework code or the agent skill.
+- Use the `tts` and `transcribe` wrappers; never call `qwen-tts`, `sherpa-onnx-offline-tts`, or `whisper-cli` directly from framework code or the agent skill.
 - Outputs are written atomically. Failed or cancelled operations leave no apparently valid artifact and no manifest entry.
 - Existing generated assets are replaced only with `--force`.
 - The provenance manifest records artifact hashes, generator details, model identities, parameters, and source identity for transcription.
@@ -224,7 +224,7 @@ Timeline path: `src/timeline/resolve.ts` resolves the JSON and references; `src/
 - **Chromium capture, audio/transcript inspection, FFmpeg** → `src/renderer/`; extend `test/cli-e2e.test.ts`, `test/video-determinism.test.ts`, and verify artifacts with FFprobe.
 - **CLI commands, flags, and their result contracts** → `src/cli.ts`; update `README.md` (commands table, options, non-goals), `docs/v0.1-design.md` §5-§6 and non-goals, `GLOSSARY.md`, `skills/frameyard/SKILL.md` and its references (`json-results`, `diagnostics`, `failure-recovery`, `common-mistakes`, `deterministic-authoring`, `timelines`), `src/scaffold.ts`, and `CHANGELOG.md`; extend `test/cli-e2e.test.ts` and `test/docs.test.ts`.
 - **Static validation integration and result schemas** → `src/renderer/index.ts`, `src/renderer/timeline.ts`, `src/cli.ts`; extend `test/cli-e2e.test.ts`, `test/agent-workflow.test.ts`, `test/timeline-render.test.ts`.
-- **TTS, transcription, provenance, executable resolution** → `src/assets/`; extend `test/assets-e2e.test.ts` with fake executables.
+- **TTS, transcription, provenance, executable resolution** → `src/assets/`; extend `test/assets-e2e.test.ts` with fake executables. `tts --engine supertonic` resolves the seven Supertonic files from `--model-dir`, records them in the manifest, and normalizes the engine output to 24 kHz mono.
 - **Doctor checks** → `src/doctor.ts`, `src/cli.ts`; extend `test/assets-e2e.test.ts`.
 - **Init scaffold content** → `src/scaffold.ts` (project format, composition, timeline, config, props, README, agent guide, and `next`); keep the agent guide aligned with `skills/frameyard/`; extend `test/scaffold.test.ts`, `test/docs.test.ts`, and the `init` case. When the scaffold file set changes, update `README.md`, `docs/v0.1-design.md` §6, and the scaffold README/agent guide.
 - **Agent skill contract** → `skills/frameyard/`, `package.json`; extend `test/skill.test.ts`.

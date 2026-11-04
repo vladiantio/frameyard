@@ -1,11 +1,21 @@
 import { mkdir, rm, stat } from "node:fs/promises";
 import path from "node:path";
+import type { JsonValue } from "../contracts.js";
 import { FrameyardError } from "../errors.js";
-import { probeMedia } from "../renderer/ffmpeg.js";
+import { normalizeSpeechAudio, probeMedia } from "../renderer/ffmpeg.js";
 import { VERSION } from "../version.js";
+import { resolveExecutable, type ResolvedExecutable } from "./executable.js";
 import { assertReadableFile, requireExtension } from "./files.js";
-import { resolveExecutable } from "./executable.js";
-import { QWEN_TTS_COMMAND, QWEN_TTS_ENV, QWEN_TTS_INSTALL_HINT, QWEN_TTS_REFERENCE_REVISION } from "./integrations.js";
+import {
+  QWEN_TTS_COMMAND,
+  QWEN_TTS_ENV,
+  QWEN_TTS_INSTALL_HINT,
+  QWEN_TTS_REFERENCE_REVISION,
+  SHERPA_ONNX_TTS_COMMAND,
+  SHERPA_ONNX_TTS_ENV,
+  SHERPA_ONNX_TTS_INSTALL_HINT,
+  SHERPA_ONNX_REFERENCE_REVISION,
+} from "./integrations.js";
 import { runChild } from "./process.js";
 import {
   assertOutputAvailable,
@@ -21,24 +31,46 @@ import {
   type ManifestArtifact,
   type ManifestModel,
 } from "./provenance.js";
+import {
+  buildSupertonicArgs,
+  parseSupertonicSpeaker,
+  requireSupertonicLanguage,
+  resolveSupertonicModelArchive,
+  resolveSupertonicModelFiles,
+} from "./tts-supertonic.js";
 
-export interface SynthesizeSpeechOptions {
+export type SpeechEngine = "qwen" | "supertonic";
+
+interface SpeechOptionsBase {
   projectRoot: string;
   text: string;
   speaker: string;
-  talkerModelPath: string;
-  codecModelPath: string;
   outPath: string;
-  style?: string;
-  language?: string;
-  device?: string;
   executable?: string;
   manifestPath?: string;
   force: boolean;
   signal?: AbortSignal;
 }
 
+export interface QwenSpeechOptions extends SpeechOptionsBase {
+  engine?: "qwen";
+  talkerModelPath: string;
+  codecModelPath: string;
+  style?: string;
+  language?: string;
+  device?: string;
+}
+
+export interface SupertonicSpeechOptions extends SpeechOptionsBase {
+  engine: "supertonic";
+  modelDir: string;
+  language: string;
+}
+
+export type SynthesizeSpeechOptions = QwenSpeechOptions | SupertonicSpeechOptions;
+
 export interface SpeechResult {
+  engine: SpeechEngine;
   path: string;
   bytes: number;
   sha256: string;
@@ -51,8 +83,219 @@ export interface SpeechResult {
   elapsedMs: number;
 }
 
+interface EngineInvocation {
+  executable: ResolvedExecutable;
+  args: string[];
+  stdin?: string;
+  label: string;
+  installHint: string;
+  integration: "qwentts.cpp" | "sherpa-onnx";
+  referenceRevision: string;
+  models: ManifestModel[];
+  parameters: Record<string, JsonValue>;
+  normalize: boolean;
+}
+
+interface AudioProbe {
+  sampleRate: number;
+  channels: number;
+  formatName: string;
+}
+
+function requireSpeechEngine(value: unknown): SpeechEngine {
+  if (value === undefined || value === "qwen") {
+    return "qwen";
+  }
+  if (value === "supertonic") {
+    return "supertonic";
+  }
+  throw new FrameyardError("TTS_FAILED", `Unknown speech engine "${String(value)}".`);
+}
+
+async function probeAudio(filePath: string, signal?: AbortSignal): Promise<AudioProbe> {
+  const probe = await probeMedia(filePath, signal !== undefined ? { signal } : {});
+  const audio = probe.streams.find((stream) => stream.codec_type === "audio");
+  return {
+    sampleRate: Number(audio?.sample_rate),
+    channels: Number(audio?.channels),
+    formatName: probe.format?.format_name ?? "",
+  };
+}
+
+function speechTextParameters(text: string): {
+  format: "wav16";
+  sampleRate: number;
+  channels: number;
+  textSha256: string;
+  textBytes: number;
+  textCharacters: number;
+} {
+  return {
+    format: "wav16",
+    sampleRate: 24_000,
+    channels: 1,
+    textSha256: hashText(text),
+    textBytes: Buffer.byteLength(text, "utf8"),
+    textCharacters: text.length,
+  };
+}
+
+async function prepareQwenInvocation(options: QwenSpeechOptions, rawOut: string): Promise<EngineInvocation> {
+  if (typeof options.talkerModelPath !== "string" || typeof options.codecModelPath !== "string") {
+    throw new FrameyardError("TTS_FAILED", "Qwen speech synthesis requires talker and codec model paths.");
+  }
+
+  const talkerModelPath = path.resolve(options.talkerModelPath);
+  const codecModelPath = path.resolve(options.codecModelPath);
+  const talkerBytes = await assertReadableFile(talkerModelPath, "Talker GGUF model");
+  const codecBytes = await assertReadableFile(codecModelPath, "Codec GGUF model");
+
+  const executable = await resolveExecutable({
+    command: QWEN_TTS_COMMAND,
+    ...(options.executable !== undefined ? { explicit: options.executable } : {}),
+    envVar: QWEN_TTS_ENV,
+    installHint: QWEN_TTS_INSTALL_HINT,
+  });
+
+  const talkerIdentity = await hashFile(talkerModelPath, {
+    ...(options.signal !== undefined ? { signal: options.signal } : {}),
+    label: "talker GGUF model",
+  });
+  const codecIdentity = await hashFile(codecModelPath, {
+    ...(options.signal !== undefined ? { signal: options.signal } : {}),
+    label: "codec GGUF model",
+  });
+
+  const args = [
+    "--model",
+    talkerModelPath,
+    "--codec",
+    codecModelPath,
+    "--speaker",
+    options.speaker,
+    "--format",
+    "wav16",
+    "-o",
+    rawOut,
+  ];
+  if (options.language !== undefined) {
+    args.push("--lang", options.language);
+  }
+  if (options.style !== undefined) {
+    args.push("--instruct", options.style);
+  }
+  if (options.device !== undefined) {
+    args.push("--device", options.device);
+  }
+
+  return {
+    executable,
+    args,
+    stdin: options.text,
+    label: "qwen-tts",
+    installHint: QWEN_TTS_INSTALL_HINT,
+    integration: "qwentts.cpp",
+    referenceRevision: QWEN_TTS_REFERENCE_REVISION,
+    models: [
+      {
+        role: "talker",
+        path: projectRelativePath(options.projectRoot, talkerModelPath),
+        sha256: talkerIdentity.sha256,
+        bytes: talkerIdentity.bytes,
+      },
+      {
+        role: "codec",
+        path: projectRelativePath(options.projectRoot, codecModelPath),
+        sha256: codecIdentity.sha256,
+        bytes: codecIdentity.bytes,
+      },
+    ],
+    parameters: {
+      ...speechTextParameters(options.text),
+      engine: "qwen",
+      speaker: options.speaker,
+      language: options.language ?? null,
+      style: options.style ?? null,
+      device: options.device ?? null,
+      talkerModelBytes: talkerBytes,
+      codecModelBytes: codecBytes,
+    },
+    normalize: false,
+  };
+}
+
+async function prepareSupertonicInvocation(
+  options: SupertonicSpeechOptions,
+  rawOut: string,
+): Promise<EngineInvocation> {
+  if (typeof options.modelDir !== "string" || options.modelDir.length === 0) {
+    throw new FrameyardError("TTS_FAILED", "Supertonic synthesis requires a model directory.");
+  }
+
+  const language = requireSupertonicLanguage(options.language);
+  const sid = parseSupertonicSpeaker(options.speaker);
+  const modelFiles = await resolveSupertonicModelFiles(options.modelDir);
+
+  const executable = await resolveExecutable({
+    command: SHERPA_ONNX_TTS_COMMAND,
+    ...(options.executable !== undefined ? { explicit: options.executable } : {}),
+    envVar: SHERPA_ONNX_TTS_ENV,
+    installHint: SHERPA_ONNX_TTS_INSTALL_HINT,
+  });
+
+  const models: ManifestModel[] = [];
+  let modelBytes = 0;
+  for (const file of modelFiles) {
+    const identity = await hashFile(file.path, {
+      ...(options.signal !== undefined ? { signal: options.signal } : {}),
+      label: `Supertonic ${file.role} model`,
+    });
+    modelBytes += identity.bytes;
+    models.push({
+      role: file.role,
+      path: projectRelativePath(options.projectRoot, file.path),
+      sha256: identity.sha256,
+      bytes: identity.bytes,
+    });
+  }
+
+  return {
+    executable,
+    args: buildSupertonicArgs({
+      files: modelFiles,
+      sid,
+      language,
+      outputPath: rawOut,
+      text: options.text,
+    }),
+    label: SHERPA_ONNX_TTS_COMMAND,
+    installHint: SHERPA_ONNX_TTS_INSTALL_HINT,
+    integration: "sherpa-onnx",
+    referenceRevision: SHERPA_ONNX_REFERENCE_REVISION,
+    models,
+    parameters: {
+      ...speechTextParameters(options.text),
+      engine: "supertonic",
+      speaker: options.speaker,
+      language,
+      modelFiles: modelFiles.length,
+      modelBytes,
+      modelArchive: resolveSupertonicModelArchive(modelFiles),
+    },
+    normalize: true,
+  };
+}
+
+async function prepareInvocation(options: SynthesizeSpeechOptions, rawOut: string): Promise<EngineInvocation> {
+  if (options.engine === "supertonic") {
+    return prepareSupertonicInvocation(options, rawOut);
+  }
+  return prepareQwenInvocation(options, rawOut);
+}
+
 export async function synthesizeSpeech(options: SynthesizeSpeechOptions): Promise<SpeechResult> {
   const startedAt = performance.now();
+  const engine = requireSpeechEngine(options.engine);
   const text = options.text;
   if (typeof text !== "string" || text.trim().length === 0) {
     throw new FrameyardError("TTS_FAILED", "Speech synthesis requires non-empty text.");
@@ -74,105 +317,62 @@ export async function synthesizeSpeech(options: SynthesizeSpeechOptions): Promis
     );
   }
 
-  const talkerModelPath = path.resolve(options.talkerModelPath);
-  const codecModelPath = path.resolve(options.codecModelPath);
-  const talkerBytes = await assertReadableFile(talkerModelPath, "Talker GGUF model");
-  const codecBytes = await assertReadableFile(codecModelPath, "Codec GGUF model");
-
-  const executable = await resolveExecutable({
-    command: QWEN_TTS_COMMAND,
-    ...(options.executable !== undefined ? { explicit: options.executable } : {}),
-    envVar: QWEN_TTS_ENV,
-    installHint: QWEN_TTS_INSTALL_HINT,
-  });
-
-  const manifestPath = resolveManifestPath(options.projectRoot, options.manifestPath);
-  const manifest = await readManifest(manifestPath);
-
-  const talkerIdentity = await hashFile(talkerModelPath, {
-    signal: options.signal,
-    label: "talker GGUF model",
-  });
-  const codecIdentity = await hashFile(codecModelPath, {
-    signal: options.signal,
-    label: "codec GGUF model",
-  });
-
-  const tempOut = temporaryPath(outPath, "tts");
+  const rawOut = temporaryPath(outPath, "tts-raw");
+  const finalOut = temporaryPath(outPath, "tts");
 
   try {
-    const args = [
-      "--model",
-      talkerModelPath,
-      "--codec",
-      codecModelPath,
-      "--speaker",
-      options.speaker,
-      "--format",
-      "wav16",
-      "-o",
-      tempOut,
-    ];
-    if (options.language !== undefined) {
-      args.push("--lang", options.language);
-    }
-    if (options.style !== undefined) {
-      args.push("--instruct", options.style);
-    }
-    if (options.device !== undefined) {
-      args.push("--device", options.device);
-    }
+    const invocation = await prepareInvocation(options, rawOut);
+    const manifestPath = resolveManifestPath(options.projectRoot, options.manifestPath);
+    const manifest = await readManifest(manifestPath);
 
-    await runChild(executable.path, args, {
+    await runChild(invocation.executable.path, invocation.args, {
       ...(options.signal !== undefined ? { signal: options.signal } : {}),
-      stdin: text,
+      ...(invocation.stdin !== undefined ? { stdin: invocation.stdin } : {}),
       errorCode: "TTS_FAILED",
-      label: "qwen-tts",
-      executableHint: QWEN_TTS_INSTALL_HINT,
+      label: invocation.label,
+      executableHint: invocation.installHint,
       forwardOutput: true,
     });
 
     let info;
     try {
-      info = await stat(tempOut);
+      info = await stat(rawOut);
     } catch {
-      throw new FrameyardError("TTS_FAILED", `qwen-tts did not write the requested WAV file: ${outPath}`);
+      throw new FrameyardError("TTS_FAILED", `${invocation.label} did not write the requested WAV file: ${outPath}`);
     }
     if (!info.isFile() || info.size === 0) {
-      throw new FrameyardError("TTS_FAILED", `qwen-tts produced an empty WAV file: ${outPath}`);
+      throw new FrameyardError("TTS_FAILED", `${invocation.label} produced an empty WAV file: ${outPath}`);
     }
 
-    const probe = await probeMedia(tempOut, options.signal !== undefined ? { signal: options.signal } : {});
-    const audio = probe.streams.find((stream) => stream.codec_type === "audio");
-    const sampleRate = Number(audio?.sample_rate);
-    const channels = Number(audio?.channels);
-    const formatName = probe.format?.format_name ?? "";
-    if (!audio || sampleRate !== 24_000 || channels !== 1 || !formatName.includes("wav")) {
+    const rawProbe = await probeAudio(rawOut, options.signal);
+    if (!rawProbe.formatName.includes("wav")) {
+      throw new FrameyardError("TTS_FAILED", `${invocation.label} did not produce a WAV file: ${outPath}`);
+    }
+
+    let artifactPath = rawOut;
+    if (invocation.normalize) {
+      await normalizeSpeechAudio({
+        inputPath: rawOut,
+        outputPath: finalOut,
+        ...(options.signal !== undefined ? { signal: options.signal } : {}),
+      });
+      artifactPath = finalOut;
+      invocation.parameters.sourceSampleRate = rawProbe.sampleRate;
+      invocation.parameters.sourceChannels = rawProbe.channels;
+    }
+
+    const probe = await probeAudio(artifactPath, options.signal);
+    if (probe.sampleRate !== 24_000 || probe.channels !== 1 || !probe.formatName.includes("wav")) {
       throw new FrameyardError(
         "TTS_FAILED",
-        `qwen-tts must produce a 24 kHz mono WAV; received ${String(audio?.sample_rate ?? "unknown")} Hz, ${String(audio?.channels ?? "unknown")} channel(s), format "${formatName || "unknown"}".`,
+        `${invocation.label} must produce a 24 kHz mono WAV; received ${String(probe.sampleRate || "unknown")} Hz, ${String(probe.channels || "unknown")} channel(s), format "${probe.formatName || "unknown"}".`,
       );
     }
 
-    const artifactIdentity = await hashFile(tempOut, {
-      signal: options.signal,
+    const artifactIdentity = await hashFile(artifactPath, {
+      ...(options.signal !== undefined ? { signal: options.signal } : {}),
       label: "generated WAV",
     });
-
-    const models: ManifestModel[] = [
-      {
-        role: "talker",
-        path: projectRelativePath(options.projectRoot, talkerModelPath),
-        sha256: talkerIdentity.sha256,
-        bytes: talkerIdentity.bytes,
-      },
-      {
-        role: "codec",
-        path: projectRelativePath(options.projectRoot, codecModelPath),
-        sha256: codecIdentity.sha256,
-        bytes: codecIdentity.bytes,
-      },
-    ];
 
     const artifact: ManifestArtifact = {
       path: projectRelativePath(options.projectRoot, outPath),
@@ -185,25 +385,12 @@ export async function synthesizeSpeech(options: SynthesizeSpeechOptions): Promis
         name: "frameyard",
         version: VERSION,
         command: "tts",
-        executable: executable.path,
-        integration: "qwentts.cpp",
-        referenceRevision: QWEN_TTS_REFERENCE_REVISION,
+        executable: invocation.executable.path,
+        integration: invocation.integration,
+        referenceRevision: invocation.referenceRevision,
       },
-      models,
-      parameters: {
-        speaker: options.speaker,
-        language: options.language ?? null,
-        style: options.style ?? null,
-        device: options.device ?? null,
-        format: "wav16",
-        sampleRate: 24_000,
-        channels: 1,
-        textSha256: hashText(text),
-        textBytes: Buffer.byteLength(text, "utf8"),
-        textCharacters: text.length,
-        talkerModelBytes: talkerBytes,
-        codecModelBytes: codecBytes,
-      },
+      models: invocation.models,
+      parameters: invocation.parameters,
     };
 
     const updatedManifest = upsertArtifact(manifest, artifact);
@@ -211,7 +398,7 @@ export async function synthesizeSpeech(options: SynthesizeSpeechOptions): Promis
     try {
       await publishStagedFiles(
         [
-          { tempPath: tempOut, path: outPath, label: "speech" },
+          { tempPath: artifactPath, path: outPath, label: "speech" },
           { tempPath: manifestTemp, path: manifestPath, label: "provenance manifest", overwrite: true },
         ],
         { force: options.force },
@@ -221,6 +408,7 @@ export async function synthesizeSpeech(options: SynthesizeSpeechOptions): Promis
     }
 
     const result: SpeechResult = {
+      engine,
       path: outPath,
       bytes: artifactIdentity.bytes,
       sha256: artifactIdentity.sha256,
@@ -230,14 +418,19 @@ export async function synthesizeSpeech(options: SynthesizeSpeechOptions): Promis
       manifest: manifestPath,
       elapsedMs: performance.now() - startedAt,
     };
-    if (options.language !== undefined) {
+    if (options.engine === "supertonic") {
       result.language = options.language;
-    }
-    if (options.device !== undefined) {
-      result.device = options.device;
+    } else {
+      if (options.language !== undefined) {
+        result.language = options.language;
+      }
+      if (options.device !== undefined) {
+        result.device = options.device;
+      }
     }
     return result;
   } finally {
-    await rm(tempOut, { force: true });
+    await rm(rawOut, { force: true });
+    await rm(finalOut, { force: true });
   }
 }

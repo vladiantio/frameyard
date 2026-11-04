@@ -103,7 +103,9 @@ describe("official agent skill", () => {
       expect(skill).toContain(`frameyard ${command}`);
     }
     expect(audio).toContain("FRAMEYARD_QWEN_TTS");
+    expect(audio).toContain("FRAMEYARD_SHERPA_ONNX_TTS");
     expect(audio).toContain("FRAMEYARD_WHISPER_CLI");
+    expect(audio).toContain("--engine supertonic");
     expect(audio).toContain("--force");
     expect(subtitles).toContain("TRANSCRIPT_WORDS_UNAVAILABLE");
     expect(subtitles).toContain("Never synthesize word timings");

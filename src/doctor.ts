@@ -1,5 +1,6 @@
 import { constants } from "node:fs";
 import { access, stat } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import path from "node:path";
 import { chromium } from "playwright";
 import { FrameyardError, isFrameyardError } from "./errors.js";
@@ -9,11 +10,16 @@ import {
   QWEN_TTS_ENV,
   QWEN_TTS_INSTALL_HINT,
   QWEN_TTS_REFERENCE_REVISION,
+  SHERPA_ONNX_TTS_COMMAND,
+  SHERPA_ONNX_TTS_ENV,
+  SHERPA_ONNX_TTS_INSTALL_HINT,
+  SHERPA_ONNX_REFERENCE_REVISION,
   WHISPER_CLI_COMMAND,
   WHISPER_CLI_ENV,
   WHISPER_CLI_INSTALL_HINT,
   WHISPER_CPP_REFERENCE_REVISION,
 } from "./assets/integrations.js";
+import { resolveSupertonicModelFiles, SUPERTONIC_CLI_FLAGS } from "./assets/tts-supertonic.js";
 import { runChild } from "./assets/process.js";
 import { hashFile, readManifest } from "./assets/provenance.js";
 import { probeVideoEncoder, type VideoEncoderName } from "./renderer/ffmpeg.js";
@@ -48,7 +54,7 @@ export interface DoctorManifest {
 }
 
 export interface DoctorModel {
-  role: "talker" | "codec" | "whisper";
+  role: "talker" | "codec" | "whisper" | "supertonic";
   path: string;
   status: "ok" | "error";
   bytes?: number;
@@ -62,6 +68,7 @@ export interface DoctorResult {
   integrations: {
     tts: DoctorIntegration;
     transcribe: DoctorIntegration;
+    sherpaOnnxTts: DoctorIntegration;
   };
   manifest: DoctorManifest;
   models: DoctorModel[];
@@ -270,7 +277,7 @@ async function inspectManifest(
   };
 }
 
-function integrationFlags(help: string, flags: string[]): string[] {
+function integrationFlags(help: string, flags: readonly string[]): string[] {
   return flags.filter((flag) =>
     new RegExp(`(^|\\s)${flag.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(\\s|,|$)`, "m").test(help),
   );
@@ -348,6 +355,69 @@ async function inspectTts(explicit: string | undefined, signal?: AbortSignal): P
   }
   if (problems.length > 0) {
     result.detail = problems.join(" ");
+  }
+  return result;
+}
+
+async function inspectSherpaOnnx(explicit: string | undefined, signal?: AbortSignal): Promise<DoctorIntegration> {
+  const requested = explicit !== undefined || process.env[SHERPA_ONNX_TTS_ENV] !== undefined;
+  let executable: ResolvedExecutable;
+  try {
+    executable = await resolveExecutable({
+      command: SHERPA_ONNX_TTS_COMMAND,
+      ...(explicit !== undefined ? { explicit } : {}),
+      envVar: SHERPA_ONNX_TTS_ENV,
+      installHint: SHERPA_ONNX_TTS_INSTALL_HINT,
+    });
+  } catch (error) {
+    return {
+      name: SHERPA_ONNX_TTS_COMMAND,
+      status: "missing",
+      requested,
+      detail: error instanceof Error ? error.message : String(error),
+      referenceRevision: SHERPA_ONNX_REFERENCE_REVISION,
+    };
+  }
+
+  const help = await probeCommand(executable.path, ["--help"], {
+    signal,
+    allowFailure: true,
+  });
+  if (!help.ok) {
+    return {
+      name: SHERPA_ONNX_TTS_COMMAND,
+      status: "incompatible",
+      requested,
+      executable: executable.path,
+      source: executable.source,
+      detail: help.detail,
+      referenceRevision: SHERPA_ONNX_REFERENCE_REVISION,
+    };
+  }
+
+  const text = `${help.stdout}\n${help.stderr}`;
+  const capabilities = integrationFlags(text, SUPERTONIC_CLI_FLAGS);
+  const missing = SUPERTONIC_CLI_FLAGS.filter((flag) => !capabilities.includes(flag));
+  const versionProbe = await probeCommand(executable.path, ["--version"], {
+    signal,
+    allowFailure: true,
+  });
+  const versionText = versionProbe.ok ? firstLine(`${versionProbe.stdout}\n${versionProbe.stderr}`) : "";
+  const versionMatch = /(?:sherpa[- ]onnx[^\d]*)?v?(\d+\.\d+\.\d+)/i.exec(versionText);
+  const result: DoctorIntegration = {
+    name: SHERPA_ONNX_TTS_COMMAND,
+    status: missing.length === 0 ? "ok" : "incompatible",
+    requested,
+    executable: executable.path,
+    source: executable.source,
+    capabilities,
+    referenceRevision: SHERPA_ONNX_REFERENCE_REVISION,
+  };
+  if (versionMatch) {
+    result.version = versionMatch[0];
+  }
+  if (missing.length > 0) {
+    result.detail = `Missing required CLI capabilities: ${missing.join(", ")}.`;
   }
   return result;
 }
@@ -467,6 +537,46 @@ async function inspectModel(
   }
 }
 
+async function inspectSupertonicModelDir(requestedPath: string, signal?: AbortSignal): Promise<DoctorModel> {
+  if (signal?.aborted) {
+    throw new FrameyardError("CANCELLED", "Operation cancelled.");
+  }
+  const modelDir = path.resolve(requestedPath);
+  try {
+    const files = await resolveSupertonicModelFiles(modelDir);
+    const identities = await Promise.all(
+      files.map((file) =>
+        hashFile(file.path, {
+          ...(signal !== undefined ? { signal } : {}),
+          label: `Supertonic ${file.role} model`,
+        }),
+      ),
+    );
+    const bytes = identities.reduce((total, identity) => total + identity.bytes, 0);
+    const sha256 = createHash("sha256")
+      .update(identities.map((identity) => identity.sha256).join("\n"))
+      .digest("hex");
+    return {
+      role: "supertonic",
+      path: modelDir,
+      status: "ok",
+      bytes,
+      sha256,
+      detail: `${files.length} Supertonic model files are readable; sha256 is the combined digest of their content hashes.`,
+    };
+  } catch (error) {
+    if (error instanceof FrameyardError && error.code === "CANCELLED") {
+      throw error;
+    }
+    return {
+      role: "supertonic",
+      path: modelDir,
+      status: "error",
+      detail: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
 const VIDEO_ENCODERS: readonly VideoEncoderName[] = [
   "libx264",
   "libx265",
@@ -541,9 +651,11 @@ export async function runDoctor(options: {
   projectRoot: string;
   manifestPath: string;
   qwenTts?: string;
+  sherpaOnnxTts?: string;
   whisperCli?: string;
   talkerModel?: string;
   codecModel?: string;
+  supertonicModelDir?: string;
   whisperModel?: string;
   signal?: AbortSignal;
 }): Promise<DoctorResult> {
@@ -639,6 +751,7 @@ export async function runDoctor(options: {
 
   const tts = await inspectTts(options.qwenTts, options.signal);
   const transcribe = await inspectWhisper(options.whisperCli, options.signal);
+  const sherpaOnnxTts = await inspectSherpaOnnx(options.sherpaOnnxTts, options.signal);
 
   const models: DoctorModel[] = [];
   if (options.talkerModel !== undefined) {
@@ -650,6 +763,9 @@ export async function runDoctor(options: {
   if (options.whisperModel !== undefined) {
     models.push(await inspectModel("whisper", options.whisperModel, options.signal));
   }
+  if (options.supertonicModelDir !== undefined) {
+    models.push(await inspectSupertonicModelDir(options.supertonicModelDir, options.signal));
+  }
 
   if (options.signal?.aborted) {
     throw new FrameyardError("CANCELLED", "Operation cancelled.");
@@ -657,17 +773,16 @@ export async function runDoctor(options: {
 
   const requiredOk = checks.every((check) => !check.required || check.status === "ok");
   const manifestOk = manifestResult.manifest.valid;
-  const requestedOk =
-    tts.status !== "incompatible" &&
-    transcribe.status !== "incompatible" &&
-    (!tts.requested || tts.status === "ok") &&
-    (!transcribe.requested || transcribe.status === "ok");
+  const integrations = [tts, transcribe, sherpaOnnxTts];
+  const requestedOk = integrations.every(
+    (integration) => integration.status !== "incompatible" && (!integration.requested || integration.status === "ok"),
+  );
   const modelsOk = models.every((model) => model.status === "ok");
 
   return {
     healthy: requiredOk && manifestOk && requestedOk && modelsOk,
     checks,
-    integrations: { tts, transcribe },
+    integrations: { tts, transcribe, sherpaOnnxTts },
     manifest: manifestResult.manifest,
     models,
   };

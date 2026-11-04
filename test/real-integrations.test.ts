@@ -77,6 +77,47 @@ describe.skipIf(!enabled)("real-model integrations", () => {
     expect((await readFile(path.join(root, "voice.wav"))).subarray(0, 4).toString()).toBe("RIFF");
   }, 600_000);
 
+  it.skipIf(!enabled || process.env.FRAMEYARD_REAL_SUPERTONIC_MODEL_DIR === undefined)(
+    "produces a frozen WAV through sherpa-onnx Supertonic",
+    async () => {
+      const modelDir = requiredEnv("FRAMEYARD_REAL_SUPERTONIC_MODEL_DIR");
+      const root = await mkdtemp(path.join(tmpdir(), "frameyard-real-supertonic-"));
+      roots.push(root);
+      await writeFile(path.join(root, "script.txt"), "Frameyard Supertonic integration test.\n");
+
+      const result = await run(
+        [
+          "tts",
+          "--engine",
+          "supertonic",
+          "--speaker",
+          process.env.FRAMEYARD_REAL_SUPERTONIC_SPEAKER ?? "0",
+          "--model-dir",
+          path.resolve(modelDir),
+          "--language",
+          process.env.FRAMEYARD_REAL_SUPERTONIC_LANGUAGE ?? "en",
+          "--text-file",
+          "script.txt",
+          "--out",
+          "voice.wav",
+          "--json",
+        ],
+        root,
+      );
+
+      expect(result.code, result.stderr).toBe(0);
+      expect(JSON.parse(result.stdout)).toMatchObject({
+        ok: true,
+        command: "tts",
+        engine: "supertonic",
+        sampleRate: 24_000,
+        channels: 1,
+      });
+      expect((await readFile(path.join(root, "voice.wav"))).subarray(0, 4).toString()).toBe("RIFF");
+    },
+    600_000,
+  );
+
   it("produces a canonical transcript through whisper.cpp", async () => {
     const model = requiredEnv("FRAMEYARD_REAL_WHISPER_MODEL");
     const source = requiredEnv("FRAMEYARD_REAL_WHISPER_SOURCE");

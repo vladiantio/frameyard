@@ -365,8 +365,12 @@ A versioned, project-local record of generated assets, their content hashes, and
 _Avoid_: Render cache
 
 **Speech synthesis** (TTS):
-The local production of a spoken audio asset from text using a named speaker.
+The local production of a spoken audio asset from text using a named speaker or numeric speaker id.
 _Avoid_: Voice generation, voice cloning, voice design
+
+**Speech engine**:
+A local executable that turns text into a speech asset. Frameyard supports qwentts.cpp CustomVoice and sherpa-onnx Supertonic 3.
+_Avoid_: TTS provider, cloud voice
 
 **Transcription**:
 The local production of timed text from source audio or video.

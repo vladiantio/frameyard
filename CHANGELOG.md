@@ -12,6 +12,11 @@ contract change may ship in a minor release and is called out explicitly below.
 
 ### Added
 
+- `tts --engine supertonic` synthesizes 31-language speech through
+  `sherpa-onnx-offline-tts` and the Supertonic 3 model archive. It normalizes
+  the engine output to the frozen 24 kHz mono WAV contract, records the seven
+  model files in the provenance manifest, and adds `doctor --sherpa-onnx-tts`
+  and `doctor --model-dir` inspection. The default engine remains `qwen`.
 - Timeline clips on one video track may dissolve across their overlap through a
   timeline-level `transitions` array. The window is `to.start .. from.end`; the
   incoming clip composites above the outgoing clip with `opacity × eased

@@ -141,7 +141,7 @@ export default {
 - Frameyard does not time-stretch audio or change timeline duration to fit it.
 - An unmuted embedded video contributes its audio track to the same mix; use \`muted\` or \`data-fy-audio="off"\` for a visual-only video.
 - Declare required transcripts with \`<fy-transcript src="assets/voice.transcript.json" words></fy-transcript>\`.
-- Produce speech with \`npx frameyard tts\` and transcripts with \`npx frameyard transcribe\`; never call \`qwen-tts\` or \`whisper-cli\` directly, and never run inference inside a controller.
+- Produce speech with \`npx frameyard tts\` and transcripts with \`npx frameyard transcribe\`; never call \`qwen-tts\`, \`sherpa-onnx-offline-tts\`, or \`whisper-cli\` directly, and never run inference inside a controller.
 - Do not overwrite or regenerate generated assets without explicit approval.
 - \`words\` requires measured word timings; never interpolate segment timings.
 - Commit \`frameyard.assets.json\` when present; do not edit hashes or manifest entries by hand.

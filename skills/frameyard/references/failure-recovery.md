@@ -60,8 +60,8 @@ Do not claim success after a nonzero exit. Fix the cause, rerun `check`, and onl
 | `DETERMINISM_WARNING` | Forbidden clock/randomness, CSS transition, or runtime warning | Derive state from `frame`/`props`; use `random("stable:key")`. |
 | `OUTPUT_EXISTS` | Output exists and replacement was not approved | Reuse it, choose another path, or pass `--overwrite`/`--force` with permission. |
 | `OUTPUT_FAILED` | An output or manifest could not be written atomically | Check directory permissions and free space; rerun. |
-| `EXECUTABLE_NOT_FOUND` | `qwen-tts` or `whisper-cli` could not be resolved | Pass `--executable`, set the environment variable, or fix `PATH`. |
-| `TTS_FAILED` | Speech synthesis failed or produced an invalid WAV | Read stderr; verify the talker/codec models and CLI compatibility. |
+| `EXECUTABLE_NOT_FOUND` | `qwen-tts`, `sherpa-onnx-offline-tts`, or `whisper-cli` could not be resolved | Pass `--executable`, set `FRAMEYARD_QWEN_TTS`, `FRAMEYARD_SHERPA_ONNX_TTS`, or `FRAMEYARD_WHISPER_CLI`, or fix `PATH`. |
+| `TTS_FAILED` | Speech synthesis failed or produced an invalid WAV | Read stderr; verify the engine-specific models (`--talker-model`/`--codec-model` for qwen, `--model-dir` for Supertonic) and CLI compatibility. |
 | `TRANSCRIBE_FAILED` | Normalization or `whisper-cli` failed | Verify FFmpeg, the source media, and the Whisper model. |
 | `MANIFEST_INVALID` | Provenance manifest is corrupt or unsupported | Restore or regenerate the manifest; do not invent hashes. |
 | `FFMPEG_FAILED` | FFmpeg is missing, lacks encoders, or failed | Run `npx frameyard doctor --json`; install FFmpeg with libx264 and AAC. |

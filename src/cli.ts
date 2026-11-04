@@ -33,7 +33,8 @@ import { startPreviewServer } from "./server/server.js";
 import { scaffoldFiles, SCAFFOLD_NEXT } from "./scaffold.js";
 import { VERSION } from "./version.js";
 import { transcribeAudio, type SubtitleFormat } from "./assets/transcribe.js";
-import { synthesizeSpeech } from "./assets/tts.js";
+import { synthesizeSpeech, type SpeechEngine } from "./assets/tts.js";
+import { isSupertonicLanguage, parseSupertonicSpeaker, SUPERTONIC_LANGUAGES } from "./assets/tts-supertonic.js";
 import { resolveManifestPath } from "./assets/provenance.js";
 import { runDoctor } from "./doctor.js";
 
@@ -52,6 +53,8 @@ const VALUE_FLAGS = new Set([
   "container",
   "text-file",
   "speaker",
+  "engine",
+  "model-dir",
   "talker-model",
   "codec-model",
   "style",
@@ -62,6 +65,7 @@ const VALUE_FLAGS = new Set([
   "export",
   "manifest",
   "qwen-tts",
+  "sherpa-onnx-tts",
   "whisper-cli",
 ]);
 const BOOLEAN_FLAGS = new Set(["json", "overwrite", "force", "words", "help", "version"]);
@@ -175,6 +179,8 @@ function allowedFlags(command: string): Set<string> {
         ...common,
         "text-file",
         "speaker",
+        "engine",
+        "model-dir",
         "talker-model",
         "codec-model",
         "out",
@@ -188,7 +194,17 @@ function allowedFlags(command: string): Set<string> {
     case "transcribe":
       return new Set([...common, "out", "model", "words", "export", "language", "executable", "manifest", "force"]);
     case "doctor":
-      return new Set([...common, "manifest", "qwen-tts", "whisper-cli", "talker-model", "codec-model", "model"]);
+      return new Set([
+        ...common,
+        "manifest",
+        "qwen-tts",
+        "sherpa-onnx-tts",
+        "whisper-cli",
+        "talker-model",
+        "codec-model",
+        "model-dir",
+        "model",
+      ]);
     case "help":
       return new Set(["help"]);
     default:
@@ -240,9 +256,46 @@ function validateArgs(parsed: ParsedArgs): void {
     validateRenderConcurrency(Number(parsed.flags.get("concurrency")));
   }
   if (parsed.command === "tts") {
-    for (const required of ["speaker", "talker-model", "codec-model", "out"]) {
-      if (!parsed.flags.has(required)) {
-        usage(`"tts" requires --${required}.`);
+    const requestedEngine = parsed.flags.get("engine");
+    let engine: SpeechEngine = "qwen";
+    if (requestedEngine !== undefined) {
+      if (typeof requestedEngine !== "string" || (requestedEngine !== "qwen" && requestedEngine !== "supertonic")) {
+        usage('--engine must be "qwen" or "supertonic".');
+      }
+      engine = requestedEngine;
+    }
+
+    if (engine === "supertonic") {
+      for (const required of ["speaker", "model-dir", "language", "out"]) {
+        if (!parsed.flags.has(required)) {
+          usage(`"tts" requires --${required} with --engine supertonic.`);
+        }
+      }
+      for (const forbidden of ["talker-model", "codec-model", "style", "device"]) {
+        if (parsed.flags.has(forbidden)) {
+          usage(`--${forbidden} is not valid with --engine supertonic.`);
+        }
+      }
+      const speaker = parsed.flags.get("speaker");
+      if (typeof speaker === "string") {
+        try {
+          parseSupertonicSpeaker(speaker);
+        } catch (error) {
+          usage(error instanceof Error ? error.message : String(error));
+        }
+      }
+      const language = parsed.flags.get("language");
+      if (typeof language === "string" && !isSupertonicLanguage(language)) {
+        usage(`--language must be one of: ${SUPERTONIC_LANGUAGES.join(", ")}.`);
+      }
+    } else {
+      for (const required of ["speaker", "talker-model", "codec-model", "out"]) {
+        if (!parsed.flags.has(required)) {
+          usage(`"tts" requires --${required}.`);
+        }
+      }
+      if (parsed.flags.has("model-dir")) {
+        usage("--model-dir is only valid with --engine supertonic.");
       }
     }
   }
@@ -287,9 +340,10 @@ Usage:
   frameyard check <composition-id> [--props <file>] [--project <dir>] [--json]
   frameyard still <composition-or-timeline-id> --frame <spec> [--out <file-or-dir>] [--props <file>] [--project <dir>] [--json]
   frameyard render <composition-or-timeline-id> [--out <file>] [--props <file>] [--project <dir>] [--concurrency <n>] [--workers <n>] [--encoder <name>] [--codec <name>] [--container <name>] [--scratch <dir>] [--overwrite] [--json]
-  frameyard tts --speaker <name> --talker-model <gguf> --codec-model <gguf> --out <file.wav> [--text-file <file>] [--style <text>] [--language <lang>] [--device <name>] [--executable <path>] [--manifest <file>] [--force] [--json]
+  frameyard tts [--engine qwen] --speaker <name> --talker-model <gguf> --codec-model <gguf> --out <file.wav> [--text-file <file>] [--style <text>] [--language <lang>] [--device <name>] [--executable <path>] [--manifest <file>] [--force] [--json]
+  frameyard tts --engine supertonic --speaker <sid> --model-dir <dir> --language <code> --out <file.wav> [--text-file <file>] [--executable <path>] [--manifest <file>] [--force] [--json]
   frameyard transcribe <source> --model <gguf> --out <file.json> [--words] [--export srt,vtt] [--language <lang>] [--executable <path>] [--manifest <file>] [--force] [--json]
-  frameyard doctor [--qwen-tts <path>] [--whisper-cli <path>] [--talker-model <gguf>] [--codec-model <gguf>] [--model <gguf>] [--manifest <file>] [--project <dir>] [--json]
+  frameyard doctor [--qwen-tts <path>] [--sherpa-onnx-tts <path>] [--whisper-cli <path>] [--talker-model <gguf>] [--codec-model <gguf>] [--model-dir <dir>] [--model <gguf>] [--manifest <file>] [--project <dir>] [--json]
 
 Options:
   --project <dir>        Use a project other than the current directory.
@@ -305,18 +359,21 @@ Options:
   --overwrite            Replace an existing still or render output.
   --force                Replace existing generated assets and manifest entries.
   --text-file <file>     Text to synthesize. Reads stdin when omitted.
-  --speaker <name>       Named speaker for CustomVoice speech synthesis.
-  --talker-model <gguf>  Talker GGUF model path.
-  --codec-model <gguf>   Codec GGUF model path.
-  --style <text>         Optional style instruction for speech synthesis.
-  --language <lang>      Spoken language, when known.
+  --speaker <value>      Named speaker for qwen, or the numeric speaker id for Supertonic.
+  --engine <name>        Speech engine: qwen or supertonic (default: qwen).
+  --model-dir <dir>      Supertonic model directory from the sherpa-onnx archive.
+  --talker-model <gguf>  Talker GGUF model path for qwen.
+  --codec-model <gguf>   Codec GGUF model path for qwen.
+  --style <text>         Optional style instruction for qwen speech synthesis.
+  --language <lang>      Spoken language. Supertonic requires one of its 31 upstream language codes.
   --device <name>        Compute device for qwen-tts, such as CPU or CUDA0.
   --model <gguf>         Whisper GGML model path.
   --words                Request measured word timings during transcription.
   --export srt,vtt       Derived subtitle exports next to the transcript.
-  --executable <path>    Explicit qwen-tts or whisper-cli executable.
+  --executable <path>    Explicit qwen-tts, sherpa-onnx-offline-tts, or whisper-cli executable.
   --manifest <file>      Provenance manifest path (default: frameyard.assets.json).
   --qwen-tts <path>      qwen-tts executable to inspect with doctor.
+  --sherpa-onnx-tts <path>  sherpa-onnx-offline-tts executable to inspect with doctor.
   --whisper-cli <path>   whisper-cli executable to inspect with doctor.
   --json                 Print a structured result to stdout.
   --help, -h             Show this help.
@@ -351,7 +408,7 @@ function printCommandHelp(command: string): void {
       return;
     case "tts":
       process.stdout.write(
-        "Usage: frameyard tts --speaker <name> --talker-model <gguf> --codec-model <gguf> --out <file.wav> [--text-file <file>] [--style <text>] [--language <lang>] [--device <name>] [--executable <path>] [--manifest <file>] [--force] [--json]\nProduce one frozen 24 kHz mono WAV with local qwentts.cpp CustomVoice synthesis.\n",
+        "Usage: frameyard tts [--engine qwen] --speaker <name> --talker-model <gguf> --codec-model <gguf> --out <file.wav> [--text-file <file>] [--style <text>] [--language <lang>] [--device <name>] [--executable <path>] [--manifest <file>] [--force] [--json]\n       frameyard tts --engine supertonic --speaker <sid> --model-dir <dir> --language <code> --out <file.wav> [--text-file <file>] [--executable <path>] [--manifest <file>] [--force] [--json]\nProduce one frozen 24 kHz mono WAV with local qwentts.cpp CustomVoice or sherpa-onnx Supertonic 3 synthesis. Supertonic language codes: ar, bg, cs, da, de, el, en, es, et, fi, fr, hi, hr, hu, id, it, ja, ko, lt, lv, nl, pl, pt, ro, ru, sk, sl, sv, tr, uk, vi.\n",
       );
       return;
     case "transcribe":
@@ -361,7 +418,7 @@ function printCommandHelp(command: string): void {
       return;
     case "doctor":
       process.stdout.write(
-        "Usage: frameyard doctor [--qwen-tts <path>] [--whisper-cli <path>] [--talker-model <gguf>] [--codec-model <gguf>] [--model <gguf>] [--manifest <file>] [--project <dir>] [--json]\nInspect core requirements, optional integrations, model readability, and provenance integrity without changing the environment.\n",
+        "Usage: frameyard doctor [--qwen-tts <path>] [--sherpa-onnx-tts <path>] [--whisper-cli <path>] [--talker-model <gguf>] [--codec-model <gguf>] [--model-dir <dir>] [--model <gguf>] [--manifest <file>] [--project <dir>] [--json]\nInspect core requirements, optional integrations, model readability, and provenance integrity without changing the environment.\n",
       );
       return;
     default:
@@ -1021,12 +1078,11 @@ async function runRender(parsed: ParsedArgs, signal: AbortSignal): Promise<numbe
 async function runTts(parsed: ParsedArgs, signal: AbortSignal): Promise<number> {
   const projectRoot = await assetRootFromFlag(parsed.flags);
   const json = parsed.flags.has("json") === true;
+  const engine = (flagString(parsed.flags, "engine") ?? "qwen") as SpeechEngine;
   const speaker = flagString(parsed.flags, "speaker");
-  const talkerModel = flagString(parsed.flags, "talker-model");
-  const codecModel = flagString(parsed.flags, "codec-model");
   const outValue = flagString(parsed.flags, "out");
-  if (!speaker || !talkerModel || !codecModel || !outValue) {
-    usage('"tts" requires --speaker, --talker-model, --codec-model, and --out.');
+  if (!speaker || !outValue) {
+    usage('"tts" requires --speaker and --out.');
   }
 
   const textFile = flagString(parsed.flags, "text-file");
@@ -1045,34 +1101,58 @@ async function runTts(parsed: ParsedArgs, signal: AbortSignal): Promise<number> 
     text = await readStdin();
   }
 
-  const result = await synthesizeSpeech({
-    projectRoot,
-    text,
-    speaker,
-    talkerModelPath: path.resolve(process.cwd(), talkerModel),
-    codecModelPath: path.resolve(process.cwd(), codecModel),
-    outPath: path.resolve(process.cwd(), outValue),
-    ...(flagString(parsed.flags, "style") !== undefined ? { style: flagString(parsed.flags, "style") as string } : {}),
-    ...(flagString(parsed.flags, "language") !== undefined
-      ? { language: flagString(parsed.flags, "language") as string }
-      : {}),
-    ...(flagString(parsed.flags, "device") !== undefined
-      ? { device: flagString(parsed.flags, "device") as string }
-      : {}),
-    ...(flagString(parsed.flags, "executable") !== undefined
-      ? { executable: flagString(parsed.flags, "executable") as string }
-      : {}),
-    ...(flagString(parsed.flags, "manifest") !== undefined
-      ? { manifestPath: flagString(parsed.flags, "manifest") as string }
-      : {}),
-    force: parsed.flags.has("force") === true,
-    signal,
-  });
+  const result =
+    engine === "supertonic"
+      ? await synthesizeSpeech({
+          engine: "supertonic",
+          projectRoot,
+          text,
+          speaker,
+          modelDir: path.resolve(process.cwd(), flagString(parsed.flags, "model-dir") as string),
+          language: flagString(parsed.flags, "language") as string,
+          outPath: path.resolve(process.cwd(), outValue),
+          ...(flagString(parsed.flags, "executable") !== undefined
+            ? { executable: flagString(parsed.flags, "executable") as string }
+            : {}),
+          ...(flagString(parsed.flags, "manifest") !== undefined
+            ? { manifestPath: flagString(parsed.flags, "manifest") as string }
+            : {}),
+          force: parsed.flags.has("force") === true,
+          signal,
+        })
+      : await synthesizeSpeech({
+          engine: "qwen",
+          projectRoot,
+          text,
+          speaker,
+          talkerModelPath: path.resolve(process.cwd(), flagString(parsed.flags, "talker-model") as string),
+          codecModelPath: path.resolve(process.cwd(), flagString(parsed.flags, "codec-model") as string),
+          outPath: path.resolve(process.cwd(), outValue),
+          ...(flagString(parsed.flags, "style") !== undefined
+            ? { style: flagString(parsed.flags, "style") as string }
+            : {}),
+          ...(flagString(parsed.flags, "language") !== undefined
+            ? { language: flagString(parsed.flags, "language") as string }
+            : {}),
+          ...(flagString(parsed.flags, "device") !== undefined
+            ? { device: flagString(parsed.flags, "device") as string }
+            : {}),
+          ...(flagString(parsed.flags, "executable") !== undefined
+            ? { executable: flagString(parsed.flags, "executable") as string }
+            : {}),
+          ...(flagString(parsed.flags, "manifest") !== undefined
+            ? { manifestPath: flagString(parsed.flags, "manifest") as string }
+            : {}),
+          force: parsed.flags.has("force") === true,
+          signal,
+        });
 
   if (json) {
     printJson({ ok: true, command: "tts", ...result });
   } else {
-    process.stdout.write(`Wrote 24 kHz mono WAV to ${result.path} (${(result.bytes / (1024 * 1024)).toFixed(2)} MB)\n`);
+    process.stdout.write(
+      `Wrote 24 kHz mono WAV to ${result.path} (${(result.bytes / (1024 * 1024)).toFixed(2)} MB, ${result.engine})\n`,
+    );
     process.stdout.write(`Updated provenance manifest ${result.manifest}\n`);
   }
   return 0;
@@ -1131,6 +1211,9 @@ async function runDoctorCommand(parsed: ParsedArgs, signal: AbortSignal): Promis
     ...(flagString(parsed.flags, "qwen-tts") !== undefined
       ? { qwenTts: flagString(parsed.flags, "qwen-tts") as string }
       : {}),
+    ...(flagString(parsed.flags, "sherpa-onnx-tts") !== undefined
+      ? { sherpaOnnxTts: flagString(parsed.flags, "sherpa-onnx-tts") as string }
+      : {}),
     ...(flagString(parsed.flags, "whisper-cli") !== undefined
       ? { whisperCli: flagString(parsed.flags, "whisper-cli") as string }
       : {}),
@@ -1139,6 +1222,9 @@ async function runDoctorCommand(parsed: ParsedArgs, signal: AbortSignal): Promis
       : {}),
     ...(flagString(parsed.flags, "codec-model") !== undefined
       ? { codecModel: flagString(parsed.flags, "codec-model") as string }
+      : {}),
+    ...(flagString(parsed.flags, "model-dir") !== undefined
+      ? { supertonicModelDir: flagString(parsed.flags, "model-dir") as string }
       : {}),
     ...(flagString(parsed.flags, "model") !== undefined
       ? { whisperModel: flagString(parsed.flags, "model") as string }
@@ -1154,7 +1240,11 @@ async function runDoctorCommand(parsed: ParsedArgs, signal: AbortSignal): Promis
       const suffix = check.required ? "" : " (optional)";
       process.stdout.write(`${mark} ${check.name}${suffix}: ${check.detail}\n`);
     }
-    for (const integration of [result.integrations.tts, result.integrations.transcribe]) {
+    for (const integration of [
+      result.integrations.tts,
+      result.integrations.transcribe,
+      result.integrations.sherpaOnnxTts,
+    ]) {
       const mark =
         integration.status === "ok" ? "✓" : integration.status === "missing" && !integration.requested ? "○" : "✗";
       const detail = integration.detail ? ` — ${integration.detail}` : "";

@@ -34,7 +34,9 @@ Declare required transcripts with:
 
 ## Local speech synthesis
 
-Use Frameyard, not `qwen-tts` directly:
+Use Frameyard instead of calling the upstream executables directly:
+
+### qwentts.cpp (default)
 
 ```sh
 npx frameyard tts \
@@ -47,6 +49,7 @@ npx frameyard tts \
   --json
 ```
 
+- `--engine qwen` is the default and may be omitted.
 - CustomVoice only: `--speaker` is required.
 - Text comes from `--text-file` or stdin.
 - `--style` maps to the upstream style instruction.
@@ -57,6 +60,28 @@ npx frameyard tts \
 - `--force` is required to replace an existing asset. Do not pass it without user approval.
 - Executable resolution: `--executable`, then `FRAMEYARD_QWEN_TTS`, then `PATH`.
 - Frameyard does not build qwentts.cpp, download models, or redistribute weights.
+
+### Supertonic 3
+
+```sh
+npx frameyard tts \
+  --engine supertonic \
+  --speaker 0 \
+  --model-dir models/sherpa-onnx-supertonic-3-tts-int8-2026-05-11 \
+  --language es \
+  --text-file script.txt \
+  --out assets/voice-es.wav \
+  --json
+```
+
+- The engine covers 31 languages and requires one of their codes (`es`, `en`, `fr`, `de`, ...); `--language` is mandatory.
+- `--speaker` is the numeric `--sid`, not a name.
+- `--model-dir` points at the extracted Supertonic 3 archive with its seven files; do not pass individual files.
+- `--style` and `--device` are qwen-only. Put Supertonic expression tags such as `<laugh>`, `<breath>`, and `<sigh>` in the text.
+- The engine writes its native WAV; Frameyard normalizes it to 24 kHz mono and records `sourceSampleRate` and `sourceChannels` in the manifest.
+- `--force` is required to replace an existing asset. Do not pass it without user approval.
+- Executable resolution: `--executable`, then `FRAMEYARD_SHERPA_ONNX_TTS`, then `PATH`.
+- Frameyard does not build sherpa-onnx, download the model archive, or redistribute weights. The upstream Supertonic repository is archived and its weights use the OpenRAIL-M license.
 
 ## Local transcription
 
@@ -93,5 +118,5 @@ Commit the manifest with the project. It explains how generated inputs were prod
 - Do not regenerate or overwrite an existing generated asset without permission.
 - Do not silently switch models, speakers, language, or text.
 - Report the manifest path and the exact asset paths after success.
-- `npx frameyard doctor` verifies manifest integrity, including artifact, source, model, and derived-export hashes, and optional integration executables; it does not download or repair anything. Pass `--talker-model`, `--codec-model`, or `--model` to inspect model readability and identity before generation.
+- `npx frameyard doctor` verifies manifest integrity, including artifact, source, model, and derived-export hashes, and optional integration executables; it does not download or repair anything. Pass `--talker-model`, `--codec-model`, `--model-dir`, or `--model` to inspect model readability and identity before generation.
 - Once assets are frozen, checking and rendering do not need the model or inference executable.

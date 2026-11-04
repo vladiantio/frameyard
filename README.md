@@ -10,11 +10,12 @@ The current design is implemented: HTML composition fragments, JSON timelines wi
 - FFmpeg and FFprobe on `PATH`, built with H.264 (`libx264`), AAC, HEVC (`libx265`), VP9 (`libvpx-vp9`), and Opus (`libopus`) support. The software HEVC and VP9 encoders are only used for software renders; `--encoder nvenc` and `--encoder qsv` need no software encoder for that codec.
 - The Playwright-managed Chromium build
 - Optional: `qwen-tts` from [`qwentts.cpp`](https://github.com/ServeurpersoCom/qwentts.cpp) for local speech synthesis
+- Optional: `sherpa-onnx-offline-tts` from [`sherpa-onnx`](https://github.com/k2-fsa/sherpa-onnx) v2.0.1 plus the Supertonic 3 model archive for 31-language local speech synthesis
 - Optional: `whisper-cli` from [`whisper.cpp`](https://github.com/ggml-org/whisper.cpp) for local transcription
 
 Install the Playwright Chromium build with `npx playwright install chromium`. Run the CLI with `npx frameyard`; no global install is required.
 
-The wrappers target the CLI surfaces of qwentts.cpp commit `5916bf7c79dbb4e66fc059cdc507a79a23a28bb4` and whisper.cpp commit `284029c07012d2000941a08d38a31ffb71f4734e`.
+The wrappers target the CLI surfaces of qwentts.cpp commit `5916bf7c79dbb4e66fc059cdc507a79a23a28bb4`, sherpa-onnx commit `af2d8d81dbfa61c4cea4c568da78f3982edca005` (v2.0.1), and whisper.cpp commit `284029c07012d2000941a08d38a31ffb71f4734e`.
 
 ## Quick start
 
@@ -277,7 +278,7 @@ Transcript paths resolve from the project root. `words` requires actual measured
 | `frameyard check <id> [--props <file>]` | Run static validation, then evaluate every animated frame or the single state of a static composition without capture |
 | `frameyard still <id> --frame <spec>` | Capture one or more PNGs through the production path for a composition or timeline; a static composition exposes frame 0 |
 | `frameyard render <id> [--out <video.mp4>]` | Render an animated composition directly, a static composition to PNG, or a timeline through the segmented lossless pipeline; defaults to `out/<id>.<ext>` |
-| `frameyard tts ...` | Produce one frozen 24 kHz mono WAV with local qwentts.cpp |
+| `frameyard tts ...` | Produce one frozen 24 kHz mono WAV with local qwentts.cpp or sherpa-onnx Supertonic 3 |
 | `frameyard transcribe ...` | Produce canonical transcript JSON with optional word timings and SRT/VTT exports |
 | `frameyard doctor` | Inspect core requirements, optional integrations, and manifest integrity |
 
@@ -338,6 +339,16 @@ npx frameyard tts \
   --text-file script.txt \
   --out assets/voice.wav
 
+# 31-language Supertonic 3 through sherpa-onnx. The engine output is
+# normalized to the same frozen 24 kHz mono WAV contract.
+npx frameyard tts \
+  --engine supertonic \
+  --speaker 0 \
+  --model-dir models/sherpa-onnx-supertonic-3-tts-int8-2026-05-11 \
+  --language es \
+  --text-file script.txt \
+  --out assets/voice-es.wav
+
 # Canonical transcript with measured word timings and derived SRT/VTT.
 npx frameyard transcribe assets/voice.wav \
   --model models/ggml-base.en.bin \
@@ -345,13 +356,18 @@ npx frameyard transcribe assets/voice.wav \
   --words --export srt,vtt
 ```
 
-- Executable resolution: `--executable`, then `FRAMEYARD_QWEN_TTS` or `FRAMEYARD_WHISPER_CLI`, then `PATH`.
-- `tts` supports CustomVoice only: a named speaker is required. Reference-audio cloning and VoiceDesign are deferred.
+- `tts` defaults to `--engine qwen` (qwentts.cpp CustomVoice). `--engine supertonic` requires `--model-dir`, a numeric `--speaker`, and one of the 31 Supertonic language codes.
+- `qwentts.cpp` supports CustomVoice only: a named speaker is required. Reference-audio cloning and VoiceDesign are deferred.
+- Supertonic accepts its inline expression tags in the text; `--style` and `--device` are qwen-only.
+- Supertonic writes its native WAV and Frameyard normalizes it to 24 kHz mono with FFmpeg. The manifest records `sourceSampleRate` and `sourceChannels`.
+- Executable resolution: `--executable`, then `FRAMEYARD_QWEN_TTS`, `FRAMEYARD_SHERPA_ONNX_TTS`, or `FRAMEYARD_WHISPER_CLI`, then `PATH`.
 - `--device CPU` forces qwentts.cpp onto the CPU when a GPU does not have enough VRAM.
 - `transcribe` normalizes the source with FFmpeg to 16 kHz mono PCM WAV before `whisper-cli`.
 - Outputs are atomic. Existing assets are replaced only with `--force`.
 - A partial operation leaves no apparently valid artifact and no manifest entry.
 - Transcription never fabricates word timings and never executes Whisper's generated karaoke script.
+
+Supertonic 3 is pinned to the sherpa-onnx `v2.0.1` surface and the `sherpa-onnx-supertonic-3-tts-int8-2026-05-11` model archive. Its upstream repository is archived and its weights use the OpenRAIL-M license; Frameyard neither redistributes the weights nor builds sherpa-onnx.
 
 ### Provenance
 
@@ -363,9 +379,10 @@ Successful operations update `frameyard.assets.json` in the project root, or the
 npx frameyard doctor
 npx frameyard doctor --json
 npx frameyard doctor --talker-model models/talker.gguf --codec-model models/codec.gguf
+npx frameyard doctor --sherpa-onnx-tts /path/to/sherpa-onnx-offline-tts --model-dir models/supertonic
 ```
 
-`doctor` checks Node, FFmpeg and required encoders, FFprobe, Playwright Chromium, manifest integrity (artifact, source, model, and derived-export hashes), explicitly supplied model readability, and optional `qwen-tts`/`whisper-cli` capabilities. It does not repair, download, or modify anything. Missing optional integrations do not fail, but a found executable with incompatible capabilities does.
+`doctor` checks Node, FFmpeg and required encoders, FFprobe, Playwright Chromium, manifest integrity (artifact, source, model, and derived-export hashes), explicitly supplied model readability, and optional `qwen-tts`, `sherpa-onnx-offline-tts`, and `whisper-cli` capabilities. Pass `--talker-model`, `--codec-model`, `--model-dir`, or `--model` to inspect model readability before generation. It does not repair, download, or modify anything. Missing optional integrations do not fail, but a found executable with incompatible capabilities does.
 
 ## Agent skill
 
@@ -412,7 +429,7 @@ Deferred from this implementation slice:
 - Nested `data-fy-repeat` scopes and a general template language
 - Declarative JSON Schema validation
 - Arbitrary executable scripts in composition HTML
-- `qwentts.cpp` reference-audio voice cloning and VoiceDesign
+- `qwentts.cpp` reference-audio voice cloning and VoiceDesign; Supertonic voice cloning and emotion selection
 - Automatic long-text chunking, streaming synthesis, and alternative generated-audio formats
 - Automatic upstream builds, model downloads, environment repair, and hosted rendering
 - Unbounded batch still capture and general image-sequence output; `still` accepts at most 32 inspection frames per invocation
@@ -468,7 +485,7 @@ These commands use the local build; `npx frameyard` runs the published package.
 
 `pnpm check` runs the script syntax checks, lint, formatting checks, typechecks, and the full suite. `pnpm install` installs the repository's git hooks; pre-commit runs `pnpm check:static` and the unit tests, and pre-push runs the full suite. CI runs the same `pnpm check` on Linux with Node 22 and 24. For preview-only UI work, `pnpm check:preview` runs the static checks and the preview tests without the full suite; it does not replace `pnpm check` in CI or before pushing.
 
-CI uses fake `qwen-tts` and `whisper-cli` executables. Real-model tests are opt-in:
+CI uses fake `qwen-tts`, `sherpa-onnx-offline-tts`, and `whisper-cli` executables. Real-model tests are opt-in:
 
 ```sh
 FRAMEYARD_REAL_INTEGRATIONS=1 \
@@ -478,6 +495,8 @@ FRAMEYARD_REAL_WHISPER_MODEL=/path/to/ggml-model.bin \
 FRAMEYARD_REAL_WHISPER_SOURCE=/path/to/source.wav \
 # optional, for GPUs with too little VRAM:
 FRAMEYARD_REAL_TTS_DEVICE=CPU \
+# optional, for the sherpa-onnx Supertonic test:
+FRAMEYARD_REAL_SUPERTONIC_MODEL_DIR=/path/to/sherpa-onnx-supertonic-3-tts-int8-2026-05-11 \
 pnpm vitest run test/real-integrations.test.ts
 ```
 

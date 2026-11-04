@@ -13,7 +13,7 @@ export interface ManifestGenerator {
   version: string;
   command: "tts" | "transcribe";
   executable: string;
-  integration: "qwentts.cpp" | "whisper.cpp";
+  integration: "qwentts.cpp" | "sherpa-onnx" | "whisper.cpp";
   referenceRevision: string;
 }
 
@@ -137,9 +137,11 @@ function parseManifest(value: unknown): Manifest {
           : manifestError(`${label}.generator.command must be "tts" or "transcribe".`),
       executable: requireString(item.generator.executable, `${label}.generator.executable`),
       integration:
-        item.generator.integration === "qwentts.cpp" || item.generator.integration === "whisper.cpp"
+        item.generator.integration === "qwentts.cpp" ||
+        item.generator.integration === "sherpa-onnx" ||
+        item.generator.integration === "whisper.cpp"
           ? item.generator.integration
-          : manifestError(`${label}.generator.integration must be "qwentts.cpp" or "whisper.cpp".`),
+          : manifestError(`${label}.generator.integration must be "qwentts.cpp", "sherpa-onnx", or "whisper.cpp".`),
       referenceRevision: requireString(item.generator.referenceRevision, `${label}.generator.referenceRevision`),
     };
 

@@ -56,6 +56,15 @@
 - Assuming media/transcript `src` is document-relative. It is project-root-relative.
 - Assuming the controller `src` is project-root-relative. It is relative to the composition URL.
 
+## Generated audio
+
+- Passing `--talker-model` or `--codec-model` with `--engine supertonic`, or `--model-dir` with `--engine qwen`. Flags are engine-specific.
+- Using a speaker name with `--engine supertonic`; `--speaker` is the numeric `--sid`.
+- Omitting `--language` with Supertonic or using a code outside its 31-language list.
+- Expecting `--style` or `--device` to work with Supertonic; both are qwen-only. Put expression tags in the text.
+- Pointing `--model-dir` at individual files instead of the extracted seven-file archive.
+- Regenerating an existing speech asset without `--force` and user approval (`OUTPUT_EXISTS`).
+
 ## Timelines
 
 - Putting `blend` on an audio clip. It is only valid on visual clips.

@@ -16,9 +16,11 @@ import { findElements, getAttribute, type ElementMatch } from "./walk.js";
 
 export interface CompositionDescriptor {
   /**
-   * Declared metadata before format resolution. Null when the source does
-   * not declare a usable `duration-in-frames` or declares only one of
-   * `width` and `height`.
+   * Declared metadata before format resolution. Null when the source declares
+   * invalid time metadata, declares only one of `width` and `height`, or
+   * declares `fps` without `duration-in-frames`. A composition that declares
+   * neither `duration-in-frames` nor `fps` is static and resolves with a null
+   * `durationInFrames`.
    */
   metadata: DeclaredCompositionMetadata | null;
   defaultProps: Readonly<Props>;
@@ -195,10 +197,23 @@ function readMetadata<Node>(
   root: Node,
 ): { metadata: DeclaredCompositionMetadata | null; diagnostics: CompositionDiagnostic[] } {
   const diagnostics: CompositionDiagnostic[] = [];
+  const hasDuration = getAttribute(adapter, root, "duration-in-frames") !== undefined;
+  const hasFps = getAttribute(adapter, root, "fps") !== undefined;
   const width = readPositiveInteger(adapter, path, root, "width", diagnostics, false);
   const height = readPositiveInteger(adapter, path, root, "height", diagnostics, false);
   const fps = readPositiveNumber(adapter, path, root, "fps", diagnostics, false);
-  const durationInFrames = readPositiveInteger(adapter, path, root, "duration-in-frames", diagnostics, true);
+  const durationInFrames = readPositiveInteger(adapter, path, root, "duration-in-frames", diagnostics, false);
+
+  if (!hasDuration && hasFps) {
+    diagnostics.push(
+      createDiagnostic(
+        "error",
+        "COMPOSITION_INVALID",
+        '"duration-in-frames" is required when "fps" is declared on <fy-composition>.',
+        attributeDetails(adapter, path, root, "fps"),
+      ),
+    );
+  }
 
   const hasWidth = getAttribute(adapter, root, "width") !== undefined;
   const hasHeight = getAttribute(adapter, root, "height") !== undefined;
@@ -215,10 +230,12 @@ function readMetadata<Node>(
     );
   }
 
+  const isStatic = !hasDuration && !hasFps;
+  const usable = isStatic || durationInFrames !== null;
   return {
     metadata:
-      paired && durationInFrames !== null && diagnostics.length === 0
-        ? { format: { width, height, fps }, durationInFrames }
+      paired && usable && diagnostics.length === 0
+        ? { format: { width, height, fps }, durationInFrames: isStatic ? null : durationInFrames }
         : null,
     diagnostics,
   };

@@ -2,6 +2,7 @@ export { VERSION, VERSION as version } from "./version.js";
 export {
   assertJsonSerializable,
   isPlainObject,
+  isStaticCompositionMetadata,
   mergeProps,
   normalizeAudioClip,
   normalizeTranscriptClip,
@@ -10,6 +11,7 @@ export type {
   AudioClip,
   CompositionDiagnostic,
   CompositionDiagnosticDetails,
+  CompositionDimensions,
   CompositionFormat,
   CompositionMetadata,
   CompositionSourceInfo,
@@ -22,7 +24,9 @@ export type {
   JsonValue,
   Props,
   ResolvedAudioClip,
+  ResolvedCompositionMetadata,
   ResolvedTranscriptClip,
+  StaticCompositionMetadata,
   TranscriptClip,
 } from "./contracts.js";
 export { FrameyardError, errorMessage, isFrameyardError } from "./errors.js";

@@ -578,3 +578,61 @@ export default {
     );
   });
 });
+
+describe("static composition validation", () => {
+  it("resolves a composition without duration or fps as static", async () => {
+    const result = await validate("static", '<fy-composition width="320" height="180"><p>Still</p></fy-composition>');
+
+    expect(result.info?.metadata).toEqual({ width: 320, height: 180, static: true });
+    expect(result.formatUnresolved).toBe(false);
+    expect(result.diagnostics.filter((diagnostic) => diagnostic.severity === "error")).toEqual([]);
+  });
+
+  it("requires duration-in-frames when fps is declared", async () => {
+    const result = await validate("static-fps", '<fy-composition width="320" height="180" fps="10"></fy-composition>');
+
+    expect(result.info).toBeNull();
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: "COMPOSITION_INVALID",
+        message: expect.stringContaining("duration-in-frames"),
+      }),
+    );
+  });
+
+  it("rejects time drivers and media on a static composition", async () => {
+    const result = await validate(
+      "static-drivers",
+      `<fy-composition width="320" height="180">
+        <div data-fy-anim-start="0"></div>
+        <audio src="assets/tone.wav"></audio>
+        <fy-transcript src="assets/voice.transcript.json" words></fy-transcript>
+      </fy-composition>`,
+    );
+
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({ severity: "error", code: "STATIC_ANIMATION_UNSUPPORTED" }),
+    );
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({ severity: "error", code: "STATIC_MEDIA_UNSUPPORTED" }),
+    );
+  });
+
+  it("inherits dimensions for a static composition from the project format", async () => {
+    const result = await validate("static-inherit", "<fy-composition></fy-composition>", undefined, {
+      width: 640,
+      height: 360,
+      fps: 30,
+    });
+
+    expect(result.info?.metadata).toEqual({ width: 640, height: 360, static: true });
+    expect(result.formatUnresolved).toBe(false);
+  });
+
+  it("reports an unresolved format when a static composition has no dimensions or project format", async () => {
+    const result = await validate("static-noformat", "<fy-composition></fy-composition>");
+
+    expect(result.info).toBeNull();
+    expect(result.formatUnresolved).toBe(true);
+  });
+});

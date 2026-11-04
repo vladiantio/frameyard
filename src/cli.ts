@@ -286,7 +286,7 @@ Usage:
   frameyard dev [--port <port>] [--project <dir>]
   frameyard check <composition-id> [--props <file>] [--project <dir>] [--json]
   frameyard still <composition-or-timeline-id> --frame <spec> [--out <file-or-dir>] [--props <file>] [--project <dir>] [--json]
-  frameyard render <composition-or-timeline-id> [--out <video>] [--props <file>] [--project <dir>] [--concurrency <n>] [--workers <n>] [--encoder <name>] [--codec <name>] [--container <name>] [--scratch <dir>] [--overwrite] [--json]
+  frameyard render <composition-or-timeline-id> [--out <file>] [--props <file>] [--project <dir>] [--concurrency <n>] [--workers <n>] [--encoder <name>] [--codec <name>] [--container <name>] [--scratch <dir>] [--overwrite] [--json]
   frameyard tts --speaker <name> --talker-model <gguf> --codec-model <gguf> --out <file.wav> [--text-file <file>] [--style <text>] [--language <lang>] [--device <name>] [--executable <path>] [--manifest <file>] [--force] [--json]
   frameyard transcribe <source> --model <gguf> --out <file.json> [--words] [--export srt,vtt] [--language <lang>] [--executable <path>] [--manifest <file>] [--force] [--json]
   frameyard doctor [--qwen-tts <path>] [--whisper-cli <path>] [--talker-model <gguf>] [--codec-model <gguf>] [--model <gguf>] [--manifest <file>] [--project <dir>] [--json]
@@ -294,9 +294,9 @@ Usage:
 Options:
   --project <dir>        Use a project other than the current directory.
   --props <file>         Composition props, or a { "<clip-id>": {...} } override map for a timeline.
-  --out <path>           Output path for still, render, tts, or transcribe. For still, one frame uses a .png file and multiple frames use a directory. Render defaults to out/<id>.mp4 in the project.
+  --out <path>           Output path for still, render, tts, or transcribe. For still, one frame uses a .png file and multiple frames use a directory. Render defaults to out/<id>.mp4 for video and out/<id>.png for a static composition.
   --frame <spec>         Still frames: n, n-m, or a comma-separated list (maximum 32 unique frames).
-  --concurrency <n>      Parallel browser sessions for composition render, 1-${MAX_RENDER_CONCURRENCY} (default: 1).
+  --concurrency <n>      Parallel browser sessions for animated composition render, 1-${MAX_RENDER_CONCURRENCY} (default: 1).
   --workers <n>          Parallel segment workers for timeline render, 1-${MAX_TIMELINE_WORKERS} (default: 8).
   --encoder <name>       Encoder: auto, software, nvenc, or qsv (default: auto).
   --codec <name>         Delivery codec for render: h264, hevc, or vp9 (default: h264; vp9 for webm).
@@ -341,12 +341,12 @@ function printCommandHelp(command: string): void {
       return;
     case "still":
       process.stdout.write(
-        "Usage: frameyard still <composition-or-timeline-id> --frame <spec> [--out <path>] [--props <file>] [--project <dir>] [--overwrite] [--json]\nCapture one or more frames through the production rendering path. <spec> is a frame number, an inclusive range like 2-12, or a comma-separated list, with at most 32 unique frames per invocation. With one frame, --out is a .png file; with multiple frames, --out is a directory.\n",
+        "Usage: frameyard still <composition-or-timeline-id> --frame <spec> [--out <path>] [--props <file>] [--project <dir>] [--overwrite] [--json]\nCapture one or more frames through the production rendering path. <spec> is a frame number, an inclusive range like 2-12, or a comma-separated list, with at most 32 unique frames per invocation. With one frame, --out is a .png file; with multiple frames, --out is a directory. A static composition exposes only frame 0.\n",
       );
       return;
     case "render":
       process.stdout.write(
-        `Usage: frameyard render <composition-or-timeline-id> [--out <video>] [--props <file>] [--project <dir>] [--concurrency <n>] [--workers <n>] [--encoder <name>] [--codec <name>] [--container <name>] [--scratch <dir>] [--overwrite] [--json]\nRender an MP4, MOV, MKV, or WebM with H.264, HEVC, or VP9 video and AAC or Opus audio. The default output is out/<id>.<extension> in the project. Composition concurrency is 1-${MAX_RENDER_CONCURRENCY}; timeline workers are 1-${MAX_TIMELINE_WORKERS}. Encoder choices are auto, software, nvenc, and qsv; the default auto probes NVENC, then Quick Sync, then the codec's software encoder. WebM and VP9 use Opus audio, and HEVC in MP4/MOV keeps the hvc1 sample entry.\n`,
+        `Usage: frameyard render <composition-or-timeline-id> [--out <file>] [--props <file>] [--project <dir>] [--concurrency <n>] [--workers <n>] [--encoder <name>] [--codec <name>] [--container <name>] [--scratch <dir>] [--overwrite] [--json]\nRender an MP4, MOV, MKV, or WebM with H.264, HEVC, or VP9 video and AAC or Opus audio, or a PNG for a static composition. The default output is out/<id>.<extension> for video and out/<id>.png for a static composition. Animated composition concurrency is 1-${MAX_RENDER_CONCURRENCY}; timeline workers are 1-${MAX_TIMELINE_WORKERS}. Encoder choices are auto, software, nvenc, and qsv; the default auto probes NVENC, then Quick Sync, then the codec's software encoder. WebM and VP9 use Opus audio, and HEVC in MP4/MOV keeps the hvc1 sample entry. A static composition rejects --concurrency, --container, --codec, and --encoder.\n`,
       );
       return;
     case "tts":
@@ -663,6 +663,8 @@ async function runCheck(parsed: ParsedArgs, signal: AbortSignal): Promise<number
 
   if (json) {
     printJson({ ok: true, command: "check", ...result });
+  } else if (result.kind === "static") {
+    process.stdout.write(`✓ ${compositionId}: static ${result.metadata.width}×${result.metadata.height}\n`);
   } else {
     const meta = result.metadata;
     process.stdout.write(
@@ -917,9 +919,11 @@ async function runRender(parsed: ParsedArgs, signal: AbortSignal): Promise<numbe
   const project = await projectFromFlag(parsed.flags);
   const props = await readPropsFile(parsed.flags);
   const encoder = encoderChoice(parsed.flags);
-  const container = containerChoice(parsed.flags) ?? "mp4";
+  const containerValue = containerChoice(parsed.flags);
+  const container = containerValue ?? "mp4";
   // WebM is a VP9/Opus container; every other container defaults to H.264.
-  const codec = codecChoice(parsed.flags) ?? defaultCodecForContainer(container);
+  const codecValue = codecChoice(parsed.flags);
+  const codec = codecValue ?? defaultCodecForContainer(container);
   assertContainerCodec(container, codec);
   if (encoder !== undefined && encoder !== "auto") {
     // Rejects codec/vendor mismatches such as --codec hevc --encoder libx264.
@@ -927,10 +931,9 @@ async function runRender(parsed: ParsedArgs, signal: AbortSignal): Promise<numbe
   }
   const targetId = parsed.positionals[0] as string;
   const outValue = flagString(parsed.flags, "out");
-  const outPath =
-    outValue === undefined
-      ? path.join(project.root, "out", `${targetId}.${CONTAINER_EXTENSION[container]}`)
-      : path.resolve(process.cwd(), outValue);
+  const explicitOutPath = outValue === undefined ? undefined : path.resolve(process.cwd(), outValue);
+  const timelineOutPath =
+    explicitOutPath ?? path.join(project.root, "out", `${targetId}.${CONTAINER_EXTENSION[container]}`);
   const json = parsed.flags.has("json") === true;
 
   if (project.timelines.has(targetId)) {
@@ -954,7 +957,7 @@ async function runRender(parsed: ParsedArgs, signal: AbortSignal): Promise<numbe
     const result = await renderTimeline({
       project,
       timelineId: targetId,
-      outPath,
+      outPath: timelineOutPath,
       ...(workers !== undefined ? { workers } : {}),
       ...(scratchDir !== undefined ? { scratchDir } : {}),
       ...(encoder !== undefined ? { encoder } : {}),
@@ -983,19 +986,18 @@ async function runRender(parsed: ParsedArgs, signal: AbortSignal): Promise<numbe
 
   const compositionId = targetId;
   const concurrencyValue = parsed.flags.get("concurrency");
-  const concurrency = validateRenderConcurrency(
-    typeof concurrencyValue === "string" ? Number(concurrencyValue) : undefined,
-  );
+  const concurrency =
+    typeof concurrencyValue === "string" ? validateRenderConcurrency(Number(concurrencyValue)) : undefined;
 
   const result = await renderComposition({
     project,
     compositionId,
     props,
-    outPath,
-    concurrency,
+    ...(explicitOutPath !== undefined ? { outPath: explicitOutPath } : {}),
+    ...(concurrency !== undefined ? { concurrency } : {}),
     ...(encoder !== undefined ? { encoder } : {}),
-    codec,
-    container,
+    ...(codecValue !== undefined ? { codec: codecValue } : {}),
+    ...(containerValue !== undefined ? { container: containerValue } : {}),
     overwrite: parsed.flags.has("overwrite") === true,
     signal,
     onProgress: progressPrinter("Rendering"),
@@ -1004,6 +1006,10 @@ async function runRender(parsed: ParsedArgs, signal: AbortSignal): Promise<numbe
   printDiagnostics(result.diagnostics);
   if (json) {
     printJson({ ok: true, command: "render", ...result });
+  } else if (result.kind === "image") {
+    process.stdout.write(
+      `Rendered ${compositionId} to ${result.path} (${result.width}×${result.height}, ${result.bytes} bytes)\n`,
+    );
   } else {
     process.stdout.write(
       `Rendered ${compositionId} to ${result.path} (${result.framesRendered} frames, ${formatDuration(result.durationSeconds)}, ${result.audio.clips} audio clip${result.audio.clips === 1 ? "" : "s"}, ${result.encoder} encoder)\n`,

@@ -43,6 +43,7 @@ Exactly one controller is allowed, and it must be a top-level sibling of `<fy-co
 - `mount({ root, props })` runs once per load and may be asynchronous. Use it to query the root, create canvases, and start loading local data.
 - `update({ frame, props, root })` runs on every seek. It must be synchronous and seek-safe: derive the frame from `frame` and `props` only.
 - `dispose()` releases resources and resets module-scope state. The host calls it before remounting or disposing the composition host.
+- A static composition runs `mount()` and `validateProps()` only. `update()` is not called and frame-state variables are not set; the host reports `STATIC_UPDATE_IGNORED`. Do not create media in a static controller: the host rejects it with `STATIC_MEDIA_UNSUPPORTED`. Draw canvas/WebGL content once from `mount()`.
 - `validateProps(props)` is optional and synchronous. Return an array of human-readable errors, or `void`.
 - A validation-only controller may export just `validateProps`.
 

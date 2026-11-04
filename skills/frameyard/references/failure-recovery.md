@@ -13,7 +13,7 @@ Do not claim success after a nonzero exit. Fix the cause, rerun `check`, and onl
 | `COMPOSITION_INVALID` | Invalid root, metadata, fragment structure, or reserved attribute | Fix the composition fragment; check `details.line` and `details.attribute`. |
 | `COMPOSITION_DOCUMENT_SHELL` | A full document shell is present | Remove `<!doctype>`, `<html>`, `<head>`, and `<body>`; keep the fragment body and top-level metadata. See the 0.8 migration guide. |
 | `IMPORT_MAP_INVALID` | Invalid import map placement, JSON, attributes, or reserved specifier | Keep one or more top-level import maps; remove `frameyard`/`frameyard/` keys and forbidden attributes. |
-| `COMPOSITION_FORMAT_UNRESOLVED` | The composition omits `width`/`height`/`fps` and the project has no `format` | Declare the attributes on `<fy-composition>`, add `format { width, height, fps }` to `video.config.js`, or render through a timeline. |
+| `COMPOSITION_FORMAT_UNRESOLVED` | The composition omits `width`/`height` and the project has no `format` | Declare `width`/`height` on `<fy-composition>`, add `format { width, height, fps }` to `video.config.js`, or render through a timeline. |
 | `COMPOSITION_ERROR` | Mount, update, or browser page error | Read the frame location; remove forbidden clocks/randomness or fix the controller. |
 | `COMPOSITION_UPDATE_ASYNC` | `update()` returned a promise | Move async work to `mount()`. |
 | `COMPOSITION_NOT_READY` | `seek`/`settle` before a successful load | Await `load`/`ready`. |
@@ -28,6 +28,10 @@ Do not claim success after a nonzero exit. Fix the cause, rerun `check`, and onl
 | `ANIMATION_INVALID` | Invalid `data-fy-anim-*` value | Use non-negative integer frames and a positive duration. |
 | `ANIMATION_NOT_FOUND` | `data-fy-anim-*` without a CSS animation | Add an `animation` shorthand or remove the attributes. |
 | `ANIMATION_MULTIPLE` | Multiple animations on one scheduled element | Use one animation or move scheduling to CSS/the controller. |
+| `STATIC_ANIMATION_UNSUPPORTED` | A static composition uses `data-fy-anim-*` | Remove the attributes or declare `duration-in-frames` and `fps` to make the composition animated. |
+| `STATIC_MEDIA_UNSUPPORTED` | A static composition declares video, audio, or a transcript | Move media and captions to a timeline, or declare `duration-in-frames` and `fps`. |
+| `STATIC_UPDATE_IGNORED` | A static composition exports `update()` | Move initialization into `mount()`; static compositions do not run `update()`. |
+| `STATIC_ANIMATION_PAUSED` | A static composition has CSS animations/transitions | Remove them; the capture uses time 0. |
 | `SCRIPT_NOT_ALLOWED` | Executable script other than the controller | Move code into the controller. |
 | `EVENT_HANDLER_NOT_ALLOWED` | Inline `on*` handler or `data-fy-attr-on*` | Remove the handler; use a controller. |
 | `URL_NOT_ALLOWED` | `javascript:` URL | Use a safe URL. |
@@ -65,7 +69,7 @@ Do not claim success after a nonzero exit. Fix the cause, rerun `check`, and onl
 - Failed TTS/transcription operations leave no artifact and no manifest entry.
 - Existing outputs are replaced only with `--overwrite` (renders/stills) or `--force` (generated assets).
 - Cancellation terminates the child inference process and cleans temporary work.
-- `check` validates every frame and declared transcripts without encoding.
+- `check` validates every animated frame, or a static composition's single state, and declared transcripts without encoding.
 - Static validation failures exit before Chromium starts.
 - `check`, `still`, and `render` seek embedded videos and wait for decode before evaluating or capturing a frame.
 - `doctor` inspects but never repairs, downloads, or modifies the environment.

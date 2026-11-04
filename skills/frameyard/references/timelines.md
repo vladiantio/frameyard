@@ -18,7 +18,7 @@ export default {
 
 - `format` fixes width, height, and fps for every timeline and fills those values for compositions that omit them; a declared value always wins. It is required when the project lists timelines.
 - Composition and timeline IDs share one namespace and must be unique.
-- A composition that declares an `fps` must match the project fps exactly; an undeclared `fps` inherits it. A different size is fitted by the clip.
+- An animated composition that declares an `fps` must match the project fps exactly; an undeclared `fps` inherits it. A different size is fitted by the clip. A static composition has no fps and skips the frame-rate comparison.
 - Composition-only projects remain valid without `format` or `timelines`.
 
 ## Timeline document
@@ -75,7 +75,7 @@ export default {
 
 | `source.kind` | Fields | Notes |
 | --- | --- | --- |
-| `composition` | `id` | Project composition ID. The clip may set `props`. |
+| `composition` | `id` | Project composition ID. The clip may set `props`. A static composition behaves as an image source. |
 | `timeline` | `id` | Nested timeline ID. Rendered as a group. |
 | `video` | `src` | Local MP4/WebM, project-relative. |
 | `image` | `src` | Local PNG/JPEG/WebP. `duration` is required. |
@@ -86,9 +86,10 @@ Media paths resolve from the project root. No remote URLs.
 ## Time and trims
 
 - `start` is the timeline frame where the clip begins.
-- `sourceIn` is the first source frame. It defaults to `0` and must be `0` for images.
-- `duration` is the number of timeline frames. It is optional for compositions, nested timelines, video, and audio; it defaults to the rest of the source. Images require it.
-- A clip that exceeds its source is an error.
+- `sourceIn` is the first source frame. It defaults to `0` and must be `0` for images and static compositions.
+- `duration` is the number of timeline frames. It is optional for animated compositions, nested timelines, video, and audio; it defaults to the rest of the source. Images and static compositions require it.
+- A clip that exceeds its source is an error. Static compositions have no intrinsic duration, so the clip duration is the only bound.
+- A static composition clip is captured once per props variant as a transparent PNG and reused across segments. A clip whose source is static and whose `audio` settings are non-default receives an `AUDIO_WARNING` because there is no source audio.
 - Clips on one track cannot overlap. Touching endpoints are allowed. Use separate tracks for overlays.
 
 ## Presentation
@@ -107,7 +108,7 @@ A blend mode composites the clip against everything below it in the stage, inclu
 
 ## Audio
 
-- Composition, video, and nested-timeline clips contribute audio automatically unless `audio.muted` is true.
+- Animated composition, video, and nested-timeline clips contribute audio automatically unless `audio.muted` is true. Static compositions contribute no audio; put audio on a timeline track.
 - Timeline audio clips live on audio tracks. Audio tracks support `gain` and `muted`.
 - `audio.gain` on a clip is 0–1 and multiplies the source audio.
 - There are no linked A/V pairs. For a J/L cut, mute the visual clip and add an audio clip with a different `sourceIn`.
@@ -132,7 +133,7 @@ npx frameyard render main --props props/main.json --workers 8 --scratch /path/to
 - `--container <mp4|mov|mkv|webm>` selects the delivery container (default `mp4`); `--codec <h264|hevc|vp9>` selects the codec, and `--encoder <auto|software|nvenc|qsv>` selects how it is encoded. MP4 and MOV hold H.264/HEVC with AAC; MKV holds all three; WebM holds VP9 with Opus and defaults to VP9. `auto` is the default and probes NVENC, then Quick Sync, then software; `software` forces `libx264`, `libx265`, or `libvpx-vp9`. FFV1 intermediates stay lossless and software-encoded, HEVC keeps the `hvc1` tag in MP4/MOV, and the output extension must match the container.
 - `--concurrency` is composition-only.
 - `render` defaults to `out/<timeline-id>.mp4`.
-- `check` evaluates every timeline frame and composition frame. `still` captures one or more requested frames through the same clip capture and composite path; a multi-frame still resolves the timeline, starts one server, and reuses one scratch directory. The `--frame` spec and 32-frame cap are the same as for compositions.
+- `check` evaluates every timeline frame and every animated composition frame; a static composition layer is inspected once and not seeked per frame. `still` captures one or more requested frames through the same clip capture and composite path; a multi-frame still resolves the timeline, starts one server, and reuses one scratch directory. The `--frame` spec and 32-frame cap are the same as for compositions.
 - `npx frameyard dev` lists timelines in the preview; the timeline view has a program monitor, read-only tracks and clips, playhead, playback, audio controls, and diagnostics.
 
 ## Determinism and performance

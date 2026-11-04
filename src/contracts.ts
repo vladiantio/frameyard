@@ -27,19 +27,46 @@ export interface DeclaredFormat {
 /** The fixed facts a composition fragment declares before format resolution. */
 export interface DeclaredCompositionMetadata {
   format: DeclaredFormat;
-  /** Positive integer number of frames in the composition. */
-  durationInFrames: number;
+  /**
+   * Positive integer number of frames in the composition. Null when the
+   * fragment declares neither `duration-in-frames` nor `fps`, making it a
+   * static (timeless) composition.
+   */
+  durationInFrames: number | null;
 }
 
-export interface CompositionMetadata {
+/** Output dimensions shared by animated and static compositions. */
+export interface CompositionDimensions {
   /** Output width in CSS pixels. */
   width: number;
   /** Output height in CSS pixels. */
   height: number;
+}
+
+/**
+ * A static composition has no time base. It is captured once in its initial
+ * state and cannot be seeked or encoded as video.
+ */
+export interface StaticCompositionMetadata extends CompositionDimensions {
+  readonly static: true;
+}
+
+/** A composition with a frame clock. Frame time is always frame / fps. */
+export interface CompositionMetadata extends CompositionDimensions {
+  readonly static?: false;
   /** Frames per second. Frame time is always derived from frame / fps. */
   fps: number;
   /** Positive integer number of frames in the composition. */
   durationInFrames: number;
+}
+
+/** Metadata resolved against the project format. */
+export type ResolvedCompositionMetadata = CompositionMetadata | StaticCompositionMetadata;
+
+export function isStaticCompositionMetadata(
+  metadata: ResolvedCompositionMetadata | null | undefined,
+): metadata is StaticCompositionMetadata {
+  return metadata?.static === true;
 }
 
 export interface AudioClip {
@@ -133,7 +160,7 @@ export interface ControllerDeclaration {
 
 export interface CompositionSourceInfo {
   /** Metadata resolved against the project format. */
-  metadata: CompositionMetadata;
+  metadata: ResolvedCompositionMetadata;
   /**
    * The format values the fragment declares. Missing values were inherited
    * from the project format to produce `metadata`.
@@ -149,7 +176,7 @@ export interface CompositionSourceInfo {
 /** The browser host API exposed as window.__fy. */
 export interface FrameyardHost {
   readonly ready: Promise<void>;
-  readonly metadata: CompositionMetadata;
+  readonly metadata: ResolvedCompositionMetadata;
   readonly defaultProps: Readonly<Props>;
   readonly props: Readonly<Props>;
   readonly controller: { kind: "inline" } | { kind: "external"; src: string } | null;

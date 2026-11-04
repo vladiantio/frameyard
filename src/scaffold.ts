@@ -10,11 +10,11 @@ This project produces deterministic, parameterized video with Frameyard. Follow 
 - \`compositions/\` contains HTML fragments. An optional controller lives beside the fragment as a \`.controller.js\` module; import \`frameyard/runtime\` for \`random("stable:key")\` and other browser APIs.
 - \`timelines/\` contains JSON timeline documents that assemble composition and media clips into one video.
 - \`props/hello.json\` contains composition props; \`props/main.json\` contains timeline clip overrides keyed by composition clip ID.
-- \`out/\` contains rendered MP4s and is gitignored. \`render\` writes \`out/<id>.mp4\` by default.
+- \`out/\` contains rendered MP4s and PNGs and is gitignored. \`render\` writes \`out/<id>.mp4\` for video and \`out/<id>.png\` for a static composition by default.
 - \`assets/\` (create it when needed) contains audio, images, fonts, and generated assets.
 - \`package.json\` pins the CLI version in \`dev\`, \`check\`, \`render\`, and \`still\` scripts. Run \`dev\` with \`npm run dev\` or \`pnpm dev\`; for the others, pass the timeline or composition id: \`npm run check -- main\` (npm) or \`pnpm check main\` (pnpm).
 
-\`duration-in-frames\` is required on \`<fy-composition>\`. \`width\`, \`height\`, and \`fps\` are optional and inherit the project \`format\`; this scaffold declares them explicitly. Declare \`width\` and \`height\` together or not at all, and never derive metadata from props.
+\`duration-in-frames\` is required for an animated composition. A composition that declares neither \`duration-in-frames\` nor \`fps\` is static: it is captured once, renders to PNG, and cannot use animation scheduling, media, or transcripts. \`width\`, \`height\`, and \`fps\` are optional and inherit the project \`format\`; this scaffold declares them explicitly. Declare \`width\` and \`height\` together or not at all, and never derive metadata from props.
 
 ## Composition skeleton
 
@@ -65,12 +65,12 @@ are top-level siblings. Do not add \`<!doctype>\`, \`<html>\`, \`<head>\`,
 
 - \`source.kind\` is \`composition\` (with \`id\`), \`timeline\` (with \`id\`), or \`video\`, \`image\`, \`audio\` (with a project-relative \`src\`).
 - \`start\`, \`sourceIn\`, and \`duration\` use timeline frames. Omitted durations use the rest of the source; image clips require a duration.
-- Composition clips may declare \`props\`; the same composition can appear multiple times with different props, trims, and transforms.
+- Composition clips may declare \`props\`; the same composition can appear multiple times with different props, trims, and transforms. A static composition clip needs an explicit \`duration\` and \`sourceIn: 0\`, and contributes no audio.
 - Visual clips support static \`transform\` values: \`fit\` (\`contain\`, \`cover\`, \`stretch\`), \`width\`/\`height\` (an explicit box, both together), \`x\`, \`y\`, \`scale\`, \`rotation\`, and \`opacity\`. \`width\`/\`height\` are mutually exclusive with \`scale\`.
 - Visual clips may declare a static \`blend\` mode from the separable CSS set (\`normal\`, \`multiply\`, \`screen\`, \`overlay\`, \`darken\`, \`lighten\`, \`color-dodge\`, \`color-burn\`, \`hard-light\`, \`soft-light\`, \`difference\`, \`exclusion\`); omitted means \`normal\`.
 - Video and audio clips are muted with \`audio.muted\`; \`audio.gain\` is 0-1. Composition audio is included automatically.
 - Tracks composite from bottom to top. Clips on the same track cannot overlap. No transitions or keyframes.
-- Project \`format\` fixes width, height, and fps for every timeline and fills those values for compositions that omit them. A declared composition fps must match the project; different composition sizes are fitted by the clip.
+- Project \`format\` fixes width, height, and fps for every timeline and fills those values for compositions that omit them. Animated composition fps must match the project; different composition sizes are fitted by the clip. A static composition has no fps.
 
 ## Bindings
 
@@ -89,6 +89,15 @@ are top-level siblings. Do not add \`<!doctype>\`, \`<html>\`, \`<head>\`,
 - Frame-state variables are set on \`:root\`: \`--fy-frame\`, \`--fy-time\`, \`--fy-progress\`, \`--fy-fps\`, \`--fy-duration\`, and \`--fy-duration-frames\`.
 - Use \`--fy-progress\` for progress bars and \`--fy-frame\`/\`--fy-time\` in \`calc()\` for simple computed motion.
 - CSS transitions are not deterministic; do not use them.
+
+## Static compositions
+
+A composition that declares neither \`duration-in-frames\` nor \`fps\` is static.
+It is captured once and renders to PNG. It may use images, CSS, SVG, and canvas,
+but not \`data-fy-anim-*\`, \`<video>\`, \`<audio>\`, or \`<fy-transcript>\`. Its
+controller runs \`mount()\` and \`validateProps()\`; \`update()\` is not called and
+frame-state variables are not set. In a timeline, a static composition clip
+needs an explicit \`duration\` and \`sourceIn: 0\`.
 
 ## Controller
 
@@ -140,7 +149,7 @@ export default {
 
 1. Read \`video.config.js\`, the timeline document, the referenced composition HTML, the optional controller, and the props files before changing behavior.
 2. Author compositions with native HTML, CSS, SVG, Canvas 2D, WebGL, embedded video, and an optional controller. Arrange composition and media clips in the timeline JSON. Do not add a bundling step.
-3. Validate every frame: \`npx frameyard check main --json\`. Static validation runs before Chromium and reports stable diagnostic codes with source locations. Use \`--props <file>\` for composition props or a timeline clip override map.
+3. Validate every animated frame (or a static composition's single state): \`npx frameyard check main --json\`. Static validation runs before Chromium and reports stable diagnostic codes with source locations. Use \`--props <file>\` for composition props or a timeline clip override map.
 4. Inspect representative frames: \`npx frameyard still main --frame <spec> --out <dir|file.png> --json\`, where \`<spec>\` is a frame number, an inclusive range like \`2-12\`, or a comma-separated list with at most 32 unique frames. With multiple frames, \`--out\` is a directory. Then view the PNGs when the host supports images. State explicitly when visual inspection is not possible.
 5. Render: \`npx frameyard render main --props props/main.json [--workers <n>] [--scratch <dir>] --json\`. The video is written to \`out/main.mp4\` unless \`--out\` is passed.
 6. Report the timeline, composition sources, props, validation result, diagnostics, still paths and inspection status, video path, and any failure. Never claim success when \`check\` fails, a still is missing, or a render exits nonzero.
@@ -160,8 +169,8 @@ npx frameyard render hello --props props/hello.json --json
 
 - Use \`--json\` for non-interactive commands. Parse stdout as the structured result; treat stderr as progress and diagnostics.
 - Use \`--project <dir>\` when running outside the project root.
-- \`render\` writes to \`out/<id>.mp4\` in the project unless \`--out\` is passed. \`out/\` is gitignored.
-- Use \`--concurrency <n>\` for composition renders (1-16). Use \`--workers <n>\` for timeline renders (1-16); the default is 8. Timeline renders also accept \`--scratch <dir>\` for FFV1 intermediates. \`--container <mp4|mov|mkv|webm>\`, \`--codec <h264|hevc|vp9>\`, and \`--encoder <auto|software|nvenc|qsv>\` select the delivery pair and encoder; the defaults are MP4 with H.264 and \`auto\`, which falls back to software.
+- \`render\` writes to \`out/<id>.mp4\` for video and \`out/<id>.png\` for a static composition unless \`--out\` is passed. \`out/\` is gitignored.
+- Use \`--concurrency <n>\` for animated composition renders (1-16). Use \`--workers <n>\` for timeline renders (1-16); the default is 8. Timeline renders also accept \`--scratch <dir>\` for FFV1 intermediates. \`--container <mp4|mov|mkv|webm>\`, \`--codec <h264|hevc|vp9>\`, and \`--encoder <auto|software|nvenc|qsv>\` select the delivery pair and encoder; the defaults are MP4 with H.264 and \`auto\`, which falls back to software. A static composition render rejects the container, codec, encoder, and concurrency options.
 - \`still\` and \`render\` replace existing outputs only with \`--overwrite\`. Generated assets are replaced only with \`--force\`, and only with user approval.
 
 The official \`frameyard\` agent skill contains the full host-neutral contract. Install it with \`npx skills add vladiantio/frameyard\` or see the \`skills/frameyard/\` directory in the \`frameyard\` npm package. This file is the project-local summary.

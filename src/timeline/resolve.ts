@@ -3,9 +3,9 @@ import path from "node:path";
 import type {
   CompositionDiagnostic,
   CompositionDiagnosticDetails,
-  CompositionMetadata,
   ControllerDeclaration,
   ResolvedAudioClip,
+  ResolvedCompositionMetadata,
   ResolvedTranscriptClip,
 } from "../contracts.js";
 import { mergeProps, type Props } from "../contracts.js";
@@ -19,9 +19,10 @@ export interface ResolvedCompositionSource {
   kind: "composition";
   id: string;
   entry: string;
-  metadata: CompositionMetadata;
+  metadata: ResolvedCompositionMetadata;
   controller: ControllerDeclaration | null;
-  durationInFrames: number;
+  /** Absent for a static composition; the clip must declare its own duration. */
+  durationInFrames?: number;
   audioClips: readonly ResolvedAudioClip[];
   embeddedAudioClips: readonly ResolvedAudioClip[];
   transcriptClips: readonly ResolvedTranscriptClip[];
@@ -428,13 +429,22 @@ async function resolveCompositionSource(options: {
     );
   }
 
+  const metadata = validation.info.metadata;
+  if (metadata.static === true && clip.audio !== undefined && (clip.audio.muted || clip.audio.gain !== 1)) {
+    addWarning(
+      diagnostics,
+      `Static composition "${sourceId}" has no audio; audio settings on clip "${clip.id}" are ignored.`,
+      details,
+    );
+  }
+
   return {
     kind: "composition",
     id: sourceId,
     entry: composition.entry,
-    metadata: validation.info.metadata,
+    metadata,
     controller: validation.info.controller,
-    durationInFrames: validation.info.metadata.durationInFrames,
+    ...(metadata.static === true ? {} : { durationInFrames: metadata.durationInFrames }),
     audioClips: validation.info.audioClips,
     embeddedAudioClips: validation.info.embeddedAudioClips,
     transcriptClips: validation.info.transcriptClips,
@@ -616,6 +626,15 @@ function resolveClipDuration(
     nesting,
     jsonPath: "$.clips",
   };
+  if (source.kind === "composition" && source.metadata.static === true && clip.sourceIn !== 0) {
+    addError(
+      diagnostics,
+      "TIMELINE_CLIP_OUT_OF_RANGE",
+      `Clip "${clip.id}" uses sourceIn ${clip.sourceIn}, but static composition "${source.id}" has no frames. Use sourceIn 0 and declare the clip duration.`,
+      details,
+    );
+    return null;
+  }
   const sourceDuration = source.kind === "image" ? undefined : source.durationInFrames;
 
   if (clip.duration === undefined) {

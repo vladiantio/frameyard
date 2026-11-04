@@ -1,6 +1,6 @@
 # Migrating to Frameyard 0.8
 
-0.8 changes compositions from full HTML documents to partial HTML fragments. The framework now generates the document shell, import map, sizing style, format block, and host runtime. Timelines, props files, audio, transcripts, the CLI, and the rendering pipeline are unchanged.
+0.8 changes compositions from full HTML documents to partial HTML fragments and adds static (timeless) compositions. The framework generates the document shell, import map, sizing style, format block, and host runtime. Timelines, props files, audio, transcripts, and media keep their existing model; the CLI adds PNG output for static compositions and discriminated result kinds.
 
 ## Why
 
@@ -87,12 +87,74 @@ After:
 </fy-composition>
 ```
 
+## Static compositions
+
+A composition that declares neither `duration-in-frames` nor `fps` is now
+static. It is captured once and `render <id>` writes `out/<id>.png`.
+
+If a composition was failing because `duration-in-frames` was missing, decide
+which behavior you intended:
+
+- For a still, remove `fps` too and use the composition directly or as a
+  timeline image clip.
+- For video, add both `duration-in-frames` and `fps` (or let `fps` inherit from
+  the project `format`). Declaring `fps` without `duration-in-frames` remains an
+  error.
+
+A static composition needs width and height, declared on the root or inherited
+from the project `format`. It is visual-only: `<img>`, CSS, SVG, and canvas are
+allowed; `<video>`, `<audio>`, and `<fy-transcript>` are validation errors. Its
+controller may use `mount()` and `validateProps()`, but `update()` is not called
+and frame-state variables are not set. Put audio, video, and captions on a
+timeline instead.
+
+`render` for a static composition rejects `--container`, `--codec`,
+`--encoder`, and `--concurrency`. Use a timeline with an image/static
+composition clip when the deliverable must be a video.
+
+## Static timeline clips
+
+A clip whose composition source is static behaves like an image clip:
+
+- `duration` is required;
+- `sourceIn` must be `0`;
+- `props`, transform, opacity, and blend mode still apply;
+- the clip contributes no audio or transcripts.
+
+The renderer captures one transparent PNG per composition/props pair and reuses
+it across segments.
+
+## JSON result kinds
+
+`render` now returns a discriminated union. Video results keep their fields and
+add `kind: "video"`. Static composition results add `kind: "image"` with
+`path`, `width`, `height`, `bytes`, `diagnostics`, and `elapsedMs`; they have no
+`fps`, `durationInFrames`, `framesRendered`, `codec`, `container`, `encoder`, or
+audio/transcript fields.
+
+`check` also returns a union. Animated results add `kind: "animated"`. Static
+results use `kind: "static"`, `metadata: { width, height, static: true }`,
+`framesChecked: 1`, and no audio/transcript fields.
+
+`still` on a static composition accepts only frame `0`; other frames fail with
+`FRAME_OUT_OF_RANGE`.
+
+Library consumers also see a type change: `FrameyardHost.metadata`,
+`CompositionSourceInfo.metadata`, and browser sessions now expose
+`ResolvedCompositionMetadata`, a union of animated metadata and
+`{ width, height, static: true }`. Narrow with `metadata.static === true`
+before reading `fps` or `durationInFrames`.
+
 ## Error codes
 
 - `COMPOSITION_DOCUMENT_SHELL`: remove the document shell. The diagnostic includes the element and line.
 - `IMPORT_MAP_INVALID`: fix the import map placement, JSON, attributes, or reserved specifier.
 - `PROPS_INVALID` / `CONTROLLER_INVALID`: move the block to the top level and keep exactly one controller.
-- `COMPOSITION_INVALID`: the root is missing, duplicated, or nested.
+- `COMPOSITION_INVALID`: the root is missing, duplicated, or nested, or `fps` is declared without `duration-in-frames`.
+- `STATIC_ANIMATION_UNSUPPORTED`: remove `data-fy-anim-*` or declare `duration-in-frames` and `fps`.
+- `STATIC_MEDIA_UNSUPPORTED`: move video, audio, or transcripts to a timeline, or declare time metadata.
+- `STATIC_UPDATE_IGNORED`: move static initialization from `update()` to `mount()`.
+- `STATIC_ANIMATION_PAUSED`: remove CSS animations/transitions from a static composition; capture uses time 0.
 
 `check`, `still`, and `render` run the same validation before Chromium. Run `npx frameyard check <id> --json` after editing each composition.
 

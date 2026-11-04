@@ -25,7 +25,9 @@ export interface TimelinePreviewCompositionSource {
   url: string;
   width: number;
   height: number;
-  durationInFrames: number;
+  /** True when the composition is captured once and never seeked. */
+  static?: boolean;
+  durationInFrames?: number;
 }
 
 export interface TimelinePreviewNestedTimelineSource {

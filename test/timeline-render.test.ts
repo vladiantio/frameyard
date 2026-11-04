@@ -43,6 +43,12 @@ const inheritedCompositionHtml = compositionHtml.replace(
   '<fy-composition duration-in-frames="10">',
 );
 
+const staticCompositionHtml = `<style>
+      html, body { margin: 0; width: 100%; height: 100%; background: #123456; }
+    </style>
+    <fy-composition></fy-composition>
+`;
+
 const throwingCompositionHtml = `<fy-composition width="320" height="180" fps="10" duration-in-frames="10">
       <div class="dot"></div>
     </fy-composition>
@@ -334,6 +340,46 @@ describe("timeline rendering", () => {
     const audio = streams.find((stream) => stream.codec_type === "audio");
     expect(video).toMatchObject({ width: 320, height: 180, nb_read_frames: "10" });
     expect(audio).toBeDefined();
+  }, 120_000);
+
+  it("renders a static composition clip as a reused image layer across segments", async () => {
+    const { root, outPath } = await createProject(staticCompositionHtml);
+    const project = await loadProject(root);
+
+    const result = await renderTimelineForTest({
+      project,
+      timelineId: "main",
+      outPath,
+      workers: 2,
+      maxSegmentFrames: 3,
+    });
+
+    expect(result.framesRendered).toBe(10);
+    expect(result.segments).toBe(4);
+    const video = (await probe(outPath)).streams.find((stream) => stream.codec_type === "video");
+    expect(video).toMatchObject({ width: 320, height: 180, nb_read_frames: "10" });
+
+    const pixels: Array<[number, number, number]> = [];
+    for (const frame of [0, 9]) {
+      const framePath = path.join(root, "out", `static-${frame}.png`);
+      await exec("ffmpeg", [
+        "-v",
+        "error",
+        "-y",
+        "-ss",
+        String(frame / 10),
+        "-i",
+        outPath,
+        "-frames:v",
+        "1",
+        framePath,
+      ]);
+      pixels.push(await mediaPixel(framePath, 160, 90));
+    }
+
+    expect(pixels[0]).toEqual(pixels[1]);
+    expect(pixels[0]?.[2]).toBeGreaterThan(pixels[0]?.[0] ?? 0);
+    expect(pixels[0]?.[2]).toBeGreaterThan(20);
   }, 120_000);
 
   it("renders HEVC across concatenated segments with the hvc1 tag", async () => {

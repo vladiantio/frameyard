@@ -68,6 +68,7 @@
     "test:preview": "pnpm build && vitest run test/preview-runtime.test.ts test/timeline-preview.test.ts test/timeline-preview-runtime.test.ts",
     "test:unit": "vitest run test/contracts.test.ts test/docs.test.ts test/encoders.test.ts test/random.test.ts test/release.test.ts test/scaffold.test.ts test/transcript.test.ts",
     "bench": "pnpm build && node scripts/bench-render.mjs",
+    "bench:static": "pnpm build && node bench/static-composition.mjs",
     "set-version": "node scripts/set-version.mjs",
     "verify-release": "node scripts/verify-release.mjs",
     "retag-release": "node scripts/retag-release.mjs",

@@ -21,10 +21,10 @@ import {
   type CompositionDiagnostic,
   type CompositionDiagnosticDetails,
   type CompositionFormat,
-  type CompositionMetadata,
   type CompositionSourceInfo,
   type ControllerDeclaration,
   type DeclaredFormat,
+  type ResolvedCompositionMetadata,
   type DiagnosticSeverity,
   type Props,
   type ResolvedAudioClip,
@@ -116,7 +116,7 @@ class HtmlCompositionValidator {
   private defaultPropsValue: Readonly<Props> = Object.freeze({});
   private props: Readonly<Props>;
   private readonly format: CompositionFormat | undefined;
-  private metadata: CompositionMetadata | null = null;
+  private metadata: ResolvedCompositionMetadata | null = null;
   private declaredFormat: DeclaredFormat | null = null;
   private formatUnresolved = false;
   private controller: ControllerDeclaration | null = null;
@@ -180,6 +180,18 @@ class HtmlCompositionValidator {
     });
     this.diagnostics.push(...animation.diagnostics);
     this.validateAnimationTargets(animation.entries);
+    if (this.metadata?.static === true) {
+      for (const entry of animation.entries) {
+        if (!isElement(entry.element)) {
+          continue;
+        }
+        this.error(
+          "STATIC_ANIMATION_UNSUPPORTED",
+          "A static composition cannot use data-fy-anim-* scheduling. Remove the animation or declare duration-in-frames and fps.",
+          this.attributeDetails(entry.element, entry.attributes[0] ?? "data-fy-anim-start"),
+        );
+      }
+    }
 
     const media = readMediaDeclarations(adapter, {
       path: this.entry,
@@ -187,6 +199,18 @@ class HtmlCompositionValidator {
       props: this.props,
     });
     this.diagnostics.push(...media.diagnostics);
+    if (this.metadata?.static === true) {
+      for (const declaration of [...media.audio, ...media.embedded]) {
+        if (!isElement(declaration.element)) {
+          continue;
+        }
+        this.error(
+          "STATIC_MEDIA_UNSUPPORTED",
+          "A static composition is visual-only and cannot declare audio or video. Put audio on a timeline track instead.",
+          this.elementDetails(declaration.element),
+        );
+      }
+    }
     await this.validateMediaFiles(media.audio, media.embedded);
 
     const transcripts = readTranscriptDeclarations(adapter, {
@@ -195,6 +219,18 @@ class HtmlCompositionValidator {
       props: this.props,
     });
     this.diagnostics.push(...transcripts.diagnostics);
+    if (this.metadata?.static === true) {
+      for (const declaration of transcripts.declarations) {
+        if (!isElement(declaration.element)) {
+          continue;
+        }
+        this.error(
+          "STATIC_MEDIA_UNSUPPORTED",
+          "A static composition is visual-only and cannot declare transcripts. Put captions on a timeline instead.",
+          this.elementDetails(declaration.element),
+        );
+      }
+    }
     await this.validateTranscriptFiles(transcripts.declarations);
 
     await this.validateOrdinaryAssets();

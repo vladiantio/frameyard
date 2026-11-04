@@ -33,6 +33,18 @@ node scripts/bench-render.mjs --project examples/demo --concurrency 4 --frames 2
 `pnpm bench --fixtures --quick` also works; use the direct `node` form when
 passing `--browser-arg` values that start with `--`.
 
+## Static composition benchmark
+
+`pnpm bench:static` renders the same 1280×720 visual twice: once as an animated
+composition with 300 frames and once as a static composition with no time
+metadata. It reports wall time, output bytes, and the speedup. Override the
+frame count with `FRAMEYARD_STATIC_BENCH_FRAMES=<n>`. This is a regression check
+for the single-capture path, not a general encoding benchmark.
+
+```sh
+pnpm bench:static
+```
+
 ## Timeline benchmarks
 
 The timeline benchmarks are measurement tools, not production commands. They

@@ -447,4 +447,78 @@ describe("timeline resolution", () => {
       composition: "intro",
     });
   });
+
+  it("treats a static composition clip as an image source with a declared duration", async () => {
+    const project = await createProject({
+      timeline: timeline([
+        {
+          id: "still",
+          track: "v1",
+          source: { kind: "composition", id: "intro" },
+          start: 0,
+          duration: 10,
+        },
+      ]),
+      compositionHtml: "<fy-composition></fy-composition>\n",
+    });
+
+    const resolved = await resolveMain(project);
+    const clip = resolved.timeline?.clips[0];
+
+    expect(resolved.diagnostics.filter((diagnostic) => diagnostic.severity === "error")).toEqual([]);
+    expect(clip).toMatchObject({
+      duration: 10,
+      source: {
+        kind: "composition",
+        metadata: { width: 1920, height: 1080, static: true },
+      },
+    });
+    expect(clip?.source).not.toHaveProperty("durationInFrames");
+  });
+
+  it("requires an explicit duration and sourceIn 0 for a static composition clip", async () => {
+    const missingDuration = await createProject({
+      timeline: timeline([
+        {
+          id: "still",
+          track: "v1",
+          source: { kind: "composition", id: "intro" },
+          start: 0,
+        },
+      ]),
+      compositionHtml: "<fy-composition></fy-composition>\n",
+    });
+    const resolvedMissing = await resolveMain(missingDuration);
+
+    expect(resolvedMissing.timeline).toBeNull();
+    expect(resolvedMissing.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: "TIMELINE_CLIP_OUT_OF_RANGE",
+        message: expect.stringContaining("explicit duration"),
+      }),
+    );
+
+    const nonzeroSourceIn = await createProject({
+      timeline: timeline([
+        {
+          id: "still",
+          track: "v1",
+          source: { kind: "composition", id: "intro" },
+          start: 0,
+          sourceIn: 1,
+          duration: 10,
+        },
+      ]),
+      compositionHtml: "<fy-composition></fy-composition>\n",
+    });
+    const resolvedSourceIn = await resolveMain(nonzeroSourceIn);
+
+    expect(resolvedSourceIn.timeline).toBeNull();
+    expect(resolvedSourceIn.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: "TIMELINE_CLIP_OUT_OF_RANGE",
+        message: expect.stringContaining("sourceIn 1"),
+      }),
+    );
+  });
 });

@@ -1,9 +1,9 @@
 import type {
   CompositionDiagnostic,
-  CompositionMetadata,
   FrameyardHost,
   Props,
   ResolvedAudioClip,
+  ResolvedCompositionMetadata,
   ResolvedTranscriptClip,
 } from "../index.js";
 import { COMPOSITION_FORMAT_UNRESOLVED_MESSAGE } from "../composition/index.js";
@@ -19,13 +19,13 @@ import {
 interface CompositionEntry {
   id: string;
   entry: string;
-  metadata?: CompositionMetadata;
+  metadata?: ResolvedCompositionMetadata;
   controller: { kind: "inline" } | { kind: "external"; src: string } | null;
   diagnostics: CompositionDiagnostic[];
 }
 
 interface LoadedHostState {
-  metadata: CompositionMetadata;
+  metadata: ResolvedCompositionMetadata;
   props: Props;
   controller: { kind: "inline" } | { kind: "external"; src: string } | null;
   audioClips: ResolvedAudioClip[];
@@ -84,7 +84,7 @@ const muteCheckbox = byId<HTMLInputElement>("mute");
 const volumeSlider = byId<HTMLInputElement>("volume");
 
 let hostFrame: FrameyardHost | null = null;
-let metadata: CompositionMetadata | null = null;
+let metadata: ResolvedCompositionMetadata | null = null;
 let audioClips: readonly ResolvedAudioClip[] = [];
 let embeddedAudioClips: readonly ResolvedAudioClip[] = [];
 let audioEntries: AudioEntry[] = [];
@@ -114,9 +114,17 @@ function clearError(): void {
   errorBox.textContent = "";
 }
 
+function isStaticMetadata(value: ResolvedCompositionMetadata | null | undefined): boolean {
+  return value?.static === true;
+}
+
 function updateMeta(): void {
   if (!metadata) {
     metaLabel.textContent = "";
+    return;
+  }
+  if (metadata.static === true) {
+    metaLabel.textContent = `${metadata.width}×${metadata.height} · static`;
     return;
   }
   const seconds = metadata.durationInFrames / metadata.fps;
@@ -124,7 +132,7 @@ function updateMeta(): void {
 }
 
 function updateTransport(): void {
-  if (!metadata) {
+  if (!metadata || metadata.static === true) {
     frameLabel.textContent = "0";
     durationLabel.textContent = "0";
     clockLabel.textContent = "0.00s";
@@ -205,7 +213,7 @@ function buildAudio(): void {
 }
 
 function syncAudio(): void {
-  if (!metadata || audioEntries.length === 0) {
+  if (!metadata || metadata.static === true || audioEntries.length === 0) {
     return;
   }
 
@@ -266,15 +274,16 @@ function renderFrame(frame: number, options: { settle?: boolean } = {}): void {
     throw new FrameyardError("COMPOSITION_ERROR", "No composition is loaded.");
   }
 
+  const targetFrame = metadata.static === true ? 0 : frame;
   try {
-    active.seek(frame);
+    active.seek(targetFrame);
   } catch (error) {
     stopPlayback();
     showError(error);
     throw error;
   }
 
-  currentFrame = frame;
+  currentFrame = targetFrame;
   clearError();
   updateTransport();
   syncAudio();
@@ -292,7 +301,7 @@ function renderFrame(frame: number, options: { settle?: boolean } = {}): void {
 }
 
 function playbackLoop(): void {
-  if (!playing || !hostFrame || !metadata) {
+  if (!playing || !hostFrame || !metadata || metadata.static === true) {
     return;
   }
 
@@ -320,7 +329,7 @@ function playbackLoop(): void {
 }
 
 function setPlaying(value: boolean): void {
-  if (!hostFrame || !metadata || playing === value) {
+  if (!hostFrame || !metadata || metadata.static === true || playing === value) {
     return;
   }
 
@@ -342,11 +351,14 @@ function setPlaying(value: boolean): void {
 }
 
 function framesPerSecond(): number {
-  return Math.max(1, Math.round(metadata?.fps ?? 1));
+  if (!metadata || metadata.static === true) {
+    return 1;
+  }
+  return Math.max(1, Math.round(metadata.fps));
 }
 
 function stepFrame(delta: number): void {
-  if (!hostFrame || !metadata) {
+  if (!hostFrame || !metadata || metadata.static === true) {
     return;
   }
   stopPlayback();
@@ -606,17 +618,18 @@ function renderDiagnostic(diagnostic: CompositionDiagnostic): HTMLElement {
   return element;
 }
 
-function isCompositionMetadata(value: unknown): value is CompositionMetadata {
+function isCompositionMetadata(value: unknown): value is ResolvedCompositionMetadata {
   if (typeof value !== "object" || value === null) {
     return false;
   }
   const record = value as Record<string, unknown>;
-  return (
-    typeof record.width === "number" &&
-    typeof record.height === "number" &&
-    typeof record.fps === "number" &&
-    typeof record.durationInFrames === "number"
-  );
+  if (typeof record.width !== "number" || typeof record.height !== "number") {
+    return false;
+  }
+  if (record.static === true) {
+    return true;
+  }
+  return typeof record.fps === "number" && typeof record.durationInFrames === "number";
 }
 
 function browserCommandError(error: unknown): Error {
@@ -635,7 +648,7 @@ const api: PreviewApi = {
       } catch (error) {
         throw browserCommandError(error);
       } finally {
-        setTransportEnabled(hostFrame !== null);
+        setTransportEnabled(hostFrame !== null && !isStaticMetadata(metadata));
       }
     });
   },
@@ -739,7 +752,9 @@ async function initPreview(): Promise<void> {
 
     const option = document.createElement("option");
     option.value = item.id;
-    option.textContent = metadata ? `${item.id} — ${metadata.width}×${metadata.height} · ${metadata.fps} fps` : item.id;
+    option.textContent = metadata
+      ? `${item.id} — ${metadata.width}×${metadata.height}${metadata.static === true ? " · static" : ` · ${metadata.fps} fps`}`
+      : item.id;
     compositionSelect.append(option);
   }
 

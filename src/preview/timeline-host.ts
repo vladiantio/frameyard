@@ -337,6 +337,9 @@ export function createTimelineHost(
           continue;
         }
         if (clip.source.kind === "composition") {
+          if (clip.source.static === true) {
+            continue;
+          }
           const api = contentWindow.__fy;
           if (api) {
             api.seek(localFrame);

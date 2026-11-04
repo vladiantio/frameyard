@@ -483,6 +483,81 @@ export function resolveTimelineAudio(timeline: ResolvedTimeline): {
   };
 }
 
+interface StaticCapture {
+  path: string;
+  diagnostics: CompositionDiagnostic[];
+}
+
+async function captureStaticCompositionLayer(options: {
+  project: Project;
+  timeline: ResolvedTimeline;
+  clip: ResolvedTimelineClip;
+  source: ResolvedCompositionSource;
+  serverUrl: string;
+  scratchRoot: string;
+  infoCache: Map<string, StaticValidationResult>;
+  staticCache: Map<string, Promise<StaticCapture>>;
+  signal?: AbortSignal;
+}): Promise<StaticCapture> {
+  const { project, timeline, clip, source, serverUrl, scratchRoot, infoCache, staticCache } = options;
+  const propsKey = JSON.stringify(clip.props ?? null);
+  const cacheKey = `${source.entry}\u0000${propsKey}`;
+  const cached = staticCache.get(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
+  const pending = (async (): Promise<StaticCapture> => {
+    let validation = infoCache.get(cacheKey);
+    if (!validation) {
+      validation = await validateHtmlComposition({
+        projectRoot: project.root,
+        entry: source.entry,
+        ...(clip.props !== undefined ? { props: clip.props } : {}),
+        ...(project.format ? { format: project.format } : {}),
+      });
+      infoCache.set(cacheKey, validation);
+    }
+    if (!validation.info) {
+      throw new FrameyardError(
+        "TIMELINE_CLIP_INVALID",
+        `Composition "${source.id}" could not be loaded for clip "${clip.id}".`,
+        { diagnostics: validation.diagnostics },
+      );
+    }
+
+    const session = await openCompositionSession({
+      serverUrl,
+      entry: source.entry,
+      props: clip.props,
+      info: validation.info,
+      staticDiagnostics: validation.diagnostics,
+      transparentBackground: true,
+    });
+    try {
+      throwIfAborted(options.signal);
+      await session.seek(0);
+      const png = await session.capture();
+      const filePath = path.join(scratchRoot, `static-${randomUUID()}.png`);
+      await writeFile(filePath, png);
+      const diagnostics = (await session.readDiagnostics()).map((diagnostic) =>
+        compositionDiagnostic(diagnostic, timeline.id, clip, source.id),
+      );
+      return { path: filePath, diagnostics };
+    } finally {
+      await session.close();
+    }
+  })();
+
+  staticCache.set(cacheKey, pending);
+  try {
+    return await pending;
+  } catch (error) {
+    staticCache.delete(cacheKey);
+    throw error;
+  }
+}
+
 async function captureCompositionLayer(options: {
   project: Project;
   timeline: ResolvedTimeline;
@@ -563,6 +638,7 @@ async function renderNestedTimelineRange(options: {
   serverUrl: string;
   scratchRoot: string;
   infoCache: Map<string, StaticValidationResult>;
+  staticCache: Map<string, Promise<StaticCapture>>;
   depth: number;
   signal?: AbortSignal;
 }): Promise<{ path: string; diagnostics: CompositionDiagnostic[] }> {
@@ -585,6 +661,7 @@ async function renderNestedTimelineRange(options: {
         serverUrl: options.serverUrl,
         scratchRoot: options.scratchRoot,
         infoCache: options.infoCache,
+        staticCache: options.staticCache,
         codec: "ffv1",
         background: options.timeline.background ?? "transparent",
         prefix,
@@ -616,6 +693,7 @@ async function processTimelineSegment(options: {
   serverUrl: string;
   scratchRoot: string;
   infoCache: Map<string, StaticValidationResult>;
+  staticCache: Map<string, Promise<StaticCapture>>;
   codec?: VideoCodec | "ffv1";
   container?: VideoContainer;
   background?: string;
@@ -660,6 +738,29 @@ async function processTimelineSegment(options: {
     };
 
     if (source.kind === "composition") {
+      if (source.metadata.static === true) {
+        const captured = await captureStaticCompositionLayer({
+          project,
+          timeline,
+          clip,
+          source,
+          serverUrl,
+          scratchRoot,
+          infoCache,
+          staticCache: options.staticCache,
+          ...(options.signal ? { signal: options.signal } : {}),
+        });
+        diagnostics.push(...captured.diagnostics);
+        layers.push({
+          kind: "image",
+          path: captured.path,
+          sourceWidth: source.metadata.width,
+          sourceHeight: source.metadata.height,
+          ...base,
+        });
+        continue;
+      }
+
       const captured = await captureCompositionLayer({
         project,
         timeline,
@@ -705,6 +806,7 @@ async function processTimelineSegment(options: {
         serverUrl,
         scratchRoot,
         infoCache,
+        staticCache: options.staticCache,
         depth: depth + 1,
         ...(options.signal ? { signal: options.signal } : {}),
       });
@@ -808,6 +910,9 @@ async function checkResolvedTimelineRange(options: {
         staticDiagnostics: target.validation.diagnostics,
       });
       sessions.set(key, session);
+      if (target.source.metadata.static === true) {
+        await session.seek(0);
+      }
     }
 
     for (const segment of plan.segments) {
@@ -818,6 +923,9 @@ async function checkResolvedTimelineRange(options: {
             continue;
           }
           const source = layer.clip.source;
+          if (source.metadata.static === true) {
+            continue;
+          }
           const key = `${source.entry}\u0000${JSON.stringify(layer.clip.props ?? null)}`;
           const session = sessions.get(key);
           if (!session) {
@@ -1318,6 +1426,7 @@ export async function renderTimeline(options: TimelineRenderOptions): Promise<Ti
   const scratchRoot = await mkdtemp(path.join(scratchBase, "frameyard-timeline-"));
   const server = await startPreviewServer({ projectRoot: options.project.root, port: 0 });
   const infoCache = new Map<string, StaticValidationResult>();
+  const staticCache = new Map<string, Promise<StaticCapture>>();
   const diagnostics: CompositionDiagnostic[] = [...resolved.diagnostics];
   if (workers < requestedWorkers) {
     diagnostics.push({
@@ -1391,6 +1500,7 @@ export async function renderTimeline(options: TimelineRenderOptions): Promise<Ti
           serverUrl: server.url,
           scratchRoot,
           infoCache,
+          staticCache,
           codec,
           container,
           encoder,

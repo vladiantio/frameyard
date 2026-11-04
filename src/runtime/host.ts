@@ -17,6 +17,7 @@ import {
   type FrameyardHost,
   type Props,
   type ResolvedAudioClip,
+  type ResolvedCompositionMetadata,
   type ResolvedTranscriptClip,
 } from "../contracts.js";
 import {
@@ -53,7 +54,7 @@ interface ControllerModule {
 interface HostRuntimeOptions {
   root: HTMLElement;
   path: string;
-  metadata: CompositionMetadata;
+  metadata: ResolvedCompositionMetadata;
   defaultProps: Readonly<Props>;
   declaration: ControllerDeclaration | null;
   controllerModule: ControllerModule | null;
@@ -72,7 +73,7 @@ const FRAME_STATE_PROPERTIES = [
 ];
 
 class HostRuntime implements FrameyardHost {
-  readonly metadata: CompositionMetadata;
+  readonly metadata: ResolvedCompositionMetadata;
   readonly defaultProps: Readonly<Props>;
   readonly controller: FrameyardHost["controller"];
 
@@ -207,6 +208,10 @@ class HostRuntime implements FrameyardHost {
         toHostError(new FrameyardError("COMPOSITION_NOT_READY", "Cannot settle before the composition has loaded.")),
       );
     }
+    if (this.metadata.static === true) {
+      // A static composition has no media or frame clock to settle.
+      return Promise.resolve();
+    }
     const promise = new Promise<void>((resolve, reject) => {
       this.settleWaiters.push({ resolve, reject, frame: this.currentFrame });
       this.settleLoop ??= this.runSettleLoop();
@@ -259,7 +264,11 @@ class HostRuntime implements FrameyardHost {
       this.hideRoot();
       this.props = props;
       applyPropVariables(this.root, props);
-      setFrameState(this.metadata, 0);
+      if (this.metadata.static === true) {
+        this.clearFrameState();
+      } else {
+        setFrameState(this.metadata, 0);
+      }
       applyBindings({
         root: this.root,
         props,
@@ -272,7 +281,17 @@ class HostRuntime implements FrameyardHost {
       });
       this.addDiagnostics(animation.diagnostics);
       this.assertNoReadErrors(animation.diagnostics);
-      applyAnimationSchedule(animation.entries, this.metadata.fps);
+      if (this.metadata.static === true) {
+        if (animation.entries.length > 0) {
+          throw new FrameyardError(
+            "STATIC_ANIMATION_UNSUPPORTED",
+            "A static composition cannot use data-fy-anim-* scheduling. Remove the animation or declare duration-in-frames and fps.",
+            { diagnostics: [...animation.diagnostics] },
+          );
+        }
+      } else {
+        applyAnimationSchedule(animation.entries, this.metadata.fps);
+      }
 
       if (this.controllerModule?.mount) {
         await withDiagnosticsAsync("Composition mount()", this.diagnosticSink, () =>
@@ -282,35 +301,117 @@ class HostRuntime implements FrameyardHost {
       this.assertActive();
       this.mounted = true;
 
+      if (this.metadata.static === true) {
+        const postMountAnimation = readAnimationDeclarations(createDomAdapter(this.root), {
+          path: this.path,
+          includeTemplateContent: false,
+        });
+        this.addDiagnostics(postMountAnimation.diagnostics);
+        this.assertNoReadErrors(postMountAnimation.diagnostics);
+        if (postMountAnimation.entries.length > 0) {
+          throw new FrameyardError(
+            "STATIC_ANIMATION_UNSUPPORTED",
+            "A static composition cannot create data-fy-anim-* scheduling in its controller. Remove the animation or declare duration-in-frames and fps.",
+            { diagnostics: [...postMountAnimation.diagnostics] },
+          );
+        }
+      }
+
       await waitForAssets(this.root);
       this.assertActive();
-      const media = readMediaDeclarations(createDomAdapter(this.root), {
-        path: this.path,
-        includeTemplateContent: false,
-        props,
-        bindingsApplied: true,
-      });
-      this.addDiagnostics(media.diagnostics);
-      this.assertNoReadErrors(media.diagnostics);
-      await prepareMedia(this.root);
-      this.assertActive();
-      this.audio = Object.freeze(media.audio.map((declaration) => declaration.clip));
-      this.embedded = describeMediaAudio(this.root);
 
-      const transcripts = readTranscriptDeclarations(createDomAdapter(this.root), {
-        path: this.path,
-        includeTemplateContent: false,
-        props,
-        bindingsApplied: true,
-      });
-      this.addDiagnostics(transcripts.diagnostics);
-      this.assertNoReadErrors(transcripts.diagnostics);
-      this.transcripts = Object.freeze(transcripts.declarations.map((declaration) => declaration.clip));
-      checkAnimationDiagnostics(this.root, (diagnostic) => this.addDiagnostic(diagnostic));
+      if (this.metadata.static === true) {
+        if (this.controllerModule?.update) {
+          this.addDiagnostic({
+            severity: "warning",
+            code: "STATIC_UPDATE_IGNORED",
+            message: "Static compositions do not run update(); move initialization into mount().",
+          });
+        }
 
-      this.seekNow(0);
-      await settleMedia(this.root, 0, this.metadata.fps);
+        const mediaElements = [...this.root.querySelectorAll("video, audio, fy-transcript")];
+        if (mediaElements.length > 0) {
+          throw new FrameyardError(
+            "STATIC_MEDIA_UNSUPPORTED",
+            "A static composition is visual-only and cannot contain video, audio, or transcripts. Put media on a timeline instead.",
+            { details: { elements: mediaElements.map((element) => element.tagName.toLowerCase()) } },
+          );
+        }
+
+        const media = readMediaDeclarations(createDomAdapter(this.root), {
+          path: this.path,
+          includeTemplateContent: false,
+          props,
+          bindingsApplied: true,
+        });
+        this.addDiagnostics(media.diagnostics);
+        this.assertNoReadErrors(media.diagnostics);
+        if (media.audio.length > 0 || media.embedded.length > 0) {
+          throw new FrameyardError(
+            "STATIC_MEDIA_UNSUPPORTED",
+            "A static composition is visual-only and cannot declare media. Put media on a timeline instead.",
+            { diagnostics: [...media.diagnostics] },
+          );
+        }
+
+        const transcripts = readTranscriptDeclarations(createDomAdapter(this.root), {
+          path: this.path,
+          includeTemplateContent: false,
+          props,
+          bindingsApplied: true,
+        });
+        this.addDiagnostics(transcripts.diagnostics);
+        this.assertNoReadErrors(transcripts.diagnostics);
+        if (transcripts.declarations.length > 0) {
+          throw new FrameyardError(
+            "STATIC_MEDIA_UNSUPPORTED",
+            "A static composition is visual-only and cannot declare transcripts.",
+            { diagnostics: [...transcripts.diagnostics] },
+          );
+        }
+
+        if (this.root.getAnimations({ subtree: true }).length > 0) {
+          this.addDiagnostic({
+            severity: "warning",
+            code: "STATIC_ANIMATION_PAUSED",
+            message: "A static composition contains CSS animations or transitions; they were paused at time 0.",
+          });
+          this.pauseAllAnimations();
+        }
+
+        this.audio = Object.freeze([]);
+        this.embedded = Object.freeze([]);
+        this.transcripts = Object.freeze([]);
+      } else {
+        const media = readMediaDeclarations(createDomAdapter(this.root), {
+          path: this.path,
+          includeTemplateContent: false,
+          props,
+          bindingsApplied: true,
+        });
+        this.addDiagnostics(media.diagnostics);
+        this.assertNoReadErrors(media.diagnostics);
+        await prepareMedia(this.root);
+        this.assertActive();
+        this.audio = Object.freeze(media.audio.map((declaration) => declaration.clip));
+        this.embedded = describeMediaAudio(this.root);
+
+        const transcripts = readTranscriptDeclarations(createDomAdapter(this.root), {
+          path: this.path,
+          includeTemplateContent: false,
+          props,
+          bindingsApplied: true,
+        });
+        this.addDiagnostics(transcripts.diagnostics);
+        this.assertNoReadErrors(transcripts.diagnostics);
+        this.transcripts = Object.freeze(transcripts.declarations.map((declaration) => declaration.clip));
+        checkAnimationDiagnostics(this.root, (diagnostic) => this.addDiagnostic(diagnostic));
+
+        this.seekNow(0);
+        await settleMedia(this.root, 0, this.metadata.fps);
+      }
       this.assertActive();
+      this.currentFrame = 0;
       this.loaded = true;
       this.showRoot();
     } catch (error) {
@@ -354,7 +455,17 @@ class HostRuntime implements FrameyardHost {
   }
 
   private seekNow(frame: number): void {
-    if (!Number.isInteger(frame) || frame < 0 || frame >= this.metadata.durationInFrames) {
+    if (!Number.isInteger(frame) || frame < 0) {
+      throw new FrameyardError("FRAME_OUT_OF_RANGE", `Frame ${frame} must be a non-negative integer.`);
+    }
+
+    if (this.metadata.static === true) {
+      // A static composition has a single visual state; seeking is a no-op.
+      this.currentFrame = 0;
+      return;
+    }
+
+    if (frame >= this.metadata.durationInFrames) {
       throw new FrameyardError(
         "FRAME_OUT_OF_RANGE",
         `Frame ${frame} is outside the valid range 0..${this.metadata.durationInFrames - 1}.`,
@@ -384,6 +495,9 @@ class HostRuntime implements FrameyardHost {
   }
 
   private async runSettleLoop(): Promise<void> {
+    if (this.metadata.static === true) {
+      return;
+    }
     try {
       while (this.settleWaiters.length > 0) {
         const waiters = this.settleWaiters;

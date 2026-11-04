@@ -103,6 +103,12 @@ const longComposition = `<fy-composition width="160" height="90" fps="10" durati
     </fy-composition>
 `;
 
+const staticComposition = `<style>
+      html, body { margin: 0; width: 100%; height: 100%; background: #123456; }
+    </style>
+    <fy-composition width="160" height="90"></fy-composition>
+`;
+
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
 const missingVideoComposition = `<fy-composition width="160" height="90" fps="10" duration-in-frames="2">
@@ -259,7 +265,7 @@ beforeAll(async () => {
   await mkdir(path.join(root, "assets"), { recursive: true });
   await writeFile(
     path.join(root, "video.config.js"),
-    `export default { compositions: { demo: "./compositions/demo.html", media: "./compositions/media.html", webgl: "./compositions/webgl.html", long: "./compositions/long.html", "missing-video": "./compositions/missing-video.html", broken: "./compositions/broken.html", throwing: "./compositions/throwing.html", html: "./compositions/html.html", "html-invalid": "./compositions/html-invalid.html", legacy: "./compositions/legacy.html" } };\n`,
+    `export default { compositions: { demo: "./compositions/demo.html", media: "./compositions/media.html", webgl: "./compositions/webgl.html", long: "./compositions/long.html", "missing-video": "./compositions/missing-video.html", broken: "./compositions/broken.html", throwing: "./compositions/throwing.html", html: "./compositions/html.html", "html-invalid": "./compositions/html-invalid.html", legacy: "./compositions/legacy.html", static: "./compositions/static.html" } };\n`,
   );
   await writeFile(path.join(root, "compositions", "demo.html"), composition);
   await writeFile(path.join(root, "compositions", "media.html"), mediaComposition);
@@ -269,6 +275,7 @@ beforeAll(async () => {
   await writeFile(path.join(root, "compositions", "html.html"), htmlComposition);
   await writeFile(path.join(root, "compositions", "html-invalid.html"), invalidHtmlComposition);
   await writeFile(path.join(root, "compositions", "legacy.html"), legacyComposition);
+  await writeFile(path.join(root, "compositions", "static.html"), staticComposition);
   await writeFile(
     path.join(root, "compositions", "broken.html"),
     `<fy-composition width="160" height="90" fps="10" duration-in-frames="2">
@@ -420,6 +427,80 @@ describe("CLI end-to-end", () => {
       nb_read_frames: "6",
     });
     expect(streams.find((stream) => stream.codec_type === "audio")).toMatchObject({ codec_name: "aac" });
+  });
+
+  it("checks, stills, and renders a static composition as a PNG", async () => {
+    const check = await run(["check", "static", "--project", root, "--json"], root);
+    expect(check.code).toBe(0);
+    const checked = JSON.parse(check.stdout) as Record<string, unknown>;
+    expect(checked).toMatchObject({
+      ok: true,
+      command: "check",
+      composition: "static",
+      entry: "compositions/static.html",
+      kind: "static",
+      metadata: { width: 160, height: 90, static: true },
+      framesChecked: 1,
+      diagnostics: [],
+    });
+    expect(checked).not.toHaveProperty("audio");
+    expect(checked).not.toHaveProperty("transcripts");
+
+    const still = await run(
+      ["still", "static", "--frame", "0", "--out", "static-0.png", "--project", root, "--json"],
+      root,
+    );
+    expect(still.code).toBe(0);
+    const stillJson = JSON.parse(still.stdout) as Record<string, unknown>;
+    expect(stillJson).toMatchObject({
+      ok: true,
+      command: "still",
+      composition: "static",
+      entry: "compositions/static.html",
+      frame: 0,
+      width: 160,
+      height: 90,
+      diagnostics: [],
+    });
+    const pixel = await pngPixel(path.join(root, "static-0.png"), 80, 45);
+    expect(pixel[2]).toBeGreaterThan(pixel[0] ?? 0);
+
+    const outPath = path.join(root, "out", "static.png");
+    const render = await run(["render", "static", "--project", root, "--json"], root, { pinEncoder: false });
+    expect(render.code).toBe(0);
+    const rendered = JSON.parse(render.stdout) as Record<string, unknown>;
+    expect(rendered).toMatchObject({
+      ok: true,
+      command: "render",
+      kind: "image",
+      composition: "static",
+      entry: "compositions/static.html",
+      path: outPath,
+      width: 160,
+      height: 90,
+      diagnostics: [],
+    });
+    expect(rendered).not.toHaveProperty("codec");
+    expect(rendered).not.toHaveProperty("framesRendered");
+    expect((await stat(outPath)).size).toBeGreaterThan(0);
+
+    const outOfRange = await run(["still", "static", "--frame", "1", "--project", root, "--json"], root);
+    expect(outOfRange.code).toBe(1);
+    expect(JSON.parse(outOfRange.stdout)).toMatchObject({
+      ok: false,
+      command: "still",
+      error: { code: "FRAME_OUT_OF_RANGE" },
+    });
+
+    const videoFlag = await run(["render", "static", "--container", "mp4", "--project", root, "--json"], root, {
+      pinEncoder: false,
+    });
+    expect(videoFlag.code).toBe(2);
+    expect(JSON.parse(videoFlag.stdout)).toMatchObject({
+      ok: false,
+      command: "render",
+      error: { code: "USAGE" },
+    });
   });
 
   it("returns static diagnostics for an invalid HTML composition", async () => {

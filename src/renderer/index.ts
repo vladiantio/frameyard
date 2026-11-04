@@ -8,6 +8,7 @@ import {
   type CompositionDiagnostic,
   type CompositionMetadata,
   type CompositionSourceInfo,
+  type StaticCompositionMetadata,
 } from "../contracts.js";
 import { FrameyardError, isFrameyardError } from "../errors.js";
 import { validateHtmlComposition } from "../html/validate.js";
@@ -44,7 +45,8 @@ interface SessionOptions {
   onProgress?: (event: ProgressEvent) => void;
 }
 
-export interface CheckResult {
+export interface AnimatedCheckResult {
+  kind: "animated";
   composition: string;
   entry: string;
   controller: { kind: "inline" } | { kind: "external"; src: string } | null;
@@ -61,6 +63,19 @@ export interface CheckResult {
   diagnostics: CompositionDiagnostic[];
   elapsedMs: number;
 }
+
+export interface StaticCheckResult {
+  kind: "static";
+  composition: string;
+  entry: string;
+  controller: { kind: "inline" } | { kind: "external"; src: string } | null;
+  metadata: StaticCompositionMetadata;
+  framesChecked: 1;
+  diagnostics: CompositionDiagnostic[];
+  elapsedMs: number;
+}
+
+export type CheckResult = AnimatedCheckResult | StaticCheckResult;
 
 export interface StillFrameResult {
   frame: number;
@@ -82,7 +97,8 @@ export interface StillResult {
   elapsedMs: number;
 }
 
-export interface RenderResult {
+export interface VideoRenderResult {
+  kind: "video";
   composition: string;
   entry: string;
   controller: { kind: "inline" } | { kind: "external"; src: string } | null;
@@ -110,6 +126,21 @@ export interface RenderResult {
   diagnostics: CompositionDiagnostic[];
   elapsedMs: number;
 }
+
+export interface ImageRenderResult {
+  kind: "image";
+  composition: string;
+  entry: string;
+  controller: { kind: "inline" } | { kind: "external"; src: string } | null;
+  path: string;
+  width: number;
+  height: number;
+  bytes: number;
+  diagnostics: CompositionDiagnostic[];
+  elapsedMs: number;
+}
+
+export type RenderResult = VideoRenderResult | ImageRenderResult;
 
 export const MAX_RENDER_CONCURRENCY = 16;
 
@@ -364,26 +395,6 @@ async function withPreparedSessions<T>(
   }
 }
 
-async function withSessions<T>(
-  options: SessionOptions,
-  resolveSessionCount: (first: CompositionSession) => number,
-  callback: (sessions: CompositionSession[]) => Promise<T>,
-): Promise<T> {
-  const prepared = await prepareComposition(options);
-  return withPreparedSessions(options, prepared, resolveSessionCount, callback);
-}
-
-async function withSession<T>(
-  options: SessionOptions,
-  callback: (session: CompositionSession) => Promise<T>,
-): Promise<T> {
-  return withSessions(
-    options,
-    () => 1,
-    async (sessions) => callback(sessions[0] as CompositionSession),
-  );
-}
-
 function reportProgress(options: SessionOptions, frame: number, total: number, startedAt: number): void {
   options.onProgress?.({ frame, total, elapsedMs: performance.now() - startedAt });
 }
@@ -486,48 +497,75 @@ async function captureFramesInOrder(options: {
 
 export async function checkComposition(options: SessionOptions): Promise<CheckResult> {
   const startedAt = performance.now();
-  return withSession(options, async (session) => {
-    const total = session.metadata.durationInFrames;
-    const audio = await inspectTimelineAudio({
-      projectRoot: options.project.root,
-      clips: timelineAudioClips(session),
-      fps: session.metadata.fps,
-      durationInFrames: total,
-      signal: options.signal,
-    });
-    const transcripts = await inspectTranscriptClips({
-      projectRoot: options.project.root,
-      clips: session.transcriptClips,
-      signal: options.signal,
-    });
+  const prepared = await prepareComposition(options);
+  return withPreparedSessions(
+    options,
+    prepared,
+    () => 1,
+    async (sessions) => {
+      const session = sessions[0] as CompositionSession;
+      const metadata = session.metadata;
 
-    for (let frame = 0; frame < total; frame += 1) {
-      throwIfAborted(options.signal);
-      await session.seek(frame);
-      reportProgress(options, frame + 1, total, startedAt);
-    }
+      if (metadata.static === true) {
+        throwIfAborted(options.signal);
+        await session.seek(0);
+        reportProgress(options, 1, 1, startedAt);
+        const diagnostics = mergeDiagnostics(prepared.staticDiagnostics, await session.readDiagnostics());
+        return {
+          kind: "static",
+          composition: options.compositionId,
+          entry: session.entry,
+          controller: session.controller,
+          metadata,
+          framesChecked: 1,
+          diagnostics,
+          elapsedMs: performance.now() - startedAt,
+        };
+      }
 
-    const diagnostics = mergeDiagnostics(
-      await session.readDiagnostics(),
-      audioDiagnostics(audio.warnings),
-      transcriptDiagnostics(transcripts.warnings),
-    );
+      const total = metadata.durationInFrames;
+      const audio = await inspectTimelineAudio({
+        projectRoot: options.project.root,
+        clips: timelineAudioClips(session),
+        fps: metadata.fps,
+        durationInFrames: total,
+        signal: options.signal,
+      });
+      const transcripts = await inspectTranscriptClips({
+        projectRoot: options.project.root,
+        clips: session.transcriptClips,
+        signal: options.signal,
+      });
 
-    return {
-      composition: options.compositionId,
-      entry: session.entry,
-      controller: session.controller,
-      metadata: session.metadata,
-      framesChecked: total,
-      audio: { clips: audio.clips.length, details: audio.clips },
-      transcripts: {
-        clips: transcripts.clips.length,
-        details: transcripts.clips,
-      },
-      diagnostics,
-      elapsedMs: performance.now() - startedAt,
-    };
-  });
+      for (let frame = 0; frame < total; frame += 1) {
+        throwIfAborted(options.signal);
+        await session.seek(frame);
+        reportProgress(options, frame + 1, total, startedAt);
+      }
+
+      const diagnostics = mergeDiagnostics(
+        await session.readDiagnostics(),
+        audioDiagnostics(audio.warnings),
+        transcriptDiagnostics(transcripts.warnings),
+      );
+
+      return {
+        kind: "animated",
+        composition: options.compositionId,
+        entry: session.entry,
+        controller: session.controller,
+        metadata,
+        framesChecked: total,
+        audio: { clips: audio.clips.length, details: audio.clips },
+        transcripts: {
+          clips: transcripts.clips.length,
+          details: transcripts.clips,
+        },
+        diagnostics,
+        elapsedMs: performance.now() - startedAt,
+      };
+    },
+  );
 }
 
 export async function captureStills(
@@ -563,7 +601,8 @@ export async function captureStills(
   const overwrite = options.overwrite ?? false;
   const startedAt = performance.now();
   const prepared = await prepareComposition(options);
-  const total = prepared.staticInfo.metadata.durationInFrames;
+  const metadata = prepared.staticInfo.metadata;
+  const total = metadata.static === true ? 1 : metadata.durationInFrames;
   const invalidFrames = options.frames.filter((frame) => frame >= total);
   if (invalidFrames.length > 0) {
     const first = invalidFrames[0] as number;
@@ -606,6 +645,7 @@ export async function captureStills(
 
         await assertOutputsAvailable(options.outPaths, overwrite);
         const diagnostics = mergeDiagnostics(
+          metadata.static === true ? prepared.staticDiagnostics : [],
           await session.readDiagnostics(),
           transcriptDiagnostics(transcripts.warnings),
         );
@@ -652,9 +692,86 @@ export async function captureStill(
   });
 }
 
+async function renderStaticComposition(
+  options: SessionOptions & {
+    outPath?: string;
+    overwrite?: boolean;
+    concurrency?: number;
+    encoder?: VideoEncoderChoice;
+    codec?: VideoCodec;
+    container?: VideoContainer;
+  },
+  prepared: PreparedComposition,
+  startedAt: number,
+): Promise<ImageRenderResult> {
+  if (
+    options.container !== undefined ||
+    options.codec !== undefined ||
+    options.encoder !== undefined ||
+    options.concurrency !== undefined
+  ) {
+    throw new FrameyardError(
+      "USAGE",
+      "Static compositions render to PNG; --container, --codec, --encoder, and --concurrency are not valid.",
+    );
+  }
+
+  const metadata = prepared.staticInfo.metadata;
+  if (metadata.static !== true) {
+    throw new FrameyardError("INTERNAL", "renderStaticComposition received an animated composition.");
+  }
+
+  const outPath = options.outPath ?? path.join(options.project.root, "out", `${options.compositionId}.png`);
+  if (path.extname(outPath).toLowerCase() !== ".png") {
+    throw new FrameyardError("USAGE", `Static compositions render to a .png file: ${outPath}`);
+  }
+
+  const overwrite = options.overwrite ?? false;
+  await ensureOutputAvailable(outPath, overwrite);
+
+  return withPreparedSessions(
+    options,
+    prepared,
+    () => 1,
+    async (sessions) => {
+      const session = sessions[0] as CompositionSession;
+      const tempPath = path.join(
+        path.dirname(outPath),
+        `.${path.basename(outPath)}.frameyard-${process.pid}-${randomUUID()}.tmp`,
+      );
+
+      try {
+        throwIfAborted(options.signal);
+        await session.seek(0);
+        const png = await session.capture();
+        await writeFile(tempPath, png);
+        await assertOutputsAvailable([outPath], overwrite);
+        await publishFile(tempPath, outPath, overwrite);
+        reportProgress(options, 1, 1, startedAt);
+
+        const diagnostics = mergeDiagnostics(prepared.staticDiagnostics, await session.readDiagnostics());
+        return {
+          kind: "image",
+          composition: options.compositionId,
+          entry: session.entry,
+          controller: session.controller,
+          path: outPath,
+          width: metadata.width,
+          height: metadata.height,
+          bytes: (await stat(outPath)).size,
+          diagnostics,
+          elapsedMs: performance.now() - startedAt,
+        };
+      } finally {
+        await rm(tempPath, { force: true });
+      }
+    },
+  );
+}
+
 export async function renderComposition(
   options: SessionOptions & {
-    outPath: string;
+    outPath?: string;
     overwrite?: boolean;
     concurrency?: number;
     /** Encoder choice; defaults to the codec's software encoder. */
@@ -665,29 +782,39 @@ export async function renderComposition(
     container?: VideoContainer;
   },
 ): Promise<RenderResult> {
+  const startedAt = performance.now();
+  const prepared = await prepareComposition(options);
+  if (prepared.staticInfo.metadata.static === true) {
+    return renderStaticComposition(options, prepared, startedAt);
+  }
+
   const container = options.container ?? "mp4";
   const codec = options.codec ?? defaultCodecForContainer(container);
   assertContainerCodec(container, codec);
   const extension = `.${CONTAINER_EXTENSION[container]}`;
-  if (path.extname(options.outPath).toLowerCase() !== extension) {
+  const outPath = options.outPath ?? path.join(options.project.root, "out", `${options.compositionId}${extension}`);
+  if (path.extname(outPath).toLowerCase() !== extension) {
     throw new FrameyardError(
       "USAGE",
-      `Render output for --container ${container} must use a ${extension} extension: ${options.outPath}`,
+      `Render output for --container ${container} must use a ${extension} extension: ${outPath}`,
     );
   }
 
   const requestedConcurrency = validateRenderConcurrency(options.concurrency);
   const overwrite = options.overwrite ?? false;
-  const startedAt = performance.now();
-  await ensureOutputAvailable(options.outPath, overwrite);
+  await ensureOutputAvailable(outPath, overwrite);
   await assertFfmpegCapabilities(options.signal, codec);
   const encoderName = await resolveVideoEncoder(codec, options.encoder, options.signal);
 
-  return withSessions(
+  return withPreparedSessions(
     options,
-    (first) => Math.min(requestedConcurrency, first.metadata.durationInFrames),
+    prepared,
+    (first) => (first.metadata.static === true ? 1 : Math.min(requestedConcurrency, first.metadata.durationInFrames)),
     async (sessions) => {
       const session = sessions[0] as CompositionSession;
+      if (session.metadata.static === true) {
+        throw new FrameyardError("INTERNAL", "An animated render opened a static composition session.");
+      }
       const { width, height, fps, durationInFrames } = session.metadata;
       const concurrency = sessions.length;
       if (width % 2 !== 0 || height % 2 !== 0) {
@@ -714,8 +841,8 @@ export async function renderComposition(
 
       const scratchDir = await mkdtemp(path.join(tmpdir(), "frameyard-render-"));
       const tempOut = path.join(
-        path.dirname(options.outPath),
-        `.${path.basename(options.outPath)}.frameyard-${process.pid}-${randomUUID()}.mp4`,
+        path.dirname(outPath),
+        `.${path.basename(outPath)}.frameyard-${process.pid}-${randomUUID()}.mp4`,
       );
 
       let encoder: Awaited<ReturnType<typeof startVideoEncoder>> | undefined;
@@ -775,13 +902,13 @@ export async function renderComposition(
         await encoder.finish();
         encoder = undefined;
 
-        if (!overwrite && (await pathExists(options.outPath))) {
+        if (!overwrite && (await pathExists(outPath))) {
           throw new FrameyardError(
             "OUTPUT_EXISTS",
-            `Output already exists: ${options.outPath}. Pass --overwrite to replace it.`,
+            `Output already exists: ${outPath}. Pass --overwrite to replace it.`,
           );
         }
-        await publishFile(tempOut, options.outPath, overwrite);
+        await publishFile(tempOut, outPath, overwrite);
         completed = true;
 
         const diagnostics = mergeDiagnostics(
@@ -791,10 +918,11 @@ export async function renderComposition(
         );
 
         return {
+          kind: "video",
           composition: options.compositionId,
           entry: session.entry,
           controller: session.controller,
-          path: options.outPath,
+          path: outPath,
           width,
           height,
           fps,
@@ -805,7 +933,7 @@ export async function renderComposition(
           codec,
           container,
           encoder: encoderName,
-          bytes: (await stat(options.outPath)).size,
+          bytes: (await stat(outPath)).size,
           audio: { clips: audio.clips.length },
           transcripts: {
             clips: transcripts.clips.length,

@@ -19,6 +19,8 @@ const examples = [
   { project: "video", id: "video-timeline", frame: 210, timeline: true },
   { project: "video", id: "video-timeline-mp4", frame: 210, timeline: true },
   { project: "blend", id: "blend-timeline", frame: 285, timeline: true },
+  { project: "static", id: "still", frame: 0 },
+  { project: "static", id: "still-timeline", frame: 45, timeline: true },
 ];
 
 let temp: string;

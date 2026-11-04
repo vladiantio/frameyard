@@ -15,19 +15,23 @@ The fixed width, height, and frame rate shared by every timeline in a project an
 _Avoid_: Composition metadata, render options
 
 **Composition**:
-A uniquely identified, reusable video source with a fixed duration in frames, content parameterized by props, and a format that is either declared or inherited from the project.
+A uniquely identified, reusable video or still source, content parameterized by props, and a format that is either declared or inherited from the project. An animated composition has a duration in frames; a static composition has no time base.
 _Avoid_: Scene, template, video
+
+**Static composition**:
+A composition that declares neither `duration-in-frames` nor `fps`. It has no frame clock, audio, or transcripts, is captured once in its initial state, and renders to a PNG. A timeline treats it as an image source whose clip declares the duration.
+_Avoid_: Still video, one-frame composition
 
 **Declared format**:
 The width, height, and frame rate a composition fragment declares on its root. A value may be absent, in which case it is inherited; a declared value always wins over the project format.
 _Avoid_: Composition metadata, defaults
 
 **Resolved format**:
-The width, height, and frame rate a composition actually renders with, after declared values and the project format are combined. It is part of the immutable frame environment.
+The width, height, and frame rate an animated composition actually renders with, after declared values and the project format are combined. A static composition resolves width and height only. It is part of the immutable frame environment.
 _Avoid_: Output options, render settings
 
 **Composition metadata**:
-The resolved dimensions and frame rate plus the duration in frames that define a composition's source contract.
+The resolved dimensions plus the frame rate and duration that define an animated composition's source contract, or the dimensions and `static: true` of a static composition.
 _Avoid_: Render options, props
 
 **Composition descriptor**:
@@ -35,11 +39,11 @@ The fixed facts read from a composition fragment before frame production: declar
 _Avoid_: Composition config, parsed document
 
 **Composition lifecycle**:
-The host-driven sequence that loads a composition fragment, seeks it to frames, and releases it.
+The host-driven sequence that loads a composition fragment, optionally seeks it to frames, and releases it. A static composition is loaded, captured once, and released without seeking.
 _Avoid_: Render loop, playback lifecycle
 
 **Controller lifecycle**:
-The `mount → update → dispose` sequence a composition controller uses for per-frame computation.
+The `mount → update → dispose` sequence an animated composition controller uses for per-frame computation. A static composition runs `mount` and `dispose` only.
 _Avoid_: Composition lifecycle
 
 **Composition revision**:
@@ -265,7 +269,7 @@ The preview surface that shows the timeline at the playhead.
 _Avoid_: Stage, canvas
 
 **Check**:
-A validation operation that first runs static validation, then loads a timeline or composition and evaluates every frame without capturing or encoding.
+A validation operation that first runs static validation, then loads a timeline or composition and evaluates every frame without capturing or encoding. A static composition has one state, so it is loaded and inspected once.
 _Avoid_: Test render, dry run
 
 **Static composition validation**:
@@ -285,8 +289,12 @@ A structured error or warning about a timeline's source, tracks, clips, referenc
 _Avoid_: Log message, error string
 
 **Render**:
-The production of one complete video from a timeline or a standalone composition with fixed inputs.
+The production of one complete video from a timeline or an animated standalone composition, or one PNG from a static standalone composition, with fixed inputs.
 _Avoid_: Recording, export
+
+**Static composition render**:
+The PNG produced by `render` for a static composition. It has no frame rate, duration, audio, or encoder.
+_Avoid_: Still, frame export
 
 **Render concurrency**:
 The optional number of independent browser sessions used to seek and capture frames during a composition render; timeline rendering is sequential in 0.6. Frames are still encoded in timeline order, and concurrency must not change visual state.
@@ -297,7 +305,7 @@ The finished audiovisual output of a successful render.
 _Avoid_: Composition, project
 
 **Still**:
-One or more requested frames captured as PNGs through the production rendering path for a timeline or composition. A single invocation captures at most 32 inspection frames; this is not image-sequence output.
+One or more requested frames captured as PNGs through the production rendering path for a timeline or composition. A static composition exposes exactly frame 0. A single invocation captures at most 32 inspection frames; this is not image-sequence output.
 _Avoid_: Frame export, image sequence
 
 **Reproducibility**:

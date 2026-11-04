@@ -18,6 +18,16 @@ function projectUrl(relative: string): string {
 
 function previewSource(source: ResolvedTimelineSource): TimelinePreviewSource {
   if (source.kind === "composition") {
+    if (source.metadata.static === true) {
+      return {
+        kind: "composition",
+        id: source.id,
+        url: `${projectUrl(source.entry)}?__fy-manual=1`,
+        width: source.metadata.width,
+        height: source.metadata.height,
+        static: true,
+      };
+    }
     return {
       kind: "composition",
       id: source.id,

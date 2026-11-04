@@ -21,20 +21,46 @@ contract change may ship in a minor release and is called out explicitly below.
 - Top-level author import maps are validated and hoisted after the framework
   map; `frameyard` and `frameyard/` specifiers are reserved and invalid maps
   report `IMPORT_MAP_INVALID`.
-- `<fy-composition>` keeps `duration-in-frames` required but makes `width`,
-  `height`, and `fps` optional. An omitted value is inherited from the project
-  `format`; a declared value wins, and `width`/`height` must be declared
-  together. `CompositionSourceInfo` gains `declaredFormat`, and
-  `project.json`/render results keep exposing resolved metadata.
-- Rendering a composition that omits format values in a project without
-  `format` fails with `COMPOSITION_FORMAT_UNRESOLVED` instead of a document
-  diagnostic; `check`, `still`, `render`, and the preview report the same
-  actionable error. See ADR 0015.
+- `<fy-composition>` makes `width`, `height`, and `fps` optional and keeps
+  `duration-in-frames` required only for an animated composition. An omitted
+  value is inherited from the project `format`; a declared value wins, and
+  `width`/`height` must be declared together. `CompositionSourceInfo` gains
+  `declaredFormat`, and `project.json`/render results keep exposing resolved
+  metadata.
+- A composition that declares neither `duration-in-frames` nor `fps` is static.
+  It has no frame clock, is captured once, and `render` writes `out/<id>.png`.
+  `fps` without `duration-in-frames` is an error. See ADR 0017 and
+  [migration-0.8](./docs/migration-0.8.md).
+- Static compositions are visual-only: `data-fy-anim-*`, `<video>`, `<audio>`,
+  and `<fy-transcript>` are errors. The host runs `mount()` and prop validation,
+  skips `update()`, leaves frame-state variables unset, pauses CSS animations at
+  time 0, and reports `STATIC_UPDATE_IGNORED` and `STATIC_ANIMATION_PAUSED`.
+- A static composition clip in a timeline behaves like an image clip: it
+  requires `duration`, rejects nonzero `sourceIn`, contributes no audio or
+  transcripts, and is captured once per composition/props pair and reused
+  across segments.
+- `render` results are a discriminated union with `kind: "video"` or
+  `kind: "image"`. Static composition renders reject `--container`, `--codec`,
+  `--encoder`, and `--concurrency`. `check` adds `kind: "animated"` or
+  `kind: "static"`; a static check inspects one state and reports
+  `framesChecked: 1`.
+- `still` on a static composition exposes exactly frame 0; other frames fail
+  with `FRAME_OUT_OF_RANGE`.
+- Preview loads a static composition once, disables its transport, and keeps a
+  static timeline layer loaded without seeking it.
+- Rendering a composition that omits dimensions in a project without `format`
+  fails with `COMPOSITION_FORMAT_UNRESOLVED` instead of a document diagnostic;
+  `check`, `still`, `render`, and the preview report the same actionable error.
+  See ADR 0015.
 
 ### Added
 
+- `examples/static/` demonstrates a timeless composition rendered to PNG and
+  reused as a timeline image.
 - `examples/blend/compositions/backdrop.html` demonstrates an inherited
   composition format.
+- Static composition validation, host, CLI, timeline, preview, and example
+  coverage.
 
 ## [0.7.0] - 2026-11-02
 

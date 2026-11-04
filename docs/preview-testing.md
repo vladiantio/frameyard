@@ -12,6 +12,10 @@ expose the same seek/settle contract the renderer uses.
   `settle()`, and `dispose()`.
 - `seek()` is synchronous. Call `await settle()` before reading pixels; `load()`
   resets the host, so apply props through it.
+- A static composition reports `metadata: { width, height, static: true }`.
+  `seek()` is a no-op, `settle()` resolves, and the page disables the transport.
+  Wait for the static composition's own marker instead of `waitForFrame()`,
+  which expects a controller-updated `#box`.
 
 ## Timeline preview
 
@@ -21,6 +25,9 @@ expose the same seek/settle contract the renderer uses.
 - Order: `await ready`, `await load()`, `await seek(frame)`, `await settle()`.
 - The non-embedded page owns transport and audio; only the embedded host exposes
   `window.__fyTimeline`.
+- A static composition source carries `static: true` and no
+  `durationInFrames`. The host loads the layer once and skips per-frame seek;
+  the layer remains visible while the timeline playhead moves.
 
 ## Waiting for a frame
 

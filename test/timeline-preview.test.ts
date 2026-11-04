@@ -16,6 +16,30 @@ beforeAll(async () => {
     `<fy-composition width="320" height="180" fps="10" duration-in-frames="10"></fy-composition>`,
   );
   await writeFile(
+    path.join(root, "compositions", "still.html"),
+    `<fy-composition width="320" height="180"><div style="width: 100%; height: 100%; background: #123456"></div></fy-composition>`,
+  );
+  await writeFile(
+    path.join(root, "timelines", "static.json"),
+    `${JSON.stringify(
+      {
+        version: 1,
+        tracks: [{ id: "v1", kind: "video" }],
+        clips: [
+          {
+            id: "still",
+            track: "v1",
+            source: { kind: "composition", id: "still" },
+            start: 0,
+            duration: 10,
+          },
+        ],
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  await writeFile(
     path.join(root, "timelines", "main.json"),
     `${JSON.stringify(
       {
@@ -40,8 +64,8 @@ beforeAll(async () => {
     path.join(root, "video.config.js"),
     `export default {
       format: { width: 320, height: 180, fps: 10 },
-      compositions: { intro: "./compositions/intro.html" },
-      timelines: { main: "./timelines/main.json" },
+      compositions: { intro: "./compositions/intro.html", still: "./compositions/still.html" },
+      timelines: { main: "./timelines/main.json", static: "./timelines/static.json" },
     };\n`,
   );
   server = await startPreviewServer({ projectRoot: root, port: 0, host: "127.0.0.1" });
@@ -88,6 +112,24 @@ describe("timeline preview server", () => {
     ]);
   });
 
+  it("publishes static composition sources without a duration", async () => {
+    const response = await fetch(new URL("/__frameyard/timeline/static.json", server.url));
+
+    expect(response.status).toBe(200);
+    const data = (await response.json()) as {
+      clips: Array<{ source: Record<string, unknown> }>;
+    };
+    expect(data.clips[0]?.source).toMatchObject({
+      kind: "composition",
+      id: "still",
+      url: "/compositions/still.html?__fy-manual=1",
+      width: 320,
+      height: 180,
+      static: true,
+    });
+    expect(data.clips[0]?.source).not.toHaveProperty("durationInFrames");
+  });
+
   it("serves the timeline preview page and embedded host page", async () => {
     const preview = await fetch(new URL("/__frameyard/timeline/main", server.url));
     expect(preview.status).toBe(200);
@@ -110,8 +152,16 @@ describe("timeline preview server", () => {
     const data = (await response.json()) as Record<string, unknown>;
     expect(data).toMatchObject({
       format: { width: 320, height: 180, fps: 10 },
-      timelines: [{ id: "main", entry: "timelines/main.json", kind: "timeline" }],
+      timelines: expect.arrayContaining([
+        expect.objectContaining({ id: "main", entry: "timelines/main.json", kind: "timeline" }),
+        expect.objectContaining({ id: "static", entry: "timelines/static.json", kind: "timeline" }),
+      ]),
     });
-    expect(Array.isArray(data.compositions)).toBe(true);
+    const compositions = data.compositions as Array<{ id: string; metadata: unknown }>;
+    expect(compositions.find((composition) => composition.id === "still")?.metadata).toEqual({
+      width: 320,
+      height: 180,
+      static: true,
+    });
   });
 });

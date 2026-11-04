@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "tracks": [{ "id": "v1", "kind": "video" }],
+  "clips": [
+    {
+      "id": "still",
+      "track": "v1",
+      "source": { "kind": "composition", "id": "still" },
+      "start": 0,
+      "duration": 90
+    }
+  ]
+}

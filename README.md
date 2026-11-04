@@ -44,7 +44,7 @@ npx frameyard still main --frame 0,118-126 --out out/stills
 
 The scaffold wraps its composition in `timelines/main.timeline.json`. `render` writes the video to `out/main.mp4` in the project by default; pass `--out <file.mp4>` to choose another path. The composition remains renderable on its own with `npx frameyard render hello --props props/hello.json`. The scaffold's `.gitignore` ignores `out/`.
 
-The 30-second reference composition lives in [`examples/demo`](./examples/demo), a focused WebGL shader example lives in [`examples/webgl`](./examples/webgl), the video example in [`examples/video`](./examples/video) includes two embedded-video compositions plus WebM and MP4 timelines that place the clips on tracks under a transparent HTML overlay, and [`examples/blend`](./examples/blend) demonstrates static CSS blend modes on composition and video clips. Each README has the commands for running it from a repository checkout.
+The 30-second reference composition lives in [`examples/demo`](./examples/demo), a focused WebGL shader example lives in [`examples/webgl`](./examples/webgl), the video example in [`examples/video`](./examples/video) includes two embedded-video compositions plus WebM and MP4 timelines that place the clips on tracks under a transparent HTML overlay, [`examples/blend`](./examples/blend) demonstrates static CSS blend modes on composition and video clips, and [`examples/static`](./examples/static) shows a timeless composition rendered as a PNG and reused as a timeline image. Each README has the commands for running it from a repository checkout.
 
 ## Project format
 
@@ -88,9 +88,11 @@ Do not add `<!doctype>`, `<html>`, `<head>`, `<body>`, `<title>`, or `<meta>`; t
 
 An optional top-level `<script type="importmap">` can add bare specifiers for controllers. Frameyard hoists it before the host module; `frameyard` and `frameyard/` specifiers are reserved.
 
-`duration-in-frames` is required. `width`, `height`, and `fps` are optional: a missing value is inherited from the project `format`, and a declared value always wins. Declare `width` and `height` together or not at all. The same fragment above can therefore be written as `<fy-composition duration-in-frames="900">`, rendering at 1920×1080 and 30 fps because the project fixes that format. Props are JSON-serializable, deep-frozen, and merged shallowly over the `data-fy="props"` defaults. They cannot change metadata.
+`width`, `height`, and `fps` are optional: a missing value is inherited from the project `format`, and a declared value always wins. Declare `width` and `height` together or not at all. The same fragment above can therefore be written as `<fy-composition duration-in-frames="900">`, rendering at 1920×1080 and 30 fps because the project fixes that format. Props are JSON-serializable, deep-frozen, and merged shallowly over the `data-fy="props"` defaults. They cannot change metadata.
 
-A composition that declares no format values in a project without `format` fails with `COMPOSITION_FORMAT_UNRESOLVED`: declare the attributes or add `format { width, height, fps }` to `video.config.js`. A composition-only project stays valid without `format` as long as its compositions declare their own.
+A composition that declares **neither** `duration-in-frames` nor `fps` is static. It has no frame clock, uses width/height only, is captured once, and renders to a PNG; `render hello` writes `out/hello.png`. Its controller may `mount()` and validate props, but `update()` is not called and frame-state variables are not set. CSS animations are paused at time 0 with a warning; `data-fy-anim-*`, `<video>`, `<audio>`, and `<fy-transcript>` are errors. Declaring `fps` without `duration-in-frames` is an error. A static composition used in a timeline behaves as an image clip: declare the clip `duration` and keep `sourceIn: 0`. See [`examples/static`](./examples/static).
+
+A composition that declares no dimensions in a project without `format` fails with `COMPOSITION_FORMAT_UNRESOLVED`: declare `width`/`height` or add `format { width, height, fps }` to `video.config.js`. A composition-only project stays valid without `format` as long as its compositions declare their own.
 
 ### Timeline
 
@@ -134,8 +136,8 @@ A timeline is a JSON document that places composition and media clips on video a
 ```
 
 - Sources are `composition` + `id`, `timeline` + `id`, or `video`/`image`/`audio` + project-relative `src`.
-- `start`, `sourceIn`, and `duration` use timeline frames. Omitted durations use the rest of the source; image clips require a duration.
-- Composition clips can fix `props`, trim the source range, and repeat the same composition with different settings.
+- `start`, `sourceIn`, and `duration` use timeline frames. Omitted durations use the rest of the source; image clips and static composition clips require a duration.
+- Composition clips can fix `props`, trim the source range, and repeat the same composition with different settings. A static composition clip must use `sourceIn: 0`, has no intrinsic duration, and contributes no audio or transcripts.
 - Visual clips support static `fit`, `width`/`height` (an explicit box), `x`, `y`, `scale`, `rotation`, `opacity`, and `blend`. `fit` applies inside the box; `width` and `height` go together and are mutually exclusive with `scale`. `blend` is a CSS `mix-blend-mode` value with source-alpha semantics, from `normal` (the default) through `multiply`, `screen`, `overlay`, the light/dodge/burn family, `difference`, and `exclusion`; `hue`, `saturation`, `color`, and `luminosity` are rejected. No keyframes, transitions, or other effects.
 - Video, composition, and nested-timeline clips contribute audio automatically unless muted. Timeline audio clips live on audio tracks.
 - A composition that declares an `fps` must match the project fps; an undeclared `fps` inherits it. Different sizes are fitted by the clip. Clips on one track cannot overlap.
@@ -270,14 +272,14 @@ Transcript paths resolve from the project root. `words` requires actual measured
 | --- | --- |
 | `frameyard init [directory]` | Scaffold a timeline-first HTML/JSON project with an `AGENTS.md` guide and pinned scripts |
 | `frameyard dev [--port <port>]` | Start the preview server; preview compositions or open a timeline |
-| `frameyard check <id> [--props <file>]` | Run static validation, then evaluate every frame of a composition or timeline without capture |
-| `frameyard still <id> --frame <spec>` | Capture one or more PNGs through the production path for a composition or timeline |
-| `frameyard render <id> [--out <video.mp4>]` | Render a composition directly, or a timeline through the segmented lossless pipeline; defaults to `out/<id>.mp4` |
+| `frameyard check <id> [--props <file>]` | Run static validation, then evaluate every animated frame or the single state of a static composition without capture |
+| `frameyard still <id> --frame <spec>` | Capture one or more PNGs through the production path for a composition or timeline; a static composition exposes frame 0 |
+| `frameyard render <id> [--out <video.mp4>]` | Render an animated composition directly, a static composition to PNG, or a timeline through the segmented lossless pipeline; defaults to `out/<id>.<ext>` |
 | `frameyard tts ...` | Produce one frozen 24 kHz mono WAV with local qwentts.cpp |
 | `frameyard transcribe ...` | Produce canonical transcript JSON with optional word timings and SRT/VTT exports |
 | `frameyard doctor` | Inspect core requirements, optional integrations, and manifest integrity |
 
-Common options: `--project <dir>`, `--json`, `--help`, and `--version`. `still` and `render` accept `--overwrite`. `still` accepts `--frame <spec>`, where `<spec>` is a frame number, an inclusive range such as `2-12`, or a comma-separated list; duplicates are removed preserving the first occurrence, order is preserved, and one invocation captures at most 32 unique frames. With one frame, `--out` is a `.png` file; with multiple frames, it is a directory and the files are named `still-<id>-<frame>.png`, defaulting to the current working directory. Composition renders accept `--concurrency <n>` (1-16); timeline renders accept `--workers <n>` (1-16) and `--scratch <dir>`. `render` also accepts `--container <mp4|mov|mkv|webm>`, `--codec <h264|hevc|vp9>`, and `--encoder <auto|software|nvenc|qsv>`. MP4 and MOV hold H.264 and HEVC with AAC; MKV holds H.264, HEVC, and VP9; WebM holds VP9 with Opus and defaults to VP9. `--out` must use the container's extension, and `render` defaults to `out/<id>.<ext>` accordingly. `--encoder` defaults to `auto`, which probes NVENC, then Quick Sync with a one-frame encode, and falls back to the codec's software encoder; `software` forces `libx264`, `libx265`, or `libvpx-vp9`. For a timeline, `--props` is a JSON object keyed by composition clip id; for a composition, it is the props object. `tts` and `transcribe` accept `--force`. `init` takes the target directory as a positional argument. Explicit output paths passed with `--out` are relative to the current working directory.
+Common options: `--project <dir>`, `--json`, `--help`, and `--version`. `still` and `render` accept `--overwrite`. `still` accepts `--frame <spec>`, where `<spec>` is a frame number, an inclusive range such as `2-12`, or a comma-separated list; duplicates are removed preserving the first occurrence, order is preserved, and one invocation captures at most 32 unique frames. With one frame, `--out` is a `.png` file; with multiple frames, it is a directory and the files are named `still-<id>-<frame>.png`, defaulting to the current working directory. A static composition exposes only frame 0. Animated composition renders accept `--concurrency <n>` (1-16); timeline renders accept `--workers <n>` (1-16) and `--scratch <dir>`. `render` also accepts `--container <mp4|mov|mkv|webm>`, `--codec <h264|hevc|vp9>`, and `--encoder <auto|software|nvenc|qsv>`. MP4 and MOV hold H.264 and HEVC with AAC; MKV holds H.264, HEVC, and VP9; WebM holds VP9 with Opus and defaults to VP9. `--out` must use the container's extension, and `render` defaults to `out/<id>.<ext>` accordingly. A static composition always writes `out/<id>.png` and rejects `--container`, `--codec`, `--encoder`, and `--concurrency`; use a timeline image clip when the deliverable must be video. `--encoder` defaults to `auto`, which probes NVENC, then Quick Sync with a one-frame encode, and falls back to the codec's software encoder; `software` forces `libx264`, `libx265`, or `libvpx-vp9`. For a timeline, `--props` is a JSON object keyed by composition clip id; for a composition, it is the props object. `tts` and `transcribe` accept `--force`. `init` takes the target directory as a positional argument. Explicit output paths passed with `--out` are relative to the current working directory.
 
 A render fails immediately on an uncaught error, unhandled rejection, missing required asset, or invalid composition output. It writes to a temporary file and publishes only after FFmpeg succeeds. Existing outputs are not replaced unless `--overwrite` is supplied.
 
@@ -375,24 +377,24 @@ A composition renders directly:
 
 1. Static composition validation resolves metadata before launching Chromium.
 2. Chromium navigates to the served composition document with the composition host.
-3. One session, or several when `--concurrency` is greater than 1, seeks every frame, calls the controller, seeks CSS/WAAPI animations, and waits for embedded media decode and paint.
+3. For an animated composition, one session, or several when `--concurrency` is greater than 1, seeks every frame, calls the controller, seeks CSS/WAAPI animations, and waits for embedded media decode and paint. A static composition loads once and captures one PNG without seeking frames.
 4. The viewport is captured through the Chrome DevTools Protocol, piped to FFmpeg, and encoded as H.264, HEVC, or VP9 with AAC or Opus audio.
 
 A timeline renders through segments:
 
 1. Static timeline validation resolves references, media, nested timelines, durations, props, audio, and overlaps.
 2. The timeline is split at active-layer changes and a maximum segment duration.
-3. In parallel workers, Chromium captures active composition and nested-timeline clips to alpha-preserving FFV1 intermediates.
+3. In parallel workers, Chromium captures active composition and nested-timeline clips to alpha-preserving FFV1 intermediates. A static composition is captured once per props variant as a transparent PNG and reused as an image layer across segments.
 4. FFmpeg applies fit, static transforms, opacity, video/image decoding, and audio mixing, and encodes each segment as H.264, HEVC, or VP9.
 5. Segments are concatenated in timeline order without re-encoding and the global audio mix is muxed into the final output.
 
-Composition concurrency changes scheduling only. Timeline workers process independent segments; output order and captured composition frames remain deterministic. `check` and `still` use the same clip capture and composite path as their target. A multi-frame `still` captures sequentially, reuses one preview server, and its frames are pixel-identical to capturing each frame separately.
+Composition concurrency changes scheduling only. Timeline workers process independent segments; output order and captured composition frames remain deterministic. `check` and `still` use the same clip capture and composite path as their target. A multi-frame `still` captures sequentially, reuses one preview server, and its frames are pixel-identical to capturing each frame separately. A static composition render performs one capture and does not seek frames.
 
 Both targets encode H.264 in MP4 by default. `--container` selects `mp4`, `mov`, `mkv`, or `webm`, `--codec` selects `h264`, `hevc`, or `vp9`, and `--encoder` selects how that codec is encoded: `software` forces `libx264`, `libx265`, or `libvpx-vp9`; `nvenc` and `qsv` drive NVIDIA NVENC and Intel Quick Sync; the default `auto` probes NVENC, then Quick Sync, then falls back to the codec's software encoder. WebM defaults to VP9 and rejects H.264 and HEVC; MP4 and MOV reject VP9. VP9 renders use Opus audio everywhere; H.264 and HEVC use AAC. The probe is a real one-frame encode, so a driver that lists an encoder but cannot open it is skipped instead of failing mid-render. Hardware encoders are faster but produce different encoded bytes and file sizes at the calibrated quality. HEVC in MP4 and MOV uses the `hvc1` sample entry so Apple players accept it, but it does not play in browsers without platform HEVC decoding, so H.264 remains the portable default. Hardware encoders never capture frames, and the segmented timeline pipeline still writes lossless alpha-preserving FFV1 intermediates in software. NVENC allows eight concurrent encode sessions on consumer drivers, so timeline `--workers` is capped at eight when NVENC resolves, with an `ENCODER_WARNING` diagnostic when a larger value is requested. Use `--encoder software` when the encoder choice must not depend on the host GPU, such as CI or a reproducible A/B measurement; encoded bytes still depend on the FFmpeg build and its threading.
 
 For the same composition or timeline revision, props, assets, segment plan, frame, and pinned runtime/browser/FFmpeg environment, the captured composition frames and deterministic composite are identical. Encoded bytes are not a reproducibility guarantee, even on the same machine; they depend on the FFmpeg build, encoder threading, and runtime environment. Preview composites in Chromium while timeline production composites with FFmpeg, so small differences in scaling, alpha, and video color conversion are expected; parity is guaranteed at clip capture.
 
-For a repeatable local measurement of seek, capture, encode, and full-render time, run `pnpm bench`. See `bench/README.md` for the measurement recipe. Timeline performance is tracked separately with the long-form benchmarks; the representative target and worst-case measurements are in [ADR 0012](./docs/adr/0012-render-timelines-with-segmented-lossless-clip-intermediates.md).
+For a repeatable local measurement of seek, capture, encode, and full-render time, run `pnpm bench`; `pnpm bench:static` compares an animated composition with the same visual rendered as a static PNG. See `bench/README.md` for the measurement recipe. Timeline performance is tracked separately with the long-form benchmarks; the representative target and worst-case measurements are in [ADR 0012](./docs/adr/0012-render-timelines-with-segmented-lossless-clip-intermediates.md).
 
 ## Current limits
 
@@ -412,10 +414,13 @@ Deferred from this implementation slice:
 - Automatic long-text chunking, streaming synthesis, and alternative generated-audio formats
 - Automatic upstream builds, model downloads, environment repair, and hosted rendering
 - Unbounded batch still capture and general image-sequence output; `still` accepts at most 32 inspection frames per invocation
+- Audio, transcripts, or embedded video in a static composition; use a timeline
+- A `--video` escape hatch for static composition renders; use a timeline image clip
+- Exporting a fully static timeline as a PNG or recursively optimizing static nested timelines
 - React or other UI-framework adapters, plugin APIs, and agent-only runtimes
 - TypeScript transpilation for project compositions and npm dependency optimization
 
-See the [design baseline](./docs/v0.1-design.md) for the full product contract, [ADR 0007](./docs/adr/0007-make-html-documents-the-composition-unit.md) for the HTML authoring decision, [ADR 0010](./docs/adr/0010-make-timelines-the-render-unit.md) for timelines, [ADR 0012](./docs/adr/0012-render-timelines-with-segmented-lossless-clip-intermediates.md) for segmented rendering, [ADR 0013](./docs/adr/0013-capture-bounded-multi-frame-stills-for-inspection.md) for bounded multi-frame stills, [ADR 0016](./docs/adr/0016-author-compositions-as-html-fragments.md) for fragment composition authoring, the [0.8 migration guide](./docs/migration-0.8.md), and the [domain glossary](./GLOSSARY.md) for terminology.
+See the [design baseline](./docs/v0.1-design.md) for the full product contract, [ADR 0007](./docs/adr/0007-make-html-documents-the-composition-unit.md) for the HTML authoring decision, [ADR 0010](./docs/adr/0010-make-timelines-the-render-unit.md) for timelines, [ADR 0012](./docs/adr/0012-render-timelines-with-segmented-lossless-clip-intermediates.md) for segmented rendering, [ADR 0013](./docs/adr/0013-capture-bounded-multi-frame-stills-for-inspection.md) for bounded multi-frame stills, [ADR 0016](./docs/adr/0016-author-compositions-as-html-fragments.md) for fragment composition authoring, [ADR 0017](./docs/adr/0017-render-timeless-compositions-as-stills.md) for static composition rendering, the [0.8 migration guide](./docs/migration-0.8.md), and the [domain glossary](./GLOSSARY.md) for terminology.
 
 ## Repository layout
 
@@ -437,6 +442,7 @@ See the [design baseline](./docs/v0.1-design.md) for the full product contract, 
 - `examples/webgl/`: the focused WebGL shader example
 - `examples/video/`: embedded-video compositions and WebM/MP4 timelines with video clips under a transparent HTML overlay
 - `examples/blend/`: composition and video clips composited with static CSS blend modes
+- `examples/static/`: a timeless composition rendered as a PNG and reused as a timeline image
 - `bench/fixtures/`: controlled HTML compositions for the render benchmark
 - `scripts/`: benchmark, release checks, versioning, and git-hook installation
 - `docs/adr/`: architecture decision records

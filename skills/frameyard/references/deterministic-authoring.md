@@ -38,12 +38,23 @@ There is no directory scanning. A new composition fragment is invisible until it
 </fy-composition>
 ```
 
-- `duration-in-frames` is required on the root. `width`, `height`, and `fps` are optional: a missing value inherits the project `format`, and a declared value wins. Declare `width` and `height` together or not at all.
+- `duration-in-frames` is required for an animated composition. `width`, `height`, and `fps` are optional: a missing value inherits the project `format`, and a declared value wins. Declare `width` and `height` together or not at all. A composition that declares neither `duration-in-frames` nor `fps` is static.
 - The `data-fy="props"` block is a top-level JSON object. External props merge shallowly over it and are deep-frozen.
 - There is exactly one `<fy-composition>` root, and it must be a top-level element in the fragment.
 - Do not add `<!doctype>`, `<html>`, `<head>`, `<body>`, `<title>`, or `<meta>`; Frameyard owns the shell. Props, the controller, and import maps are top-level siblings of the root. Top-level `<style>` and `<link rel="stylesheet">` elements are hoisted into the generated head; styles inside the root stay in the body.
 - An optional top-level `<script type="importmap">` adds bare specifiers for controllers. `frameyard` and `frameyard/` specifiers are reserved.
 - The reserved `data-fy-host` attribute and `data-fy="format"` block are framework-only. Unsupported features such as `<base>`, refresh/CSP meta tags, `<iframe>`, `<object>`, and `<embed>` are rejected.
+
+## Static compositions
+
+A static composition declares neither `duration-in-frames` nor `fps`. It has no frame clock: Frameyard loads it, applies bindings, runs `mount()`, pauses CSS animations at time 0, and captures one PNG. `update()` is not called and `--fy-frame`, `--fy-time`, `--fy-progress`, `--fy-fps`, `--fy-duration`, and `--fy-duration-frames` are not set.
+
+- Use `<img>`, CSS backgrounds, SVG, and canvas drawn once from `mount()`.
+- Do not use `data-fy-anim-*`, `<video>`, `<audio>`, or `<fy-transcript>`; these are validation errors. Put media and captions on a timeline.
+- Do not rely on `update()` or frame-state variables. A controller that exports `update()` loads with a `STATIC_UPDATE_IGNORED` warning.
+- CSS animations and transitions are paused at 0 with a `STATIC_ANIMATION_PAUSED` warning; remove them for a predictable still.
+- In a timeline, a static composition clip needs an explicit `duration` and `sourceIn: 0`.
+- `render` writes a PNG and rejects video flags. Use a timeline image clip when the deliverable must be video.
 
 ## Bindings
 
@@ -214,8 +225,8 @@ npx frameyard still hello --frame 42 --out hello-42.png --json
 npx frameyard still hello --frame 0,118-126 --out out/stills --json
 ```
 
-`check` runs static validation before Chromium, then evaluates every frame and validates audio and declared transcripts without capturing or encoding. Read the structured `diagnostics` array. Do not replace `check` with a single still. Inspect several representative frames in one `still` call with a range or list; the batch seeks sequentially in one session and is limited to 32 unique frames.
+`check` runs static validation before Chromium, then evaluates every animated frame and validates audio and declared transcripts without capturing or encoding. A static composition is inspected once. Read the structured `diagnostics` array. Do not replace `check` with a single still. Inspect several representative frames in one `still` call with a range or list; the batch seeks sequentially in one session and is limited to 32 unique frames. A static composition exposes only frame 0.
 
 ## Metadata is fixed
 
-`width`, `height`, `fps`, and `duration-in-frames` cannot be derived from props. `duration-in-frames` is always declared. `width`, `height`, and `fps` are either declared or inherited from the project `format`, and the resolved values are fixed for the load. A composition that declares none of them in a project without `format` fails with `COMPOSITION_FORMAT_UNRESOLVED`. The resolved format is part of the immutable frame environment, so viewport units and percentage layout are valid but depend on it. Put variation in props. Frameyard does not change duration to fit audio.
+`width`, `height`, `fps`, and `duration-in-frames` cannot be derived from props. An animated composition always declares `duration-in-frames`; a static composition declares neither time attribute. `width`, `height`, and `fps` are either declared or inherited from the project `format`, and the resolved values are fixed for the load. A composition that declares no dimensions in a project without `format` fails with `COMPOSITION_FORMAT_UNRESOLVED`. The resolved format is part of the immutable frame environment, so viewport units and percentage layout are valid but depend on it. Put variation in props. Frameyard does not change duration to fit audio.

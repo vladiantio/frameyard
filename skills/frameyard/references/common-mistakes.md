@@ -8,8 +8,9 @@
 ## Document structure
 
 - Adding `<!doctype>`, `<html>`, `<head>`, `<body>`, `<title>`, or `<meta>`; compositions are fragments and the framework owns the shell (`COMPOSITION_DOCUMENT_SHELL`).
-- Missing/multiple `<fy-composition>` roots, a root nested inside another element, or missing `duration-in-frames` on the root. `width`, `height`, and `fps` may be omitted when the project declares `format`, but declaring only one of `width` and `height` is an error.
-- Rendering a composition that declares no `width`/`height`/`fps` in a project without `format`; add the attributes or the project `format` (`COMPOSITION_FORMAT_UNRESOLVED`).
+- Missing/multiple `<fy-composition>` roots, a root nested inside another element, or missing `duration-in-frames` on an animated composition. `width`, `height`, and `fps` may be omitted when the project declares `format`, but declaring only one of `width` and `height` is an error.
+- Forgetting both `duration-in-frames` and `fps` on a composition that should animate; that composition is now static and renders to PNG. Declaring `fps` without `duration-in-frames` is an error.
+- Rendering a composition that declares no dimensions in a project without `format`; add `width`/`height` or the project `format` (`COMPOSITION_FORMAT_UNRESOLVED`).
 - Missing the top-level `data-fy="props"` block when the composition relies on default props; a nested props block is rejected.
 - Putting props, the controller, or an import map inside `<fy-composition>` instead of at the top level.
 - Using the reserved `data-fy-host` attribute or `data-fy="format"` block.
@@ -62,6 +63,16 @@
 - Expecting a blend on a transparent nested timeline to see the parent's layers. A nested timeline is its own document and blends only against its own backdrop.
 - Expecting a blend on a composition with an opaque background to reach lower tracks. The composition's alpha is opaque; leave its background transparent.
 - Expecting preview and final render blend pixels to match exactly. CSS is the reference and FFmpeg approximates it; the guarantee is at clip capture.
+- Omitting `duration` on a static composition clip, or setting `sourceIn` above 0. A static source has no intrinsic duration or frames.
+- Expecting a static composition clip to contribute audio or transcripts. It is visual-only.
+
+## Static compositions
+
+- Expecting `update()` or `--fy-*` frame-state variables to run. A static composition only runs `mount()` and prop validation; use CSS, markup, or mount-time canvas drawing.
+- Adding `data-fy-anim-*`, `<video>`, `<audio>`, or `<fy-transcript>` to a static composition. These are `STATIC_ANIMATION_UNSUPPORTED` or `STATIC_MEDIA_UNSUPPORTED`.
+- Relying on CSS animations or transitions at capture time; they are paused at 0 with `STATIC_ANIMATION_PAUSED`.
+- Passing `--container`, `--codec`, `--encoder`, or `--concurrency` to `render` for a static composition. Use a timeline image clip if the deliverable must be video.
+- Requesting a still frame other than 0 from a static composition.
 
 ## Validation
 

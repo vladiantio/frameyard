@@ -11,7 +11,7 @@ Every non-interactive command supports `--json`. Stdout contains one JSON docume
 }
 ```
 
-Additional fields are command-specific and stable within the 0.4 contract. `check`, `still`, and `render` report `elapsedMs`, the wall time of the operation from static validation and preflight through the final frame or publication; CLI argument parsing is excluded.
+Additional fields are command-specific and stable within the 0.8 contract. `check`, `still`, and `render` report `elapsedMs`, the wall time of the operation from static validation and preflight through the final frame or publication; CLI argument parsing is excluded.
 
 ## Error envelope
 
@@ -55,12 +55,13 @@ Static validation diagnostics include source locations. Runtime diagnostics may 
 
 ## check
 
-`metadata` always reports the resolved format, combining declared values with the project `format`.
+Animated composition results report `kind: "animated"`. `metadata` reports the resolved format, combining declared values with the project `format`.
 
 ```json
 {
   "ok": true,
   "command": "check",
+  "kind": "animated",
   "composition": "hello",
   "entry": "compositions/hello.html",
   "controller": { "kind": "inline" },
@@ -93,6 +94,23 @@ Static validation diagnostics include source locations. Runtime diagnostics may 
 
 `entry` is the project-relative composition fragment path. `controller` is `{ kind: "inline" }`, `{ kind: "external", src }`, or `null`.
 
+A static composition result reports `kind: "static"`, dimensions only, `framesChecked: 1`, and no audio/transcript fields:
+
+```json
+{
+  "ok": true,
+  "command": "check",
+  "kind": "static",
+  "composition": "still",
+  "entry": "compositions/still.html",
+  "controller": null,
+  "metadata": { "width": 1920, "height": 1080, "static": true },
+  "framesChecked": 1,
+  "diagnostics": [],
+  "elapsedMs": 600
+}
+```
+
 ## still
 
 ```json
@@ -113,14 +131,17 @@ Static validation diagnostics include source locations. Runtime diagnostics may 
 }
 ```
 
-`frames` is always present and follows the expanded `--frame` order. `frame` and `path` are also present only when exactly one frame was captured. `--frame` accepts a number, an inclusive range (`2-12`), or a comma-separated list; at most 32 unique frames are captured per invocation. With multiple frames, `--out` is a directory and the files are named `still-<id>-<frame>.png`.
+`frames` is always present and follows the expanded `--frame` order. `frame` and `path` are also present only when exactly one frame was captured. `--frame` accepts a number, an inclusive range (`2-12`), or a comma-separated list; at most 32 unique frames are captured per invocation. With multiple frames, `--out` is a directory and the files are named `still-<id>-<frame>.png`. A static composition exposes only frame `0`; other frames fail with `FRAME_OUT_OF_RANGE`.
 
 ## render
+
+Animated composition and timeline results report `kind: "video"`:
 
 ```json
 {
   "ok": true,
   "command": "render",
+  "kind": "video",
   "composition": "hello",
   "entry": "compositions/hello.html",
   "controller": { "kind": "inline" },
@@ -143,7 +164,26 @@ Static validation diagnostics include source locations. Runtime diagnostics may 
 }
 ```
 
-A successful render means the final path exists and was published atomically. A nonzero exit means no new partial video was published. Without `--out`, the final path is `out/<composition-id>.<ext>` inside the project root, using the container extension. `concurrency` is the number of browser sessions actually used; it is capped by `durationInFrames` and by the CLI maximum of 16. `container` is `mp4`, `mov`, `mkv`, or `webm`; `codec` is `h264`, `hevc`, or `vp9`; and `encoder` is the resolved encoder (`libx264`, `libx265`, `libvpx-vp9`, `h264_nvenc`, `hevc_nvenc`, `h264_qsv`, or `hevc_qsv`). Timeline results also report the effective `workers` count after the encoder session cap, with an `ENCODER_WARNING` diagnostic when it was reduced.
+A static composition result reports `kind: "image"` and has no fps, duration, frame count, codec, container, encoder, audio, or transcript fields:
+
+```json
+{
+  "ok": true,
+  "command": "render",
+  "kind": "image",
+  "composition": "still",
+  "entry": "compositions/still.html",
+  "controller": null,
+  "path": "/absolute/path/out/still.png",
+  "width": 1920,
+  "height": 1080,
+  "bytes": 48210,
+  "diagnostics": [],
+  "elapsedMs": 700
+}
+```
+
+A successful render means the final path exists and was published atomically. A nonzero exit means no new partial output was published. Without `--out`, the final path is `out/<composition-id>.<ext>` for video and `out/<composition-id>.png` for a static composition inside the project root. `concurrency` is the number of browser sessions actually used; it is capped by `durationInFrames` and by the CLI maximum of 16, and a static composition rejects it. `container` is `mp4`, `mov`, `mkv`, or `webm`; `codec` is `h264`, `hevc`, or `vp9`; and `encoder` is the resolved encoder (`libx264`, `libx265`, `libvpx-vp9`, `h264_nvenc`, `hevc_nvenc`, `h264_qsv`, or `hevc_qsv`). Timeline results also report the effective `workers` count after the encoder session cap, with an `ENCODER_WARNING` diagnostic when it was reduced.
 
 ## tts
 

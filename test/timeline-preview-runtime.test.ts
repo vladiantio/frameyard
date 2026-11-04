@@ -30,6 +30,12 @@ export default {
     </script>
 `;
 
+const staticComposition = `<style>html, body { margin: 0; width: 100%; height: 100%; background: #123456; }</style>
+    <fy-composition width="320" height="180">
+      <div id="still">Still</div>
+    </fy-composition>
+`;
+
 beforeAll(async () => {
   root = await mkdtemp(path.join(tmpdir(), "frameyard-timeline-preview-runtime-"));
   await mkdir(path.join(root, "compositions"), { recursive: true });
@@ -69,6 +75,27 @@ beforeAll(async () => {
     path.join(root, "assets", "flash.webm"),
   ]);
   await writeFile(path.join(root, "compositions", "intro.html"), composition);
+  await writeFile(path.join(root, "compositions", "still.html"), staticComposition);
+  await writeFile(
+    path.join(root, "timelines", "static.json"),
+    `${JSON.stringify(
+      {
+        version: 1,
+        tracks: [{ id: "v1", kind: "video" }],
+        clips: [
+          {
+            id: "still",
+            track: "v1",
+            source: { kind: "composition", id: "still" },
+            start: 0,
+            duration: 10,
+          },
+        ],
+      },
+      null,
+      2,
+    )}\n`,
+  );
   await writeFile(
     path.join(root, "timelines", "main.json"),
     `${JSON.stringify(
@@ -181,8 +208,8 @@ beforeAll(async () => {
     path.join(root, "video.config.js"),
     `export default {
       format: { width: 320, height: 180, fps: 10 },
-      compositions: { intro: "./compositions/intro.html" },
-      timelines: { main: "./timelines/main.json", sized: "./timelines/sized.json", video: "./timelines/video.json", blend: "./timelines/blend.json" },
+      compositions: { intro: "./compositions/intro.html", still: "./compositions/still.html" },
+      timelines: { main: "./timelines/main.json", static: "./timelines/static.json", sized: "./timelines/sized.json", video: "./timelines/video.json", blend: "./timelines/blend.json" },
     };\n`,
   );
   server = await startPreviewServer({ projectRoot: root, port: 0 });
@@ -206,6 +233,49 @@ describe("timeline preview runtime", () => {
       await waitForFrame(page, 5);
       const layers = await page.locator(".timeline-layer").count();
       expect(layers).toBe(1);
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+
+  it("keeps a static composition layer loaded without seeking it", async () => {
+    const page = await browser.newPage({ viewport: { width: 640, height: 360 } });
+    try {
+      await openEmbeddedTimeline(page, new URL("/__frameyard/timeline/static?__fy-embed=1", server.url).href);
+      await loadTimeline(page);
+      await seekTimeline(page, 0);
+      await page.waitForFunction(() => {
+        const iframe = document.querySelector<HTMLIFrameElement>('[data-clip="still"] iframe');
+        return iframe?.contentDocument?.querySelector("#still")?.textContent === "Still";
+      });
+
+      const frame = page.locator('[data-clip="still"] iframe').first();
+      const read = () =>
+        frame.evaluate((element) => {
+          const contentWindow = (element as HTMLIFrameElement).contentWindow as unknown as {
+            __fy?: { metadata?: unknown; frame?: number };
+            document: Document;
+          };
+          return {
+            metadata: contentWindow.__fy?.metadata,
+            frame: contentWindow.__fy?.frame,
+            text: contentWindow.document.querySelector("#still")?.textContent,
+          };
+        });
+
+      expect(await read()).toEqual({
+        metadata: { width: 320, height: 180, static: true },
+        frame: 0,
+        text: "Still",
+      });
+
+      await seekTimeline(page, 7);
+
+      expect(await read()).toEqual({
+        metadata: { width: 320, height: 180, static: true },
+        frame: 0,
+        text: "Still",
+      });
     } finally {
       await page.close();
     }

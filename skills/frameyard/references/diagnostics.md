@@ -44,7 +44,7 @@ Static validation covers:
 | `COMPOSITION_INVALID` | error | Missing/invalid root, metadata, fragment structure, or reserved attributes |
 | `COMPOSITION_DOCUMENT_SHELL` | error | A full document shell (`<!doctype>`, `<html>`, `<head>`, or `<body>`) is present; compositions are fragments |
 | `IMPORT_MAP_INVALID` | error | Invalid import map placement, JSON, attributes, or reserved `frameyard` specifiers |
-| `COMPOSITION_FORMAT_UNRESOLVED` | error | The composition omits `width`/`height`/`fps` and the project has no `format`; this is a command error, not a document diagnostic |
+| `COMPOSITION_FORMAT_UNRESOLVED` | error | The composition omits `width`/`height` and the project has no `format`; this is a command error, not a document diagnostic |
 | `PROPS_INVALID` | error | Invalid default props JSON, invalid overrides, or `validateProps` failure |
 | `CONTROLLER_INVALID` | error | Missing/duplicate/both-inline-and-external controller, missing file, or invalid exports |
 | `BINDING_INVALID` | error | Unknown `data-fy-*` attribute or malformed binding path |
@@ -56,6 +56,10 @@ Static validation covers:
 | `ANIMATION_INVALID` | error | Invalid `data-fy-anim-*` value |
 | `ANIMATION_NOT_FOUND` | warning | `data-fy-anim-*` is present but the element has no CSS animation |
 | `ANIMATION_MULTIPLE` | warning | Multiple animations on one declaratively scheduled element |
+| `STATIC_ANIMATION_UNSUPPORTED` | error | A static composition uses `data-fy-anim-*`; remove it or declare `duration-in-frames` and `fps` |
+| `STATIC_MEDIA_UNSUPPORTED` | error | A static composition declares `<video>`, `<audio>`, or `<fy-transcript>`; move media to a timeline |
+| `STATIC_UPDATE_IGNORED` | warning | A static composition controller exports `update()`; move initialization into `mount()` |
+| `STATIC_ANIMATION_PAUSED` | warning | A static composition has CSS animations/transitions; they are paused at time 0 |
 | `SCRIPT_NOT_ALLOWED` | error | Executable `<script>` other than the controller |
 | `EVENT_HANDLER_NOT_ALLOWED` | error | Inline `on*` handler or `data-fy-attr-on*` |
 | `URL_NOT_ALLOWED` | error | `javascript:` URL |
@@ -79,7 +83,7 @@ Static validation covers:
 - `controller`: `{ kind: "inline" }`, `{ kind: "external", src }`, or `null`
 - `diagnostics`: all static and runtime diagnostics, deduplicated
 
-`check` also exposes `metadata`, `framesChecked`, `audio.details`, and `transcripts.details`. `still` exposes `frames`, `width`, and `height`, plus `frame` and `path` when exactly one frame was captured. `render` exposes the output path, dimensions, frame count, concurrency, bytes, and audio/transcript clip counts.
+`check` and `render` are discriminated unions. Animated/video results report `kind: "animated"` or `kind: "video"`; static composition results report `kind: "static"` or `kind: "image"`. A static check exposes `metadata: { width, height, static: true }` and `framesChecked: 1` with no audio/transcript fields. An image render exposes the PNG path, dimensions, bytes, diagnostics, and elapsed time with no fps, duration, frame count, codec, container, encoder, audio, or transcript fields. `still` exposes `frames`, `width`, and `height`, plus `frame` and `path` when exactly one frame was captured; a static composition only accepts frame 0.
 
 Failures use the same envelope with `error.code`, `error.message`, optional `error.details`, and top-level `diagnostics`.
 

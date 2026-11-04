@@ -102,6 +102,49 @@ const mediaHtml = `<fy-composition width="160" height="90" fps="10" duration-in-
     </fy-composition>
 `;
 
+const staticHtml = `<style>
+      @keyframes pulse { from { opacity: 1; } to { opacity: 0.5; } }
+      #box { width: 20px; height: 20px; background: #b8f36b; animation: pulse 1s linear infinite; }
+    </style>
+    <fy-composition width="200" height="100">
+      <div id="box"></div>
+    </fy-composition>
+    <script type="text/fy-controller">
+export default {
+  mount({ root }) {
+    root.querySelector("#box").dataset.mounted = "yes";
+  },
+  update({ root }) {
+    root.querySelector("#box").dataset.updated = "yes";
+  },
+};
+    </script>
+`;
+
+const staticMediaHtml = `<fy-composition width="200" height="100"></fy-composition>
+    <script type="text/fy-controller">
+export default {
+  mount({ root }) {
+    const video = document.createElement("video");
+    video.src = "assets/clip.webm";
+    root.append(video);
+  },
+};
+    </script>
+`;
+
+const staticAnimationHtml = `<fy-composition width="200" height="100"></fy-composition>
+    <script type="text/fy-controller">
+export default {
+  mount({ root }) {
+    const box = document.createElement("div");
+    box.setAttribute("data-fy-anim-start", "0");
+    root.append(box);
+  },
+};
+    </script>
+`;
+
 const boundHtml = `<fy-composition width="160" height="90" fps="10" duration-in-frames="12">
       <audio data-fy-attr-src="voice"></audio>
       <fy-transcript data-fy-attr-src="transcript"></fy-transcript>
@@ -136,6 +179,9 @@ beforeAll(async () => {
       media: "./compositions/media.html",
       bound: "./compositions/bound.html",
       "import-map": "./compositions/import-map.html",
+      static: "./compositions/static.html",
+      "static-media": "./compositions/static-media.html",
+      "static-animation": "./compositions/static-animation.html",
     } };\n`,
   );
   await writeFile(path.join(root, "compositions", "hello.html"), helloHtml);
@@ -146,6 +192,9 @@ beforeAll(async () => {
   await writeFile(path.join(root, "compositions", "media.html"), mediaHtml);
   await writeFile(path.join(root, "compositions", "bound.html"), boundHtml);
   await writeFile(path.join(root, "compositions", "import-map.html"), importMapHtml);
+  await writeFile(path.join(root, "compositions", "static.html"), staticHtml);
+  await writeFile(path.join(root, "compositions", "static-media.html"), staticMediaHtml);
+  await writeFile(path.join(root, "compositions", "static-animation.html"), staticAnimationHtml);
   await writeFile(path.join(root, "compositions", "demo-lib.js"), demoLibJs);
   await writeFile(
     path.join(root, "broken.html"),
@@ -545,5 +594,75 @@ describe("browser composition host", () => {
       ]),
     });
     await page.close();
+  });
+
+  it("loads a static composition without a frame clock and warns about update and CSS animation", async () => {
+    const page = await openHost("static.html");
+    await host(page, async (api) => {
+      await (api.load as (options?: { props?: unknown }) => Promise<void>)({});
+    });
+    const before = await host(page, (api) => ({
+      metadata: api.metadata,
+      frame: api.frame,
+      diagnostics: api.diagnostics,
+      audioClips: api.audioClips,
+      transcriptClips: api.transcriptClips,
+    }));
+
+    expect(before.metadata).toEqual({ width: 200, height: 100, static: true });
+    expect(before.frame).toBe(0);
+    expect(before.audioClips).toEqual([]);
+    expect(before.transcriptClips).toEqual([]);
+    expect(before.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "STATIC_UPDATE_IGNORED" }),
+        expect.objectContaining({ code: "STATIC_ANIMATION_PAUSED" }),
+      ]),
+    );
+
+    const dom = await page.evaluate(() => {
+      const box = document.querySelector("#box") as HTMLElement;
+      const animation = box.getAnimations()[0];
+      return {
+        mounted: box.dataset.mounted,
+        updated: box.dataset.updated ?? null,
+        frame: document.documentElement.style.getPropertyValue("--fy-frame"),
+        fps: document.documentElement.style.getPropertyValue("--fy-fps"),
+        playState: animation?.playState,
+        currentTime: animation?.currentTime,
+      };
+    });
+    expect(dom.mounted).toBe("yes");
+    expect(dom.updated).toBeNull();
+    expect(dom.frame).toBe("");
+    expect(dom.fps).toBe("");
+    expect(dom.playState).toBe("paused");
+    expect(dom.currentTime).toBe(0);
+
+    const afterSeek = await host(page, (api) => {
+      (api.seek as (frame: number) => void)(5);
+      return { frame: api.frame };
+    });
+    expect(afterSeek.frame).toBe(0);
+    await page.close();
+  });
+
+  it("rejects media and animation drivers in a static composition", async () => {
+    for (const [entry, code] of [
+      ["static-media.html", "STATIC_MEDIA_UNSUPPORTED"],
+      ["static-animation.html", "STATIC_ANIMATION_UNSUPPORTED"],
+    ] as const) {
+      const page = await openHost(entry);
+      const message = await host(page, async (api) => {
+        try {
+          await (api.load as (options?: { props?: unknown }) => Promise<void>)({});
+          return "no error";
+        } catch (error) {
+          return (error as Error).message;
+        }
+      });
+      expect(message).toContain(`[${code}]`);
+      await page.close();
+    }
   });
 });

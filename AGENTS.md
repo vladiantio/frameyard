@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Frameyard is a local-first framework for deterministic, parameterized videos authored with HTML compositions and JSON timelines. The 0.8 design is implemented: HTML composition fragments, JSON timelines with tracks/clips and nested timelines, declarative bindings, CSS animation scheduling, frame-state variables, inline and external controllers, composition and timeline hosts, static validation, interactive preview with a read-only timeline, direct composition rendering, segmented lossless timeline rendering, audio and transcripts, Chromium capture, FFmpeg output, provenance manifests, and the official agent skill.
+Frameyard is a local-first framework for deterministic, parameterized videos authored with HTML compositions and JSON timelines. The 0.8 design is implemented: HTML composition fragments, static (timeless) compositions rendered as PNGs, JSON timelines with tracks/clips and nested timelines, declarative bindings, CSS animation scheduling, frame-state variables, inline and external controllers, composition and timeline hosts, static validation, interactive preview with a read-only timeline, direct composition rendering, segmented lossless timeline rendering, audio and transcripts, Chromium capture, FFmpeg output, provenance manifests, and the official agent skill.
 
 ## Read first
 
@@ -8,7 +8,8 @@ Frameyard is a local-first framework for deterministic, parameterized videos aut
 - **Before changing timelines or nested timelines**: read `docs/adr/0010-make-timelines-the-render-unit.md`, `docs/adr/0011-compose-timeline-frames-in-a-live-browser-host.md` (preview-only), `docs/adr/0012-render-timelines-with-segmented-lossless-clip-intermediates.md`, `skills/frameyard/references/timelines.md`, and the reproducibility guarantee in `docs/v0.1-design.md` §3.
 - **Before changing determinism or rendering architecture**: read `docs/adr/0002-make-frame-and-props-the-only-animation-state.md`, `docs/adr/0003-render-browser-frames-offline.md`, `docs/adr/0005-keep-parallel-rendering-opt-in-and-frame-ordered.md`, `docs/adr/0009-composite-production-frames-in-software.md`, and the reproducibility guarantee in `docs/v0.1-design.md` §3.
 - **Before changing authoring APIs or the HTML/controller boundary**: read `docs/adr/0001-keep-composition-authoring-web-native.md` (amended by ADR 0007), `docs/adr/0006-seek-embedded-media-from-the-frame-clock.md` (placement amended by ADR 0007), and `docs/adr/0007-make-html-documents-the-composition-unit.md`.
-- **For usage and project layout**: read `README.md` and `docs/migration-0.4.md`.
+- **Before changing static composition behavior**: read `docs/adr/0017-render-timeless-compositions-as-stills.md` and `docs/migration-0.8.md`.
+- **For usage and project layout**: read `README.md`, `docs/migration-0.4.md`, and `docs/migration-0.8.md`.
 - **For preview tests or browser probes**: read `docs/preview-testing.md`.
 
 ## Commands
@@ -32,6 +33,7 @@ pnpm test:preview                      # builds first, then runs the preview tes
 pnpm test:unit                         # tool-free subset used by the pre-commit hook
 pnpm test test/contracts.test.ts       # one test file, builds first
 pnpm bench                             # seek/capture/encode/full-render timings
+pnpm bench:static                      # animated composition vs the same visual as a static PNG
 pnpm compare-stills a.png b.png        # exact decoded-pixel diff; exits nonzero on any difference
 ```
 
@@ -49,10 +51,13 @@ node dist/cli.js dev --project examples/demo
 node dist/cli.js still demo-timeline --frame 240 --project examples/demo --out still.png
 node dist/cli.js render demo-timeline --project examples/demo --props examples/demo/props/demo.json
 node dist/cli.js render demo --project examples/demo --props examples/demo/props/demo.json
+node dist/cli.js check still --project examples/static
+node dist/cli.js render still --project examples/static --out examples/static/out/still.png
+node dist/cli.js render still-timeline --project examples/static
 node dist/cli.js doctor
 ```
 
-`render` defaults to `out/<id>.mp4` inside the project root; pass `--out` for another path. Timeline renders accept `--workers <n>` and `--scratch <dir>`; composition renders accept `--concurrency <n>`. Both accept `--container <mp4|mov|mkv|webm>`, `--codec <h264|hevc|vp9>`, and `--encoder <auto|software|nvenc|qsv>`; the default is MP4/H.264 with `auto`, which probes hardware and falls back to software, WebM defaults to VP9, the output extension must match the container, and the probe is a one-frame encode. The repository and scaffold ignore `out/`.
+`render` defaults to `out/<id>.mp4` inside the project root for timelines and animated compositions, and `out/<id>.png` for static compositions; pass `--out` for another path. Timeline renders accept `--workers <n>` and `--scratch <dir>`; animated composition renders accept `--concurrency <n>`. Both video paths accept `--container <mp4|mov|mkv|webm>`, `--codec <h264|hevc|vp9>`, and `--encoder <auto|software|nvenc|qsv>`; the default is MP4/H.264 with `auto`, which probes hardware and falls back to software, WebM defaults to VP9, the output extension must match the container, and the probe is a one-frame encode. A static composition render rejects those four flags. The repository and scaffold ignore `out/`.
 
 Documentation command examples: runnable examples in `README.md`, `skills/frameyard/`, the `init` scaffold, and `init --json` `next` use `npx frameyard`; repository-internal commands (this file, `examples/*/README.md`, and README's `Development` section) use `node dist/cli.js` after `pnpm build`. Command reference tables and `--help` usage lines keep the bare `frameyard` name. `test/docs.test.ts` enforces the user-facing rule, including the generated scaffold markdown in `src/scaffold.ts`; `test/examples.test.ts` enforces the example README rule.
 
@@ -108,7 +113,7 @@ A full 30-second demo timeline render is segmented and uses 8 workers by default
 | `examples/blend/` | Static CSS blend modes on composition and video timeline clips |
 | `test/` | Public-seam tests |
 
-Per-frame path: `src/renderer/browser.ts` `openCompositionSession` navigates to the served composition URL, waits for `window.__fy`, calls `load`, then `seek`/`settle`/capture. `src/runtime/host.ts` applies bindings, imports the controller, mounts it, prepares media, sets frame-state variables, calls `update`, seeks animations, and settles media. `src/renderer/index.ts` merges static and runtime diagnostics into the result.
+Per-frame path: `src/renderer/browser.ts` `openCompositionSession` navigates to the served composition URL, waits for `window.__fy`, calls `load`, then `seek`/`settle`/capture. `src/runtime/host.ts` applies bindings, imports the controller, mounts it, prepares media, sets frame-state variables, calls `update`, seeks animations, and settles media. A static composition stops after bindings and `mount()`, skips media preparation and frame state, pauses CSS animations at time 0, and captures one PNG. `src/renderer/index.ts` merges static and runtime diagnostics into the result.
 
 Timeline path: `src/timeline/resolve.ts` resolves the JSON and references; `src/timeline/plan.ts` splits segments and active layers; `src/renderer/timeline.ts` captures composition/nested ranges with `openCompositionSession({ transparentBackground: true })`, encodes FFV1, composites with FFmpeg, concatenates, mixes audio, publishes atomically, and cleans scratch. Preview uses `src/preview/timeline-host.ts` with a bounded lazy layer pool.
 
@@ -118,8 +123,9 @@ Timeline path: `src/timeline/resolve.ts` resolves the JSON and references; `src/
 
 - A composition is a partial HTML fragment with one top-level `<fy-composition>` root. `video.config.js` explicitly maps IDs to `.html` entries; there is no directory scanning. JavaScript composition modules are rejected.
 - The framework generates the document shell (`<!doctype>`, `<html>`, `<head>`, `<body>`, charset, title, import map, sizing style, format block, and host module). Authors must not declare those elements. Props blocks, the controller, and import maps are top-level siblings; top-level `<style>` and `<link rel="stylesheet">` are hoisted into the generated head. The reserved `data-fy-host` attribute and `data-fy="format"` block are framework-only.
-- Metadata (`width`, `height`, `fps`, `duration-in-frames`) is fixed on the root. `duration-in-frames` is required; `width`, `height`, and `fps` are optional and inherit the project `format` when absent (declared values win, `width`/`height` are declared together). Props cannot change metadata.
-- The resolved format is part of the immutable frame environment. A composition that omits format values in a project without `format` fails with `COMPOSITION_FORMAT_UNRESOLVED`.
+- Metadata (`width`, `height`, `fps`, `duration-in-frames`) is fixed on the root. `width`, `height`, and `fps` are optional and inherit the project `format` when absent (declared values win, `width`/`height` are declared together). `duration-in-frames` is optional only for a static composition. Props cannot change metadata.
+- A static composition declares neither `duration-in-frames` nor `fps`. It has no frame clock, is captured once, and renders to a PNG. `fps` without `duration-in-frames` is an error. A static composition is visual-only: `data-fy-anim-*`, `<video>`, `<audio>`, and `<fy-transcript>` are errors. Its controller may `mount()` and validate props, but `update()` is not called, frame-state variables are not set, CSS animations are paused at time 0, and `STATIC_UPDATE_IGNORED`/`STATIC_ANIMATION_PAUSED` are warnings.
+- The resolved format is part of the immutable frame environment. A composition that omits dimensions in a project without `format` fails with `COMPOSITION_FORMAT_UNRESOLVED`.
 - Default props are a `data-fy="props"` JSON block. Props are JSON, deep-frozen, and merged shallowly over defaults.
 - Bindings are explicit: `data-fy-text`, `data-fy-attr-*`, `data-fy-class-*`, `data-fy-if`, and `data-fy-repeat` on `<template>`. Bindings apply once per load, before controller `mount`.
 - The `fy` prefix is the authoring namespace: `fy-composition`, `fy-transcript`, `data-fy-*`, `--fy-*`, `text/fy-controller`. The package, CLI, config, manifest, server route, import specifier, and error codes remain `frameyard`.
@@ -132,14 +138,14 @@ Timeline path: `src/timeline/resolve.ts` resolves the JSON and references; `src/
 
 - A timeline is a versioned JSON document listed explicitly in `video.config.js`. `format` fixes width, height, and fps for every timeline; composition and timeline IDs share one namespace.
 - Tracks are `video` or `audio`. Video tracks composite bottom-to-top; audio tracks mix. Clips on one track cannot overlap. No transitions or keyframes; blend modes are static per visual clip.
-- Clip sources are composition ID, nested timeline ID, or a project-relative video/image/audio path. `start`, `sourceIn`, and `duration` are project frames; image clips require a duration.
-- Composition clips can fix `props` and trim the source range. Visual clips support a static transform and a static CSS blend mode; see `skills/frameyard/references/timelines.md` for the fields. Composition fps must match the project.
+- Clip sources are composition ID, nested timeline ID, or a project-relative video/image/audio path. `start`, `sourceIn`, and `duration` are project frames; image clips and static composition clips require a duration.
+- Composition clips can fix `props` and trim the source range. A static composition clip must use `sourceIn: 0`, has no intrinsic source duration, and contributes no audio or transcripts; the renderer captures one transparent PNG per composition/props pair and reuses it as an image layer. Visual clips support a static transform and a static CSS blend mode; see `skills/frameyard/references/timelines.md` for the fields. Animated composition fps must match the project.
 - Visual clips contribute audio automatically unless muted. Timeline audio clips live on audio tracks. Nested timelines are groups and include their audio.
 - The timeline renderer is segmented: Chromium captures composition/nested ranges to alpha-preserving FFV1, FFmpeg composites and encodes segments in parallel, segments are concatenated in order, and audio is mixed once. Scratch is bounded and cleaned.
 
 ### Determinism
 
-- A composition frame's visual state derives only from the integer `frame`, immutable `props`, and data/assets loaded before frame production. A timeline frame derives from its active clips and the same composition rules.
+- A composition frame's visual state derives only from the integer `frame`, immutable `props`, and data/assets loaded before frame production. A timeline frame derives from its active clips and the same composition rules. A static composition has one state; it is captured after `mount()` with animations paused at time 0 and does not seek or run `update()`.
 - Timeline composition frames are compared at clip capture; preview (Chromium composite) and production (FFmpeg composite) may differ slightly in scaling, alpha, and video color conversion.
 - `update()` must not depend on previously visited frames. Declarative bindings apply once per load; controller-created DOM is not re-bound.
 - Animation drivers are `update()`, runtime-seeked CSS/WAAPI, and `data-fy-anim-*` scheduling. `Math.random()`, `Date.now()`, `performance.now()`, timers, independent `requestAnimationFrame` loops, CSS transitions, and wall-clock reads are not animation inputs. Use `random("stable:key")`.
@@ -153,10 +159,11 @@ Timeline path: `src/timeline/resolve.ts` resolves the JSON and references; `src/
 
 - `src/html/validate.ts` parses composition fragments with parse5 (and detects legacy document shells) and reports all static diagnostics in source order. It is Node-only. `src/contracts.ts`, `src/bindings.ts`, `src/composition/`, and `src/runtime/` must stay free of `node:` imports; `pnpm typecheck:browser` enforces it.
 - `check`, `still`, and `render` run static validation before Chromium. Static errors fail without launching a browser; warnings allow frame evaluation. `dev` validates on composition request.
-- A composition that omits `width`/`height`/`fps` in a project without `format` is not a fragment error: validation reports `formatUnresolved`, and the command fails with `COMPOSITION_FORMAT_UNRESOLVED`.
+- A composition that omits dimensions in a project without `format` is not a fragment error: validation reports `formatUnresolved`, and the command fails with `COMPOSITION_FORMAT_UNRESOLVED`.
+- A composition with neither `duration-in-frames` nor `fps` is static. Static validation rejects `fps` without `duration-in-frames`, `data-fy-anim-*`, media, and transcripts. A static composition can still inherit `width`/`height` from the project `format`.
 - Diagnostics carry `severity`, `code`, `message`, and optional `details` with `path`, `line`, `column`, `element`, `attribute`, `value`, and `suggestion`. Error envelopes carry optional `error.details` and top-level `diagnostics`.
 - Unknown `data-fy-*` attributes, repeat misuse, controller declaration errors, executable scripts, event handlers, `javascript:` URLs, unsupported elements, and missing media/transcript references are errors. Missing binding paths and animation mismatches are warnings.
-- The result schemas expose `entry`, `controller`, and top-level `diagnostics` for composition `check`, `still`, and `render`. Timeline results expose `timeline`, `format`, `tracks`, `clips`, and `diagnostics`; audio/transcript warnings are `AUDIO_WARNING`/`TRANSCRIPT_WARNING` diagnostics, not nested string arrays.
+- The result schemas expose `entry`, `controller`, and top-level `diagnostics` for composition `check`, `still`, and `render`. Composition `render` is a union with `kind: "video"` or `kind: "image"`; composition `check` is a union with `kind: "animated"` or `kind: "static"`. A static image result has no fps, duration, frames, codec, container, encoder, audio, or transcripts. Timeline results expose `timeline`, `format`, `tracks`, `clips`, and `diagnostics`; audio/transcript warnings are `AUDIO_WARNING`/`TRANSCRIPT_WARNING` diagnostics, not nested string arrays.
 - `src/timeline/schema.ts` is browser-safe and strict: unknown fields, invalid sources, track mismatches, overlaps, and transform/blend/audio values are errors. `src/timeline/resolve.ts` adds references, fps, media probes, source bounds, nested cycles, and props overrides.
 
 ### Host, preview, and rendering
@@ -164,12 +171,12 @@ Timeline path: `src/timeline/resolve.ts` resolves the JSON and references; `src/
 - The preview server serves configured composition fragments at their real project path, wraps them in the fixed document shell, hoists top-level import maps and styles, and injects the framework import map, sizing style, and host module.
 - Inline controllers are served through the virtual URL `<composition>?__fy-controller`; the host imports either that URL or the external `src`. A composition has exactly one controller.
 - `window.__fy` exposes `ready`, `metadata`, `defaultProps`, `props`, `controller`, `audioClips`, `embeddedAudioClips`, `transcriptClips`, `diagnostics`, `frame`, `load`, `seek`, `settle`, and `dispose`.
-- Manual mode (`?__fy-manual`) waits for `load` and hides the root until the first successful load. Auto mode loads defaults and seeks frame 0. `load` validates props before disposing, restores the pristine DOM snapshot, re-applies bindings, remounts the controller, and prepares media.
+- Manual mode (`?__fy-manual`) waits for `load` and hides the root until the first successful load. Auto mode loads defaults and seeks frame 0. `load` validates props before disposing, restores the pristine DOM snapshot, re-applies bindings, remounts the controller, and prepares media. For a static composition it stops after `mount()` and asset loading: no `update()`, media preparation, animation seek, or frame state. `seek()` is a no-op and `settle()` resolves.
 - Preview loads the composition in a same-origin iframe and owns preview audio/playback. Props apply reuses the host `load`; composition changes reload the iframe with a unique load token. `check`, `still`, and `render` navigate directly to the composition URL and drive the same host API.
 - The renderer uses static metadata for the viewport before navigation, blocks network after loading, and captures through CDP. Concurrency uses independent sessions but ordered writing; output order and pixels must match a sequential render.
-- `check` exercises every frame; `still` follows the production capture path. A render writes a temporary output and publishes atomically; existing outputs are replaced only with `--overwrite`.
+- `check` exercises every animated frame and inspects a static composition once; `still` follows the production capture path and exposes only frame 0 for a static composition. A render writes a temporary output and publishes atomically; existing outputs are replaced only with `--overwrite`. A static composition render captures one PNG and does not use FFmpeg.
 - Timeline preview serves `/__frameyard/timeline/<id>` and `.json`; embedded pages expose `window.__fyTimeline`. The preview host lazily loads active clips and evicts inactive layers; it is not the production compositor.
-- Timeline production captures compositions with `transparentBackground: true`, preserves alpha in FFV1, and composites nested timelines as groups. `--workers` bounds segment concurrency; `--scratch` bounds intermediates. Composition rendering keeps `--concurrency`. `--container`, `--codec`, and `--encoder` select the delivery pair and encoder for both paths; FFV1 intermediates remain lossless and software-encoded, HEVC keeps the `hvc1` tag in MP4/MOV, VP9 pairs with Opus, NVENC caps timeline workers at eight sessions, and encoded bytes are not a reproducibility guarantee.
+- Timeline production captures compositions with `transparentBackground: true`, preserves alpha in FFV1, and composites nested timelines as groups. A static composition is captured once as a transparent PNG per props variant and enters the composite as an image layer; the cache is shared across segments and workers. `--workers` bounds segment concurrency; `--scratch` bounds intermediates. Animated composition rendering keeps `--concurrency`; static composition rendering is a single capture and rejects it. `--container`, `--codec`, and `--encoder` select the delivery pair and encoder for video paths; FFV1 intermediates remain lossless and software-encoded, HEVC keeps the `hvc1` tag in MP4/MOV, VP9 pairs with Opus, NVENC caps timeline workers at eight sessions, and encoded bytes are not a reproducibility guarantee.
 - Timeline `still` and `check` recurse into nested timelines; media-only frames are validated but not decoded frame-by-frame.
 
 ### Generated assets
@@ -189,7 +196,7 @@ Timeline path: `src/timeline/resolve.ts` resolves the JSON and references; `src/
 - Output directories are created during preflight, before Chromium starts; the CLI removes a directory it created when the invocation publishes nothing.
 - `elapsedMs` measures from static validation and preflight through publication; CLI argument parsing is excluded.
 - Preserve exact frame counts in FFmpeg (`-frames:v`) and bounded audio (`-t`).
-- `check` must inspect every frame and report audio/transcript durations and diagnostics without capturing or encoding.
+- `check` must inspect every animated frame and report audio/transcript durations and diagnostics without capturing or encoding. A static composition has one state and reports `kind: "static"` with `framesChecked: 1`.
 - `doctor` exits nonzero when required checks fail but does not throw away the structured findings.
 
 ## Change map
@@ -198,9 +205,10 @@ Timeline path: `src/timeline/resolve.ts` resolves the JSON and references; `src/
 - **Binding semantics** → `src/bindings.ts`, `src/runtime/bindings.ts`; extend `test/bindings.test.ts`, `test/host-runtime.test.ts`.
 - **Composition grammar reading** → `src/composition/`, `src/html/document-adapter.ts`; extend `test/composition-document.test.ts`, `test/static-validation.test.ts`.
 - **HTML parsing and static validation** → `src/html/parse.ts`, `src/html/validate.ts`; extend `test/static-validation.test.ts`, `test/server-html.test.ts`.
+- **Static composition model** → `src/contracts.ts`, `src/composition/descriptor.ts`, `src/composition/format.ts`, `src/html/validate.ts`, `src/runtime/host.ts`; keep `ADR 0017` and `docs/migration-0.8.md` in step. Extend `test/static-validation.test.ts` and `test/host-runtime.test.ts` with the metadata matrix, media/animation rejection, static load, and warning cases.
 - **Host runtime** → `src/runtime/host.ts`, `src/runtime/media.ts`, `src/runtime/diagnostics.ts`; extend `test/host-runtime.test.ts`.
-- **Timeline schema and resolution** → `src/timeline/schema.ts`, `src/timeline/resolve.ts`, `src/timeline/plan.ts`; extend `test/timeline-schema.test.ts`, `test/timeline-resolve.test.ts`, `test/timeline-plan.test.ts`. Document contract fields in `skills/frameyard/references/timelines.md`; other docs link to it.
-- **Timeline rendering** → `src/renderer/timeline.ts`, `src/renderer/ffmpeg.ts`, `src/renderer/browser.ts`; extend `test/timeline-render.test.ts` with per-frame mapping coverage for every affected layer kind (video, composition, nested timeline), and verify artifacts with FFprobe.
+- **Timeline schema and resolution** → `src/timeline/schema.ts`, `src/timeline/resolve.ts`, `src/timeline/plan.ts`; extend `test/timeline-schema.test.ts`, `test/timeline-resolve.test.ts`, `test/timeline-plan.test.ts`. Static composition clips are image-like: explicit duration, `sourceIn: 0`, no intrinsic duration, no audio. Document contract fields in `skills/frameyard/references/timelines.md`; other docs link to it.
+- **Timeline rendering** → `src/renderer/timeline.ts`, `src/renderer/ffmpeg.ts`, `src/renderer/browser.ts`; extend `test/timeline-render.test.ts` with per-frame mapping coverage for every affected layer kind (video, composition, nested timeline, static composition image), and verify artifacts with FFprobe.
 - **Preview** → `src/preview/main.ts`, `src/server/preview-html.ts`; extend the HTML iframe case in `test/preview-runtime.test.ts`.
 - **Timeline preview** → `src/preview/timeline-main.ts`, `src/preview/timeline-host.ts`, `src/preview/timeline-data.ts`, `src/server/timeline-preview-*.ts`; extend `test/timeline-preview.test.ts`, `test/timeline-preview-runtime.test.ts`; keep `docs/preview-testing.md` in step with the embedded host API.
 - **Server routes, document shell generation, inline controller, `project.json`, timeline preview/data** → `src/server/server.ts`, `src/server/composition-html.ts`; extend `test/project-server.test.ts`, `test/server-html.test.ts`, `test/timeline-preview.test.ts`.
@@ -211,7 +219,7 @@ Timeline path: `src/timeline/resolve.ts` resolves the JSON and references; `src/
 - **Doctor checks** → `src/doctor.ts`, `src/cli.ts`; extend `test/assets-e2e.test.ts`.
 - **Init scaffold content** → `src/scaffold.ts` (project format, composition, timeline, config, props, README, agent guide, and `next`); keep the agent guide aligned with `skills/frameyard/`; extend `test/scaffold.test.ts`, `test/docs.test.ts`, and the `init` case. When the scaffold file set changes, update `README.md`, `docs/v0.1-design.md` §6, and the scaffold README/agent guide.
 - **Agent skill contract** → `skills/frameyard/`, `package.json`; extend `test/skill.test.ts`.
-- **Reference behavior** → `examples/demo/`, `examples/webgl/`, `examples/video/`, and `examples/blend/`; keep their README commands working. The demo includes a timeline wrapping its composition; the video example includes WebM and MP4 timelines with video clips under a transparent overlay composition; the blend example sequences static blend modes on composition and video clips. Extend `test/examples.test.ts` when the example set or entry layout changes.
+- **Reference behavior** → `examples/demo/`, `examples/webgl/`, `examples/video/`, `examples/blend/`, and `examples/static/`; keep their README commands working. The demo includes a timeline wrapping its composition; the video example includes WebM and MP4 timelines with video clips under a transparent overlay composition; the blend example sequences static blend modes on composition and video clips; the static example renders a timeless composition to PNG and reuses it as a timeline image. Extend `test/examples.test.ts` when the example set or entry layout changes.
 - **Performance benchmarks** → `scripts/bench-render.mjs`, `bench/fixtures/`, `bench/README.md`; keep `pnpm bench` representative of the composition capture path. Timeline benchmark scripts are temporary measurement tools; the production projection is in ADR 0012.
 - **Lint and formatting** → `.oxlintrc.json`, `.oxfmtrc.json`, `package.json`, `.githooks/pre-commit`, and CI/release workflows; run `pnpm check:static`.
 - **Release checks and versioning** → `scripts/set-version.mjs`, `scripts/verify-release.mjs`, `scripts/retag-release.mjs`, `RELEASING.md`, `.github/workflows/release.yml`; run `pnpm verify-release` after tagging.
@@ -222,19 +230,19 @@ Test at public seams, not private helpers:
 
 - `test/contracts.test.ts`: composition metadata, props, JSON serialization, audio clips, transcript requirements, diagnostics.
 - `test/bindings.test.ts`: binding path syntax, resolution, repeat scope, value coercion, suggestions.
-- `test/static-validation.test.ts`: fragment metadata, defaults, bindings, scripts, controllers, import maps, document-shell rejection, media, transcripts, source locations, diagnostics.
+- `test/static-validation.test.ts`: fragment metadata, static metadata matrix, static media/animation rejection, defaults, bindings, scripts, controllers, import maps, document-shell rejection, media, transcripts, source locations, diagnostics.
 - `test/server-html.test.ts`: `.html` entries, fragment wrapping and head ordering, virtual inline controller, static error pages, `project.json` diagnostics.
-- `test/host-runtime.test.ts`: host bindings, repeat/if/class, animation scheduling, frame variables, inline/external controllers, props validation, load atomicity, dispose, diagnostics, auto mode, media settle.
+- `test/host-runtime.test.ts`: host bindings, repeat/if/class, animation scheduling, frame variables, inline/external controllers, props validation, load atomicity, dispose, diagnostics, auto mode, media settle, and static load (mount-only, no frame state, paused CSS animations, `update()`/media warnings and errors).
 - `test/random.test.ts`: frame/time conversion and stateless keyed deterministic randomness.
 - `test/project-server.test.ts`: config loading, static routes, import map, ranges, traversal rejection.
 - `test/timeline-config.test.ts`: `video.config.js` timeline entries, format requirements, timeline-only projects, and duplicate or missing entries.
-- `test/preview-runtime.test.ts`: HTML iframe preview, props, seeking, transport keys, CSS animation, Canvas, WebGL, embedded video, determinism, diagnostics.
-- `test/timeline-preview-runtime.test.ts`: timeline preview UI and embedding, scrubbing, frame/one-second stepping, seek coalescing, keyboard forwarding, layer sizing, blend layering and preview/still parity, and video frame presentation.
-- `test/timeline-render.test.ts`: segmented rendering, transform boxes, alpha and blend-mode compositing, media/audio, nested timelines, and per-frame barcode mapping for video, composition, and nested-timeline layers.
+- `test/preview-runtime.test.ts`: HTML iframe preview, props, seeking, transport keys, CSS animation, Canvas, WebGL, embedded video, determinism, diagnostics, and static composition preview without a transport.
+- `test/timeline-preview-runtime.test.ts`: timeline preview UI and embedding, scrubbing, frame/one-second stepping, seek coalescing, keyboard forwarding, layer sizing, blend layering and preview/still parity, video frame presentation, and static layers that stay loaded without seeking.
+- `test/timeline-render.test.ts`: segmented rendering, transform boxes, alpha and blend-mode compositing, media/audio, nested timelines, static composition capture reuse, and per-frame barcode mapping for video, composition, and nested-timeline layers.
 - `test/encoders.test.ts`: codec and container matrix, encoder name mapping, encoder arguments, HEVC tags, and NVENC session limits.
-- `test/cli-e2e.test.ts`: real CLI with Chromium and FFmpeg, JSON envelopes, missing assets, deterministic stills across concurrent sessions, embedded video/WebGL capture and audio, container/codec/audio output, overwrite behavior, HTML check/still/render, static diagnostics, `dev`, `init`.
+- `test/cli-e2e.test.ts`: real CLI with Chromium and FFmpeg, JSON envelopes, missing assets, deterministic stills across concurrent sessions, embedded video/WebGL capture and audio, container/codec/audio output, overwrite behavior, HTML check/still/render, static composition check/still/render and video-flag rejection, static diagnostics, `dev`, `init`.
 - `test/video-determinism.test.ts`: a full-scene opacity animation over embedded video captures the requested frame, and consecutive composition frames map to consecutive source frames.
-- `test/examples.test.ts`: example README commands use the repository CLI, and each bundled example captures a still.
+- `test/examples.test.ts`: example README commands use the repository CLI, and each bundled example captures a still, including the static composition and its timeline.
 - `test/assets-e2e.test.ts`: `tts`/`transcribe`/`doctor` with fake upstream executables, normalization, word timings, exports, manifests, cancellation, transcript validation.
 - `test/agent-workflow.test.ts`: source preservation, check/still/render reporting, failure reporting through the CLI.
 - `test/real-integrations.test.ts`: opt-in real-model checks enabled by `FRAMEYARD_REAL_INTEGRATIONS=1` and explicit model paths.

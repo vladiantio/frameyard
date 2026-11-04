@@ -3,17 +3,18 @@
 A 12-second, 1920×1080, 30 fps timeline that demonstrates every supported CSS
 blend mode on composition and video clips. Four video tracks build one frame:
 
-- `v1` **backdrop** — an opaque HTML composition with a grid, concentric rings,
-  and a dark vignette. It omits `width`, `height`, and `fps` and inherits the
-  project format, so it is captured at the timeline's own size.
-- `v2` **aurora** — a transparent HTML composition with three blurred color
-  blobs. Its clip uses `blend: "screen"` for the full 12 seconds.
+- `v1` **backdrop** — a static opaque HTML composition with a grid, concentric
+  rings, and a dark vignette. It omits the time metadata and all dimensions, so
+  it inherits the project format and is captured once at the timeline's size.
+- `v2` **aurora** — a static transparent HTML composition with three blurred
+  color blobs. It declares its dimensions but no time metadata, so it is also
+  captured once. Its clip uses `blend: "screen"` for the full 12 seconds.
 - `v3` **ink** — a local 1280×720 H.264 clip scaled to fill the project frame.
   Twelve touching clips play one second each, cycling through all 12 supported
   modes in timeline order.
-- `v4` **labels** — a transparent HTML composition in normal mode. It lists the
-  modes and their time ranges, and draws a progress bar from the `--fy-progress`
-  frame-state variable.
+- `v4` **labels** — an animated transparent HTML composition in normal mode. It
+  lists the modes and their time ranges, and draws a progress bar from the
+  `--fy-progress` frame-state variable, so it is evaluated per frame.
 
 The mode sequence on `v3` is:
 
@@ -41,6 +42,11 @@ show every mode in one timeline; it does not animate `blend` itself. `hue`,
 `saturation`, `color`, and `luminosity` are rejected because they need
 cross-channel math and are not part of the supported set.
 
+`backdrop` and `aurora` are static compositions: they declare no
+`duration-in-frames` or `fps`, are captured once, and the same image is reused
+for every timeline frame. `labels` remains animated because its progress bar
+reads `--fy-progress`; making it static would freeze the bar.
+
 Preview composites with Chromium `mix-blend-mode`; production uses FFmpeg's
 `blend` filter plus an alpha mask. The preview stage stacks by track order and
 is isolated from the preview chrome. Small scaling, alpha, and color differences
@@ -60,10 +66,11 @@ examples/blend/
 ```
 
 The timeline lives in `timelines/blend.timeline.json`; the project format and
-entries are fixed in `video.config.js`. `backdrop.html` demonstrates the
-optional composition format: with `width`, `height`, and `fps` omitted it
-renders at the project's 1920×1080, 30 fps, while the other compositions keep
-declaring their format explicitly.
+entries are fixed in `video.config.js`. `backdrop.html` is a static composition
+that omits all dimensions and time metadata, so it inherits the project's
+1920×1080 size. `aurora.html` is a static composition that declares its
+dimensions but no time metadata. `labels.html` is an animated composition and
+keeps its `fps` and `duration-in-frames`.
 
 ## Commands
 

@@ -117,6 +117,15 @@ export default {
     </script>
 `;
 
+const staticHtml = `<style>
+      html, body { margin: 0; width: 100%; height: 100%; background: #123456; }
+      #still { color: #b8f36b; font: 16px monospace; }
+    </style>
+    <fy-composition width="200" height="100">
+      <div id="still">Static preview</div>
+    </fy-composition>
+`;
+
 let root: string;
 let server: PreviewServer;
 let browser: Browser;
@@ -152,12 +161,13 @@ beforeAll(async () => {
   await mkdir(path.join(root, "assets"), { recursive: true });
   await writeFile(
     path.join(root, "video.config.js"),
-    `export default { compositions: { demo: "./compositions/demo.html", diagnostics: "./compositions/diagnostics.html", media: "./compositions/media.html", html: "./compositions/html.html" } };\n`,
+    `export default { compositions: { demo: "./compositions/demo.html", diagnostics: "./compositions/diagnostics.html", media: "./compositions/media.html", html: "./compositions/html.html", static: "./compositions/static.html" } };\n`,
   );
   await writeFile(path.join(root, "compositions", "demo.html"), demoHtml);
   await writeFile(path.join(root, "compositions", "media.html"), mediaHtml);
   await writeFile(path.join(root, "compositions", "html.html"), htmlComposition);
   await writeFile(path.join(root, "compositions", "diagnostics.html"), diagnosticsHtml);
+  await writeFile(path.join(root, "compositions", "static.html"), staticHtml);
   await writeFile(path.join(root, "assets", "tone.wav"), toneWav());
   await exec("ffmpeg", [
     "-hide_banner",
@@ -676,6 +686,52 @@ describe("browser preview runtime", () => {
     });
     await expect(outOfRange).rejects.toThrow(/0.*19|range/i);
 
+    await context.close();
+  });
+
+  it("previews a static composition without a transport", async () => {
+    const context = await browser.newContext({ viewport: { width: 800, height: 600 } });
+    const page = await context.newPage();
+    await page.goto(new URL("/__frameyard/?render=1", server.url).href);
+    await page.waitForFunction(() => Boolean((window as unknown as Record<string, unknown>).__frameyardPreview));
+
+    const loaded = await page.evaluate(async () => {
+      const api = (window as unknown as Record<string, unknown>).__frameyardPreview as {
+        load(entry: string, props?: unknown): Promise<{ metadata: unknown }>;
+      };
+      return api.load("compositions/static.html");
+    });
+    expect(loaded.metadata).toEqual({ width: 200, height: 100, static: true });
+
+    const ui = await page.evaluate(() => {
+      const stage = document.querySelector("#stage-frame") as HTMLIFrameElement;
+      const stageWindow = stage.contentWindow as unknown as {
+        __fy?: { metadata?: unknown };
+      };
+      return {
+        meta: document.querySelector("#meta")?.textContent,
+        playDisabled: (document.querySelector("#play") as HTMLButtonElement).disabled,
+        scrubDisabled: (document.querySelector("#scrub") as HTMLInputElement).disabled,
+        frame: document.querySelector("#frame")?.textContent,
+        stageText: stage.contentDocument?.querySelector("#still")?.textContent,
+        stageMetadata: stageWindow.__fy?.metadata,
+      };
+    });
+    expect(ui.meta).toContain("static");
+    expect(ui.playDisabled).toBe(true);
+    expect(ui.scrubDisabled).toBe(true);
+    expect(ui.frame).toBe("0");
+    expect(ui.stageText).toBe("Static preview");
+    expect(ui.stageMetadata).toEqual({ width: 200, height: 100, static: true });
+
+    const seeked = await page.evaluate(() => {
+      const api = (window as unknown as Record<string, unknown>).__frameyardPreview as {
+        seek(frame: number): void;
+      };
+      api.seek(10);
+      return document.querySelector("#frame")?.textContent;
+    });
+    expect(seeked).toBe("0");
     await context.close();
   });
 });

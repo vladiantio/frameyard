@@ -1,10 +1,10 @@
 import { chromium, type Browser, type BrowserContext, type CDPSession, type Page } from "playwright";
 import type {
   CompositionDiagnostic,
-  CompositionMetadata,
   CompositionSourceInfo,
   Props,
   ResolvedAudioClip,
+  ResolvedCompositionMetadata,
   ResolvedTranscriptClip,
 } from "../contracts.js";
 import { FrameyardError, isFrameyardError, type FrameyardDiagnostic, type FrameyardErrorCode } from "../errors.js";
@@ -12,7 +12,7 @@ import { FrameyardError, isFrameyardError, type FrameyardDiagnostic, type Framey
 export interface CompositionSession {
   readonly entry: string;
   readonly controller: { kind: "inline" } | { kind: "external"; src: string } | null;
-  readonly metadata: CompositionMetadata;
+  readonly metadata: ResolvedCompositionMetadata;
   readonly props: Props;
   readonly audioClips: ResolvedAudioClip[];
   readonly embeddedAudioClips: ResolvedAudioClip[];
@@ -26,7 +26,7 @@ export interface CompositionSession {
 
 interface HostSessionApi {
   readonly ready: Promise<void>;
-  readonly metadata: CompositionMetadata;
+  readonly metadata: ResolvedCompositionMetadata;
   readonly props: Props;
   readonly controller: { kind: "inline" } | { kind: "external"; src: string } | null;
   readonly audioClips: ResolvedAudioClip[];
@@ -107,6 +107,16 @@ async function closeQuietly(action: () => Promise<void>): Promise<void> {
 
 function diagnosticKey(diagnostic: CompositionDiagnostic): string {
   return JSON.stringify([diagnostic.severity, diagnostic.code, diagnostic.message, diagnostic.details ?? null]);
+}
+
+function metadataMatches(actual: ResolvedCompositionMetadata, expected: ResolvedCompositionMetadata): boolean {
+  if (actual.width !== expected.width || actual.height !== expected.height) {
+    return false;
+  }
+  if (actual.static === true || expected.static === true) {
+    return actual.static === true && expected.static === true;
+  }
+  return actual.fps === expected.fps && actual.durationInFrames === expected.durationInFrames;
 }
 
 function mergeDiagnostics(...groups: readonly CompositionDiagnostic[][]): CompositionDiagnostic[] {
@@ -201,7 +211,7 @@ export async function openCompositionSession(options: {
     }
 
     let loaded: {
-      metadata: CompositionMetadata;
+      metadata: ResolvedCompositionMetadata;
       props: Props;
       controller: { kind: "inline" } | { kind: "external"; src: string } | null;
       audioClips: ResolvedAudioClip[];
@@ -235,12 +245,7 @@ export async function openCompositionSession(options: {
       throw browserCommandError(error);
     }
 
-    if (
-      loaded.metadata.width !== options.info.metadata.width ||
-      loaded.metadata.height !== options.info.metadata.height ||
-      loaded.metadata.fps !== options.info.metadata.fps ||
-      loaded.metadata.durationInFrames !== options.info.metadata.durationInFrames
-    ) {
+    if (!metadataMatches(loaded.metadata, options.info.metadata)) {
       throw new FrameyardError(
         "COMPOSITION_INVALID",
         `Composition "${options.entry}" metadata changed between static validation and browser load.`,

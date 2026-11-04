@@ -9,6 +9,7 @@ export {
 } from "./contracts.js";
 export type {
   AudioClip,
+  AudioVolumeEnvelope,
   CompositionDiagnostic,
   CompositionDiagnosticDetails,
   CompositionDimensions,
@@ -39,7 +40,7 @@ export type {
   TranscriptSource,
   WordTiming,
 } from "./transcript.js";
-export { BLEND_MODES, parseTimelineDocument, UNSUPPORTED_BLEND_MODES } from "./timeline/schema.js";
+export { BLEND_MODES, parseTimelineDocument, TRANSITION_KINDS, UNSUPPORTED_BLEND_MODES } from "./timeline/schema.js";
 export type {
   BlendMode,
   FitPolicy,
@@ -59,4 +60,6 @@ export type {
   TimelineTrack,
   TimelineTrackKind,
   TimelineTransform,
+  TimelineTransition,
+  TransitionKind,
 } from "./timeline/schema.js";

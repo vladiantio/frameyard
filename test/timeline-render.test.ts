@@ -2281,3 +2281,216 @@ describe("timeline keyframe rendering", () => {
     );
   }, 120_000);
 });
+
+describe("timeline transitions", () => {
+  async function solidImage(filePath: string, color: string): Promise<void> {
+    await exec("ffmpeg", [
+      "-y",
+      "-v",
+      "error",
+      "-f",
+      "lavfi",
+      "-i",
+      `color=c=${color}:s=320x180:d=1`,
+      "-frames:v",
+      "1",
+      filePath,
+    ]);
+  }
+
+  async function writeTimeline(
+    root: string,
+    timeline: unknown,
+    compositions: Record<string, string> = {},
+  ): Promise<void> {
+    await writeFile(path.join(root, "timelines", "main.json"), `${JSON.stringify(timeline, null, 2)}\n`);
+    await writeFile(
+      path.join(root, "video.config.js"),
+      `export default {
+        format: { width: 320, height: 180, fps: 10 },
+        compositions: ${JSON.stringify(compositions)},
+        timelines: { main: "./timelines/main.json" },
+      };\n`,
+    );
+  }
+
+  async function extractFrame(videoPath: string, frame: number, outputPath: string): Promise<void> {
+    await exec("ffmpeg", [
+      "-v",
+      "error",
+      "-y",
+      "-i",
+      videoPath,
+      "-vf",
+      `select=eq(n\\,${frame})`,
+      "-frames:v",
+      "1",
+      outputPath,
+    ]);
+  }
+
+  async function meanVolume(filePath: string, start: number, end: number): Promise<number> {
+    const { stderr } = await exec("ffmpeg", [
+      "-v",
+      "info",
+      "-i",
+      filePath,
+      "-af",
+      `atrim=${start}:${end},volumedetect`,
+      "-f",
+      "null",
+      "-",
+    ]);
+    const match = /mean_volume:\s*(-?[\d.]+) dB/.exec(stderr);
+    if (!match) {
+      throw new Error(`Could not read mean_volume from ${filePath}.`);
+    }
+    return Number(match[1]);
+  }
+
+  it("dissolves from the outgoing clip to the incoming clip", async () => {
+    const root = await customRoot();
+    await mkdir(path.join(root, "out"), { recursive: true });
+    await solidImage(path.join(root, "assets", "red.png"), "0xff0000");
+    await solidImage(path.join(root, "assets", "green.png"), "0x00ff00");
+    await writeTimeline(root, {
+      version: 1,
+      background: "#000000",
+      tracks: [{ id: "v1", kind: "video" }],
+      clips: [
+        { id: "a", track: "v1", source: { kind: "image", src: "assets/red.png" }, start: 0, duration: 10 },
+        { id: "b", track: "v1", source: { kind: "image", src: "assets/green.png" }, start: 6, duration: 10 },
+      ],
+      transitions: [{ from: "a", to: "b", kind: "dissolve" }],
+    });
+    const project = await loadProject(root);
+    const outPath = path.join(root, "out", "main.mp4");
+
+    const checked = await checkTimeline({ project, timelineId: "main" });
+    expect(checked.transitions).toBe(1);
+    expect(checked.diagnostics.filter((diagnostic) => diagnostic.severity === "error")).toEqual([]);
+
+    const result = await renderTimelineForTest({
+      project,
+      timelineId: "main",
+      outPath,
+      workers: 2,
+      maxSegmentFrames: 2,
+    });
+    expect(result.transitions).toBe(1);
+    expect(result.framesRendered).toBe(16);
+
+    const frames = new Map<number, string>();
+    for (const frame of [0, 6, 8, 9, 10, 15]) {
+      const file = path.join(root, "out", `frame-${frame}.png`);
+      await extractFrame(outPath, frame, file);
+      frames.set(frame, file);
+    }
+    const at = (frame: number) => mediaPixel(frames.get(frame) as string, 160, 90);
+
+    const start = await at(0);
+    expect(start[0]).toBeGreaterThan(220);
+    expect(start[1]).toBeLessThan(30);
+
+    const overlapStart = await at(6);
+    expect(overlapStart[0]).toBeGreaterThan(220);
+    expect(overlapStart[1]).toBeLessThan(30);
+
+    const middle = await at(8);
+    expect(Math.abs((middle[0] as number) - 128)).toBeLessThanOrEqual(12);
+    expect(Math.abs((middle[1] as number) - 128)).toBeLessThanOrEqual(12);
+    expect(middle[2]).toBeLessThan(30);
+
+    const threeQuarters = await at(9);
+    expect(threeQuarters[1]).toBeGreaterThan((threeQuarters[0] as number) + 60);
+
+    const end = await at(10);
+    expect(end[1]).toBeGreaterThan(220);
+    expect(end[0]).toBeLessThan(30);
+
+    const stillPath = path.join(root, "out", "still-8.png");
+    await captureTimelineStill({ project, timelineId: "main", frame: 8, outPath: stillPath });
+    const still = await mediaPixel(stillPath, 160, 90);
+    for (let channel = 0; channel < 3; channel += 1) {
+      expect(Math.abs((still[channel] as number) - (middle[channel] as number))).toBeLessThanOrEqual(12);
+    }
+
+    const singleSegmentPath = path.join(root, "out", "single.mp4");
+    await renderTimelineForTest({
+      project,
+      timelineId: "main",
+      outPath: singleSegmentPath,
+      workers: 1,
+      maxSegmentFrames: 100,
+    });
+    const singleFrame = path.join(root, "out", "single-8.png");
+    await extractFrame(singleSegmentPath, 8, singleFrame);
+    const single = await mediaPixel(singleFrame, 160, 90);
+    for (let channel = 0; channel < 3; channel += 1) {
+      expect(Math.abs((single[channel] as number) - (middle[channel] as number))).toBeLessThanOrEqual(6);
+    }
+  }, 180_000);
+
+  it("crossfades the audio contributed by both clips with equal power", async () => {
+    const root = await customRoot();
+    await mkdir(path.join(root, "out"), { recursive: true });
+    await exec("ffmpeg", [
+      "-y",
+      "-v",
+      "error",
+      "-f",
+      "lavfi",
+      "-i",
+      "sine=frequency=60:duration=3:sample_rate=48000",
+      "-ac",
+      "2",
+      path.join(root, "assets", "tone.wav"),
+    ]);
+    await writeFile(
+      path.join(root, "compositions", "tone.html"),
+      `<style>html, body { margin: 0; width: 100%; height: 100%; background: #203040; }</style>
+    <fy-composition width="320" height="180" fps="10" duration-in-frames="10">
+      <audio src="assets/tone.wav" data-fy-start="0" data-fy-duration="1"></audio>
+    </fy-composition>
+`,
+    );
+    await writeTimeline(
+      root,
+      {
+        version: 1,
+        tracks: [{ id: "v1", kind: "video" }],
+        clips: [
+          {
+            id: "a",
+            track: "v1",
+            source: { kind: "composition", id: "tone" },
+            start: 0,
+            duration: 10,
+          },
+          {
+            id: "b",
+            track: "v1",
+            source: { kind: "composition", id: "tone" },
+            start: 6,
+            duration: 10,
+          },
+        ],
+        transitions: [{ from: "a", to: "b", kind: "dissolve" }],
+      },
+      { tone: "./compositions/tone.html" },
+    );
+    const project = await loadProject(root);
+    const outPath = path.join(root, "out", "main.mp4");
+
+    const result = await renderTimelineForTest({ project, timelineId: "main", outPath, workers: 1 });
+    expect(result.audio.clips).toBe(2);
+
+    const startDb = await meanVolume(outPath, 0.05, 0.15);
+    const middleDb = await meanVolume(outPath, 0.85, 0.95);
+
+    // Equal power sums two correlated tones to +3 dB. A linear crossfade would
+    // stay at 0 dB and an uncrossfaded overlap would reach +6 dB.
+    expect(middleDb - startDb).toBeGreaterThan(2);
+    expect(middleDb - startDb).toBeLessThan(3.6);
+  }, 180_000);
+});

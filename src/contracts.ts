@@ -82,12 +82,26 @@ export interface AudioClip {
   volume?: number;
 }
 
+/** One multiplicative gain ramp applied over an absolute timeline frame window. */
+export interface AudioVolumeEnvelope {
+  /** Inclusive first timeline frame. */
+  startFrame: number;
+  /** Exclusive last timeline frame. */
+  endFrame: number;
+  /** CSS timing function applied before the equal-power mapping. Defaults to `linear`. */
+  easing?: string;
+  /** `in` ramps 0→1 and `out` ramps 1→0. */
+  role: "in" | "out";
+}
+
 export interface ResolvedAudioClip {
   src: string;
   startFrame: number;
   trimStart: number;
   trimDuration?: number;
   volume: number;
+  /** Gain ramps multiplied into `volume`, evaluated at absolute timeline frames. */
+  envelopes?: AudioVolumeEnvelope[];
 }
 
 export interface TranscriptClip {
@@ -132,6 +146,10 @@ export interface CompositionDiagnosticDetails {
   media?: string;
   timelineFrame?: number;
   sourceFrame?: number;
+  /** Transition source clip ID when the diagnostic targets a transition. */
+  from?: string;
+  /** Transition target clip ID when the diagnostic targets a transition. */
+  to?: string;
   /** Clip IDs from outermost to innermost for diagnostics inside nested timelines. */
   nesting?: string[];
   controller?: {

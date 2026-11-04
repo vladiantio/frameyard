@@ -42,6 +42,14 @@ Do not claim success after a nonzero exit. Fix the cause, rerun `check`, and onl
 | `FRAME_OUT_OF_RANGE` | Frame outside `0..durationInFrames - 1` | Choose valid frames; a batch error lists every invalid frame and the valid range. |
 | `AUDIO_INVALID` | Bad clip or unreadable/unsupported audio | Use a local project-root-relative file with a decodable audio stream. |
 | `AUDIO_WARNING` | Audio timeline overrun or silent embedded media | Adjust timing/trim or remove the silent source. |
+| `TIMELINE_TRANSITION_UNKNOWN_CLIP` | A transition names a missing or self clip | Use two distinct resolved clip IDs in this timeline. |
+| `TIMELINE_TRANSITION_WRONG_TRACK` | The pair is on different tracks | Keep both clips on one video track. |
+| `TIMELINE_TRANSITION_AUDIO_TRACK` | The pair is on an audio track | Transitions are video-track only. |
+| `TIMELINE_TRANSITION_NOT_OVERLAPPING` | The incoming clip starts at or after the outgoing clip ends | Move `to.start` earlier; touching endpoints are not a transition. |
+| `TIMELINE_TRANSITION_GEOMETRY` | Reversed order or the incoming clip ends before the outgoing clip | Use `from.start < to.start < from.end < to.end`. |
+| `TIMELINE_TRANSITION_DUPLICATE` | Repeated pair or a clip used twice on one side | Declare each pair once; a clip may chain `from → to → from`. |
+| `TIMELINE_TRANSITION_NOT_DISSOLVE` | Unsupported or missing `kind` | Use `"kind": "dissolve"`. |
+| `TIMELINE_TRANSITION_INVALID` | Unknown transition field, invalid id, or unsupported easing | Fix the entry; easing uses the keyframe timing-function vocabulary. |
 | `MEDIA_INVALID` | Invalid media source or attributes | Use local, seekable files and valid `data-fy-*` values. |
 | `MEDIA_SEEK_FAILED` | Embedded video did not reach the requested time | Re-encode with a regular keyframe interval or replace the source. |
 | `TRANSCRIPT_INVALID` | Invalid/missing transcript declaration or JSON | Regenerate with `npx frameyard transcribe`; do not hand-edit timestamps. |

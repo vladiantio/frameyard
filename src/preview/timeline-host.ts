@@ -1,5 +1,6 @@
 import { nextPaint, waitForVideoPaint } from "../runtime/video.js";
 import { evaluatePresentation } from "../timeline/keyframes.js";
+import { transitionProgress } from "../timeline/transitions.js";
 import type {
   TimelinePreviewClip,
   TimelinePreviewData,
@@ -97,10 +98,10 @@ function fitScale(
   return { x: raw, y: raw };
 }
 
-function applyClipPresentation(wrapper: HTMLDivElement, clip: TimelinePreviewClip, frame: number): void {
+function applyClipPresentation(wrapper: HTMLDivElement, clip: TimelinePreviewClip, frame: number, alpha = 1): void {
   const values = evaluatePresentation(clip.transform, clip.keyframes, frame - clip.start);
   const scale = clip.transform.width === undefined ? values.scale : 1;
-  wrapper.style.opacity = String(values.opacity);
+  wrapper.style.opacity = String(values.opacity * alpha);
   wrapper.style.transform = `translate(-50%, -50%) translate(${values.x}px, ${values.y}px) rotate(${values.rotation}deg) scale(${scale})`;
 }
 
@@ -195,6 +196,28 @@ export function createTimelineHost(
 
   const trackOrder = new Map(data.tracks.map((track, index) => [track.id, index]));
   const visualClips = data.clips.filter((clip) => clip.source.kind !== "audio");
+  const transitionsByClip = new Map<
+    string,
+    Array<{ role: "in" | "out"; start: number; end: number; easing?: string }>
+  >();
+  for (const transition of data.transitions) {
+    const span = {
+      start: transition.start,
+      end: transition.end,
+      ...(transition.easing !== undefined ? { easing: transition.easing } : {}),
+    };
+    const outgoing = transitionsByClip.get(transition.from) ?? [];
+    outgoing.push({ role: "out", ...span });
+    transitionsByClip.set(transition.from, outgoing);
+    const incoming = transitionsByClip.get(transition.to) ?? [];
+    incoming.push({ role: "in", ...span });
+    transitionsByClip.set(transition.to, incoming);
+  }
+  const transitionAt = (
+    clipId: string,
+    frame: number,
+  ): { role: "in" | "out"; start: number; end: number; easing?: string } | undefined =>
+    (transitionsByClip.get(clipId) ?? []).find((span) => span.start <= frame && frame < span.end);
   const layers = new Map<string, Layer>();
   let currentFrame = 0;
   let keyHandler: ((event: KeyboardEvent) => void) | null = null;
@@ -336,7 +359,11 @@ export function createTimelineHost(
       layer.lastActive = frame;
       layer.wrapper.style.display = "block";
       const clip = layer.clip;
-      applyClipPresentation(layer.wrapper, clip, frame);
+      const transition = transitionAt(clip.id, frame);
+      const alpha = transition?.role === "in" ? transitionProgress(transition, frame) : 1;
+      applyClipPresentation(layer.wrapper, clip, frame, alpha);
+      // Within one track the incoming clip stacks above the outgoing clip.
+      layer.wrapper.style.zIndex = String((trackOrder.get(clip.track) ?? 0) * 2 + (transition?.role === "in" ? 1 : 0));
       const localFrame = clip.sourceIn + (frame - clip.start);
       if (clip.source.kind === "composition" || clip.source.kind === "timeline") {
         const contentWindow = (layer.element as HTMLIFrameElement).contentWindow as unknown as FrameyardFrame | null;

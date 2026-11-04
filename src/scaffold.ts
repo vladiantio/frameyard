@@ -70,7 +70,7 @@ are top-level siblings. Do not add \`<!doctype>\`, \`<html>\`, \`<head>\`,
 - Visual clips may animate \`x\`, \`y\`, \`scale\`, \`rotation\`, and \`opacity\` with \`keyframes\`: per-channel arrays of \`{ "frame", "value", "easing"? }\` in clip-local frames. A keyed channel cannot also be an explicit scalar in \`transform\`, and \`keyframes.scale\` cannot be combined with a \`width\`/\`height\` box. Easing uses CSS timing functions, defaulting to \`linear\`.
 - Visual clips may declare a static \`blend\` mode from the separable CSS set (\`normal\`, \`multiply\`, \`screen\`, \`overlay\`, \`darken\`, \`lighten\`, \`color-dodge\`, \`color-burn\`, \`hard-light\`, \`soft-light\`, \`difference\`, \`exclusion\`); omitted means \`normal\`.
 - Video and audio clips are muted with \`audio.muted\`; \`audio.gain\` is 0-1. Composition audio is included automatically.
-- Tracks composite from bottom to top. Clips on the same track cannot overlap. Transitions are deferred.
+- Tracks composite from bottom to top. Clips on the same track cannot overlap unless a timeline-level \`transitions\` entry pairs them for a \`dissolve\`; the overlap \`to.start .. from.end\` is the window, the incoming clip fades in above the outgoing clip, and contributed audio crossfades.
 - Project \`format\` fixes width, height, and fps for every timeline and fills those values for compositions that omit them. Animated composition fps must match the project; different composition sizes are fitted by the clip. A static composition has no fps.
 
 ## Bindings

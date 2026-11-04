@@ -1,9 +1,21 @@
 import type { ResolvedTimeline, ResolvedTimelineClip } from "./resolve.js";
 
+export interface TimelineRenderTransition {
+  /** `in` carries the animated alpha; `out` renders normally. */
+  role: "in" | "out";
+  /** Inclusive first timeline frame. */
+  start: number;
+  /** Exclusive last timeline frame. */
+  end: number;
+  easing?: string;
+}
+
 export interface TimelineRenderLayer {
   clip: ResolvedTimelineClip;
   /** Source frame used at the segment's first timeline frame. */
   sourceStart: number;
+  /** Present while the segment intersects a transition on this clip. */
+  transition?: TimelineRenderTransition;
 }
 
 export interface TimelineRenderSegment {
@@ -77,18 +89,44 @@ export function planTimelineRender(
   }
 
   const trackOrder = new Map(timeline.tracks.map((track, index) => [track.id, index]));
+  const transitionsByClip = new Map<
+    string,
+    Array<{ role: "in" | "out"; start: number; end: number; easing?: string }>
+  >();
+  for (const transition of timeline.transitions) {
+    const window = {
+      start: transition.start,
+      end: transition.end,
+      ...(transition.easing !== undefined ? { easing: transition.easing } : {}),
+    };
+    const outgoing = transitionsByClip.get(transition.from) ?? [];
+    outgoing.push({ role: "out", ...window });
+    transitionsByClip.set(transition.from, outgoing);
+    const incoming = transitionsByClip.get(transition.to) ?? [];
+    incoming.push({ role: "in", ...window });
+    transitionsByClip.set(transition.to, incoming);
+  }
+
   const segments: TimelineRenderSegment[] = ranges.map((range, index) => {
     const layers = visualClips
       .filter((clip) => clip.start <= range.start && clip.end >= range.end)
       .sort((left, right) => {
         const leftOrder = trackOrder.get(left.track) ?? Number.MAX_SAFE_INTEGER;
         const rightOrder = trackOrder.get(right.track) ?? Number.MAX_SAFE_INTEGER;
-        return leftOrder - rightOrder;
+        // Within one track, the later-starting clip composites above the
+        // outgoing clip during a transition overlap.
+        return leftOrder - rightOrder || left.start - right.start || left.end - right.end;
       })
-      .map((clip) => ({
-        clip,
-        sourceStart: clip.sourceIn + (range.start - clip.start),
-      }));
+      .map((clip) => {
+        const transition = (transitionsByClip.get(clip.id) ?? []).find(
+          (candidate) => candidate.start < range.end && candidate.end > range.start,
+        );
+        return {
+          clip,
+          sourceStart: clip.sourceIn + (range.start - clip.start),
+          ...(transition !== undefined ? { transition } : {}),
+        };
+      });
 
     return {
       index,

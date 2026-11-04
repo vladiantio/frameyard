@@ -1,4 +1,4 @@
-import type { CompositionDiagnostic, Props } from "../contracts.js";
+import type { AudioVolumeEnvelope, CompositionDiagnostic, Props } from "../contracts.js";
 import type { BlendMode, TimelineKeyframes } from "../timeline/schema.js";
 
 export type TimelinePreviewFit = "contain" | "cover" | "stretch";
@@ -77,6 +77,18 @@ export interface TimelinePreviewTrack {
   muted?: boolean;
 }
 
+export interface TimelinePreviewTransition {
+  from: string;
+  to: string;
+  kind: "dissolve";
+  easing?: string;
+  track: string;
+  /** Inclusive first timeline frame. */
+  start: number;
+  /** Exclusive last timeline frame. */
+  end: number;
+}
+
 export interface TimelinePreviewAudioClip {
   src: string;
   url: string;
@@ -84,6 +96,7 @@ export interface TimelinePreviewAudioClip {
   trimStart: number;
   trimDuration?: number;
   volume: number;
+  envelopes?: AudioVolumeEnvelope[];
 }
 
 export interface TimelinePreviewData {
@@ -94,6 +107,7 @@ export interface TimelinePreviewData {
   background?: string;
   tracks: TimelinePreviewTrack[];
   clips: TimelinePreviewClip[];
+  transitions: TimelinePreviewTransition[];
   audioClips: TimelinePreviewAudioClip[];
   diagnostics: CompositionDiagnostic[];
 }

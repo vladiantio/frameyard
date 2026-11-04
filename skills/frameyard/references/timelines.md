@@ -75,7 +75,7 @@ export default {
 - `tracks` and `clips` are required. Track order is bottom-to-top for video and irrelevant for audio.
 - `background` is an optional color; the final video composites over black.
 - `durationInFrames` is optional. The duration is derived from the latest clip end unless declared; a declared duration may extend but not cut clips.
-- Unknown fields are errors. Blend modes are static per clip; there are no transitions, animated blend modes, other effects, or track solo/visibility.
+- Unknown fields are errors. Blend modes are static per clip; there are no animated blend modes, other effects, or track solo/visibility. Clip transitions are the one same-track overlap (see [Transitions](#transitions)).
 
 ## Sources
 
@@ -96,7 +96,7 @@ Media paths resolve from the project root. No remote URLs.
 - `duration` is the number of timeline frames. It is optional for animated compositions, nested timelines, video, and audio; it defaults to the rest of the source. Images and static compositions require it.
 - A clip that exceeds its source is an error. Static compositions have no intrinsic duration, so the clip duration is the only bound.
 - A static composition clip is captured once per props variant as a transparent PNG and reused across segments. A clip whose source is static and whose `audio` settings are non-default receives an `AUDIO_WARNING` because there is no source audio.
-- Clips on one track cannot overlap. Touching endpoints are allowed. Use separate tracks for overlays.
+- Clips on one track cannot overlap unless a timeline-level `transitions` entry pairs them. Touching endpoints are allowed but are not a transition. Use separate tracks for overlays that are not transitions.
 
 ## Presentation
 
@@ -147,6 +147,33 @@ Preview evaluates keyframes on every seek with the exact CSS timing function. Pr
 
 The read-only timeline preview draws a marker for each distinct keyframe frame on a clip. Hovering a marker lists the channels at that frame; clicking it seeks the playhead there.
 
+## Transitions
+
+A timeline may declare a `transitions` array. Each entry pairs two clips on one video track across their overlap:
+
+```json
+"clips": [
+  { "id": "alpha", "track": "main", "source": { "kind": "composition", "id": "alpha" }, "start": 0, "duration": 60 },
+  { "id": "beta", "track": "main", "source": { "kind": "composition", "id": "beta" }, "start": 45, "duration": 60 }
+],
+"transitions": [
+  { "from": "alpha", "to": "beta", "kind": "dissolve", "easing": "ease-in-out" }
+]
+```
+
+- `from` and `to` must be clip IDs on the same **video** track. Audio tracks do not support transitions.
+- `kind` is required and must be `dissolve`. Other kinds are rejected.
+- `easing` defaults to `linear` and accepts the same CSS timing functions as keyframes, including `hold` and `steps(...)`.
+- There is no `duration`. The window is the overlap `to.start .. from.end`. Move `to.start` earlier to lengthen the dissolve; the outgoing clip's declared duration already covers its side, so no media handles are needed.
+- Valid geometry is `from.start < to.start < from.end < to.end`. The incoming clip must start inside the outgoing clip and end after it. Reversed order, a contained clip, a touching or later start, and cross-track pairs are errors.
+- A clip may be the `to` of one transition and the `from` of the next, so transitions chain. A clip may not participate twice on the same side, and the same pair may not be declared twice.
+- Overlap without a declared transition is still `TIMELINE_CLIP_OVERLAP`. A third clip that overlaps either side is an error, so at most two clips are active on a video track.
+- During the window the incoming clip composites directly above the outgoing clip with alpha `clipOpacity × eased progress`. Its static or keyframed `opacity` multiplies the transition. `blend` works normally because transition alpha is part of the source alpha.
+- Contributed audio crossfades with equal power: the outgoing clip ramps as `sqrt(1 - t)` and the incoming as `sqrt(t)`, after easing. `audio.muted` still zeroes its side. Transitions on a nested-timeline clip fade that group's audio.
+- Preview stacks the incoming layer above the outgoing layer, applies the same alpha, ramps `<audio>` volume during playback, and draws a read-only hatched band over the overlap.
+
+`check` exposes the resolved transition count and validates every window. `still` and `render` share the composite path, so a still captured inside a dissolve matches the rendered frame. See `examples/transitions`.
+
 ## Audio
 
 - Animated composition, video, and nested-timeline clips contribute audio automatically unless `audio.muted` is true. Static compositions contribute no audio; put audio on a timeline track.
@@ -182,8 +209,8 @@ npx frameyard render main --props props/main.json --workers 8 --scratch /path/to
 - A timeline frame derives only from its active clips, their composition frames, keyframe values, props, assets, and the render plan.
 - Composition frames are captured with Chromium; transparent compositions preserve alpha.
 - Timeline production captures active composition and nested-timeline clips to lossless FFV1, composites segments with FFmpeg, concatenates the ordered segments, and mixes audio once.
-- Keyframe values are evaluated against absolute timeline frames, so segment boundaries do not change them. Position, scale, and rotation use per-frame filter expressions; animated opacity uses an alpha mask. Animated opacity and animated scale add a mask/scale pass per affected layer.
-- Preview composites in Chromium with CSS `mix-blend-mode`; production composites with FFmpeg's `blend` and `maskedmerge`. CSS is the reference; small scaling, alpha, color, blend-math, and subpixel-position differences are expected. Easing curves in the filter graph approximate the CSS curve; parity is guaranteed at clip capture, not at final encoded pixels.
+- Keyframe and transition values are evaluated against absolute timeline frames, so segment boundaries do not change them. Position, scale, and rotation use per-frame filter expressions; animated opacity and incoming transition alpha use an alpha mask. Animated opacity, animated scale, and a dissolve add a mask/scale pass per affected layer.
+- Preview composites in Chromium with CSS `mix-blend-mode` and CSS `opacity`; production composites with FFmpeg's `blend`, `maskedmerge`, and an alpha mask. CSS is the reference; small scaling, alpha, color, blend-math, and subpixel-position differences are expected. Easing curves in the filter graph approximate the CSS curve; parity is guaranteed at clip capture, not at final encoded pixels.
 - Alpha-correct blending costs roughly 1.7× per blended 1080p layer in the production composite. Budget for it when a timeline stacks several blended layers.
 - Final output bytes are not a reproducibility guarantee.
 - Long timelines are segmented and bounded. The reference target and measured worst cases are documented in `docs/adr/0012-render-timelines-with-segmented-lossless-clip-intermediates.md`.

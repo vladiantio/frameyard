@@ -538,6 +538,181 @@ describe("timeline resolution", () => {
     expect(clip?.source).not.toHaveProperty("durationInFrames");
   });
 
+  it("resolves a dissolve across the overlap of two clips", async () => {
+    const project = await createProject({
+      timeline: timeline(
+        [
+          {
+            id: "a",
+            track: "v1",
+            source: { kind: "composition", id: "intro" },
+            start: 0,
+            duration: 10,
+          },
+          {
+            id: "b",
+            track: "v1",
+            source: { kind: "composition", id: "intro" },
+            start: 6,
+            duration: 10,
+          },
+        ],
+        undefined,
+        { transitions: [{ from: "a", to: "b", kind: "dissolve", easing: "ease-in-out" }] },
+      ),
+    });
+
+    const resolved = await resolveMain(project);
+
+    expect(resolved.diagnostics.filter((diagnostic) => diagnostic.severity === "error")).toEqual([]);
+    expect(resolved.timeline?.transitions).toEqual([
+      { from: "a", to: "b", kind: "dissolve", easing: "ease-in-out", track: "v1", start: 6, end: 10 },
+    ]);
+  });
+
+  it("rejects an overlap that no declared transition covers", async () => {
+    const project = await createProject({
+      timeline: timeline(
+        [
+          { id: "a", track: "v1", source: { kind: "composition", id: "intro" }, start: 0, duration: 10 },
+          { id: "b", track: "v1", source: { kind: "composition", id: "intro" }, start: 5, duration: 10 },
+          { id: "c", track: "v1", source: { kind: "composition", id: "intro" }, start: 8, duration: 10 },
+        ],
+        undefined,
+        { transitions: [{ from: "a", to: "b", kind: "dissolve" }] },
+      ),
+    });
+
+    const resolved = await resolveMain(project);
+
+    expect(resolved.timeline).toBeNull();
+    expect(resolved.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: "TIMELINE_CLIP_OVERLAP",
+        message: expect.stringContaining('"c" overlaps "a"'),
+      }),
+    );
+  });
+
+  it("diagnoses every invalid transition geometry", async () => {
+    const unknown = await createProject({
+      timeline: timeline(
+        [{ id: "a", track: "v1", source: { kind: "composition", id: "intro" }, start: 0, duration: 10 }],
+        undefined,
+        { transitions: [{ from: "a", to: "ghost", kind: "dissolve" }] },
+      ),
+    });
+    expect((await resolveMain(unknown)).diagnostics.map((diagnostic) => diagnostic.code)).toContain(
+      "TIMELINE_TRANSITION_UNKNOWN_CLIP",
+    );
+
+    const wrongTrack = await createProject({
+      timeline: timeline(
+        [
+          { id: "a", track: "v1", source: { kind: "composition", id: "intro" }, start: 0, duration: 10 },
+          { id: "b", track: "v2", source: { kind: "composition", id: "intro" }, start: 5, duration: 10 },
+        ],
+        [
+          { id: "v1", kind: "video" },
+          { id: "v2", kind: "video" },
+        ],
+        { transitions: [{ from: "a", to: "b", kind: "dissolve" }] },
+      ),
+    });
+    expect((await resolveMain(wrongTrack)).diagnostics.map((diagnostic) => diagnostic.code)).toContain(
+      "TIMELINE_TRANSITION_WRONG_TRACK",
+    );
+
+    const audioTrack = await createProject({
+      timeline: timeline(
+        [
+          { id: "a", track: "a1", source: { kind: "audio", src: "assets/chime.wav" }, start: 0, duration: 10 },
+          { id: "b", track: "a1", source: { kind: "audio", src: "assets/chime.wav" }, start: 5, duration: 10 },
+        ],
+        [{ id: "a1", kind: "audio" }],
+        { transitions: [{ from: "a", to: "b", kind: "dissolve" }] },
+      ),
+    });
+    expect((await resolveMain(audioTrack)).diagnostics.map((diagnostic) => diagnostic.code)).toContain(
+      "TIMELINE_TRANSITION_AUDIO_TRACK",
+    );
+
+    const notOverlapping = await createProject({
+      timeline: timeline(
+        [
+          { id: "a", track: "v1", source: { kind: "composition", id: "intro" }, start: 0, duration: 10 },
+          { id: "b", track: "v1", source: { kind: "composition", id: "intro" }, start: 12, duration: 10 },
+        ],
+        undefined,
+        { transitions: [{ from: "a", to: "b", kind: "dissolve" }] },
+      ),
+    });
+    expect((await resolveMain(notOverlapping)).diagnostics.map((diagnostic) => diagnostic.code)).toContain(
+      "TIMELINE_TRANSITION_NOT_OVERLAPPING",
+    );
+
+    const nested = await createProject({
+      timeline: timeline(
+        [
+          { id: "a", track: "v1", source: { kind: "composition", id: "intro" }, start: 0, duration: 10 },
+          { id: "b", track: "v1", source: { kind: "composition", id: "intro" }, start: 2, duration: 6 },
+        ],
+        undefined,
+        { transitions: [{ from: "a", to: "b", kind: "dissolve" }] },
+      ),
+    });
+    expect((await resolveMain(nested)).diagnostics.map((diagnostic) => diagnostic.code)).toContain(
+      "TIMELINE_TRANSITION_GEOMETRY",
+    );
+
+    const reversed = await createProject({
+      timeline: timeline(
+        [
+          { id: "a", track: "v1", source: { kind: "composition", id: "intro" }, start: 6, duration: 10 },
+          { id: "b", track: "v1", source: { kind: "composition", id: "intro" }, start: 0, duration: 10 },
+        ],
+        undefined,
+        { transitions: [{ from: "a", to: "b", kind: "dissolve" }] },
+      ),
+    });
+    const reversedCodes = (await resolveMain(reversed)).diagnostics.map((diagnostic) => diagnostic.code);
+    expect(reversedCodes).toContain("TIMELINE_TRANSITION_GEOMETRY");
+    expect(reversedCodes).not.toContain("TIMELINE_CLIP_OVERLAP");
+  });
+
+  it("rejects duplicate and unsupported transitions at parse time", async () => {
+    const duplicate = await createProject({
+      timeline: timeline(
+        [
+          { id: "a", track: "v1", source: { kind: "composition", id: "intro" }, start: 0, duration: 10 },
+          { id: "b", track: "v1", source: { kind: "composition", id: "intro" }, start: 6, duration: 10 },
+          { id: "c", track: "v1", source: { kind: "composition", id: "intro" }, start: 20, duration: 10 },
+        ],
+        undefined,
+        {
+          transitions: [
+            { from: "a", to: "b", kind: "dissolve" },
+            { from: "a", to: "c", kind: "dissolve" },
+          ],
+        },
+      ),
+    });
+    expect((await resolveMain(duplicate)).diagnostics.map((diagnostic) => diagnostic.code)).toContain(
+      "TIMELINE_TRANSITION_DUPLICATE",
+    );
+
+    const unsupported = await createProject({
+      timeline: timeline(
+        [{ id: "a", track: "v1", source: { kind: "composition", id: "intro" }, start: 0, duration: 10 }],
+        undefined,
+        { transitions: [{ from: "a", to: "a", kind: "wipe" }] },
+      ),
+    });
+    expect((await resolveMain(unsupported)).diagnostics.map((diagnostic) => diagnostic.code)).toContain(
+      "TIMELINE_TRANSITION_NOT_DISSOLVE",
+    );
+  });
+
   it("requires an explicit duration and sourceIn 0 for a static composition clip", async () => {
     const missingDuration = await createProject({
       timeline: timeline([

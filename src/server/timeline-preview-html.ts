@@ -161,6 +161,15 @@ export function renderTimelinePreviewHtml(timelineId: string, options: { embed?:
       .clip.composition { background: linear-gradient(180deg, #314a33, #203120); border-color: #4d704d; }
       .clip.audio { background: linear-gradient(180deg, #4a3b22, #302516); border-color: #6e5631; }
       .clip.nested { background: linear-gradient(180deg, #443152, #2c2036); border-color: #63477a; }
+      .transition {
+        position: absolute; top: 8px; bottom: 8px; border-radius: 4px; z-index: 1;
+        background: repeating-linear-gradient(
+          45deg,
+          rgba(184, 243, 107, 0.24) 0 4px,
+          rgba(184, 243, 107, 0.08) 4px 8px
+        );
+        border: 1px solid rgba(184, 243, 107, 0.55); pointer-events: none;
+      }
       #playhead {
         position: absolute; top: 0; bottom: 0; width: 1px; background: var(--accent);
         box-shadow: 0 0 12px rgba(184, 243, 107, 0.7); pointer-events: none;

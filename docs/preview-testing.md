@@ -32,6 +32,10 @@ expose the same seek/settle contract the renderer uses.
   on every seek. Assert those styles or the rendered stage after `settle()`.
   Markers are `.keyframe-marker` elements with a `data-frame` absolute timeline
   frame and a channel/value tooltip; clicking one seeks the playhead.
+- Inside a transition window both clips are active. The incoming layer's inline
+  `opacity` is `clipOpacity × eased progress` and it stacks above the outgoing
+  layer on the same track. The strip draws a `.transition` band with a
+  `from → to` tooltip; it is read-only.
 
 ## Waiting for a frame
 

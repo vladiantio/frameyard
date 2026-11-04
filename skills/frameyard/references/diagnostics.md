@@ -35,7 +35,7 @@ Static validation covers:
 }
 ```
 
-`details` may include `path`, `line`, `column`, `endLine`, `endColumn`, `element`, `attribute`, `value`, `suggestion`, `frame`, and `controller`. Timeline diagnostics may also include `timeline`, `clip`, `track`, `channel`, `keyframe`, `jsonPath`, `timelineFrame`, `sourceFrame`, and `nesting`; keyframe errors use `channel`, the zero-based `keyframe` index, and the clip-local `frame`.
+`details` may include `path`, `line`, `column`, `endLine`, `endColumn`, `element`, `attribute`, `value`, `suggestion`, `frame`, and `controller`. Timeline diagnostics may also include `timeline`, `clip`, `track`, `channel`, `keyframe`, `jsonPath`, `timelineFrame`, `sourceFrame`, `from`, `to`, and `nesting`; keyframe errors use `channel`, the zero-based `keyframe` index, and the clip-local `frame`, and transition errors use `from`/`to`.
 
 ## Common codes
 
@@ -66,6 +66,14 @@ Static validation covers:
 | `ELEMENT_NOT_SUPPORTED` | error | `iframe`, `object`, `embed`, `base`, refresh/CSP meta, `source`, `track`, or declarative shadow DOM |
 | `ELEMENT_UNKNOWN` | warning | Unknown `fy-*` element |
 | `CONTENT_OUTSIDE_ROOT` | warning | Visual content outside `<fy-composition>` |
+| `TIMELINE_TRANSITION_INVALID` | error | Unknown transition field, invalid clip id, or unsupported easing |
+| `TIMELINE_TRANSITION_UNKNOWN_CLIP` | error | Transition names a missing or self clip |
+| `TIMELINE_TRANSITION_WRONG_TRACK` | error | Transition clips are on different tracks |
+| `TIMELINE_TRANSITION_AUDIO_TRACK` | error | Transition is on an audio track; video tracks only |
+| `TIMELINE_TRANSITION_NOT_OVERLAPPING` | error | Declared transition has no overlap |
+| `TIMELINE_TRANSITION_GEOMETRY` | error | Reversed order or the incoming clip ends before the outgoing clip |
+| `TIMELINE_TRANSITION_DUPLICATE` | error | Repeated pair or a clip used twice on one side |
+| `TIMELINE_TRANSITION_NOT_DISSOLVE` | error | Unsupported or missing transition `kind` |
 | `MEDIA_INVALID` | error | Invalid or missing audio/video source or attributes |
 | `TRANSCRIPT_INVALID` | error | Invalid or missing transcript source |
 | `ASSET_NOT_FOUND` | error | Missing image, stylesheet, media, or transcript file |

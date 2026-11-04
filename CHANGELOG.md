@@ -12,6 +12,13 @@ contract change may ship in a minor release and is called out explicitly below.
 
 ### Added
 
+- Timeline clips on one video track may dissolve across their overlap through a
+  timeline-level `transitions` array. The window is `to.start .. from.end`; the
+  incoming clip composites above the outgoing clip with `opacity × eased
+  progress`, contributed audio crossfades with equal power, and preview draws a
+  read-only band. Undeclared overlap stays an error. See
+  `docs/adr/0019-make-same-track-overlap-the-transition-window.md` and
+  `examples/transitions/`.
 - Timeline clips animate `x`, `y`, `scale`, `rotation`, and `opacity` with
   clip-local `keyframes`, CSS easing, preview markers, and FFmpeg expressions.
   Animated opacity composes through blend modes. See

@@ -174,6 +174,18 @@ _Avoid_: Interpolation, curve
 The static CSS `mix-blend-mode` a visual clip applies against the accumulated backdrop of all lower layers and the timeline background. It respects the clip's source alpha and is not animated.
 _Avoid_: Filter, effect, composite mode
 
+**Transition**:
+A declared dissolve between two clips on one video track, written as `{ from, to, kind: "dissolve", easing? }` in the timeline's `transitions` array. The clips overlap; an overlap without a declared transition is still an error.
+_Avoid_: Overlap, crossfade (use crossfade only for the audio ramp)
+
+**Transition window**:
+The overlap `to.start .. from.end` where both clips are active. The incoming clip composites above the outgoing clip with `opacity × eased progress`, evaluated at absolute timeline frames.
+_Avoid_: Handle, overlap region
+
+**Equal-power crossfade**:
+The audio gain curve inside a transition: the outgoing clip ramps as `sqrt(1 - t)` and the incoming clip as `sqrt(t)` after easing, keeping perceived loudness steady.
+_Avoid_: Linear fade
+
 **Nested timeline**:
 A timeline used as a clip source inside another timeline.
 _Avoid_: Compound composition

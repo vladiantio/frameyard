@@ -55,6 +55,18 @@ export interface ResolvedTimelineClip extends Omit<TimelineClip, "source" | "dur
   end: number;
 }
 
+export interface ResolvedTimelineTransition {
+  from: string;
+  to: string;
+  kind: "dissolve";
+  easing?: string;
+  track: string;
+  /** Inclusive first timeline frame; equals the incoming clip start. */
+  start: number;
+  /** Exclusive last timeline frame; equals the outgoing clip end. */
+  end: number;
+}
+
 export interface ResolvedTimeline {
   id: string;
   entry: string;
@@ -64,6 +76,7 @@ export interface ResolvedTimeline {
   durationInFrames: number;
   tracks: TimelineTrack[];
   clips: ResolvedTimelineClip[];
+  transitions: ResolvedTimelineTransition[];
 }
 
 export interface ResolveTimelineResult {
@@ -809,12 +822,104 @@ async function resolveTimelineInternal(options: {
     );
   }
 
+  const clipById = new Map(clips.map((clip) => [clip.id, clip]));
+  const trackById = new Map(document.tracks.map((track) => [track.id, track]));
+  const transitions: ResolvedTimelineTransition[] = [];
+  const declaredPairs = new Set<string>();
+
+  for (const [index, transition] of (document.transitions ?? []).entries()) {
+    const jsonPath = `$.transitions[${index}]`;
+    const details: CompositionDiagnosticDetails = {
+      timeline: timeline.id,
+      nesting: context.nesting,
+      jsonPath,
+      from: transition.from,
+      to: transition.to,
+    };
+    const from = clipById.get(transition.from);
+    const to = clipById.get(transition.to);
+    if (!from || !to || from.id === to.id) {
+      addError(
+        diagnostics,
+        "TIMELINE_TRANSITION_UNKNOWN_CLIP",
+        `Transition from "${transition.from}" to "${transition.to}" must reference two distinct clips in this timeline.`,
+        details,
+      );
+      continue;
+    }
+    if (from.track !== to.track) {
+      addError(
+        diagnostics,
+        "TIMELINE_TRANSITION_WRONG_TRACK",
+        `Transition "${from.id}" → "${to.id}" must keep both clips on one track; "${from.track}" and "${to.track}" differ.`,
+        details,
+      );
+      continue;
+    }
+    const track = trackById.get(from.track);
+    if (!track || track.kind !== "video") {
+      addError(
+        diagnostics,
+        "TIMELINE_TRANSITION_AUDIO_TRACK",
+        `Transition "${from.id}" → "${to.id}" is on audio track "${from.track}"; only video tracks support transitions.`,
+        { ...details, track: from.track },
+      );
+      continue;
+    }
+    declaredPairs.add(`${from.track}\u0000${from.id}\u0000${to.id}`);
+    declaredPairs.add(`${from.track}\u0000${to.id}\u0000${from.id}`);
+    if (to.start <= from.start) {
+      addError(
+        diagnostics,
+        "TIMELINE_TRANSITION_GEOMETRY",
+        `Transition "${from.id}" → "${to.id}" requires "${to.id}" to start after "${from.id}" starts.`,
+        { ...details, track: from.track, suggestion: `Move "${to.id}" later or "${from.id}" earlier.` },
+      );
+      continue;
+    }
+    if (to.start >= from.end) {
+      addError(
+        diagnostics,
+        "TIMELINE_TRANSITION_NOT_OVERLAPPING",
+        `Transition "${from.id}" → "${to.id}" declares no overlap: "${to.id}" starts at ${to.start}, after "${from.id}" ends at ${from.end}.`,
+        { ...details, track: from.track, suggestion: `Start "${to.id}" before frame ${from.end}.` },
+      );
+      continue;
+    }
+    if (to.end <= from.end) {
+      addError(
+        diagnostics,
+        "TIMELINE_TRANSITION_GEOMETRY",
+        `Transition "${from.id}" → "${to.id}" requires "${to.id}" to end after "${from.id}" ends at ${from.end}.`,
+        { ...details, track: from.track, suggestion: `Extend "${to.id}" beyond frame ${from.end}.` },
+      );
+      continue;
+    }
+    transitions.push({
+      from: from.id,
+      to: to.id,
+      kind: transition.kind,
+      ...(transition.easing !== undefined ? { easing: transition.easing } : {}),
+      track: from.track,
+      start: to.start,
+      end: from.end,
+    });
+  }
+
   for (const track of document.tracks) {
-    const trackClips = clips.filter((clip) => clip.track === track.id).sort((left, right) => left.start - right.start);
-    for (let index = 1; index < trackClips.length; index += 1) {
-      const previous = trackClips[index - 1] as ResolvedTimelineClip;
-      const current = trackClips[index] as ResolvedTimelineClip;
-      if (current.start < previous.end) {
+    const trackClips = clips
+      .filter((clip) => clip.track === track.id)
+      .sort((left, right) => left.start - right.start || left.end - right.end);
+    for (let index = 0; index < trackClips.length; index += 1) {
+      const previous = trackClips[index] as ResolvedTimelineClip;
+      for (let next = index + 1; next < trackClips.length; next += 1) {
+        const current = trackClips[next] as ResolvedTimelineClip;
+        if (current.start >= previous.end) {
+          break;
+        }
+        if (declaredPairs.has(`${track.id}\u0000${previous.id}\u0000${current.id}`)) {
+          continue;
+        }
         addError(
           diagnostics,
           "TIMELINE_CLIP_OVERLAP",
@@ -824,7 +929,7 @@ async function resolveTimelineInternal(options: {
             track: track.id,
             clip: current.id,
             nesting: context.nesting,
-            suggestion: "No two clips on one track may overlap in 0.6.",
+            suggestion: "No two clips on one track may overlap without a declared transition.",
           },
         );
       }
@@ -854,6 +959,7 @@ async function resolveTimelineInternal(options: {
       durationInFrames,
       tracks: document.tracks,
       clips,
+      transitions,
     },
     diagnostics: uniqueDiagnostics,
   };

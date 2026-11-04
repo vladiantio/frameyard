@@ -210,4 +210,45 @@ export function keyframeChannelExpression(
   return value;
 }
 
+function absoluteFrameExpression(frameVariable: "n" | "N", frameOffset: number): string {
+  if (frameOffset === 0) {
+    return `(${frameVariable})`;
+  }
+  return `(${frameVariable}+${formatNumber(frameOffset)})`;
+}
+
+/**
+ * Builds the eased 0..1 progress of a transition at absolute timeline frames.
+ * Used for the incoming layer's alpha mask.
+ */
+export function transitionProgressExpression(options: {
+  frameVariable: "n" | "N";
+  frameOffset: number;
+  start: number;
+  end: number;
+  easing?: string;
+}): string {
+  const length = options.end - options.start;
+  if (!Number.isInteger(length) || length <= 0) {
+    throw new Error("Transition expressions require a positive integer window.");
+  }
+  const frame = absoluteFrameExpression(options.frameVariable, options.frameOffset);
+  const progress = `min(1,max(0,((${frame}-${formatNumber(options.start)})/${length})))`;
+  return easingExpression(easingFor(options.easing), progress);
+}
+
+/**
+ * Builds an equal-power gain factor for one side of a transition from a
+ * progress expression evaluated at the audio filter's own timestamp.
+ */
+export function transitionGainExpression(options: {
+  progressExpression: string;
+  easing?: string;
+  role: "in" | "out";
+}): string {
+  const eased = easingExpression(easingFor(options.easing), `min(1,max(0,${options.progressExpression}))`);
+  const value = options.role === "in" ? eased : `(1-(${eased}))`;
+  return `sqrt(max(0,min(1,${value})))`;
+}
+
 export { formatNumber as formatKeyframeNumber };

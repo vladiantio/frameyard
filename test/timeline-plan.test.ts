@@ -37,7 +37,11 @@ function clip(options: {
   };
 }
 
-function timeline(clips: ResolvedTimelineClip[], durationInFrames = 100): ResolvedTimeline {
+function timeline(
+  clips: ResolvedTimelineClip[],
+  durationInFrames = 100,
+  transitions: ResolvedTimeline["transitions"] = [],
+): ResolvedTimeline {
   return {
     id: "main",
     entry: "timelines/main.json",
@@ -49,6 +53,7 @@ function timeline(clips: ResolvedTimelineClip[], durationInFrames = 100): Resolv
       { id: "a1", kind: "audio", gain: 1, muted: false },
     ],
     clips,
+    transitions,
   };
 }
 
@@ -160,6 +165,64 @@ describe("timeline render planning", () => {
       [30, 35, ["middle"]],
     ]);
     expect(plan.segments[0]?.layers[0]?.sourceStart).toBe(5);
+  });
+
+  it("attaches transition roles and stacks the incoming clip above the outgoing clip", () => {
+    const plan = planTimelineRender(
+      timeline(
+        [
+          clip({ id: "b", track: "v1", start: 6, duration: 10 }),
+          clip({ id: "a", track: "v1", start: 0, duration: 10 }),
+        ],
+        16,
+        [{ from: "a", to: "b", kind: "dissolve", track: "v1", start: 6, end: 10 }],
+      ),
+      { maxSegmentFrames: 100 },
+    );
+
+    expect(
+      plan.segments.map((segment) => [
+        segment.start,
+        segment.end,
+        segment.layers.map((layer) => [layer.clip.id, layer.transition?.role ?? null]),
+      ]),
+    ).toEqual([
+      [0, 6, [["a", null]]],
+      [
+        6,
+        10,
+        [
+          ["a", "out"],
+          ["b", "in"],
+        ],
+      ],
+      [10, 16, [["b", null]]],
+    ]);
+    expect(plan.segments[1]?.layers[1]?.transition).toEqual({ role: "in", start: 6, end: 10 });
+  });
+
+  it("keeps the transition window independent of the maximum segment length", () => {
+    const plan = planTimelineRender(
+      timeline(
+        [
+          clip({ id: "a", track: "v1", start: 0, duration: 12 }),
+          clip({ id: "b", track: "v1", start: 8, duration: 12 }),
+        ],
+        20,
+        [{ from: "a", to: "b", kind: "dissolve", easing: "ease-in-out", track: "v1", start: 8, end: 12 }],
+      ),
+      { maxSegmentFrames: 2 },
+    );
+
+    for (const segment of plan.segments) {
+      for (const layer of segment.layers) {
+        if (layer.transition) {
+          expect(layer.transition.start).toBe(8);
+          expect(layer.transition.end).toBe(12);
+          expect(layer.transition.easing).toBe("ease-in-out");
+        }
+      }
+    }
   });
 
   it("rejects an invalid maximum segment length", () => {

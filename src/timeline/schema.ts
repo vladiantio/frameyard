@@ -108,6 +108,23 @@ export interface TimelineClip {
   audio?: TimelineClipAudio;
 }
 
+/** Transition kinds that both preview and production can reproduce exactly. */
+export const TRANSITION_KINDS = ["dissolve"] as const;
+
+export type TransitionKind = (typeof TRANSITION_KINDS)[number];
+
+/**
+ * A dissolve across the overlap of two clips on one video track. The window is
+ * `[to.start, from.end)`; the overlap geometry is the single source of truth.
+ */
+export interface TimelineTransition {
+  from: string;
+  to: string;
+  kind: TransitionKind;
+  /** CSS timing function for the progress. Defaults to `linear`. */
+  easing?: string;
+}
+
 export interface TimelineDocument {
   version: 1;
   name?: string;
@@ -115,6 +132,7 @@ export interface TimelineDocument {
   background?: string;
   tracks: TimelineTrack[];
   clips: TimelineClip[];
+  transitions?: TimelineTransition[];
 }
 
 export interface ParseTimelineResult {
@@ -487,6 +505,135 @@ function isAudioBearingSource(source: TimelineSource): boolean {
   return source.kind !== "image";
 }
 
+function parseTransitions(
+  value: unknown,
+  path: string,
+  add: (
+    code: FrameyardErrorCode,
+    message: string,
+    path: string,
+    details?: Partial<CompositionDiagnosticDetails>,
+  ) => void,
+): TimelineTransition[] {
+  if (!Array.isArray(value)) {
+    add("TIMELINE_TRANSITION_INVALID", "Timeline transitions must be an array.", path);
+    return [];
+  }
+
+  const transitions: TimelineTransition[] = [];
+  const fromIds = new Set<string>();
+  const toIds = new Set<string>();
+  const pairs = new Set<string>();
+
+  for (const [index, raw] of value.entries()) {
+    const entryPath = jsonPath(path, index);
+    if (!isPlainObject(raw)) {
+      add("TIMELINE_TRANSITION_INVALID", "Transition must be an object.", entryPath);
+      continue;
+    }
+    for (const key of unknownKeys(raw, ["from", "to", "kind", "easing"])) {
+      add("TIMELINE_TRANSITION_INVALID", `Unknown transition field "${key}".`, jsonPath(entryPath, key));
+    }
+
+    const fromValid = isNonEmptyString(raw.from) && ID_PATTERN.test(raw.from);
+    const toValid = isNonEmptyString(raw.to) && ID_PATTERN.test(raw.to);
+    const details: Partial<CompositionDiagnosticDetails> = {
+      ...(isNonEmptyString(raw.from) ? { from: raw.from } : {}),
+      ...(isNonEmptyString(raw.to) ? { to: raw.to } : {}),
+    };
+    if (!fromValid) {
+      add(
+        "TIMELINE_TRANSITION_INVALID",
+        "Transition from must be a valid clip id.",
+        jsonPath(entryPath, "from"),
+        details,
+      );
+    }
+    if (!toValid) {
+      add("TIMELINE_TRANSITION_INVALID", "Transition to must be a valid clip id.", jsonPath(entryPath, "to"), details);
+    }
+
+    let kind: TransitionKind | undefined;
+    if (raw.kind !== undefined) {
+      if (typeof raw.kind !== "string" || !(TRANSITION_KINDS as readonly string[]).includes(raw.kind)) {
+        add(
+          "TIMELINE_TRANSITION_NOT_DISSOLVE",
+          `Transition kind must be one of: ${TRANSITION_KINDS.join(", ")}.`,
+          jsonPath(entryPath, "kind"),
+          { ...details, ...(typeof raw.kind === "string" ? { value: raw.kind } : {}) },
+        );
+      } else {
+        kind = raw.kind as TransitionKind;
+      }
+    } else {
+      add("TIMELINE_TRANSITION_NOT_DISSOLVE", "Transition kind is required.", jsonPath(entryPath, "kind"), details);
+    }
+
+    let easing: string | undefined;
+    if (raw.easing !== undefined) {
+      if (typeof raw.easing !== "string" || raw.easing.trim().length === 0) {
+        add(
+          "TIMELINE_TRANSITION_INVALID",
+          "Transition easing must be a non-empty string.",
+          jsonPath(entryPath, "easing"),
+          details,
+        );
+      } else if (parseEasing(raw.easing) === null) {
+        add(
+          "TIMELINE_TRANSITION_INVALID",
+          `Transition easing "${raw.easing}" is not supported. Use ${EASING_GRAMMAR}.`,
+          jsonPath(entryPath, "easing"),
+          { ...details, value: raw.easing, suggestion: `Use ${EASING_GRAMMAR}.` },
+        );
+      } else {
+        easing = raw.easing.trim();
+      }
+    }
+
+    if (!fromValid || !toValid) {
+      continue;
+    }
+    const from = raw.from as string;
+    const to = raw.to as string;
+    if (pairs.has(`${from}\u0000${to}`)) {
+      add(
+        "TIMELINE_TRANSITION_DUPLICATE",
+        `Transition from "${from}" to "${to}" is declared more than once.`,
+        entryPath,
+        { ...details, suggestion: "Declare each clip pair once." },
+      );
+      continue;
+    }
+    if (fromIds.has(from)) {
+      add(
+        "TIMELINE_TRANSITION_DUPLICATE",
+        `Clip "${from}" is already the source of another transition.`,
+        jsonPath(entryPath, "from"),
+        { ...details, suggestion: "A clip can transition into at most one other clip." },
+      );
+      continue;
+    }
+    if (toIds.has(to)) {
+      add(
+        "TIMELINE_TRANSITION_DUPLICATE",
+        `Clip "${to}" is already the target of another transition.`,
+        jsonPath(entryPath, "to"),
+        { ...details, suggestion: "A clip can be transitioned into at most once." },
+      );
+      continue;
+    }
+    fromIds.add(from);
+    toIds.add(to);
+    pairs.add(`${from}\u0000${to}`);
+    if (kind === undefined) {
+      continue;
+    }
+    transitions.push({ from, to, kind, ...(easing !== undefined ? { easing } : {}) });
+  }
+
+  return transitions;
+}
+
 /** Parses and normalizes a timeline JSON document without touching the filesystem. */
 export function parseTimelineDocument(value: unknown, context: DiagnosticContext = {}): ParseTimelineResult {
   const diagnostics: CompositionDiagnostic[] = [];
@@ -504,7 +651,15 @@ export function parseTimelineDocument(value: unknown, context: DiagnosticContext
     return { timeline: null, diagnostics };
   }
 
-  for (const key of unknownKeys(value, ["version", "name", "durationInFrames", "background", "tracks", "clips"])) {
+  for (const key of unknownKeys(value, [
+    "version",
+    "name",
+    "durationInFrames",
+    "background",
+    "tracks",
+    "clips",
+    "transitions",
+  ])) {
     add("TIMELINE_INVALID", `Unknown timeline field "${key}".`, jsonPath("$", key));
   }
 
@@ -818,19 +973,41 @@ export function parseTimelineDocument(value: unknown, context: DiagnosticContext
     });
   }
 
+  const transitions = value.transitions === undefined ? [] : parseTransitions(value.transitions, "$.transitions", add);
+
+  const declaredPairs = new Set<string>();
+  for (const transition of transitions) {
+    declaredPairs.add(`${transition.from}\u0000${transition.to}`);
+    declaredPairs.add(`${transition.to}\u0000${transition.from}`);
+  }
   for (const track of tracks) {
     const trackClips = clips
       .filter((clip) => clip.track === track.id && clip.duration !== undefined)
-      .sort((left, right) => left.start - right.start);
-    for (let index = 1; index < trackClips.length; index += 1) {
-      const previous = trackClips[index - 1] as TimelineClip;
-      const current = trackClips[index] as TimelineClip;
-      if (current.start < previous.start + (previous.duration as number)) {
+      .sort(
+        (left, right) =>
+          left.start - right.start ||
+          left.start + (left.duration as number) - (right.start + (right.duration as number)),
+      );
+    for (let index = 0; index < trackClips.length; index += 1) {
+      const previous = trackClips[index] as TimelineClip;
+      const previousEnd = previous.start + (previous.duration as number);
+      for (let next = index + 1; next < trackClips.length; next += 1) {
+        const current = trackClips[next] as TimelineClip;
+        if (current.start >= previousEnd) {
+          break;
+        }
+        if (declaredPairs.has(`${previous.id}\u0000${current.id}`)) {
+          continue;
+        }
         add(
           "TIMELINE_CLIP_OVERLAP",
           `Clip "${current.id}" overlaps "${previous.id}" on track "${track.id}".`,
           `$.clips[${clips.indexOf(current)}]`,
-          { track: track.id, clip: current.id, suggestion: "No two clips on one track may overlap in 0.6." },
+          {
+            track: track.id,
+            clip: current.id,
+            suggestion: "No two clips on one track may overlap without a declared transition.",
+          },
         );
       }
     }
@@ -868,6 +1045,7 @@ export function parseTimelineDocument(value: unknown, context: DiagnosticContext
       ...(typeof value.background === "string" ? { background: value.background } : {}),
       tracks,
       clips,
+      transitions,
     },
     diagnostics,
   };

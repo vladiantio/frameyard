@@ -248,11 +248,39 @@ beforeAll(async () => {
     )}\n`,
   );
   await writeFile(
+    path.join(root, "timelines", "dissolve.json"),
+    `${JSON.stringify(
+      {
+        version: 1,
+        tracks: [{ id: "v1", kind: "video" }],
+        clips: [
+          {
+            id: "red",
+            track: "v1",
+            source: { kind: "image", src: "assets/frame-1.png" },
+            start: 0,
+            duration: 10,
+          },
+          {
+            id: "lime",
+            track: "v1",
+            source: { kind: "image", src: "assets/frame-2.png" },
+            start: 6,
+            duration: 10,
+          },
+        ],
+        transitions: [{ from: "red", to: "lime", kind: "dissolve" }],
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  await writeFile(
     path.join(root, "video.config.js"),
     `export default {
       format: { width: 320, height: 180, fps: 10 },
       compositions: { intro: "./compositions/intro.html", still: "./compositions/still.html" },
-      timelines: { main: "./timelines/main.json", static: "./timelines/static.json", sized: "./timelines/sized.json", video: "./timelines/video.json", blend: "./timelines/blend.json", motion: "./timelines/motion.json" },
+      timelines: { main: "./timelines/main.json", static: "./timelines/static.json", sized: "./timelines/sized.json", video: "./timelines/video.json", blend: "./timelines/blend.json", motion: "./timelines/motion.json", dissolve: "./timelines/dissolve.json" },
     };\n`,
   );
   server = await startPreviewServer({ projectRoot: root, port: 0 });
@@ -413,8 +441,10 @@ describe("timeline preview runtime", () => {
 
       const topScreen = page.locator('[data-clip="top-screen"]');
       const bottomScreen = page.locator('[data-clip="bottom-screen"]');
-      expect(await topScreen.evaluate((element) => getComputedStyle(element).zIndex)).toBe("1");
-      expect(await bottomScreen.evaluate((element) => getComputedStyle(element).zIndex)).toBe("0");
+      const topZ = Number(await topScreen.evaluate((element) => getComputedStyle(element).zIndex));
+      const bottomZ = Number(await bottomScreen.evaluate((element) => getComputedStyle(element).zIndex));
+      expect(topZ).toBeGreaterThan(bottomZ);
+      expect(topZ % 2).toBe(0);
       expect(await topScreen.evaluate((element) => getComputedStyle(element).mixBlendMode)).toBe("screen");
       expect(await bottomScreen.evaluate((element) => getComputedStyle(element).mixBlendMode)).toBe("normal");
       expect(await page.locator("#stage").evaluate((element) => getComputedStyle(element).isolation)).toBe("isolate");
@@ -455,6 +485,74 @@ describe("timeline preview runtime", () => {
           10,
         );
       }
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+
+  it("dissolves between overlapping clips in preview and matches production pixels", async () => {
+    const page = await browser.newPage({ viewport: { width: 640, height: 360 } });
+    try {
+      await openEmbeddedTimeline(page, new URL("/__frameyard/timeline/dissolve?__fy-embed=1", server.url).href);
+      await loadTimeline(page);
+      await seekTimeline(page, 0);
+
+      const red = page.locator('[data-clip="red"]');
+      const lime = page.locator('[data-clip="lime"]');
+      expect(await lime.evaluate((element) => getComputedStyle(element).display)).toBe("none");
+
+      await seekTimeline(page, 8);
+      expect(await red.evaluate((element) => getComputedStyle(element).opacity)).toBe("1");
+      expect(await lime.evaluate((element) => getComputedStyle(element).opacity)).toBe("0.5");
+      const redZ = Number(await red.evaluate((element) => getComputedStyle(element).zIndex));
+      const limeZ = Number(await lime.evaluate((element) => getComputedStyle(element).zIndex));
+      expect(limeZ).toBeGreaterThan(redZ);
+
+      const stage = page.locator("#stage");
+      const box = await stage.boundingBox();
+      if (box === null) {
+        throw new Error("Missing timeline stage.");
+      }
+      const image = path.join(root, "out", "dissolve-preview.png");
+      await writeFile(image, await page.screenshot({ clip: box }));
+      const pixel = await mediaPixel(image, Math.floor(box.width / 2), Math.floor(box.height / 2));
+      expect(Math.abs((pixel[0] as number) - 128)).toBeLessThanOrEqual(12);
+      expect(Math.abs((pixel[1] as number) - 128)).toBeLessThanOrEqual(12);
+      expect(pixel[2]).toBeLessThan(30);
+
+      const stillPath = path.join(root, "out", "dissolve-still-8.png");
+      await captureTimelineStills({
+        project: await loadProject(root),
+        timelineId: "dissolve",
+        frames: [8],
+        outPaths: [stillPath],
+      });
+      const still = await mediaPixel(stillPath, 160, 90);
+      for (let channel = 0; channel < 3; channel += 1) {
+        expect(Math.abs((pixel[channel] as number) - (still[channel] as number))).toBeLessThanOrEqual(10);
+      }
+
+      await seekTimeline(page, 10);
+      expect(await lime.evaluate((element) => getComputedStyle(element).opacity)).toBe("1");
+      expect(await red.evaluate((element) => getComputedStyle(element).display)).toBe("none");
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+
+  it("draws a read-only transition band on the timeline strip", async () => {
+    const page = await browser.newPage({ viewport: { width: 960, height: 640 } });
+    try {
+      await page.goto(new URL("/__frameyard/timeline/dissolve", server.url).href);
+      await page.waitForSelector(".transition");
+      const band = page.locator(".transition");
+      expect(await band.count()).toBe(1);
+      expect(await band.getAttribute("title")).toContain("dissolve red → lime");
+      const box = await band.boundingBox();
+      if (box === null) {
+        throw new Error("Missing transition band.");
+      }
+      expect(box.width).toBeGreaterThan(0);
     } finally {
       await page.close();
     }

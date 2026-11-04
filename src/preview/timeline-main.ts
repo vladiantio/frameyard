@@ -1,5 +1,6 @@
 import { createTimelineHost, type TimelineHost } from "./timeline-host.js";
 import { keyframeChannelsAt, keyframeMarkerFrames } from "../timeline/keyframes.js";
+import { transitionGain } from "../timeline/transitions.js";
 import type { TimelinePreviewAudioClip, TimelinePreviewClip, TimelinePreviewData } from "./timeline-data.js";
 
 interface TimelineHostApi {
@@ -138,6 +139,15 @@ function renderTracks(data: TimelinePreviewData): { playheads: HTMLDivElement[];
       lane.append(element);
     }
 
+    for (const transition of data.transitions.filter((entry) => entry.track === track.id)) {
+      const band = document.createElement("div");
+      band.className = "transition";
+      band.style.left = `${(transition.start / data.durationInFrames) * 100}%`;
+      band.style.width = `${((transition.end - transition.start) / data.durationInFrames) * 100}%`;
+      band.title = `${transition.kind} ${transition.from} → ${transition.to} · ${transition.start}..${transition.end}`;
+      lane.append(band);
+    }
+
     const playhead = document.createElement("div");
     playhead.style.position = "absolute";
     playhead.style.top = "0";
@@ -247,7 +257,21 @@ async function main(): Promise<void> {
         clip.trimDuration !== undefined ? clip.startFrame + clip.trimDuration * fps : Number.POSITIVE_INFINITY;
       const active = currentFrame >= clip.startFrame && currentFrame < endFrame;
       const desired = clip.trimStart + Math.max(0, (currentFrame - clip.startFrame) / fps);
-      audio.volume = Math.max(0, Math.min(1, clip.volume * masterVolume * (muted ? 0 : 1)));
+      const envelopeGain = (clip.envelopes ?? []).reduce(
+        (gain, envelope) =>
+          gain *
+          transitionGain(
+            {
+              start: envelope.startFrame,
+              end: envelope.endFrame,
+              ...(envelope.easing !== undefined ? { easing: envelope.easing } : {}),
+            },
+            currentFrame,
+            envelope.role,
+          ),
+        1,
+      );
+      audio.volume = Math.max(0, Math.min(1, clip.volume * envelopeGain * masterVolume * (muted ? 0 : 1)));
       if (forceSeek || !playing) {
         if (active && Number.isFinite(desired)) {
           audio.currentTime = desired;

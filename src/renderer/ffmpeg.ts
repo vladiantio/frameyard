@@ -1,9 +1,15 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { writeFile } from "node:fs/promises";
+import type { AudioVolumeEnvelope } from "../contracts.js";
 import { FrameyardError } from "../errors.js";
 import { evaluatePresentation } from "../timeline/keyframes.js";
 import type { BlendMode, TimelineKeyframes, TimelineTransform } from "../timeline/schema.js";
-import { keyframeChannelExpression } from "./keyframe-expressions.js";
+import { transitionProgress } from "../timeline/transitions.js";
+import {
+  keyframeChannelExpression,
+  transitionGainExpression,
+  transitionProgressExpression,
+} from "./keyframe-expressions.js";
 
 const STDERR_LIMIT = 16 * 1024;
 
@@ -446,6 +452,8 @@ export interface MixClip {
   trimStart: number;
   trimDuration?: number;
   volume: number;
+  /** Multiplicative equal-power ramps evaluated against absolute timeline frames. */
+  volumeEnvelopes?: AudioVolumeEnvelope[];
 }
 
 /** Normalizes any decodable source to the 16 kHz mono PCM WAV that whisper.cpp expects. */
@@ -505,10 +513,25 @@ export async function mixAudioTimeline(options: {
     }
 
     const delayMs = Math.round((clip.startFrame * 1000) / options.fps);
+    const gain = clip.volumeEnvelopes?.length
+      ? clip.volumeEnvelopes
+          .map((envelope) =>
+            transitionGainExpression({
+              progressExpression: `((${formatNumber(clip.startFrame)}+t*${formatNumber(options.fps)}-${formatNumber(envelope.startFrame)})/${formatNumber(envelope.endFrame - envelope.startFrame)})`,
+              ...(envelope.easing !== undefined ? { easing: envelope.easing } : {}),
+              role: envelope.role,
+            }),
+          )
+          .join("*")
+      : undefined;
+    const volume =
+      gain === undefined
+        ? `volume=${formatNumber(clip.volume)}`
+        : `volume='${formatNumber(clip.volume)}*(${gain})':eval=frame`;
     const chain = [
       `atrim=${trim.join(":")}`,
       "asetpts=PTS-STARTPTS",
-      `volume=${formatNumber(clip.volume)}`,
+      volume,
       "aresample=48000",
       "aformat=sample_fmts=fltp:channel_layouts=stereo",
       "apad",
@@ -757,6 +780,15 @@ export interface TimelineCompositeLayer {
   keyframes?: TimelineKeyframes;
   /** Timeline frame where the clip starts. Defaults to 0. */
   clipStart?: number;
+  /** Transition role while the composite range intersects the overlap window. */
+  transition?: {
+    role: "in" | "out";
+    /** Inclusive first timeline frame. */
+    start: number;
+    /** Exclusive last timeline frame. */
+    end: number;
+    easing?: string;
+  };
 }
 
 function ffmpegBackgroundColor(value: string): string {
@@ -818,16 +850,26 @@ function hasKeyframe(layer: TimelineCompositeLayer, channel: "x" | "y" | "scale"
   return layer.keyframes?.[channel] !== undefined;
 }
 
-/** False when a keyed layer is invisible for every frame of the range. */
+/** The incoming layer's animated alpha at an absolute timeline frame. */
+function transitionAlphaAt(layer: TimelineCompositeLayer, frame: number): number {
+  if (layer.transition?.role !== "in") {
+    return 1;
+  }
+  return transitionProgress(layer.transition, frame);
+}
+
+/** False when a keyed or transitioning layer is invisible for every frame of the range. */
 function isLayerVisibleInRange(layer: TimelineCompositeLayer, frameOffset: number, frames: number): boolean {
-  if (!hasKeyframe(layer, "opacity") && !hasKeyframe(layer, "scale")) {
+  const animated = hasKeyframe(layer, "opacity") || hasKeyframe(layer, "scale");
+  if (!animated && layer.transition?.role !== "in") {
     return layer.opacity > 0 && layer.scale > 0;
   }
   const transform = layerTransform(layer);
   const clipStart = layer.clipStart ?? 0;
   for (let index = 0; index < frames; index += 1) {
-    const values = evaluatePresentation(transform, layer.keyframes, frameOffset + index - clipStart);
-    if (values.opacity > 0 && values.scale > 0) {
+    const frame = frameOffset + index;
+    const values = evaluatePresentation(transform, layer.keyframes, frame - clipStart);
+    if (values.opacity * transitionAlphaAt(layer, frame) > 0 && values.scale > 0) {
       return true;
     }
   }
@@ -898,7 +940,7 @@ function rotationOutputSize(
 }
 
 function needsOpacityMask(layer: TimelineCompositeLayer): boolean {
-  return hasKeyframe(layer, "opacity") || hasKeyframe(layer, "scale");
+  return hasKeyframe(layer, "opacity") || hasKeyframe(layer, "scale") || layer.transition?.role === "in";
 }
 
 /**
@@ -943,7 +985,8 @@ function presentationLayerFilters(
     addRotation();
   }
 
-  if (!opacityKeys && !scaleKeys && layer.opacity < 1) {
+  // A transitioning layer carries its opacity in the animated mask instead.
+  if (!opacityKeys && !scaleKeys && layer.transition?.role !== "in" && layer.opacity < 1) {
     filters.push(`colorchannelmixer=aa=${formatNumber(layer.opacity)}`);
   }
   return filters;
@@ -968,7 +1011,17 @@ function opacityMaskFilter(options: {
     : formatNumber(layer.opacity);
   const scale = scaleKeys ? keyframeChannelExpression("scale", scaleKeys, frameOptions) : undefined;
   const visible = scale !== undefined ? `if(gt(${scale},0),1,0)` : "1";
-  const alpha = `min(1,max(0,(${opacity})*(${visible})))`;
+  const transition =
+    layer.transition?.role === "in"
+      ? transitionProgressExpression({
+          frameVariable: "N",
+          frameOffset,
+          start: layer.transition.start,
+          end: layer.transition.end,
+          ...(layer.transition.easing !== undefined ? { easing: layer.transition.easing } : {}),
+        })
+      : undefined;
+  const alpha = `min(1,max(0,(${opacity})*(${visible})${transition !== undefined ? `*(${transition})` : ""}))`;
   const width = layer.width ?? stageWidth;
   const height = layer.height ?? stageHeight;
   return `[${inputIndex}:v]format=rgba,geq=r=0:g=0:b=0:a='255*${alpha}',scale=${width}:${height}:flags=neighbor,format=rgba[${outputLabel}]`;

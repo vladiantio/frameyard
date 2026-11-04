@@ -103,6 +103,46 @@ describe("timeline schema", () => {
     expect(parsed.timeline?.clips.at(-1)?.source).toEqual({ kind: "timeline", id: "lower-third" });
   });
 
+  it("parses transitions across clip overlaps", () => {
+    const value = validTimeline();
+    value.transitions = [{ from: "intro", to: "broll", kind: "dissolve", easing: "ease-in-out" }];
+
+    const parsed = parseTimelineDocument(value);
+
+    expect(parsed.diagnostics).toEqual([]);
+    expect(parsed.timeline?.transitions).toEqual([
+      { from: "intro", to: "broll", kind: "dissolve", easing: "ease-in-out" },
+    ]);
+  });
+
+  it("rejects transition shape errors, unsupported kinds, and duplicates", () => {
+    const unknownField = validTimeline();
+    unknownField.transitions = [{ from: "intro", to: "broll", kind: "dissolve", duration: 10 }];
+    expect(codes(unknownField)).toContain("TIMELINE_TRANSITION_INVALID");
+
+    const unknownKind = validTimeline();
+    unknownKind.transitions = [{ from: "intro", to: "broll", kind: "wipe" }];
+    expect(codes(unknownKind)).toContain("TIMELINE_TRANSITION_NOT_DISSOLVE");
+
+    const badEasing = validTimeline();
+    badEasing.transitions = [{ from: "intro", to: "broll", kind: "dissolve", easing: "bounce" }];
+    expect(codes(badEasing)).toContain("TIMELINE_TRANSITION_INVALID");
+
+    const repeatedPair = validTimeline();
+    repeatedPair.transitions = [
+      { from: "intro", to: "broll", kind: "dissolve" },
+      { from: "intro", to: "broll", kind: "dissolve" },
+    ];
+    expect(codes(repeatedPair)).toContain("TIMELINE_TRANSITION_DUPLICATE");
+
+    const repeatedSource = validTimeline();
+    repeatedSource.transitions = [
+      { from: "intro", to: "broll", kind: "dissolve" },
+      { from: "intro", to: "logo", kind: "dissolve" },
+    ];
+    expect(codes(repeatedSource)).toContain("TIMELINE_TRANSITION_DUPLICATE");
+  });
+
   it("rejects unknown root, track, clip, source, transform, and audio fields", () => {
     const root = validTimeline();
     root.extra = true;

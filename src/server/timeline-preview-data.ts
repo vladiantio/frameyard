@@ -104,6 +104,17 @@ export async function buildTimelinePreviewData(
     trimStart: clip.trimStart,
     ...(clip.trimDuration !== undefined ? { trimDuration: clip.trimDuration } : {}),
     volume: clip.volume,
+    ...(clip.envelopes !== undefined ? { envelopes: clip.envelopes } : {}),
+  }));
+
+  const transitions = timeline.transitions.map((transition) => ({
+    from: transition.from,
+    to: transition.to,
+    kind: transition.kind,
+    ...(transition.easing !== undefined ? { easing: transition.easing } : {}),
+    track: transition.track,
+    start: transition.start,
+    end: transition.end,
   }));
 
   return {
@@ -120,6 +131,7 @@ export async function buildTimelinePreviewData(
       ...(track.muted !== undefined ? { muted: track.muted } : {}),
     })),
     clips,
+    transitions,
     audioClips,
     diagnostics: resolved.diagnostics,
   };

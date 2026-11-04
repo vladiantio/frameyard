@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import {
   isPlainObject,
+  type AudioVolumeEnvelope,
   type CompositionDiagnostic,
   type CompositionSourceInfo,
   type ResolvedAudioClip,
@@ -36,6 +37,7 @@ import {
 } from "./ffmpeg.js";
 import { inspectTranscriptClips, type TranscriptInspection } from "./transcripts.js";
 import { evaluatePresentation } from "../timeline/keyframes.js";
+import { transitionProgress } from "../timeline/transitions.js";
 import { KEYFRAME_CHANNELS, type TimelineTransform } from "../timeline/schema.js";
 import { planTimelineRender, type TimelineRenderSegment } from "../timeline/plan.js";
 import {
@@ -124,6 +126,7 @@ export interface TimelineCheckResult {
   framesChecked: number;
   tracks: number;
   clips: number;
+  transitions: number;
   audio: { clips: number; details: AudioInspection["clips"] };
   transcripts: { clips: number; details: TranscriptInspection["clips"] };
   diagnostics: CompositionDiagnostic[];
@@ -142,6 +145,7 @@ export interface TimelineRenderResult {
   framesRendered: number;
   segments: number;
   workers: number;
+  transitions: number;
   /** Resolved delivery codec. */
   codec: VideoCodec;
   /** Resolved delivery container. */
@@ -319,6 +323,8 @@ interface AudioWindow {
   endFrame: number;
   gain: number;
   muted: boolean;
+  /** Gain ramps inherited from enclosing timeline clips, in absolute frames. */
+  envelopes: AudioVolumeEnvelope[];
 }
 
 function mapCompositionAudio(
@@ -363,6 +369,7 @@ function mapCompositionAudio(
     trimStart: audio.trimStart + (effectiveStart - audio.startFrame) / fps,
     trimDuration: duration,
     volume: clampVolume(audio.volume * window.gain),
+    ...(window.envelopes.length > 0 ? { envelopes: window.envelopes } : {}),
   };
 }
 
@@ -374,6 +381,20 @@ function collectTimelineAudio(
 ): void {
   const fps = timeline.format.fps;
   const trackById = new Map(timeline.tracks.map((track) => [track.id, track]));
+  const transitionSpans = new Map<string, Array<{ role: "in" | "out"; start: number; end: number; easing?: string }>>();
+  for (const transition of timeline.transitions) {
+    const span = {
+      start: transition.start,
+      end: transition.end,
+      ...(transition.easing !== undefined ? { easing: transition.easing } : {}),
+    };
+    const outgoing = transitionSpans.get(transition.from) ?? [];
+    outgoing.push({ role: "out", ...span });
+    transitionSpans.set(transition.from, outgoing);
+    const incoming = transitionSpans.get(transition.to) ?? [];
+    incoming.push({ role: "in", ...span });
+    transitionSpans.set(transition.to, incoming);
+  }
 
   for (const clip of timeline.clips) {
     const source = clip.source;
@@ -387,6 +408,13 @@ function collectTimelineAudio(
 
     const clipGain = window.gain * (clip.audio?.gain ?? 1);
     const clipMuted = window.muted || (clip.audio?.muted ?? false);
+    const ownEnvelopes: AudioVolumeEnvelope[] = (transitionSpans.get(clip.id) ?? []).map((span) => ({
+      startFrame: span.start + window.frameOffset,
+      endFrame: span.end + window.frameOffset,
+      ...(span.easing !== undefined ? { easing: span.easing } : {}),
+      role: span.role,
+    }));
+    const envelopes = ownEnvelopes.length > 0 ? [...window.envelopes, ...ownEnvelopes] : window.envelopes;
 
     if (source.kind === "composition") {
       for (const transcript of source.transcriptClips) {
@@ -396,13 +424,13 @@ function collectTimelineAudio(
         continue;
       }
       for (const audio of source.audioClips) {
-        const mapped = mapCompositionAudio(clip, audio, fps, { ...window, gain: clipGain });
+        const mapped = mapCompositionAudio(clip, audio, fps, { ...window, gain: clipGain, envelopes });
         if (mapped) {
           clips.push(mapped);
         }
       }
       for (const audio of source.embeddedAudioClips) {
-        const mapped = mapCompositionAudio(clip, audio, fps, { ...window, gain: clipGain });
+        const mapped = mapCompositionAudio(clip, audio, fps, { ...window, gain: clipGain, envelopes });
         if (mapped) {
           clips.push({ ...mapped, allowSilent: true });
         }
@@ -419,6 +447,7 @@ function collectTimelineAudio(
           endFrame,
           gain: clipGain,
           muted: clipMuted,
+          envelopes,
         },
         clips,
         transcripts,
@@ -434,6 +463,7 @@ function collectTimelineAudio(
           trimStart: clip.sourceIn / fps + (startFrame - mappedStart) / fps,
           trimDuration: (endFrame - startFrame) / fps,
           volume: clampVolume(clipGain),
+          ...(envelopes.length > 0 ? { envelopes } : {}),
         });
       }
       continue;
@@ -450,6 +480,7 @@ function collectTimelineAudio(
         trimStart: clip.sourceIn / fps + (startFrame - mappedStart) / fps,
         trimDuration: (endFrame - startFrame) / fps,
         volume: clampVolume(clipGain * (track.gain ?? 1)),
+        ...(envelopes.length > 0 ? { envelopes } : {}),
       });
     }
   }
@@ -463,7 +494,7 @@ function buildAudioClips(timeline: ResolvedTimeline): {
   const transcripts = new Map<string, ResolvedTranscriptClip>();
   collectTimelineAudio(
     timeline,
-    { frameOffset: 0, startFrame: 0, endFrame: timeline.durationInFrames, gain: 1, muted: false },
+    { frameOffset: 0, startFrame: 0, endFrame: timeline.durationInFrames, gain: 1, muted: false, envelopes: [] },
     clips,
     transcripts,
   );
@@ -739,6 +770,7 @@ async function processTimelineSegment(options: {
       blend: clip.blend ?? "normal",
       ...(clip.keyframes !== undefined ? { keyframes: clip.keyframes } : {}),
       clipStart: clip.start,
+      ...(layer.transition !== undefined ? { transition: layer.transition } : {}),
     };
 
     if (source.kind === "composition") {
@@ -895,6 +927,29 @@ function checkKeyframeEvaluation(timeline: ResolvedTimeline, segments: readonly 
   }
 }
 
+function checkTransitionEvaluation(timeline: ResolvedTimeline): void {
+  for (const transition of timeline.transitions) {
+    for (let frame = transition.start; frame < transition.end; frame += 1) {
+      const progress = transitionProgress(transition, frame);
+      if (!Number.isFinite(progress)) {
+        throw new FrameyardError(
+          "TIMELINE_TRANSITION_INVALID",
+          `Transition "${transition.from}" → "${transition.to}" produced a non-finite progress at timeline frame ${frame}.`,
+          {
+            details: {
+              timeline: timeline.id,
+              track: transition.track,
+              from: transition.from,
+              to: transition.to,
+              timelineFrame: frame,
+            },
+          },
+        );
+      }
+    }
+  }
+}
+
 async function checkResolvedTimelineRange(options: {
   timeline: ResolvedTimeline;
   startFrame: number;
@@ -908,6 +963,7 @@ async function checkResolvedTimelineRange(options: {
   const plan = planTimelineRender(timeline, { startFrame, endFrame });
   const diagnostics: CompositionDiagnostic[] = [];
   checkKeyframeEvaluation(timeline, plan.segments);
+  checkTransitionEvaluation(timeline);
   const targets = new Map<
     string,
     { source: ResolvedCompositionSource; clip: ResolvedTimelineClip; validation: StaticValidationResult }
@@ -1124,6 +1180,7 @@ export async function checkTimeline(options: {
     framesChecked: timeline.durationInFrames,
     tracks: timeline.tracks.length,
     clips: timeline.clips.length,
+    transitions: timeline.transitions.length,
     audio: { clips: audioInspection.clips.length, details: audioInspection.clips },
     transcripts: {
       clips: transcripts.clips.length,
@@ -1185,6 +1242,7 @@ async function renderResolvedTimelineFrame(options: {
       blend: clip.blend ?? "normal",
       ...(clip.keyframes !== undefined ? { keyframes: clip.keyframes } : {}),
       clipStart: clip.start,
+      ...(layer.transition !== undefined ? { transition: layer.transition } : {}),
     };
 
     if (source.kind === "composition") {
@@ -1588,6 +1646,7 @@ export async function renderTimeline(options: TimelineRenderOptions): Promise<Ti
           trimStart: asset.clip.trimStart,
           ...(asset.clip.trimDuration !== undefined ? { trimDuration: asset.clip.trimDuration } : {}),
           volume: asset.clip.volume,
+          ...(asset.clip.envelopes !== undefined ? { volumeEnvelopes: asset.clip.envelopes } : {}),
         })),
         fps: timeline.format.fps,
         durationSeconds: total / timeline.format.fps,
@@ -1626,6 +1685,7 @@ export async function renderTimeline(options: TimelineRenderOptions): Promise<Ti
       framesRendered: total,
       segments: plan.segments.length,
       workers,
+      transitions: timeline.transitions.length,
       codec,
       container,
       encoder,

@@ -1,0 +1,56 @@
+<style>
+  :root {
+    color-scheme: dark;
+  }
+  html,
+  body {
+    margin: 0;
+    width: 100%;
+    height: 100%;
+    background: #071a18;
+  }
+  .card {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-content: center;
+    gap: 20px;
+    text-align: center;
+    color: #e6fffb;
+    font-family:
+      ui-sans-serif,
+      system-ui,
+      -apple-system,
+      "Segoe UI",
+      sans-serif;
+    background:
+      radial-gradient(circle at 50% 42%, rgba(64, 224, 190, 0.45), transparent 58%),
+      linear-gradient(160deg, #0a2823, #071a18 70%);
+  }
+  .eyebrow {
+    font-size: 20px;
+    letter-spacing: 0.42em;
+    text-transform: uppercase;
+    color: #7cf0d8;
+  }
+  h1 {
+    margin: 0;
+    font-size: 148px;
+    line-height: 0.92;
+    letter-spacing: -0.04em;
+    font-weight: 800;
+  }
+  p {
+    margin: 0;
+    font-size: 28px;
+    color: #9ec9c1;
+  }
+</style>
+<fy-composition duration-in-frames="30">
+  <div class="card">
+    <div class="eyebrow">scene three</div>
+    <h1>GAMMA</h1>
+    <p>one clip can dissolve in and out</p>
+  </div>
+  <audio src="assets/gamma.wav" data-fy-start="0" data-fy-duration="1"></audio>
+</fy-composition>

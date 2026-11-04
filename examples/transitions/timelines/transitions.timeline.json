@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "tracks": [{ "id": "main", "kind": "video" }],
+  "clips": [
+    {
+      "id": "alpha",
+      "track": "main",
+      "source": { "kind": "composition", "id": "alpha" },
+      "start": 0,
+      "duration": 60
+    },
+    {
+      "id": "beta",
+      "track": "main",
+      "source": { "kind": "composition", "id": "beta" },
+      "start": 45,
+      "duration": 60
+    },
+    {
+      "id": "gamma",
+      "track": "main",
+      "source": { "kind": "composition", "id": "gamma" },
+      "start": 90,
+      "duration": 30
+    }
+  ],
+  "transitions": [
+    { "from": "alpha", "to": "beta", "kind": "dissolve", "easing": "ease-in-out" },
+    { "from": "beta", "to": "gamma", "kind": "dissolve", "easing": "linear" }
+  ]
+}

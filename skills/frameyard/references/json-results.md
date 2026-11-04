@@ -51,7 +51,7 @@ Additional fields are command-specific and stable within the 0.8 contract. `chec
 }
 ```
 
-Static validation diagnostics include source locations. Runtime diagnostics may include a `frame`. Timeline diagnostics add `timeline`, `clip`, `track`, `jsonPath`, and, for keyframe errors, `channel` and the zero-based `keyframe` index. Audio and transcript warnings use `AUDIO_WARNING` and `TRANSCRIPT_WARNING`; controller clock/randomness and CSS transition warnings use `DETERMINISM_WARNING`. See [diagnostics](diagnostics.md) for the code table.
+Static validation diagnostics include source locations. Runtime diagnostics may include a `frame`. Timeline diagnostics add `timeline`, `clip`, `track`, `jsonPath`, and, for keyframe errors, `channel` and the zero-based `keyframe` index; transition diagnostics add `from` and `to`. Audio and transcript warnings use `AUDIO_WARNING` and `TRANSCRIPT_WARNING`; controller clock/randomness and CSS transition warnings use `DETERMINISM_WARNING`. See [diagnostics](diagnostics.md) for the code table.
 
 ## check
 
@@ -110,6 +110,10 @@ A static composition result reports `kind: "static"`, dimensions only, `framesCh
   "elapsedMs": 600
 }
 ```
+
+### Timeline check
+
+A timeline check reports `timeline`, `entry`, `format`, `durationInFrames`, `framesChecked`, `tracks`, `clips`, `transitions`, `audio`, `transcripts`, `diagnostics`, and `elapsedMs`. `framesChecked` equals the timeline duration; `transitions` is the resolved count, and transition diagnostics carry `from`/`to` and `jsonPath` in `details`.
 
 ## still
 

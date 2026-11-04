@@ -132,9 +132,12 @@ describe("timeline preview server", () => {
           kind: "composition",
           id: "intro",
           url: "/compositions/intro.html?__fy-manual=1",
-          width: 320,
-          height: 180,
-          durationInFrames: 10,
+          metadata: {
+            width: 320,
+            height: 180,
+            fps: 10,
+            durationInFrames: 10,
+          },
         }),
         transform: { fit: "contain", x: 0, y: 0, scale: 1, rotation: 0, opacity: 1 },
         blend: "multiply",
@@ -173,9 +176,11 @@ describe("timeline preview server", () => {
       kind: "composition",
       id: "still",
       url: "/compositions/still.html?__fy-manual=1",
-      width: 320,
-      height: 180,
-      static: true,
+      metadata: {
+        width: 320,
+        height: 180,
+        static: true,
+      },
     });
     expect(data.clips[0]?.source).not.toHaveProperty("durationInFrames");
   });

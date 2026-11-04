@@ -1,93 +1,34 @@
-import type { AudioVolumeEnvelope, CompositionDiagnostic, Props } from "../contracts.js";
-import type { BlendMode, TimelineKeyframes } from "../timeline/schema.js";
+import type { AudioVolumeEnvelope, CompositionDiagnostic } from "../contracts.js";
+import type {
+  TimelineSceneClip,
+  TimelineSceneCompositionSource,
+  TimelineSceneInput,
+  TimelineSceneMediaSource,
+  TimelineSceneNestedSource,
+  TimelineSceneTransition,
+} from "../timeline/scene.js";
 
-export type TimelinePreviewFit = "contain" | "cover" | "stretch";
-
-export interface TimelinePreviewTransform {
-  fit: TimelinePreviewFit;
-  x: number;
-  y: number;
-  width?: number;
-  height?: number;
-  scale: number;
-  rotation: number;
-  opacity: number;
-}
-
-export interface TimelinePreviewClipAudio {
-  muted: boolean;
-  gain: number;
-}
-
-export interface TimelinePreviewCompositionSource {
-  kind: "composition";
-  id: string;
+export interface TimelinePreviewCompositionSource extends TimelineSceneCompositionSource {
   url: string;
-  width: number;
-  height: number;
-  /** True when the composition is captured once and never seeked. */
-  static?: boolean;
-  durationInFrames?: number;
 }
 
-export interface TimelinePreviewNestedTimelineSource {
-  kind: "timeline";
-  id: string;
+export interface TimelinePreviewNestedSource extends TimelineSceneNestedSource {
   url: string;
-  width: number;
-  height: number;
-  durationInFrames: number;
 }
 
-export interface TimelinePreviewMediaSource {
-  kind: "video" | "image" | "audio";
-  src: string;
+export interface TimelinePreviewMediaSource extends TimelineSceneMediaSource {
   url: string;
-  width?: number;
-  height?: number;
-  durationInFrames?: number;
-  hasAudio?: boolean;
 }
 
 export type TimelinePreviewSource =
   | TimelinePreviewCompositionSource
-  | TimelinePreviewNestedTimelineSource
+  | TimelinePreviewNestedSource
   | TimelinePreviewMediaSource;
 
-export interface TimelinePreviewClip {
-  id: string;
-  track: string;
-  source: TimelinePreviewSource;
-  start: number;
-  duration: number;
-  end: number;
-  sourceIn: number;
-  props?: Props;
-  transform: TimelinePreviewTransform;
-  keyframes?: TimelineKeyframes;
-  blend: BlendMode;
-  audio: TimelinePreviewClipAudio;
-}
+/** A resolved timeline clip with a browser-fetchable URL on its source. */
+export type TimelinePreviewClip = TimelineSceneClip<TimelinePreviewSource>;
 
-export interface TimelinePreviewTrack {
-  id: string;
-  kind: "video" | "audio";
-  name?: string;
-  gain?: number;
-  muted?: boolean;
-}
-
-export interface TimelinePreviewTransition {
-  from: string;
-  to: string;
-  kind: "dissolve" | "crossfade";
-  easing?: string;
-  track: string;
-  /** Inclusive first timeline frame. */
-  start: number;
-  /** Exclusive last timeline frame. */
-  end: number;
-}
+export type TimelinePreviewTransition = TimelineSceneTransition;
 
 export interface TimelinePreviewAudioClip {
   src: string;
@@ -99,15 +40,15 @@ export interface TimelinePreviewAudioClip {
   envelopes?: AudioVolumeEnvelope[];
 }
 
-export interface TimelinePreviewData {
+/**
+ * The serialized resolved timeline the preview host projects on every seek.
+ * Absolute paths are replaced by URLs; everything else keeps the resolved
+ * shape so the scene module can run in the browser unchanged.
+ */
+export interface TimelinePreviewData extends TimelineSceneInput<TimelinePreviewSource> {
   timeline: string;
   entry: string;
-  format: { width: number; height: number; fps: number };
-  durationInFrames: number;
   background?: string;
-  tracks: TimelinePreviewTrack[];
-  clips: TimelinePreviewClip[];
-  transitions: TimelinePreviewTransition[];
   audioClips: TimelinePreviewAudioClip[];
   diagnostics: CompositionDiagnostic[];
 }

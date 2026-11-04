@@ -4,6 +4,7 @@ import type { AudioVolumeEnvelope } from "../contracts.js";
 import { FrameyardError } from "../errors.js";
 import { evaluatePresentation } from "../timeline/keyframes.js";
 import type { BlendMode, TimelineKeyframes, TimelineTransform } from "../timeline/schema.js";
+import type { TimelineSceneLayer, TimelineSceneSource } from "../timeline/scene.js";
 import { transitionProgress } from "../timeline/transitions.js";
 import {
   keyframeChannelExpression,
@@ -777,7 +778,8 @@ export async function startVideoEncoder(options: {
 }
 
 export interface TimelineCompositeLayer {
-  kind: "composition" | "timeline" | "video" | "image";
+  /** How FFmpeg reads the captured artifact. */
+  input: "sequence" | "image" | "video";
   path: string;
   sourceWidth: number;
   sourceHeight: number;
@@ -806,6 +808,55 @@ export interface TimelineCompositeLayer {
     /** Exclusive last timeline frame. */
     end: number;
     easing?: string;
+  };
+}
+
+export interface TimelineCompositeArtifact {
+  path: string;
+  input: TimelineCompositeLayer["input"];
+  /** Absolute source frame at the segment start, for video inputs. */
+  sourceStartFrame?: number;
+}
+
+/**
+ * Builds FFmpeg's narrow layer input from a projected scene layer. The mapper
+ * owns the scene-to-filter boundary; capture chooses the artifact and its input
+ * mode, while the scene owns presentation, keyframes, and transition roles.
+ */
+export function sceneLayerToCompositeLayer<S extends TimelineSceneSource>(
+  layer: TimelineSceneLayer<S>,
+  artifact: TimelineCompositeArtifact,
+): TimelineCompositeLayer {
+  const transform = layer.transform;
+  const transition = layer.transition;
+  return {
+    input: artifact.input,
+    path: artifact.path,
+    sourceWidth: layer.sourceWidth,
+    sourceHeight: layer.sourceHeight,
+    ...(transform.width !== undefined && transform.height !== undefined
+      ? { width: transform.width, height: transform.height }
+      : {}),
+    fit: transform.fit,
+    x: transform.x,
+    y: transform.y,
+    scale: transform.scale,
+    rotation: transform.rotation,
+    opacity: transform.opacity,
+    blend: layer.blend,
+    ...(artifact.sourceStartFrame !== undefined ? { sourceStartFrame: artifact.sourceStartFrame } : {}),
+    ...(layer.keyframes !== undefined ? { keyframes: layer.keyframes } : {}),
+    clipStart: layer.clip.start,
+    ...(transition !== undefined
+      ? {
+          transition: {
+            role: transition.role,
+            start: transition.window.start,
+            end: transition.window.end,
+            ...(transition.window.easing !== undefined ? { easing: transition.window.easing } : {}),
+          },
+        }
+      : {}),
   };
 }
 
@@ -904,7 +955,7 @@ function baseLayerFilters(
     // Matroska and WebM timestamps can be quantized to milliseconds. Normalize
     // every timed layer to the project frame rate before overlay framesync so
     // it does not duplicate or drop frames. Still images are already static.
-    ...(layer.kind === "image" ? [] : [`fps=${formatNumber(fps)}`]),
+    ...(layer.input === "image" ? [] : [`fps=${formatNumber(fps)}`]),
     fitFilter(layer, stageWidth, stageHeight),
     "format=rgba",
   ];
@@ -1176,14 +1227,14 @@ function buildCompositeGraph(options: {
       maskInput = inputIndex;
     }
 
-    if (layer.kind === "video") {
+    if (layer.input === "video") {
       const startSeconds = (layer.sourceStartFrame ?? 0) / options.fps;
       if (options.segment) {
         args.push("-ss", formatNumber(startSeconds), "-t", formatNumber(durationSeconds), "-i", layer.path, "-an");
       } else {
         args.push("-ss", formatNumber(startSeconds), "-i", layer.path, "-an");
       }
-    } else if (layer.kind === "image") {
+    } else if (layer.input === "image") {
       if (options.segment) {
         args.push(
           "-loop",

@@ -29,6 +29,7 @@ import {
   mixAudioTimeline,
   muxVideoWithAudio,
   resolveVideoEncoder,
+  sceneLayerToCompositeLayer,
   type TimelineCompositeLayer,
   type VideoCodec,
   type VideoContainer,
@@ -38,8 +39,9 @@ import {
 import { inspectTranscriptClips, type TranscriptInspection } from "./transcripts.js";
 import { evaluatePresentation } from "../timeline/keyframes.js";
 import { transitionProgress } from "../timeline/transitions.js";
-import { KEYFRAME_CHANNELS, type TimelineTransform } from "../timeline/schema.js";
+import { KEYFRAME_CHANNELS } from "../timeline/schema.js";
 import { planTimelineRender, type TimelineRenderSegment } from "../timeline/plan.js";
+import { projectScene, transitionSpans } from "../timeline/scene.js";
 import {
   resolveProjectTimeline,
   type ResolvedCompositionSource,
@@ -300,23 +302,6 @@ function clampVolume(value: number): number {
   return Math.min(1, Math.max(0, value));
 }
 
-function visualSourceSize(clip: ResolvedTimelineClip, timeline: ResolvedTimeline): { width: number; height: number } {
-  const source = clip.source;
-  if (source.kind === "composition") {
-    return { width: source.metadata.width, height: source.metadata.height };
-  }
-  if (source.kind === "video" || source.kind === "image") {
-    if (source.width === undefined || source.height === undefined) {
-      throw new FrameyardError(
-        "TIMELINE_MEDIA_INVALID",
-        `Media ${source.src} is missing width/height metadata for clip "${clip.id}".`,
-      );
-    }
-    return { width: source.width, height: source.height };
-  }
-  return { width: timeline.format.width, height: timeline.format.height };
-}
-
 interface AudioWindow {
   frameOffset: number;
   startFrame: number;
@@ -381,20 +366,7 @@ function collectTimelineAudio(
 ): void {
   const fps = timeline.format.fps;
   const trackById = new Map(timeline.tracks.map((track) => [track.id, track]));
-  const transitionSpans = new Map<string, Array<{ role: "in" | "out"; start: number; end: number; easing?: string }>>();
-  for (const transition of timeline.transitions) {
-    const span = {
-      start: transition.start,
-      end: transition.end,
-      ...(transition.easing !== undefined ? { easing: transition.easing } : {}),
-    };
-    const outgoing = transitionSpans.get(transition.from) ?? [];
-    outgoing.push({ role: "out", ...span });
-    transitionSpans.set(transition.from, outgoing);
-    const incoming = transitionSpans.get(transition.to) ?? [];
-    incoming.push({ role: "in", ...span });
-    transitionSpans.set(transition.to, incoming);
-  }
+  const spansByClip = transitionSpans(timeline);
 
   for (const clip of timeline.clips) {
     const source = clip.source;
@@ -408,7 +380,7 @@ function collectTimelineAudio(
 
     const clipGain = window.gain * (clip.audio?.gain ?? 1);
     const clipMuted = window.muted || (clip.audio?.muted ?? false);
-    const ownEnvelopes: AudioVolumeEnvelope[] = (transitionSpans.get(clip.id) ?? []).map((span) => ({
+    const ownEnvelopes: AudioVolumeEnvelope[] = (spansByClip.get(clip.id) ?? []).map((span) => ({
       startFrame: span.start + window.frameOffset,
       endFrame: span.end + window.frameOffset,
       ...(span.easing !== undefined ? { easing: span.easing } : {}),
@@ -749,32 +721,9 @@ async function processTimelineSegment(options: {
     throwIfAborted(options.signal);
     const clip = layer.clip;
     const source = clip.source;
-    const transform = clip.transform ?? {
-      fit: "contain" as const,
-      x: 0,
-      y: 0,
-      scale: 1,
-      rotation: 0,
-      opacity: 1,
-    };
-    const base = {
-      fit: transform.fit,
-      x: transform.x,
-      y: transform.y,
-      ...(transform.width !== undefined && transform.height !== undefined
-        ? { width: transform.width, height: transform.height }
-        : {}),
-      scale: transform.scale,
-      rotation: transform.rotation,
-      opacity: transform.opacity,
-      blend: clip.blend ?? "normal",
-      ...(clip.keyframes !== undefined ? { keyframes: clip.keyframes } : {}),
-      clipStart: clip.start,
-      ...(layer.transition !== undefined ? { transition: layer.transition } : {}),
-    };
 
     if (source.kind === "composition") {
-      if (source.metadata.static === true) {
+      if (layer.capture === "still") {
         const captured = await captureStaticCompositionLayer({
           project,
           timeline,
@@ -787,13 +736,7 @@ async function processTimelineSegment(options: {
           ...(options.signal ? { signal: options.signal } : {}),
         });
         diagnostics.push(...captured.diagnostics);
-        layers.push({
-          kind: "image",
-          path: captured.path,
-          sourceWidth: source.metadata.width,
-          sourceHeight: source.metadata.height,
-          ...base,
-        });
+        layers.push(sceneLayerToCompositeLayer(layer, { path: captured.path, input: "image" }));
         continue;
       }
 
@@ -810,26 +753,18 @@ async function processTimelineSegment(options: {
         ...(options.signal ? { signal: options.signal } : {}),
       });
       diagnostics.push(...captured.diagnostics);
-      layers.push({
-        kind: "composition",
-        path: captured.path,
-        sourceWidth: source.metadata.width,
-        sourceHeight: source.metadata.height,
-        ...base,
-      });
+      layers.push(sceneLayerToCompositeLayer(layer, { path: captured.path, input: "sequence" }));
       continue;
     }
 
     if (source.kind === "video" || source.kind === "image") {
-      const size = visualSourceSize(clip, timeline);
-      layers.push({
-        kind: source.kind,
-        path: source.absolutePath,
-        sourceWidth: size.width,
-        sourceHeight: size.height,
-        ...base,
-        ...(source.kind === "video" ? { sourceStartFrame: layer.sourceStart } : {}),
-      });
+      layers.push(
+        sceneLayerToCompositeLayer(layer, {
+          path: source.absolutePath,
+          input: source.kind,
+          ...(source.kind === "video" ? { sourceStartFrame: layer.sourceStart } : {}),
+        }),
+      );
       continue;
     }
 
@@ -847,13 +782,7 @@ async function processTimelineSegment(options: {
         ...(options.signal ? { signal: options.signal } : {}),
       });
       diagnostics.push(...nested.diagnostics);
-      layers.push({
-        kind: "timeline",
-        path: nested.path,
-        sourceWidth: source.timeline.format.width,
-        sourceHeight: source.timeline.format.height,
-        ...base,
-      });
+      layers.push(sceneLayerToCompositeLayer(layer, { path: nested.path, input: "sequence" }));
       continue;
     }
 
@@ -894,16 +823,14 @@ interface TimelineCheckContext {
 }
 
 function checkKeyframeEvaluation(timeline: ResolvedTimeline, segments: readonly TimelineRenderSegment[]): void {
-  const fallback: TimelineTransform = { fit: "contain", x: 0, y: 0, scale: 1, rotation: 0, opacity: 1 };
   for (const segment of segments) {
     for (const layer of segment.layers) {
-      const keyframes = layer.clip.keyframes;
+      const keyframes = layer.keyframes;
       if (!keyframes) {
         continue;
       }
-      const transform = layer.clip.transform ?? fallback;
       for (let frame = segment.start; frame < segment.end; frame += 1) {
-        const values = evaluatePresentation(transform, keyframes, frame - layer.clip.start);
+        const values = evaluatePresentation(layer.transform, keyframes, frame - layer.clip.start);
         for (const channel of KEYFRAME_CHANNELS) {
           if (!Number.isFinite(values[channel])) {
             throw new FrameyardError(
@@ -1210,40 +1137,13 @@ async function renderResolvedTimelineFrame(options: {
     throw new FrameyardError("TIMELINE_INVALID", "Nested timeline depth exceeds 32.");
   }
   const { timeline, frame, context } = options;
-  const plan = planTimelineRender(timeline, { startFrame: frame, endFrame: frame + 1 });
-  const segment = plan.segments[0];
-  if (!segment) {
-    throw new FrameyardError("FRAME_OUT_OF_RANGE", `Frame ${frame} does not belong to a timeline segment.`);
-  }
+  const scene = projectScene(timeline, frame, frame + 1);
 
   const diagnostics: CompositionDiagnostic[] = [];
   const layers: TimelineCompositeLayer[] = [];
-  for (const [layerIndex, layer] of segment.layers.entries()) {
+  for (const [layerIndex, layer] of scene.layers.entries()) {
     const clip = layer.clip;
     const source = clip.source;
-    const transform = clip.transform ?? {
-      fit: "contain" as const,
-      x: 0,
-      y: 0,
-      scale: 1,
-      rotation: 0,
-      opacity: 1,
-    };
-    const base = {
-      fit: transform.fit,
-      x: transform.x,
-      y: transform.y,
-      ...(transform.width !== undefined && transform.height !== undefined
-        ? { width: transform.width, height: transform.height }
-        : {}),
-      scale: transform.scale,
-      rotation: transform.rotation,
-      opacity: transform.opacity,
-      blend: clip.blend ?? "normal",
-      ...(clip.keyframes !== undefined ? { keyframes: clip.keyframes } : {}),
-      clipStart: clip.start,
-      ...(layer.transition !== undefined ? { transition: layer.transition } : {}),
-    };
 
     if (source.kind === "composition") {
       const validation = await validateHtmlComposition({
@@ -1278,26 +1178,18 @@ async function renderResolvedTimelineFrame(options: {
       } finally {
         await session.close();
       }
-      layers.push({
-        kind: "image",
-        path: framePath,
-        sourceWidth: source.metadata.width,
-        sourceHeight: source.metadata.height,
-        ...base,
-      });
+      layers.push(sceneLayerToCompositeLayer(layer, { path: framePath, input: "image" }));
       continue;
     }
 
     if (source.kind === "video" || source.kind === "image") {
-      const size = visualSourceSize(clip, timeline);
-      layers.push({
-        kind: source.kind,
-        path: source.absolutePath,
-        sourceWidth: size.width,
-        sourceHeight: size.height,
-        ...base,
-        ...(source.kind === "video" ? { sourceStartFrame: layer.sourceStart } : {}),
-      });
+      layers.push(
+        sceneLayerToCompositeLayer(layer, {
+          path: source.absolutePath,
+          input: source.kind,
+          ...(source.kind === "video" ? { sourceStartFrame: layer.sourceStart } : {}),
+        }),
+      );
       continue;
     }
 
@@ -1314,13 +1206,7 @@ async function renderResolvedTimelineFrame(options: {
         context: { ...context, depth: context.depth + 1 },
       });
       diagnostics.push(...nestedDiagnostics);
-      layers.push({
-        kind: "image",
-        path: nestedPath,
-        sourceWidth: source.timeline.format.width,
-        sourceHeight: source.timeline.format.height,
-        ...base,
-      });
+      layers.push(sceneLayerToCompositeLayer(layer, { path: nestedPath, input: "image" }));
       continue;
     }
 

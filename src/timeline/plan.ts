@@ -1,22 +1,5 @@
-import type { ResolvedTimeline, ResolvedTimelineClip } from "./resolve.js";
-
-export interface TimelineRenderTransition {
-  /** `in` carries the animated alpha; `out` renders normally. */
-  role: "in" | "out";
-  /** Inclusive first timeline frame. */
-  start: number;
-  /** Exclusive last timeline frame. */
-  end: number;
-  easing?: string;
-}
-
-export interface TimelineRenderLayer {
-  clip: ResolvedTimelineClip;
-  /** Source frame used at the segment's first timeline frame. */
-  sourceStart: number;
-  /** Present while the segment intersects a transition on this clip. */
-  transition?: TimelineRenderTransition;
-}
+import type { ResolvedTimeline, ResolvedTimelineSource } from "./resolve.js";
+import { projectScene, type TimelineSceneLayer } from "./scene.js";
 
 export interface TimelineRenderSegment {
   index: number;
@@ -26,23 +9,17 @@ export interface TimelineRenderSegment {
   end: number;
   frames: number;
   /** Visual layers from bottom to top. */
-  layers: TimelineRenderLayer[];
+  layers: TimelineSceneLayer<ResolvedTimelineSource>[];
 }
 
 export interface TimelineRenderPlan {
-  timeline: ResolvedTimeline;
-  maxSegmentFrames: number;
   segments: TimelineRenderSegment[];
 }
 
-function isVisualClip(clip: ResolvedTimelineClip): boolean {
-  return clip.source.kind !== "audio";
-}
-
 /**
- * Splits a resolved timeline at visual clip boundaries and a maximum segment
- * duration. Every segment has a fixed set of visual layers; audio is mixed
- * globally and never appears here.
+ * Splits a resolved timeline into independently renderable segments. Segment
+ * boundaries fall on visual clip starts and ends, so every segment has a fixed
+ * scene projection; audio is mixed globally and never appears here.
  */
 export function planTimelineRender(
   timeline: ResolvedTimeline,
@@ -64,9 +41,12 @@ export function planTimelineRender(
     throw new Error(`Invalid timeline range ${startFrame}..${endFrame}.`);
   }
 
-  const visualClips = timeline.clips.filter(isVisualClip);
   const boundaries = new Set<number>([startFrame, endFrame]);
-  for (const clip of visualClips) {
+  const videoTracks = new Set(timeline.tracks.filter((track) => track.kind === "video").map((track) => track.id));
+  for (const clip of timeline.clips) {
+    if (!videoTracks.has(clip.track)) {
+      continue;
+    }
     if (clip.start > startFrame && clip.start < endFrame) {
       boundaries.add(clip.start);
     }
@@ -88,54 +68,13 @@ export function planTimelineRender(
     }
   }
 
-  const trackOrder = new Map(timeline.tracks.map((track, index) => [track.id, index]));
-  const transitionsByClip = new Map<
-    string,
-    Array<{ role: "in" | "out"; start: number; end: number; easing?: string }>
-  >();
-  for (const transition of timeline.transitions) {
-    const window = {
-      start: transition.start,
-      end: transition.end,
-      ...(transition.easing !== undefined ? { easing: transition.easing } : {}),
-    };
-    const outgoing = transitionsByClip.get(transition.from) ?? [];
-    outgoing.push({ role: "out", ...window });
-    transitionsByClip.set(transition.from, outgoing);
-    const incoming = transitionsByClip.get(transition.to) ?? [];
-    incoming.push({ role: "in", ...window });
-    transitionsByClip.set(transition.to, incoming);
-  }
+  const segments = ranges.map((range, index) => ({
+    index,
+    start: range.start,
+    end: range.end,
+    frames: range.end - range.start,
+    layers: projectScene<ResolvedTimelineSource>(timeline, range.start, range.end).layers,
+  }));
 
-  const segments: TimelineRenderSegment[] = ranges.map((range, index) => {
-    const layers = visualClips
-      .filter((clip) => clip.start <= range.start && clip.end >= range.end)
-      .sort((left, right) => {
-        const leftOrder = trackOrder.get(left.track) ?? Number.MAX_SAFE_INTEGER;
-        const rightOrder = trackOrder.get(right.track) ?? Number.MAX_SAFE_INTEGER;
-        // Within one track, the later-starting clip composites above the
-        // outgoing clip during a transition overlap.
-        return leftOrder - rightOrder || left.start - right.start || left.end - right.end;
-      })
-      .map((clip) => {
-        const transition = (transitionsByClip.get(clip.id) ?? []).find(
-          (candidate) => candidate.start < range.end && candidate.end > range.start,
-        );
-        return {
-          clip,
-          sourceStart: clip.sourceIn + (range.start - clip.start),
-          ...(transition !== undefined ? { transition } : {}),
-        };
-      });
-
-    return {
-      index,
-      start: range.start,
-      end: range.end,
-      frames: range.end - range.start,
-      layers,
-    };
-  });
-
-  return { timeline, maxSegmentFrames, segments };
+  return { segments };
 }

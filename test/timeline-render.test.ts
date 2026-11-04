@@ -1093,7 +1093,7 @@ describe("timeline blend modes", () => {
         background: "#000000",
         layers: [
           {
-            kind: "image",
+            input: "image",
             path: basePath,
             sourceWidth: 64,
             sourceHeight: 64,
@@ -1106,7 +1106,7 @@ describe("timeline blend modes", () => {
             blend: "normal",
           },
           {
-            kind: "image",
+            input: "image",
             path: sourcePath,
             sourceWidth: 64,
             sourceHeight: 64,
@@ -1154,7 +1154,7 @@ describe("timeline blend modes", () => {
       background: "#000000",
       layers: [
         {
-          kind: "image",
+          input: "image",
           path: basePath,
           sourceWidth: 64,
           sourceHeight: 64,
@@ -1167,7 +1167,7 @@ describe("timeline blend modes", () => {
           blend: "normal",
         },
         {
-          kind: "image",
+          input: "image",
           path: redPath,
           sourceWidth: 64,
           sourceHeight: 64,
@@ -1180,7 +1180,7 @@ describe("timeline blend modes", () => {
           blend: "multiply",
         },
         {
-          kind: "image",
+          input: "image",
           path: greenPath,
           sourceWidth: 64,
           sourceHeight: 64,
@@ -1233,7 +1233,7 @@ describe("timeline blend modes", () => {
       background: "#000000",
       layers: [
         {
-          kind: "image",
+          input: "image",
           path: basePath,
           sourceWidth: 64,
           sourceHeight: 64,
@@ -1246,7 +1246,7 @@ describe("timeline blend modes", () => {
           blend: "normal",
         },
         {
-          kind: "image",
+          input: "image",
           path: sourcePath,
           sourceWidth: 64,
           sourceHeight: 64,
@@ -1370,7 +1370,7 @@ describe("timeline blend modes", () => {
       background: "#000000",
       layers: [
         {
-          kind: "image",
+          input: "image",
           path: basePath,
           sourceWidth: 64,
           sourceHeight: 64,
@@ -1383,7 +1383,7 @@ describe("timeline blend modes", () => {
           blend: "normal",
         },
         {
-          kind: "image",
+          input: "image",
           path: sourcePath,
           sourceWidth: 16,
           sourceHeight: 16,
@@ -1428,7 +1428,7 @@ describe("timeline blend modes", () => {
       background: "#000000",
       layers: [
         {
-          kind: "image",
+          input: "image",
           path: basePath,
           sourceWidth: 64,
           sourceHeight: 64,
@@ -1441,7 +1441,7 @@ describe("timeline blend modes", () => {
           blend: "normal",
         },
         {
-          kind: "image",
+          input: "image",
           path: sourcePath,
           sourceWidth: 64,
           sourceHeight: 64,

@@ -1,12 +1,9 @@
 import { nextPaint, waitForVideoPaint } from "../runtime/video.js";
 import { evaluatePresentation } from "../timeline/keyframes.js";
+import { projectScene, type TimelineSceneLayer } from "../timeline/scene.js";
+import type { TimelineTransform } from "../timeline/schema.js";
 import { transitionProgress } from "../timeline/transitions.js";
-import type {
-  TimelinePreviewClip,
-  TimelinePreviewData,
-  TimelinePreviewSource,
-  TimelinePreviewTransform,
-} from "./timeline-data.js";
+import type { TimelinePreviewData, TimelinePreviewSource } from "./timeline-data.js";
 
 interface FrameyardHostApi {
   readonly ready: Promise<void>;
@@ -32,8 +29,10 @@ interface FrameyardFrame {
   JSON?: { parse(value: string): unknown };
 }
 
+type TimelineLayer = TimelineSceneLayer<TimelinePreviewSource>;
+
 interface Layer {
-  clip: TimelinePreviewClip;
+  scene: TimelineLayer;
   wrapper: HTMLDivElement;
   element: HTMLIFrameElement | HTMLVideoElement | HTMLImageElement;
   load: Promise<void>;
@@ -60,18 +59,8 @@ export interface TimelineHost {
   dispose(): Promise<void>;
 }
 
-function sourceSize(source: TimelinePreviewSource, data: TimelinePreviewData): { width: number; height: number } {
-  if (source.kind === "composition" || source.kind === "timeline") {
-    return { width: source.width, height: source.height };
-  }
-  return {
-    width: source.width ?? data.format.width,
-    height: source.height ?? data.format.height,
-  };
-}
-
 function clipBox(
-  transform: TimelinePreviewTransform,
+  transform: TimelineTransform,
   stage: { width: number; height: number },
 ): { width: number; height: number } {
   if (transform.width !== undefined && transform.height !== undefined) {
@@ -81,7 +70,7 @@ function clipBox(
 }
 
 function fitScale(
-  transform: TimelinePreviewTransform,
+  transform: TimelineTransform,
   source: { width: number; height: number },
   box: { width: number; height: number },
 ): { x: number; y: number } {
@@ -98,9 +87,9 @@ function fitScale(
   return { x: raw, y: raw };
 }
 
-function applyClipPresentation(wrapper: HTMLDivElement, clip: TimelinePreviewClip, frame: number, alpha = 1): void {
-  const values = evaluatePresentation(clip.transform, clip.keyframes, frame - clip.start);
-  const scale = clip.transform.width === undefined ? values.scale : 1;
+function applyClipPresentation(wrapper: HTMLDivElement, scene: TimelineLayer, frame: number, alpha = 1): void {
+  const values = evaluatePresentation(scene.transform, scene.keyframes, frame - scene.clip.start);
+  const scale = scene.transform.width === undefined ? values.scale : 1;
   wrapper.style.opacity = String(values.opacity * alpha);
   wrapper.style.transform = `translate(-50%, -50%) translate(${values.x}px, ${values.y}px) rotate(${values.rotation}deg) scale(${scale})`;
 }
@@ -179,6 +168,10 @@ function seekVideo(video: HTMLVideoElement, time: number): Promise<void> {
   });
 }
 
+function sourceId(source: TimelinePreviewSource): string {
+  return source.kind === "composition" || source.kind === "timeline" ? source.id : source.src;
+}
+
 export function createTimelineHost(
   stage: HTMLElement,
   data: TimelinePreviewData,
@@ -194,30 +187,6 @@ export function createTimelineHost(
   // Blend modes must not reach the preview chrome behind the stage.
   stage.style.isolation = "isolate";
 
-  const trackOrder = new Map(data.tracks.map((track, index) => [track.id, index]));
-  const visualClips = data.clips.filter((clip) => clip.source.kind !== "audio");
-  const transitionsByClip = new Map<
-    string,
-    Array<{ role: "in" | "out"; start: number; end: number; easing?: string }>
-  >();
-  for (const transition of data.transitions) {
-    const span = {
-      start: transition.start,
-      end: transition.end,
-      ...(transition.easing !== undefined ? { easing: transition.easing } : {}),
-    };
-    const outgoing = transitionsByClip.get(transition.from) ?? [];
-    outgoing.push({ role: "out", ...span });
-    transitionsByClip.set(transition.from, outgoing);
-    const incoming = transitionsByClip.get(transition.to) ?? [];
-    incoming.push({ role: "in", ...span });
-    transitionsByClip.set(transition.to, incoming);
-  }
-  const transitionAt = (
-    clipId: string,
-    frame: number,
-  ): { role: "in" | "out"; start: number; end: number; easing?: string } | undefined =>
-    (transitionsByClip.get(clipId) ?? []).find((span) => span.start <= frame && frame < span.end);
   const layers = new Map<string, Layer>();
   let currentFrame = 0;
   let keyHandler: ((event: KeyboardEvent) => void) | null = null;
@@ -234,19 +203,22 @@ export function createTimelineHost(
       }
     }
     layer.wrapper.remove();
-    layers.delete(layer.clip.id);
+    layers.delete(layer.scene.clip.id);
   };
 
-  const ensureLayer = (clip: TimelinePreviewClip): Layer => {
-    const existing = layers.get(clip.id);
+  const ensureLayer = (scene: TimelineLayer): Layer => {
+    const id = scene.clip.id;
+    const existing = layers.get(id);
     if (existing) {
+      existing.scene = scene;
       return existing;
     }
 
+    const clip = scene.clip;
     const source = clip.source;
-    const size = sourceSize(source, data);
-    const box = clipBox(clip.transform, stageSize);
-    const fit = fitScale(clip.transform, size, box);
+    const size = { width: scene.sourceWidth, height: scene.sourceHeight };
+    const box = clipBox(scene.transform, stageSize);
+    const fit = fitScale(scene.transform, size, box);
     const wrapper = document.createElement("div");
     wrapper.className = "timeline-layer";
     wrapper.dataset.clip = clip.id;
@@ -254,10 +226,8 @@ export function createTimelineHost(
     wrapper.style.height = `${box.height}px`;
     wrapper.style.overflow = "hidden";
     wrapper.style.display = "none";
-    applyClipPresentation(wrapper, clip, clip.start);
-    // Layers are created on first activation, so DOM order is not track order.
-    wrapper.style.zIndex = String(trackOrder.get(clip.track) ?? 0);
-    wrapper.style.mixBlendMode = clip.blend === "normal" ? "" : clip.blend;
+    wrapper.style.mixBlendMode = scene.blend === "normal" ? "" : scene.blend;
+    applyClipPresentation(wrapper, scene, scene.clip.start);
 
     const place = (element: HTMLElement): void => {
       element.style.position = "absolute";
@@ -270,7 +240,7 @@ export function createTimelineHost(
     let element: HTMLIFrameElement | HTMLVideoElement | HTMLImageElement;
     let load: Promise<void>;
 
-    if (source.kind === "composition" || source.kind === "timeline") {
+    if (scene.capture === "frames" || scene.capture === "still" || scene.capture === "nested") {
       const frame = document.createElement("iframe");
       // The layer is its own document; keydown there does not bubble to the preview.
       frame.addEventListener("load", () => {
@@ -286,7 +256,7 @@ export function createTimelineHost(
       // production capture context, so Chromium does not paint a white base
       // behind transparent compositions.
       frame.style.colorScheme = "light";
-      frame.title = `${source.kind} ${source.id}`;
+      frame.title = `${source.kind} ${sourceId(source)}`;
       place(frame);
       wrapper.append(frame);
       stage.append(wrapper);
@@ -311,7 +281,7 @@ export function createTimelineHost(
           await api.load();
         }
       })();
-    } else if (source.kind === "video") {
+    } else if (scene.capture === "video") {
       const video = document.createElement("video");
       video.src = source.url;
       video.width = size.width;
@@ -341,39 +311,35 @@ export function createTimelineHost(
       load = image.decode().catch(() => undefined);
     }
 
-    const layer: Layer = { clip, wrapper, element, load, lastActive: -1 };
-    layers.set(clip.id, layer);
+    const layer: Layer = { scene, wrapper, element, load, lastActive: -1 };
+    layers.set(id, layer);
     return layer;
   };
 
   const seek = async (target: number): Promise<void> => {
     const frame = Math.max(0, Math.min(data.durationInFrames - 1, Math.floor(target)));
     currentFrame = frame;
-    const active = visualClips.filter((clip) => clip.start <= frame && frame < clip.end);
-    const activeIds = new Set(active.map((clip) => clip.id));
-
-    const activeLayers = active.map((clip) => ensureLayer(clip));
+    const scene = projectScene(data, frame, frame + 1);
+    const activeIds = new Set(scene.layers.map((layer) => layer.clip.id));
+    const activeLayers = scene.layers.map(ensureLayer);
     await Promise.all(activeLayers.map((layer) => layer.load));
 
-    for (const layer of activeLayers) {
+    for (const [index, layer] of activeLayers.entries()) {
       layer.lastActive = frame;
       layer.wrapper.style.display = "block";
-      const clip = layer.clip;
-      const transition = transitionAt(clip.id, frame);
-      const alpha = transition?.role === "in" ? transitionProgress(transition, frame) : 1;
-      applyClipPresentation(layer.wrapper, clip, frame, alpha);
-      // Within one track the incoming clip stacks above the outgoing clip.
-      layer.wrapper.style.zIndex = String((trackOrder.get(clip.track) ?? 0) * 2 + (transition?.role === "in" ? 1 : 0));
-      const localFrame = clip.sourceIn + (frame - clip.start);
-      if (clip.source.kind === "composition" || clip.source.kind === "timeline") {
+      const transition = layer.scene.transition;
+      const alpha = transition?.role === "in" ? transitionProgress(transition.window, frame) : 1;
+      applyClipPresentation(layer.wrapper, layer.scene, frame, alpha);
+      // Array order is composite order; the incoming clip already sorts above
+      // the outgoing clip during a transition overlap.
+      layer.wrapper.style.zIndex = String(index + 1);
+      const localFrame = layer.scene.sourceStart;
+      if (layer.scene.capture === "frames" || layer.scene.capture === "nested") {
         const contentWindow = (layer.element as HTMLIFrameElement).contentWindow as unknown as FrameyardFrame | null;
         if (!contentWindow) {
           continue;
         }
-        if (clip.source.kind === "composition") {
-          if (clip.source.static === true) {
-            continue;
-          }
+        if (layer.scene.clip.source.kind === "composition") {
           const api = contentWindow.__fy;
           if (api) {
             api.seek(localFrame);
@@ -386,27 +352,37 @@ export function createTimelineHost(
             await api.settle();
           }
         }
-      } else if (clip.source.kind === "video") {
+      } else if (layer.scene.capture === "video") {
         await seekVideo(layer.element as HTMLVideoElement, localFrame / data.format.fps + 0.001);
       }
     }
 
     for (const layer of layers.values()) {
-      if (!activeIds.has(layer.clip.id)) {
+      if (!activeIds.has(layer.scene.clip.id)) {
         layer.wrapper.style.display = "none";
       }
     }
 
-    for (const clip of visualClips) {
-      if (clip.start > frame && clip.start <= frame + data.format.fps * 2 && !layers.has(clip.id)) {
-        const prefetched = ensureLayer(clip);
+    for (const clip of data.clips) {
+      if (
+        clip.source.kind !== "audio" &&
+        clip.start > frame &&
+        clip.start <= frame + data.format.fps * 2 &&
+        !layers.has(clip.id)
+      ) {
+        const prefetchedScene = projectScene(data, clip.start, clip.start + 1);
+        const sceneLayer = prefetchedScene.layers.find((candidate) => candidate.clip.id === clip.id);
+        if (!sceneLayer) {
+          continue;
+        }
+        const prefetched = ensureLayer(sceneLayer);
         void prefetched.load.catch(() => disposeLayer(prefetched));
       }
     }
 
     if (layers.size > maxCachedLayers) {
       const inactive = [...layers.values()]
-        .filter((layer) => !activeIds.has(layer.clip.id))
+        .filter((layer) => !activeIds.has(layer.scene.clip.id))
         .sort((left, right) => left.lastActive - right.lastActive);
       while (layers.size > maxCachedLayers && inactive.length > 0) {
         const layer = inactive.shift();

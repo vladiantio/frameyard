@@ -25,9 +25,12 @@ expose the same seek/settle contract the renderer uses.
 - Order: `await ready`, `await load()`, `await seek(frame)`, `await settle()`.
 - The non-embedded page owns transport and audio; only the embedded host exposes
   `window.__fyTimeline`.
-- A static composition source carries `static: true` and no
-  `durationInFrames`. The host loads the layer once and skips per-frame seek;
-  the layer remains visible while the timeline playhead moves.
+- A static composition source carries `metadata.static: true` and no
+  `metadata.durationInFrames`. The host loads the layer once and skips per-frame
+  seek; the layer remains visible while the timeline playhead moves.
+- The embedded host projects the serialized resolved timeline with the shared
+  scene module on every seek. Do not add a preview-only clip or transition
+  model; give the scene module what it needs instead.
 - A keyframed clip updates the layer wrapper's inline `opacity` and `transform`
   on every seek. Assert those styles or the rendered stage after `settle()`.
   Markers are `.keyframe-marker` elements with a `data-frame` absolute timeline

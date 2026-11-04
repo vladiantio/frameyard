@@ -18,33 +18,24 @@ function projectUrl(relative: string): string {
 
 function previewSource(source: ResolvedTimelineSource): TimelinePreviewSource {
   if (source.kind === "composition") {
-    if (source.metadata.static === true) {
-      return {
-        kind: "composition",
-        id: source.id,
-        url: `${projectUrl(source.entry)}?__fy-manual=1`,
-        width: source.metadata.width,
-        height: source.metadata.height,
-        static: true,
-      };
-    }
     return {
       kind: "composition",
       id: source.id,
+      metadata: source.metadata,
       url: `${projectUrl(source.entry)}?__fy-manual=1`,
-      width: source.metadata.width,
-      height: source.metadata.height,
-      durationInFrames: source.metadata.durationInFrames,
     };
   }
   if (source.kind === "timeline") {
     return {
       kind: "timeline",
       id: source.id,
-      url: `/__frameyard/timeline/${encodeURIComponent(source.id)}?__fy-embed=1`,
-      width: source.timeline.format.width,
-      height: source.timeline.format.height,
       durationInFrames: source.durationInFrames,
+      timeline: {
+        format: source.timeline.format,
+        durationInFrames: source.timeline.durationInFrames,
+        ...(source.timeline.background !== undefined ? { background: source.timeline.background } : {}),
+      },
+      url: `/__frameyard/timeline/${encodeURIComponent(source.id)}?__fy-embed=1`,
     };
   }
   return {
@@ -83,18 +74,8 @@ export async function buildTimelinePreviewData(
   const timeline = resolved.timeline;
   const audio = resolveTimelineAudio(timeline);
   const clips: TimelinePreviewClip[] = timeline.clips.map((clip) => ({
-    id: clip.id,
-    track: clip.track,
+    ...clip,
     source: previewSource(clip.source),
-    start: clip.start,
-    duration: clip.duration,
-    end: clip.end,
-    sourceIn: clip.sourceIn,
-    ...(clip.props !== undefined ? { props: clip.props } : {}),
-    transform: clip.transform ?? { fit: "contain", x: 0, y: 0, scale: 1, rotation: 0, opacity: 1 },
-    ...(clip.keyframes !== undefined ? { keyframes: clip.keyframes } : {}),
-    blend: clip.blend ?? "normal",
-    audio: clip.audio ?? { muted: false, gain: 1 },
   }));
 
   const audioClips: TimelinePreviewAudioClip[] = audio.clips.map((clip) => ({
@@ -107,31 +88,15 @@ export async function buildTimelinePreviewData(
     ...(clip.envelopes !== undefined ? { envelopes: clip.envelopes } : {}),
   }));
 
-  const transitions = timeline.transitions.map((transition) => ({
-    from: transition.from,
-    to: transition.to,
-    kind: transition.kind,
-    ...(transition.easing !== undefined ? { easing: transition.easing } : {}),
-    track: transition.track,
-    start: transition.start,
-    end: transition.end,
-  }));
-
   return {
     timeline: timeline.id,
     entry: timeline.entry,
     format: { ...timeline.format },
     durationInFrames: timeline.durationInFrames,
     ...(timeline.background !== undefined ? { background: timeline.background } : {}),
-    tracks: timeline.tracks.map((track) => ({
-      id: track.id,
-      kind: track.kind,
-      ...(track.name !== undefined ? { name: track.name } : {}),
-      ...(track.gain !== undefined ? { gain: track.gain } : {}),
-      ...(track.muted !== undefined ? { muted: track.muted } : {}),
-    })),
+    tracks: timeline.tracks,
     clips,
-    transitions,
+    transitions: timeline.transitions,
     audioClips,
     diagnostics: resolved.diagnostics,
   };

@@ -12,6 +12,7 @@
     "src/runtime/**/*.ts",
     "src/preview/**/*.ts",
     "src/timeline/schema.ts",
+    "src/timeline/scene.ts",
     "src/index.ts",
     "src/version.ts",
     "src/contracts.ts",

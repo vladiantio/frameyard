@@ -186,6 +186,10 @@ _Avoid_: Dissolve, fade
 The overlap `to.start .. from.end` where both clips are active. During a dissolve the incoming clip composites above the outgoing clip with `opacity × eased progress`, evaluated at absolute timeline frames.
 _Avoid_: Handle, overlap region
 
+**Transition role**:
+The side a clip takes in a transition: `out` for the clip being replaced, `in` for the clip replacing it.
+_Avoid_: Transition direction, fade side
+
 **Equal-power crossfade**:
 The audio gain curve inside either transition kind: the outgoing clip ramps as `sqrt(1 - t)` and the incoming clip as `sqrt(t)` after easing, keeping perceived loudness steady.
 _Avoid_: Linear fade
@@ -203,6 +207,10 @@ _Avoid_: Timestamp, animation tick
 **Active clip**:
 A clip whose timeline range contains the current timeline frame.
 _Avoid_: Visible clip
+
+**Timeline scene**:
+The ordered active clips and their presentation at one timeline frame or over one render range, including transition roles and composite order. It is the timeline-level arrangement, not a composition.
+_Avoid_: Timeline composition, frame snapshot
 
 **Clip capture**:
 The pixel frames a composition produces for a timeline clip before the timeline compositor combines layers.

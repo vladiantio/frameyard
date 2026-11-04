@@ -70,6 +70,16 @@ export interface TimelineTransform {
   opacity: number;
 }
 
+/** The presentation defaults applied when a visual clip omits a transform. */
+export const DEFAULT_TIMELINE_TRANSFORM: Readonly<TimelineTransform> = Object.freeze({
+  fit: "contain",
+  x: 0,
+  y: 0,
+  scale: 1,
+  rotation: 0,
+  opacity: 1,
+});
+
 export interface TimelineClipAudio {
   muted: boolean;
   gain: number;
@@ -206,7 +216,7 @@ function parseTransform(
     details?: Partial<CompositionDiagnosticDetails>,
   ) => void,
 ): TimelineTransform {
-  const defaults: TimelineTransform = { fit: "contain", x: 0, y: 0, scale: 1, rotation: 0, opacity: 1 };
+  const defaults: TimelineTransform = { ...DEFAULT_TIMELINE_TRANSFORM };
   if (!isPlainObject(value)) {
     add("TIMELINE_CLIP_INVALID", "Clip transform must be an object.", path);
     return defaults;
@@ -880,7 +890,7 @@ export function parseTimelineDocument(value: unknown, context: DiagnosticContext
         );
       }
     } else if (visual) {
-      transform = { fit: "contain", x: 0, y: 0, scale: 1, rotation: 0, opacity: 1 };
+      transform = { ...DEFAULT_TIMELINE_TRANSFORM };
     }
 
     let keyframes: TimelineKeyframes | undefined;

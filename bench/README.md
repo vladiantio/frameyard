@@ -159,7 +159,7 @@ CLI end-to-end suite compares PNGs from two concurrent `still` sessions.
 Do not use encoded MP4 bytes or a decoded-video hash as a determinism check.
 x264 threading and rate control can change decoded pixels at larger frame
 counts even when the captured PNGs are identical. See `AGENTS.md` and
-`docs/v0.1-design.md` §3.
+`docs/v0.x-design.md` §3.
 
 ## Known findings
 

@@ -7,7 +7,7 @@ Release only after the npm publish succeeds.
 ## Version policy
 
 Frameyard stays on `0.x` until its public contracts stabilize. See
-[`docs/v0.1-design.md`](./docs/v0.1-design.md) §13.
+[`docs/v0.x-design.md`](./docs/v0.x-design.md) §13.
 
 | Change | Version |
 | --- | --- |

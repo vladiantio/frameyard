@@ -39,7 +39,7 @@ const PNPM_BUILTINS = new Set([
 
 const STILL_CAP_DOCS = [
   "README.md",
-  "docs/v0.1-design.md",
+  "docs/v0.x-design.md",
   "GLOSSARY.md",
   "skills/frameyard/SKILL.md",
   "skills/frameyard/references/json-results.md",

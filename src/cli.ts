@@ -67,12 +67,14 @@ import {
 import { resolveManifestPath } from "./assets/provenance.js";
 import { runDoctor } from "./doctor.js";
 import { addLocalFont, removeFont } from "./fonts/add.js";
+import { addFontsource, addUrlFont, searchFontsource } from "./fonts/fontsource.js";
 import { fontManifestPath, readFontManifest } from "./fonts/manifest.js";
 import { parseFontStyle, parseFontWeight } from "./fonts/options.js";
 import { summarizeFont } from "./fonts/summary.js";
 import { assertFontIntegrity, fontStatuses, verifyFontManifest } from "./fonts/verify.js";
 import { emptyFontManifest } from "./fonts/types.js";
 import type { FontManifest } from "./fonts/types.js";
+import type { FontSummary } from "./fonts/summary.js";
 
 const COMMANDS = new Set([
   "init",
@@ -129,6 +131,10 @@ const VALUE_FLAGS = new Set([
   "unicode-range",
   "license",
   "license-file",
+  "category",
+  "limit",
+  "url",
+  "sha256",
 ]);
 const BOOLEAN_FLAGS = new Set([
   "json",
@@ -140,6 +146,8 @@ const BOOLEAN_FLAGS = new Set([
   "list",
   "local-models",
   "keep-files",
+  "static",
+  "variable",
   "help",
   "version",
 ]);
@@ -253,6 +261,12 @@ function allowedFlags(command: string): Set<string> {
         "unicode-range",
         "license",
         "license-file",
+        "category",
+        "limit",
+        "url",
+        "sha256",
+        "static",
+        "variable",
         "force",
         "keep-files",
       ]);
@@ -401,48 +415,150 @@ function validateArgs(parsed: ParsedArgs): void {
     }
   } else if (parsed.command === "font") {
     const action = parsed.positionals[0];
-    if (action === "add") {
-      if (parsed.positionals.length !== 1) {
-        usage('"font add" does not take an id in this build; use --id to override the derived font id.');
+    if (action === "search") {
+      if (parsed.positionals.length > 2) {
+        usage('"font search" accepts at most one query.');
       }
-      if (typeof parsed.flags.get("file") !== "string") {
-        usage('"font add" requires --file <path> for a local font.');
+      const query = parsed.positionals[1] ?? "";
+      const hasFilter =
+        parsed.flags.has("category") ||
+        parsed.flags.has("subset") ||
+        parsed.flags.has("style") ||
+        parsed.flags.has("variable");
+      if (query.length === 0 && !hasFilter) {
+        usage('"font search" requires a query or a --category, --subset, --style, or --variable filter.');
       }
-      if (typeof parsed.flags.get("family") !== "string") {
-        usage('"font add" requires --family <name>.');
+      for (const flag of [
+        "file",
+        "family",
+        "id",
+        "weight",
+        "url",
+        "license",
+        "license-file",
+        "sha256",
+        "force",
+        "keep-files",
+        "static",
+      ]) {
+        if (parsed.flags.has(flag)) {
+          usage(`--${flag} is not valid for "font search".`);
+        }
+      }
+      const limit = parsed.flags.get("limit");
+      if (
+        limit !== undefined &&
+        (typeof limit !== "string" || !/^\d+$/.test(limit) || Number(limit) < 1 || Number(limit) > 100)
+      ) {
+        usage("--limit must be an integer between 1 and 100.");
+      }
+    } else if (action === "add") {
+      const file = typeof parsed.flags.get("file") === "string";
+      const url = typeof parsed.flags.get("url") === "string";
+      if (file && url) {
+        usage('"font add" accepts only one source: --file, --url, or a Fontsource id.');
+      }
+      if (parsed.flags.has("category") || parsed.flags.has("limit") || parsed.flags.has("variable")) {
+        usage('--category, --limit, and --variable are only valid for "font search".');
       }
       if (parsed.flags.has("keep-files")) {
         usage('--keep-files is only valid for "font remove".');
+      }
+      if (parsed.flags.has("static") && file) {
+        usage("--static is only valid for a Fontsource id.");
+      }
+      if (parsed.flags.has("static") && url) {
+        usage("--static is only valid for a Fontsource id.");
+      }
+      if (file) {
+        if (parsed.positionals.length !== 1) {
+          usage('"font add --file" does not take an id; use --id to override the derived font id.');
+        }
+        if (typeof parsed.flags.get("family") !== "string") {
+          usage('"font add --file" requires --family <name>.');
+        }
+        if (parsed.flags.has("sha256")) {
+          usage("--sha256 is only valid with --url.");
+        }
+      } else if (url) {
+        if (parsed.positionals.length !== 1) {
+          usage('"font add --url" does not take an id; use --id to override the derived font id.');
+        }
+        if (typeof parsed.flags.get("family") !== "string") {
+          usage('"font add --url" requires --family <name>.');
+        }
+      } else {
+        if (parsed.positionals.length !== 2) {
+          usage('"font add" requires a Fontsource id, or --file/--url with --family.');
+        }
+        if (parsed.flags.has("id")) {
+          usage("The Fontsource id is positional; --id is only valid with --file or --url.");
+        }
+        if (parsed.flags.has("license") || parsed.flags.has("license-file")) {
+          usage("Fontsource supplies the license; --license/--license-file are only valid with --file or --url.");
+        }
+        if (parsed.flags.has("sha256")) {
+          usage("--sha256 is only valid with --url.");
+        }
+        if (parsed.flags.has("unicode-range")) {
+          usage("--unicode-range is only valid with --file or --url.");
+        }
       }
     } else if (action === "list" || action === "verify") {
       if (parsed.positionals.length !== 1) {
         usage(`"font ${action}" does not take positional arguments.`);
       }
-      if (parsed.flags.has("file") || parsed.flags.has("family") || parsed.flags.has("force")) {
-        usage(`--file, --family, and --force are only valid for "font add".`);
-      }
-      if (parsed.flags.has("keep-files")) {
-        usage('--keep-files is only valid for "font remove".');
+      for (const flag of [
+        "file",
+        "family",
+        "id",
+        "weight",
+        "style",
+        "subset",
+        "unicode-range",
+        "license",
+        "license-file",
+        "category",
+        "limit",
+        "url",
+        "sha256",
+        "static",
+        "variable",
+        "force",
+        "keep-files",
+      ]) {
+        if (parsed.flags.has(flag)) {
+          usage(`--${flag} is not valid for "font ${action}".`);
+        }
       }
     } else if (action === "remove") {
       if (parsed.positionals.length !== 2) {
         usage('"font remove" requires a font id.');
       }
-      if (
-        parsed.flags.has("file") ||
-        parsed.flags.has("family") ||
-        parsed.flags.has("force") ||
-        parsed.flags.has("weight") ||
-        parsed.flags.has("style") ||
-        parsed.flags.has("subset") ||
-        parsed.flags.has("unicode-range") ||
-        parsed.flags.has("license") ||
-        parsed.flags.has("license-file")
-      ) {
-        usage('font metadata flags are only valid for "font add".');
+      for (const flag of [
+        "file",
+        "family",
+        "id",
+        "weight",
+        "style",
+        "subset",
+        "unicode-range",
+        "license",
+        "license-file",
+        "category",
+        "limit",
+        "url",
+        "sha256",
+        "static",
+        "variable",
+        "force",
+      ]) {
+        if (parsed.flags.has(flag)) {
+          usage(`--${flag} is not valid for "font remove".`);
+        }
       }
     } else {
-      usage('"font" requires one of: add, list, verify, remove.');
+      usage('"font" requires one of: search, add, list, verify, remove.');
     }
   } else if (parsed.positionals.length !== 1) {
     usage(
@@ -562,7 +678,10 @@ Usage:
   frameyard add --list [--json]
   frameyard add local-models [--project <dir>] [--json]
   frameyard add <composition|timeline> <id> --template <name> [--project <dir>] [--json]
+  frameyard font search [query] [--category <category>] [--subset <subset>] [--style <normal|italic>] [--variable] [--limit <n>] [--json]
+  frameyard font add <fontsource-id> [--family <alias>] [--subset <subset>] [--style <normal|italic>] [--weight <n>] [--static] [--force] [--project <dir>] [--json]
   frameyard font add --file <path> --family <name> [--id <id>] [--weight <n|n-n>] [--style normal|italic] [--subset <name>] [--license <id>] [--license-file <path>] [--force] [--project <dir>] [--json]
+  frameyard font add --url <https-url> --family <name> [--id <id>] [--weight <n|n-n>] [--style normal|italic] [--license <id>] [--license-file <path>] [--sha256 <hash>] [--force] [--project <dir>] [--json]
   frameyard font list|verify [--project <dir>] [--json]
   frameyard font remove <id> [--keep-files] [--project <dir>] [--json]
   frameyard doctor [--qwen-tts <path>] [--sherpa-onnx-tts <path>] [--whisper-cli <path>] [--talker-model <gguf>] [--codec-model <gguf>] [--model-dir <dir>] [--model <gguf>] [--manifest <file>] [--project <dir>] [--json]
@@ -587,13 +706,20 @@ Options:
   --template <name>      Template for "add": static-poster, title-card, lower-third, or slideshow.
   --list                 List add templates and scaffolds without writing files.
   --file <path>          Local font file for "font add": .woff2, .woff, .ttf, or .otf.
-  --family <name>        CSS font-family name for "font add".
+  --url <https-url>      Download a font from HTTPS (loopback HTTP is allowed for tests).
+  --family <name>        CSS font-family name or alias for "font add".
   --id <id>              Override the font manifest id derived from the family name.
-  --weight <n|n-n>       Font weight or variable weight range for "font add" (default: 400).
-  --subset <name>        Font subset label for "font add", such as latin or latin-ext.
-  --unicode-range <r>    CSS unicode-range for a local font face.
-  --license <id>         License identifier for "font add"; warns when omitted.
+  --weight <value>       Font weight or variable range; comma-separated weights for Fontsource --static.
+  --style <value>        qwen style instruction, or normal|italic (comma list for Fontsource).
+  --subset <name>        Font subset label; comma-separated for Fontsource.
+  --unicode-range <r>    CSS unicode-range for a local or URL font face.
+  --license <id>         License identifier for --file/--url; warns when omitted.
   --license-file <path>  Copy a license file into the font directory.
+  --sha256 <hash>        Expected SHA-256 for --url; the computed hash is always recorded.
+  --category <name>      Fontsource category filter for "font search".
+  --limit <n>            Fontsource result limit for "font search", 1-100 (default: 20).
+  --variable             Fontsource search filter: only variable fonts.
+  --static               Install static Fontsource weights instead of the variable face.
   --keep-files           Keep font files when removing a font from the manifest.
   --text-file <file>     Text to synthesize. Reads stdin when omitted.
   --speaker <value>      Named speaker for qwen, or the numeric speaker id for Supertonic.
@@ -616,7 +742,7 @@ Options:
   --help, -h             Show this help.
   --version, -v          Print the version.
 
-Resource policy: the nearest frameyard.policy.json from the working directory upward sets light, authoring, or full; FRAMEYARD_POLICY overrides it. tts, transcribe, and render are blocked outside full. Use --dry-run to validate and produce a handoff command without doing heavy work.
+Resource policy: the nearest frameyard.policy.json from the working directory upward sets light, authoring, or full; FRAMEYARD_POLICY overrides it. tts, transcribe, and render are blocked outside full. font add requires authoring or full; font remove and font add --force require full. Use --dry-run to validate and produce a handoff command without doing heavy work.
 `);
 }
 
@@ -684,7 +810,7 @@ function printCommandHelp(command: string): void {
       return;
     case "font":
       process.stdout.write(
-        "Usage: frameyard font add --file <path> --family <name> [--id <id>] [--weight <n|n-n>] [--style normal|italic] [--subset <name>] [--unicode-range <range>] [--license <id>] [--license-file <path>] [--force] [--project <dir>] [--json]\n       frameyard font list|verify [--project <dir>] [--json]\n       frameyard font remove <id> [--keep-files] [--project <dir>] [--json]\nVendor a local font into assets/fonts/<id>/, update frameyard.fonts.json, and serve the generated @font-face sheet at /__frameyard/fonts.css. Fontsource search and download are added by the next change. The project policy allows list/verify everywhere, add in authoring and full, and remove or --force only in full.\n",
+        "Usage: frameyard font search [query] [--category <name>] [--subset <name>] [--style normal|italic] [--variable] [--limit <n>] [--json]\n       frameyard font add <fontsource-id> [--family <alias>] [--subset <name>] [--style normal|italic] [--weight <n>] [--static] [--force] [--project <dir>] [--json]\n       frameyard font add --file <path> --family <name> [--id <id>] [--weight <n|n-n>] [--style normal|italic] [--subset <name>] [--unicode-range <range>] [--license <id>] [--license-file <path>] [--force] [--project <dir>] [--json]\n       frameyard font add --url <https-url> --family <name> [--id <id>] [--weight <n|n-n>] [--style normal|italic] [--subset <name>] [--unicode-range <range>] [--license <id>] [--license-file <path>] [--sha256 <hash>] [--force] [--project <dir>] [--json]\n       frameyard font list|verify [--project <dir>] [--json]\n       frameyard font remove <id> [--keep-files] [--project <dir>] [--json]\nSearch Fontsource, vendor a Fontsource/local/URL font into assets/fonts/<id>/, and manage frameyard.fonts.json. The server serves the generated @font-face sheet at /__frameyard/fonts.css. Project policy allows search/list/verify everywhere, add in authoring and full, and remove or --force only in full. A --url import without --license also requires full.\n",
       );
       return;
     case "doctor":
@@ -1319,12 +1445,110 @@ async function runAdd(parsed: ParsedArgs): Promise<number> {
   return 0;
 }
 
-async function runFont(parsed: ParsedArgs, policy: LoadedResourcePolicy): Promise<number> {
+function splitFontList(value: string | undefined, flag: string): string[] | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  const parts = value
+    .split(",")
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
+  if (parts.length === 0) {
+    usage(`--${flag} requires at least one value.`);
+  }
+  return parts;
+}
+
+function parseFontsourceWeights(value: string | undefined): number[] | undefined {
+  const parts = splitFontList(value, "weight");
+  if (parts === undefined) {
+    return undefined;
+  }
+  return parts.map((part) => {
+    const weight = Number(part);
+    if (!Number.isInteger(weight) || weight < 1 || weight > 1000) {
+      usage(`--weight entries must be integers between 1 and 1000; received "${part}".`);
+    }
+    return weight;
+  });
+}
+
+function parseFontsourceStyles(value: string | undefined): ReturnType<typeof parseFontStyle>[] | undefined {
+  const parts = splitFontList(value, "style");
+  return parts?.map((part) => parseFontStyle(part));
+}
+
+function printFontAddResult(
+  result: {
+    font: FontSummary;
+    manifest: string;
+    files: string[];
+    warnings: Array<{ code: string; message: string }>;
+  },
+  json: boolean,
+): void {
+  if (json) {
+    printJson({ ok: true, command: "font", action: "add", ...result });
+    return;
+  }
+  for (const warning of result.warnings) {
+    process.stderr.write(`⚠ ${warning.code}: ${warning.message}\n`);
+  }
+  process.stdout.write(
+    `✓ font ${result.font.id}: ${result.font.family} (${result.font.provider}${result.font.version ? ` ${result.font.version}` : ""}), ${result.font.files} file${result.font.files === 1 ? "" : "s"}, ${result.font.bytes} bytes\n`,
+  );
+  process.stdout.write(`  manifest: ${result.manifest}\n`);
+  process.stdout.write(`  css: /__frameyard/fonts.css\n`);
+  process.stdout.write(`  use: font-family: "${result.font.family}", system-ui, sans-serif\n`);
+}
+
+async function runFont(parsed: ParsedArgs, signal: AbortSignal, policy: LoadedResourcePolicy): Promise<number> {
   const action = parsed.positionals[0] as string;
   const json = parsed.flags.has("json") === true;
   assertOperationAllowed(policy, "font");
+
+  if (action === "search") {
+    const query = parsed.positionals[1] ?? "";
+    const category = flagString(parsed.flags, "category");
+    const subset = flagString(parsed.flags, "subset");
+    const styleValue = flagString(parsed.flags, "style");
+    const style = styleValue === undefined ? undefined : parseFontStyle(styleValue);
+    const variable = parsed.flags.has("variable") ? true : undefined;
+    const limitValue = flagString(parsed.flags, "limit");
+    const limit = limitValue === undefined ? undefined : Number(limitValue);
+    const result = await searchFontsource({
+      query,
+      ...(category !== undefined ? { category } : {}),
+      ...(subset !== undefined ? { subset } : {}),
+      ...(style !== undefined ? { style } : {}),
+      ...(variable !== undefined ? { variable } : {}),
+      ...(limit !== undefined ? { limit } : {}),
+      signal,
+    });
+    if (json) {
+      printJson({ ok: true, command: "font", action: "search", ...result });
+    } else {
+      process.stdout.write(
+        `fontsource: ${result.results.length} result${result.results.length === 1 ? "" : "s"}${result.truncated ? " (truncated)" : ""}\n`,
+      );
+      for (const item of result.results) {
+        process.stdout.write(
+          `  ${item.id}: ${item.family} [${item.category}]${item.variable ? " variable" : ""}, weights ${item.weights.join(",")}, ${item.styles.join("/")}, subsets ${item.subsets.join(",")}, ${item.license}\n`,
+        );
+      }
+    }
+    return 0;
+  }
+
   if (action === "add") {
     assertPolicyTier(policy, "authoring", "font add");
+    if (
+      typeof parsed.flags.get("url") === "string" &&
+      !parsed.flags.has("license") &&
+      !parsed.flags.has("license-file")
+    ) {
+      assertPolicyTier(policy, "full", "font add --url without --license");
+    }
   }
   if (action === "remove") {
     assertPolicyTier(policy, "full", "font remove");
@@ -1364,48 +1588,88 @@ async function runFont(parsed: ParsedArgs, policy: LoadedResourcePolicy): Promis
   }
 
   if (action === "add") {
-    const result = await addLocalFont({
-      projectRoot: project.root,
-      ...(manifest !== undefined ? { manifest } : {}),
-      file: flagString(parsed.flags, "file") as string,
-      family: flagString(parsed.flags, "family") as string,
-      ...(flagString(parsed.flags, "id") !== undefined ? { id: flagString(parsed.flags, "id") as string } : {}),
-      weight:
-        flagString(parsed.flags, "weight") === undefined
-          ? 400
-          : parseFontWeight(flagString(parsed.flags, "weight") as string),
-      style:
-        flagString(parsed.flags, "style") === undefined
-          ? "normal"
-          : parseFontStyle(flagString(parsed.flags, "style") as string),
-      ...(flagString(parsed.flags, "subset") !== undefined
-        ? { subset: flagString(parsed.flags, "subset") as string }
-        : {}),
-      ...(flagString(parsed.flags, "unicode-range") !== undefined
-        ? { unicodeRange: flagString(parsed.flags, "unicode-range") as string }
-        : {}),
-      ...(flagString(parsed.flags, "license") !== undefined
-        ? { license: flagString(parsed.flags, "license") as string }
-        : {}),
-      ...(flagString(parsed.flags, "license-file") !== undefined
-        ? { licenseFile: flagString(parsed.flags, "license-file") as string }
-        : {}),
-      force: parsed.flags.has("force") === true,
-    });
+    const file = flagString(parsed.flags, "file");
+    const url = flagString(parsed.flags, "url");
+    const family = flagString(parsed.flags, "family");
+    const id = flagString(parsed.flags, "id");
+    const weightValue = flagString(parsed.flags, "weight");
+    const styleValue = flagString(parsed.flags, "style");
+    const subsetValue = flagString(parsed.flags, "subset");
+    const force = parsed.flags.has("force") === true;
 
-    if (json) {
-      printJson({ ok: true, command: "font", action: "add", ...result });
-    } else {
-      for (const warning of result.warnings) {
-        process.stderr.write(`⚠ ${warning.code}: ${warning.message}\n`);
-      }
-      process.stdout.write(
-        `✓ font ${result.font.id}: ${result.font.family} (${result.font.provider}${result.font.version ? ` ${result.font.version}` : ""}), ${result.font.files} file${result.font.files === 1 ? "" : "s"}, ${result.font.bytes} bytes\n`,
+    if (file !== undefined) {
+      printFontAddResult(
+        await addLocalFont({
+          projectRoot: project.root,
+          ...(manifest !== undefined ? { manifest } : {}),
+          file,
+          family: family as string,
+          ...(id !== undefined ? { id } : {}),
+          weight: weightValue === undefined ? 400 : parseFontWeight(weightValue),
+          style: styleValue === undefined ? "normal" : parseFontStyle(styleValue),
+          ...(subsetValue !== undefined ? { subset: subsetValue } : {}),
+          ...(flagString(parsed.flags, "unicode-range") !== undefined
+            ? { unicodeRange: flagString(parsed.flags, "unicode-range") as string }
+            : {}),
+          ...(flagString(parsed.flags, "license") !== undefined
+            ? { license: flagString(parsed.flags, "license") as string }
+            : {}),
+          ...(flagString(parsed.flags, "license-file") !== undefined
+            ? { licenseFile: flagString(parsed.flags, "license-file") as string }
+            : {}),
+          force,
+        }),
+        json,
       );
-      process.stdout.write(`  manifest: ${result.manifest}\n`);
-      process.stdout.write(`  css: /__frameyard/fonts.css\n`);
-      process.stdout.write(`  use: font-family: "${result.font.family}", system-ui, sans-serif\n`);
+      return 0;
     }
+
+    if (url !== undefined) {
+      printFontAddResult(
+        await addUrlFont({
+          projectRoot: project.root,
+          ...(manifest !== undefined ? { manifest } : {}),
+          url,
+          family: family as string,
+          ...(id !== undefined ? { id } : {}),
+          weight: weightValue === undefined ? 400 : parseFontWeight(weightValue),
+          style: styleValue === undefined ? "normal" : parseFontStyle(styleValue),
+          ...(subsetValue !== undefined ? { subset: subsetValue } : {}),
+          ...(flagString(parsed.flags, "unicode-range") !== undefined
+            ? { unicodeRange: flagString(parsed.flags, "unicode-range") as string }
+            : {}),
+          ...(flagString(parsed.flags, "license") !== undefined
+            ? { license: flagString(parsed.flags, "license") as string }
+            : {}),
+          ...(flagString(parsed.flags, "license-file") !== undefined
+            ? { licenseFile: flagString(parsed.flags, "license-file") as string }
+            : {}),
+          ...(flagString(parsed.flags, "sha256") !== undefined
+            ? { sha256: flagString(parsed.flags, "sha256") as string }
+            : {}),
+          force,
+          signal,
+        }),
+        json,
+      );
+      return 0;
+    }
+
+    printFontAddResult(
+      await addFontsource({
+        projectRoot: project.root,
+        ...(manifest !== undefined ? { manifest } : {}),
+        id: parsed.positionals[1] as string,
+        ...(family !== undefined ? { family } : {}),
+        ...(subsetValue !== undefined ? { subsets: splitFontList(subsetValue, "subset") } : {}),
+        ...(styleValue !== undefined ? { styles: parseFontsourceStyles(styleValue) } : {}),
+        ...(weightValue !== undefined ? { weights: parseFontsourceWeights(weightValue) } : {}),
+        static: parsed.flags.has("static") === true,
+        force,
+        signal,
+      }),
+      json,
+    );
     return 0;
   }
 
@@ -2726,7 +2990,7 @@ async function main(argv: string[]): Promise<number> {
       case "transcribe":
         return await runTranscribe(parsed, controller.signal, policy as LoadedResourcePolicy);
       case "font":
-        return await runFont(parsed, policy as LoadedResourcePolicy);
+        return await runFont(parsed, controller.signal, policy as LoadedResourcePolicy);
       case "add":
         return await runAdd(parsed);
       case "doctor":

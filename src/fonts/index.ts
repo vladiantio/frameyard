@@ -5,6 +5,24 @@ export {
   type AddLocalFontResult,
   type RemoveFontResult,
 } from "./add.js";
+export {
+  addFontsource,
+  addUrlFont,
+  searchFontsource,
+  type AddFontsourceOptions,
+  type AddRemoteFontResult,
+  type FontsourceDetail,
+  type FontsourceSearchOptions,
+  type FontsourceSearchResult,
+  type FontsourceSummary,
+} from "./fontsource.js";
+export {
+  fontFaceKey,
+  installFontRecord,
+  type FontPayload,
+  type InstallFontRecordOptions,
+  type InstallFontRecordResult,
+} from "./install.js";
 export { renderFontCss } from "./css.js";
 export {
   fontAssetDirectory,

@@ -94,7 +94,10 @@ The repository ships runnable example projects. Each example README has the comm
 | `frameyard add --list` | List the built-in project templates and scaffolds |
 | `frameyard add local-models` | Install the optional policy, OpenCode, and Pi scaffold into a workspace |
 | `frameyard add <composition\|timeline> <id> --template <name>` | Write a template entry and print the exact `video.config.js` registration snippet |
+| `frameyard font search [query]` | Search the Fontsource catalog by name, category, subset, style, or variable axis |
+| `frameyard font add <fontsource-id>` | Install a pinned Fontsource family (variable `wght` by default, or static weights with `--static`) |
 | `frameyard font add --file <path> --family <name>` | Vendor a local font into `assets/fonts/<id>/` and update `frameyard.fonts.json` |
+| `frameyard font add --url <https-url> --family <name>` | Download and vendor a font from HTTPS (loopback HTTP for tests) |
 | `frameyard font list` | List installed families, subsets, licenses, files, and status |
 | `frameyard font verify` | Verify manifest paths, formats, hashes, licenses, and orphaned directories |
 | `frameyard font remove <id>` | Remove a font from the manifest and delete its directory unless `--keep-files` is supplied |
@@ -110,7 +113,7 @@ Common options: `--project <dir>`, `--json`, `--help`, and `--version`. `still` 
 
 For a timeline, `--props` is keyed by composition clip id; for a composition, it is the props object. `init` takes the directory positionally; `add --template <name>` selects a template and `add --list` lists them. `--out` paths are relative to the working directory. `tts`, `transcribe`, and `render` accept `--dry-run`, which prints the plan, handoff command, prerequisites, and blockers without writing, loading a model, launching Chromium, or encoding. `--profile shared-cpu` and `--low-priority` adjust caps and priority; see [Resource policy](#resource-policy).
 
-`font add --file` accepts `--id`, `--weight` (a number or an inclusive range), `--style normal|italic`, `--subset`, `--unicode-range`, `--license`, and `--license-file`. Font files are copied, hashed, and recorded in `frameyard.fonts.json`; adding another subset, style, or weight to the same family merges it into the existing entry. `--force` replaces a face or provider and is denied outside `full`.
+`font search` accepts an optional query and `--category`, `--subset`, `--style`, `--variable`, and `--limit` filters. `font add <fontsource-id>` pins the Fontsource `npmVersion`, installs the variable `wght` face by default, and accepts `--static` plus `--weight`/`--style`/`--subset` lists. `font add --file` accepts `--id`, `--weight` (a number or an inclusive range), `--style normal|italic`, `--subset`, `--unicode-range`, `--license`, and `--license-file`. `font add --url` accepts the same metadata plus `--sha256`; HTTPS is required, with loopback HTTP allowed for tests. Font files are copied, hashed, and recorded in `frameyard.fonts.json`; adding another subset, style, or weight to the same family merges it into the existing entry. `--force` replaces a face or provider and is denied outside `full`.
 
 A render fails immediately on an uncaught error, unhandled rejection, missing required asset, or invalid composition output. It writes to a temporary file and publishes only after FFmpeg succeeds; existing outputs are not replaced unless `--overwrite` is supplied.
 
@@ -306,7 +309,14 @@ Declare canonical transcripts with `<fy-transcript src="assets/voice.transcript.
 
 ### Fonts
 
-Frameyard reads installed fonts from `frameyard.fonts.json` and serves one generated `@font-face` sheet to every composition. Vendor a local font with its family name:
+Frameyard reads installed fonts from `frameyard.fonts.json` and serves one generated `@font-face` sheet to every composition. Fontsource is the default catalog:
+
+```sh
+npx frameyard font search "space grotesk" --subset latin --json
+npx frameyard font add space-grotesk --subset latin
+```
+
+`font add` pins the Fontsource `npmVersion`, downloads only the requested WOFF2 subset/style/weight, vendors the package `LICENSE`, and records the SHA-256 and exact CDN URL. Variable families install the `wght` face by default; pass `--static --weight 400,700` for static files. A local or brand font uses the same manifest:
 
 ```sh
 npx frameyard font add --file ./fonts/SpaceGrotesk.woff2 \
@@ -314,7 +324,14 @@ npx frameyard font add --file ./fonts/SpaceGrotesk.woff2 \
   --license OFL-1.1 --license-file ./fonts/OFL.txt
 ```
 
-The command copies the file and license under `assets/fonts/space-grotesk/`, records the SHA-256 in the manifest, and injects the face into compositions before author styles. Use the family name in CSS as usual:
+An HTTPS URL is also accepted with `--sha256`:
+
+```sh
+npx frameyard font add --url https://example.com/Inter.woff2 \
+  --family "Inter" --license OFL-1.1 --sha256 <hash>
+```
+
+A URL import without `--license` or `--license-file` is recorded as unknown, warns, and requires the `full` policy. There is no shared font cache. Use the family name in CSS as usual:
 
 ```css
 .title {
@@ -323,7 +340,7 @@ The command copies the file and license under `assets/fonts/space-grotesk/`, rec
 }
 ```
 
-`font list` and `font verify` report the installed families and integrity. The generated sheet uses `font-display: block`; the host waits for `document.fonts.ready` and fails with `FONT_LOAD_FAILED` when a used face cannot load. Remote font URLs produce a `FONT_REMOTE` warning and are not a reproducibility guarantee. Commit `frameyard.fonts.json`, `assets/fonts/`, and license files with the project. See [fonts](./skills/frameyard/references/fonts.md).
+`font list` and `font verify` report the installed families and integrity. The generated sheet uses `font-display: block`; the host waits for `document.fonts.ready` and fails with `FONT_LOAD_FAILED` when a used face cannot load. Remote font URLs produce a `FONT_REMOTE` warning and are not a reproducibility guarantee. Commit `frameyard.fonts.json`, `assets/fonts/`, and license files with the project. See [fonts](./skills/frameyard/references/fonts.md) for Fontsource filters, static weights, URL imports, and licensing.
 
 ## Rendering and reproducibility
 
@@ -428,7 +445,7 @@ An optional `frameyard.policy.json` in the working directory or nearest ancestor
 | `authoring` | 4 frames | allowed at low priority | blocked | denied |
 | `full` | 32 frames | allowed | allowed | allowed |
 
-`lint`, `doctor`, `init`, `dev`, and `--dry-run` are available in every tier. `font list` and `font verify` are available in every tier; `font add` requires `authoring` or `full`; `font remove` and `font add --force` require `full`. A policy file can only tighten its tier; unknown fields fail with `POLICY_INVALID`. `FRAMEYARD_POLICY=light|authoring|full` overrides the file; the default is `full`. `--profile shared-cpu` caps timeline workers at 2 and composition concurrency at 1, lowers priority, and leaves the encoder at `auto`; `--low-priority` lowers priority without the caps. Values above the cap fail with `RESOURCE_PROFILE_CONFLICT`. The policy is a guardrail, not a security boundary.
+`lint`, `doctor`, `init`, `dev`, and `--dry-run` are available in every tier. `font search`, `font list`, and `font verify` are available in every tier; `font add` requires `authoring` or `full`; `font remove`, `font add --force`, and `font add --url` without `--license`/`--license-file` require `full`. A policy file can only tighten its tier; unknown fields fail with `POLICY_INVALID`. `FRAMEYARD_POLICY=light|authoring|full` overrides the file; the default is `full`. `--profile shared-cpu` caps timeline workers at 2 and composition concurrency at 1, lowers priority, and leaves the encoder at `auto`; `--low-priority` lowers priority without the caps. Values above the cap fail with `RESOURCE_PROFILE_CONFLICT`. The policy is a guardrail, not a security boundary.
 
 Install the optional local-model scaffold with `npx frameyard add local-models`, or `npx frameyard init my-project --local-models`; see [`LOCAL-MODELS.md`](./scaffolds/local-models/LOCAL-MODELS.md). See [ADR 0022](./docs/adr/0022-gate-heavy-operations-with-a-workspace-resource-policy.md) for the full contract.
 
@@ -445,6 +462,7 @@ Deferred from this implementation slice:
 - Per-timeline formats and frame-rate conversion/retiming; persistent clip caches
 - Built-in subtitle rendering, automatic caption burn-in, and declarative karaoke elements
 - Nested `data-fy-repeat` scopes, a general template language, and declarative JSON Schema validation
+- Typography roles (`--fy-font-display`, `--fy-font-body`), font-pair presets, a preview font picker, and variable axes other than `wght`
 - `qwentts.cpp` voice cloning and VoiceDesign; Supertonic voice cloning and emotion selection; long-text chunking, streaming synthesis, and alternative generated-audio formats
 - Exporting a fully static timeline as a PNG or recursively optimizing static nested timelines
 
@@ -452,6 +470,7 @@ Deliberate non-goals:
 
 - Arbitrary executable scripts in composition HTML
 - Automatic upstream builds, model downloads, environment repair, and hosted rendering
+- A shared font cache or hosted font catalog; Google Fonts, Fontshare, and Bunny Fonts are not first-class providers. Fontsource is the catalog, and local/HTTPS imports cover the rest.
 - Unbounded batch still capture and general image-sequence output; `still` accepts at most 32 inspection frames per invocation, and the active resource policy may cap it lower
 - Audio, transcripts, or embedded video in a static composition; use a timeline. A `--video` escape hatch is not provided; use a timeline image clip.
 - React or other UI-framework adapters, plugin APIs, and agent-only runtimes; TypeScript transpilation for project compositions and npm dependency optimization

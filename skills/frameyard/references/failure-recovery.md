@@ -63,8 +63,10 @@ Do not claim success after a nonzero exit. Fix the cause, rerun `check`, and onl
 | `FONT_HASH_MISMATCH` | A vendored font file changed size or hash | Restore the file, or reinstall with `npx frameyard font add --force` after approval. |
 | `FONT_LICENSE_MISSING` | License type/file is unknown or absent | Add `--license`/`--license-file`; do not redistribute the project until resolved. |
 | `FONT_LOAD_FAILED` | Chromium could not load a used `@font-face` | Run `npx frameyard font verify`; fix the manifest or file. |
-| `FONT_REMOTE` | CSS still references a remote font/stylesheet | Vendor the font with `npx frameyard font add --file`; remote fonts are not reproducible. |
-| `FONT_NOT_FOUND` | `font remove` id is not installed | Run `npx frameyard font list --json`. |
+| `FONT_PROVIDER_UNAVAILABLE` | Fontsource API/CDN is unreachable or returned an invalid response | Retry, check the network, or install the file with `font add --file`/`--url`. |
+| `FONT_DOWNLOAD_FAILED` | A Fontsource or URL response was not a valid font file | Retry the install; verify the URL and family metadata. |
+| `FONT_REMOTE` | CSS still references a remote font/stylesheet | Vendor the font with `font add`; remote fonts are not reproducible. |
+| `FONT_NOT_FOUND` | Fontsource id or `font remove` id is not installed | Search with `npx frameyard font search --json`, or list installed ids. |
 | `DETERMINISM_WARNING` | Forbidden clock/randomness, CSS transition, or runtime warning | Derive state from `frame`/`props`; use `random("stable:key")`. |
 | `OUTPUT_EXISTS` | Output exists and replacement was not approved | Reuse it, choose another path, or pass `--overwrite`/`--force` with permission. |
 | `IMAGE_INVALID` | An inspected or compared image is missing, unreadable, or has different dimensions | Check the paths; for `compare`, use images with the same width and height. |

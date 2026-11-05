@@ -60,12 +60,13 @@ dependencies of the encoder.
   unicode range, and optional license. A missing license produces a warning.
   `font list`, `font verify`, and `font remove` manage the manifest;
   `font remove` deletes the font directory unless `--keep-files` is supplied.
-- Fontsource search and download are added after the foundation change. The
-  provider pins `npmVersion` from the Fontsource API, downloads only the
-  requested subset/style/weight, downloads the package `LICENSE`, and records
-  the exact CDN URL and SHA-256. The default is the variable `wght` face when
-  the family has one; static faces require `--static`.
-- HTTPS URL imports require an explicit license; a URL import without a license
+- `font search` reads the Fontsource catalog and filters by query, category,
+  subset, style, variable, and limit. `font add <id>` pins `npmVersion` from the
+  Fontsource API, downloads only the requested subset/style/weight, downloads
+  the package `LICENSE`, and records the exact CDN URL and SHA-256. The default
+  is the variable `wght` face when the family has one; static faces require
+  `--static` and a weight or weight list.
+- HTTPS URL imports may include a pinned SHA-256. A URL import without a license
   is recorded as `unknown`, requires the `full` policy, and produces warnings in
   `list`, `verify`, and `doctor`. There is no shared font cache. Fontshare is
   not a provider: its Free Font License prohibits redistribution, subsetting,

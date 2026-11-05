@@ -30,10 +30,11 @@ instead of copying over it.
 
 - `frameyard.policy.json`: the `authoring` tier and `shared-cpu` profile. It
   blocks `tts`, `transcribe`, and `render`; allows `lint`, `context`, `doctor`,
-  `add`, `inspect`, `compare`, `font list`, `font verify`, `font add` without
-  `--force`, `check`, and at most four still frames; and denies
-  `--force`/`--overwrite` and `font remove`. Adjust the tier or profile for the
-  machine. Remove the file to return to the default `full` tier.
+  `add`, `inspect`, `compare`, `font search`, `font list`, `font verify`,
+  `font add` without `--force`, `check`, and at most four still frames; and
+  denies `--force`/`--overwrite`, `font remove`, and an unlicensed `font add
+  --url`. Adjust the tier or profile for the machine. Remove the file to return
+  to the default `full` tier.
 - `.opencode/opencode.jsonc`: project-local OpenCode permissions for a local
   model session. It denies the common heavy shell forms and protects
   `frameyard.policy.json`, `.opencode/`, `.pi/`, and `skills/frameyard/` from

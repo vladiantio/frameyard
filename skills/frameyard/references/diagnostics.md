@@ -84,8 +84,10 @@ Static validation covers:
 | `FONT_HASH_MISMATCH` | error | A vendored font file changed size or SHA-256 |
 | `FONT_LICENSE_MISSING` | warning | Font license type or file is unknown or absent |
 | `FONT_LOAD_FAILED` | error | Chromium failed to load a used `@font-face` |
+| `FONT_PROVIDER_UNAVAILABLE` | error | Fontsource API/CDN unreachable or invalid response |
+| `FONT_DOWNLOAD_FAILED` | error | A Fontsource or URL response was not a valid font file |
 | `FONT_REMOTE` | warning | CSS references a remote font or stylesheet |
-| `FONT_NOT_FOUND` | error | `font remove` id is not installed |
+| `FONT_NOT_FOUND` | error | Fontsource id or `font remove` id is not installed |
 | `AUDIO_WARNING` | warning | Audio timeline overrun or silent embedded media |
 | `TRANSCRIPT_WARNING` | warning | Empty transcript text or no timed segments |
 | `DETERMINISM_WARNING` | warning | Forbidden clock/randomness, CSS transition, or runtime diagnostic |

@@ -13,13 +13,15 @@ contract change may ship in a minor release and is called out explicitly below.
 ### Added
 
 - `frameyard.fonts.json` records vendored font families, files, licenses, and
-  SHA-256 values. `frameyard font add --file` copies a local WOFF2/WOFF/TTF/OTF
-  font into `assets/fonts/`, `font list`/`verify` inspect it, and `font remove`
-  removes it. The server injects the generated `@font-face` sheet into every
-  composition, the host fails with `FONT_LOAD_FAILED` when a used face does not
-  load, and static validation warns with `FONT_REMOTE` for remote font URLs.
-  Fontsource search and download extend the command after the foundation
-  change. See
+  SHA-256 values. `frameyard font search` filters the Fontsource catalog, and
+  `font add <id>` pins a Fontsource `npmVersion`, vendors its WOFF2 files and
+  license, and supports variable `wght` or explicit static weights. `font add
+  --file` copies a local WOFF2/WOFF/TTF/OTF font, `font add --url` vendors an
+  HTTPS source with an optional SHA-256, and `font list`/`verify`/`remove`
+  manage the manifest. The server injects the generated `@font-face` sheet into
+  every composition, the host fails with `FONT_LOAD_FAILED` when a used face
+  does not load, and static validation warns with `FONT_REMOTE` for remote font
+  URLs. See
   `docs/adr/0023-pin-fonts-as-project-assets.md`.
 - `frameyard.policy.json` is a workspace resource policy discovered from the
   working directory upward. It gates `tts`, `transcribe`, and `render`, caps

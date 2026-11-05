@@ -82,9 +82,10 @@ export default {
 ## Fonts
 
 - `frameyard.fonts.json` records installed families, licenses, and SHA-256 values; commit it with `assets/fonts/`.
-- Add a local font with `npx frameyard font add --file <path> --family "<name>" --license <id> --license-file <path>`, then use the family name in CSS.
+- Search Fontsource with `npx frameyard font search "<query>" --json`, then install a family with `npx frameyard font add <fontsource-id> --json`. Variable `wght` is the default; add `--static --weight 400,700` for static files.
+- Use `npx frameyard font add --file <path> --family "<name>" --license <id> --license-file <path>` for a local or brand font. Use `--url` for an explicit HTTPS source with `--sha256`.
 - Run `npx frameyard font list --json` and `npx frameyard font verify --json` after moving files. Do not edit manifest hashes by hand.
-- `font add` requires `authoring` or `full`; `font remove` and `font add --force` require `full`.
+- `font add` requires `authoring` or `full`; `font remove`, `font add --force`, and an unlicensed `--url` import require `full`.
 
 ## Media and transcripts
 

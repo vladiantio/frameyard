@@ -53,14 +53,18 @@ A static composition has no frame clock: no `data-fy-anim-*`, no `<video>`,
 
 ## Fonts
 
-Vendor a local `.woff2`/`.woff`/`.ttf`/`.otf` file; do not rely on a remote
-Google Fonts link for a deterministic render.
+Fontsource is the default catalog. Search, then install a pinned family:
 
 ```sh
-npx frameyard font add --file ./fonts/SpaceGrotesk.woff2 \
-  --family "Space Grotesk" --weight 300-700 --subset latin \
-  --license OFL-1.1 --license-file ./fonts/OFL.txt
+npx frameyard font search "space grotesk" --subset latin --json
+npx frameyard font add space-grotesk --subset latin
 ```
+
+Variable families install the `wght` face by default. Use `--static --weight
+400,700` for static files. A local or brand font uses `font add --file`; an
+explicit HTTPS source uses `font add --url` and may pass `--sha256`. A URL
+import without `--license` or `--license-file` is recorded as unknown and
+requires `full`.
 
 Then use the family name normally:
 
@@ -148,7 +152,11 @@ code. Use `random("stable:key")` from `frameyard/runtime`, never `Math.random()`
 | `npx frameyard render <id> --json` | Produce the video when the policy allows it |
 | `npx frameyard add --list --json` | List project templates |
 | `npx frameyard add composition <id> --template <name> --json` | Write a valid fragment and print the config snippet |
+| `npx frameyard font search <query> --json` | Search Fontsource by name, category, subset, style, or variable |
+| `npx frameyard font add <fontsource-id> --json` | Pin and vendor a Fontsource family; variable `wght` by default |
+| `npx frameyard font add <fontsource-id> --static --weight 400,700 --json` | Install explicit static weights |
 | `npx frameyard font add --file <path> --family <name> --json` | Vendor a local font into `assets/fonts/` and update `frameyard.fonts.json` |
+| `npx frameyard font add --url <https-url> --family <name> --json` | Download and vendor an HTTPS font, optionally with `--sha256` |
 | `npx frameyard font list --json` | Installed families, subsets, licenses, files, and status |
 | `npx frameyard font verify --json` | Manifest paths, hashes, licenses, and orphaned directories |
 | `npx frameyard font remove <id> --json` | Remove a font and its directory; `--keep-files` keeps the binaries |
@@ -169,9 +177,10 @@ independent of `video.config.js`.
 | `full` | 32 frames | allowed | allowed | allowed |
 
 `lint`, `context`, `doctor`, `add`, `inspect`, `compare`, and `--dry-run` are
-available in every tier. `font list` and `font verify` are available in every
-tier; `font add` requires `authoring` or `full`; `font remove` and `font add
---force` require `full`. When a heavy command is blocked, run it with `--dry-run`, report `deferred: true`, and give the user
+available in every tier. `font search`, `font list`, and `font verify` are
+available in every tier; `font add` requires `authoring` or `full`; `font
+remove`, `font add --force`, and `font add --url` without
+`--license`/`--license-file` require `full`. When a heavy command is blocked, run it with `--dry-run`, report `deferred: true`, and give the user
 `commandLine`, `prerequisites`, and `blockers`.
 
 ## Ten diagnostics that matter

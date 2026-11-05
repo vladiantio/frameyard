@@ -111,7 +111,9 @@ Static validation diagnostics include source locations. Runtime diagnostics may 
 
 ## font
 
-`font add --file` returns `action: "add"`, a `font` summary (`id`, `family`, `provider`, optional `version`, `variable`, `subsets`, `styles`, `license`, `files`, `bytes`, `status`), the `manifest` path, the generated `css` text, installed `files`, and `warnings`. `font list` returns `manifest` and a `fonts` array of the same summaries. `font verify` returns `manifest`, `fonts`, `files`, `bytes`, `valid`, and `diagnostics`; errors exit 1, warnings exit 0. `font remove` returns `id`, `family`, `manifest`, `files`, and `keptFiles`.
+`font search` returns `provider: "fontsource"`, the `query`, applied `filters`, `results`, and `truncated`. Each result has `id`, `family`, `category`, `variable`, `weights`, `styles`, `subsets`, `license`, optional `version`, and `type`.
+
+`font add` (Fontsource id, `--file`, or `--url`) returns `action: "add"`, a `font` summary (`id`, `family`, `provider`, optional `version`, `variable`, `subsets`, `styles`, `license`, `files`, `bytes`, `status`), the `manifest` path, installed `files`, `warnings`, and `next` commands. Fontsource results identify `provider: "fontsource"` and the pinned `version`; URL results identify `provider: "url"`. `font list` returns `manifest` and a `fonts` array of the same summaries. `font verify` returns `manifest`, `fonts`, `files`, `bytes`, `valid`, and `diagnostics`; errors exit 1, warnings exit 0. `font remove` returns `id`, `family`, `manifest`, `files`, and `keptFiles`.
 
 ```json
 {
@@ -127,7 +129,7 @@ Static validation diagnostics include source locations. Runtime diagnostics may 
 }
 ```
 
-A present-but-invalid manifest fails with `FONT_MANIFEST_INVALID`; missing files use `FONT_FILE_MISSING`, changed content uses `FONT_HASH_MISMATCH`, and a failed browser load uses `FONT_LOAD_FAILED`. Remote font CSS is a `FONT_REMOTE` warning.
+A present-but-invalid manifest fails with `FONT_MANIFEST_INVALID`; missing files use `FONT_FILE_MISSING`, changed content uses `FONT_HASH_MISMATCH`, and a failed browser load uses `FONT_LOAD_FAILED`. Remote font CSS is a `FONT_REMOTE` warning. Fontsource network or API failures use `FONT_PROVIDER_UNAVAILABLE`; invalid downloaded WOFF2 content uses `FONT_DOWNLOAD_FAILED`; a missing Fontsource family or `font remove` id uses `FONT_NOT_FOUND`.
 
 ## dry run
 

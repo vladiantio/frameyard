@@ -204,6 +204,10 @@ _Avoid_: Compound composition
 The versioned `frameyard.fonts.json` file that records vendored font families, their CSS family names, providers, licenses, and file hashes. It is the source of truth for the generated `@font-face` sheet.
 _Avoid_: Font config, font cache
 
+**Font provider**:
+The acquisition source recorded for a font family: `local` for a user-supplied file, `fontsource` for a pinned Fontsource download, or `url` for an explicit HTTPS source.
+_Avoid_: Font catalog, font CDN
+
 **Font family entry**:
 One manifest entry keyed by a stable id. It contains the CSS family name, provider metadata, license, optional variable axes, and one or more font files.
 _Avoid_: Font face, font package

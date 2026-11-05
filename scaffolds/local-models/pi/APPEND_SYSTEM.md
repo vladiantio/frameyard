@@ -11,8 +11,9 @@ file, `.pi/`, `.opencode/`, or `skills/frameyard/`.
 4. Do not run `frameyard tts`, `frameyard transcribe`, or `frameyard render` unless the
    user explicitly asks. Use `--dry-run` and report `deferred: true` with the exact
    handoff command instead.
-5. `frameyard font list` and `font verify` are allowed; `font add` is allowed without
-   `--force`. `font remove` and `font add --force` require the `full` policy.
+5. `frameyard font search`, `font list`, and `font verify` are allowed; `font add`
+   is allowed without `--force`. `font remove`, `font add --force`, and an
+   unlicensed `font add --url` require the `full` policy.
 6. Read `AGENTS.md` and `skills/frameyard/SKILL.md` before changing public behavior.
 
 The local llama.cpp router is at `http://127.0.0.1:9931`. Use a small text model for

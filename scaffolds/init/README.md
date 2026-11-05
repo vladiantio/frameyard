@@ -29,7 +29,14 @@ npx frameyard check hello
 npx frameyard render hello --props props/hello.json
 ```
 
-Install a local font when the design needs one:
+Install a font when the design needs one:
+
+```sh
+npx frameyard font search "space grotesk" --subset latin --json
+npx frameyard font add space-grotesk --subset latin
+```
+
+Or vendor a local font:
 
 ```sh
 npx frameyard font add --file ./fonts/SpaceGrotesk.woff2 \

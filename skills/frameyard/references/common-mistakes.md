@@ -49,7 +49,10 @@
 
 ## Fonts
 
-- Using a remote Google Fonts `<link>` in a composition that must render reproducibly. Vendor the file with `npx frameyard font add --file`; remote fonts produce `FONT_REMOTE`.
+- Using a remote Google Fonts `<link>` in a composition that must render reproducibly. Search Fontsource with `font search` and vendor the file; remote fonts produce `FONT_REMOTE`.
+- Installing a Fontsource variable family and then expecting static weights from the same record. Use `--static --weight 400,700` for static files, or `--force` to replace the family.
+- Passing `--license` with a Fontsource id; the provider supplies the license and the flag is rejected. Use `--license` only with `--file`/`--url`.
+- Importing a font by URL without a license. It records `unknown`, warns, and requires `full`; add `--license` and `--license-file` when the license allows redistribution.
 - Adding a `.woff2` file but forgetting the license or `--family`; `font add` needs the family name and warns when the license is unknown.
 - Hand-editing a path or hash in `frameyard.fonts.json`. Reinstall the face; `check`, `still`, and `render` verify hashes before Chromium.
 - Installing only weight 400 and using `font-weight: 700`, which asks the browser to synthesize a bold face. Add the weight or a variable range.

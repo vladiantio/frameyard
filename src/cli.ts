@@ -1,9 +1,32 @@
 #!/usr/bin/env node
 import { access, mkdir, readFile, rmdir, stat, writeFile } from "node:fs/promises";
+import { cpus, freemem, loadavg, totalmem } from "node:os";
 import path from "node:path";
 import { isPlainObject } from "./contracts.js";
 import { FrameyardError, errorMessage, isFrameyardError, type FrameyardDiagnostic } from "./errors.js";
 import { loadProject, resolveProjectRoot, type Project } from "./project.js";
+import {
+  assertOperationAllowed,
+  assertOverwriteAllowed,
+  assertProfileLimit,
+  assertStillFrameLimit,
+  describePolicy,
+  loadResourcePolicy,
+  lowerProcessPriority,
+  MAX_STILL_FRAMES,
+  policyDetails,
+  resolveProfile,
+  SHARED_CPU_MAX_CONCURRENCY,
+  SHARED_CPU_MAX_WORKERS,
+  shouldLowerPriority,
+  type LoadedResourcePolicy,
+} from "./policy.js";
+import { lintComposition, lintResolvedTimeline, lintTimeline } from "./lint.js";
+import { buildProjectContext } from "./context.js";
+import { analyzeRgba, compareRgba, decodeRgba, probeImage } from "./inspect.js";
+import { findTemplate, listTemplates, templateRegistration, type TemplateKind } from "./templates.js";
+import { planTimelineRender } from "./timeline/plan.js";
+import { resolveProjectTimeline, type ResolvedTimeline } from "./timeline/resolve.js";
 import {
   checkComposition,
   captureStills,
@@ -30,15 +53,35 @@ import {
   type VideoEncoderChoice,
 } from "./renderer/ffmpeg.js";
 import { startPreviewServer } from "./server/server.js";
-import { scaffoldFiles, SCAFFOLD_NEXT } from "./scaffold.js";
+import { localModelScaffoldFiles, scaffoldFiles, SCAFFOLD_NEXT } from "./scaffold.js";
 import { VERSION } from "./version.js";
 import { transcribeAudio, type SubtitleFormat } from "./assets/transcribe.js";
 import { synthesizeSpeech, type SpeechEngine } from "./assets/tts.js";
-import { isSupertonicLanguage, parseSupertonicSpeaker, SUPERTONIC_LANGUAGES } from "./assets/tts-supertonic.js";
+import {
+  isSupertonicLanguage,
+  parseSupertonicSpeaker,
+  resolveSupertonicModelFiles,
+  SUPERTONIC_LANGUAGES,
+} from "./assets/tts-supertonic.js";
 import { resolveManifestPath } from "./assets/provenance.js";
 import { runDoctor } from "./doctor.js";
 
-const COMMANDS = new Set(["init", "dev", "check", "still", "render", "tts", "transcribe", "doctor", "help"]);
+const COMMANDS = new Set([
+  "init",
+  "dev",
+  "context",
+  "lint",
+  "check",
+  "still",
+  "inspect",
+  "compare",
+  "render",
+  "tts",
+  "transcribe",
+  "add",
+  "doctor",
+  "help",
+]);
 const VALUE_FLAGS = new Set([
   "project",
   "props",
@@ -67,9 +110,21 @@ const VALUE_FLAGS = new Set([
   "qwen-tts",
   "sherpa-onnx-tts",
   "whisper-cli",
+  "profile",
+  "template",
 ]);
-const BOOLEAN_FLAGS = new Set(["json", "overwrite", "force", "words", "help", "version"]);
-const MAX_STILL_FRAMES = 32;
+const BOOLEAN_FLAGS = new Set([
+  "json",
+  "overwrite",
+  "force",
+  "words",
+  "dry-run",
+  "low-priority",
+  "list",
+  "local-models",
+  "help",
+  "version",
+]);
 
 interface ParsedArgs {
   command: string;
@@ -152,15 +207,26 @@ function parseArgs(argv: string[]): ParsedArgs {
 
 function allowedFlags(command: string): Set<string> {
   const common = new Set(["project", "json", "help"]);
+  const resource = ["profile", "low-priority"];
   switch (command) {
     case "init":
-      return new Set(["json", "help"]);
+      return new Set(["json", "local-models", "help"]);
     case "dev":
       return new Set(["project", "port", "help"]);
-    case "check":
+    case "context":
+      return new Set(common);
+    case "lint":
       return new Set([...common, "props"]);
+    case "inspect":
+      return new Set(["json", "help"]);
+    case "compare":
+      return new Set(["json", "help"]);
+    case "add":
+      return new Set([...common, "template", "list"]);
+    case "check":
+      return new Set([...common, "props", ...resource]);
     case "still":
-      return new Set([...common, "props", "out", "frame", "overwrite"]);
+      return new Set([...common, "props", "out", "frame", "overwrite", ...resource]);
     case "render":
       return new Set([
         ...common,
@@ -173,6 +239,8 @@ function allowedFlags(command: string): Set<string> {
         "encoder",
         "codec",
         "container",
+        "dry-run",
+        ...resource,
       ]);
     case "tts":
       return new Set([
@@ -190,9 +258,23 @@ function allowedFlags(command: string): Set<string> {
         "executable",
         "manifest",
         "force",
+        "dry-run",
+        ...resource,
       ]);
     case "transcribe":
-      return new Set([...common, "out", "model", "words", "export", "language", "executable", "manifest", "force"]);
+      return new Set([
+        ...common,
+        "out",
+        "model",
+        "words",
+        "export",
+        "language",
+        "executable",
+        "manifest",
+        "force",
+        "dry-run",
+        ...resource,
+      ]);
     case "doctor":
       return new Set([
         ...common,
@@ -229,7 +311,7 @@ function validateArgs(parsed: ParsedArgs): void {
     }
   }
 
-  if (["dev", "help", "doctor", "tts"].includes(parsed.command)) {
+  if (["dev", "help", "doctor", "tts", "context"].includes(parsed.command)) {
     if (parsed.positionals.length > 0) {
       usage(`"${parsed.command}" does not take a positional argument.`);
     }
@@ -237,16 +319,68 @@ function validateArgs(parsed: ParsedArgs): void {
     if (parsed.positionals.length > 1) {
       usage(`"${parsed.command}" accepts at most 1 positional argument.`);
     }
+  } else if (parsed.command === "inspect") {
+    if (parsed.positionals.length !== 1) {
+      usage('"inspect" requires an image path.');
+    }
+  } else if (parsed.command === "compare") {
+    if (parsed.positionals.length !== 2) {
+      usage('"compare" requires two image paths.');
+    }
+  } else if (parsed.command === "add") {
+    if (parsed.flags.has("list")) {
+      if (parsed.positionals.length > 0) {
+        usage('"add --list" does not take positional arguments.');
+      }
+      if (parsed.flags.has("template")) {
+        usage("--template is only valid when adding an entry.");
+      }
+    } else if (parsed.positionals[0] === "local-models") {
+      if (parsed.positionals.length !== 1) {
+        usage('"add local-models" does not take an id.');
+      }
+      if (parsed.flags.has("template")) {
+        usage('--template is not valid for "add local-models".');
+      }
+    } else {
+      if (parsed.positionals.length !== 2) {
+        usage('"add" requires <composition|timeline> <id> and --template <name>, or "add local-models".');
+      }
+      const kind = parsed.positionals[0];
+      if (kind !== "composition" && kind !== "timeline") {
+        usage('"add" kind must be "composition", "timeline", or "local-models".');
+      }
+      const templateName = parsed.flags.get("template");
+      if (typeof templateName !== "string") {
+        usage('"add" requires --template <name>.');
+      }
+      const template = findTemplate(templateName);
+      if (!template) {
+        usage(
+          `Unknown template "${templateName}". Available: ${listTemplates()
+            .map((entry) => entry.name)
+            .join(", ")}.`,
+        );
+      }
+      if (template.kind !== kind) {
+        usage(`Template "${templateName}" is a ${template.kind} template, not ${kind}.`);
+      }
+    }
   } else if (parsed.positionals.length !== 1) {
     usage(
       `"${parsed.command}" requires a ${
         parsed.command === "transcribe"
           ? "source path"
-          : parsed.command === "render"
+          : parsed.command === "render" || parsed.command === "lint"
             ? "composition or timeline id"
             : "composition id"
       }.`,
     );
+  }
+
+  const profile = parsed.flags.get("profile");
+  if (profile !== undefined && profile !== "shared-cpu") {
+    usage('--profile must be "shared-cpu".');
   }
 
   if (parsed.command === "still" && !parsed.flags.has("frame")) {
@@ -335,14 +469,21 @@ function printHelp(): void {
 Local-first, deterministic video compositions authored with HTML, CSS, and JavaScript.
 
 Usage:
-  frameyard init [directory]
+  frameyard init [directory] [--local-models]
   frameyard dev [--port <port>] [--project <dir>]
-  frameyard check <composition-id> [--props <file>] [--project <dir>] [--json]
-  frameyard still <composition-or-timeline-id> --frame <spec> [--out <file-or-dir>] [--props <file>] [--project <dir>] [--json]
-  frameyard render <composition-or-timeline-id> [--out <file>] [--props <file>] [--project <dir>] [--concurrency <n>] [--workers <n>] [--encoder <name>] [--codec <name>] [--container <name>] [--scratch <dir>] [--overwrite] [--json]
-  frameyard tts [--engine qwen] --speaker <name> --talker-model <gguf> --codec-model <gguf> --out <file.wav> [--text-file <file>] [--style <text>] [--language <lang>] [--device <name>] [--executable <path>] [--manifest <file>] [--force] [--json]
-  frameyard tts --engine supertonic --speaker <sid> --model-dir <dir> --language <code> --out <file.wav> [--text-file <file>] [--executable <path>] [--manifest <file>] [--force] [--json]
-  frameyard transcribe <source> --model <gguf> --out <file.json> [--words] [--export srt,vtt] [--language <lang>] [--executable <path>] [--manifest <file>] [--force] [--json]
+  frameyard context [--project <dir>] [--json]
+  frameyard lint <composition-or-timeline-id> [--props <file>] [--project <dir>] [--json]
+  frameyard check <composition-id> [--props <file>] [--project <dir>] [--profile <name>] [--low-priority] [--json]
+  frameyard still <composition-or-timeline-id> --frame <spec> [--out <file-or-dir>] [--props <file>] [--project <dir>] [--profile <name>] [--low-priority] [--json]
+  frameyard inspect <image> [--json]
+  frameyard compare <first-image> <second-image> [--json]
+  frameyard render <composition-or-timeline-id> [--out <file>] [--props <file>] [--project <dir>] [--concurrency <n>] [--workers <n>] [--encoder <name>] [--codec <name>] [--container <name>] [--scratch <dir>] [--overwrite] [--dry-run] [--profile <name>] [--low-priority] [--json]
+  frameyard tts [--engine qwen] --speaker <name> --talker-model <gguf> --codec-model <gguf> --out <file.wav> [--text-file <file>] [--style <text>] [--language <lang>] [--device <name>] [--executable <path>] [--manifest <file>] [--force] [--dry-run] [--profile <name>] [--low-priority] [--json]
+  frameyard tts --engine supertonic --speaker <sid> --model-dir <dir> --language <code> --out <file.wav> [--text-file <file>] [--executable <path>] [--manifest <file>] [--force] [--dry-run] [--profile <name>] [--low-priority] [--json]
+  frameyard transcribe <source> --model <gguf> --out <file.json> [--words] [--export srt,vtt] [--language <lang>] [--executable <path>] [--manifest <file>] [--force] [--dry-run] [--profile <name>] [--low-priority] [--json]
+  frameyard add --list [--json]
+  frameyard add local-models [--project <dir>] [--json]
+  frameyard add <composition|timeline> <id> --template <name> [--project <dir>] [--json]
   frameyard doctor [--qwen-tts <path>] [--sherpa-onnx-tts <path>] [--whisper-cli <path>] [--talker-model <gguf>] [--codec-model <gguf>] [--model-dir <dir>] [--model <gguf>] [--manifest <file>] [--project <dir>] [--json]
 
 Options:
@@ -356,8 +497,14 @@ Options:
   --codec <name>         Delivery codec for render: h264, hevc, or vp9 (default: h264; vp9 for webm).
   --container <name>     Delivery container: mp4, mov, mkv, or webm (default: mp4).
   --scratch <dir>        Scratch directory for timeline intermediates (default: system temp).
-  --overwrite            Replace an existing still or render output.
-  --force                Replace existing generated assets and manifest entries.
+  --overwrite            Replace an existing still or render output when the resource policy allows it.
+  --force                Replace existing generated assets and manifest entries when the resource policy allows it.
+  --dry-run              Validate and print the plan and handoff command without rendering, synthesizing, transcribing, or writing outputs.
+  --profile <name>       Resource profile for shared machines. shared-cpu caps workers at 2, concurrency at 1, and lowers process priority.
+  --low-priority         Lower the process priority without changing worker caps.
+  --local-models         With init, also install the optional local-model host scaffold.
+  --template <name>      Template for "add": static-poster, title-card, lower-third, or slideshow.
+  --list                 List add templates and scaffolds without writing files.
   --text-file <file>     Text to synthesize. Reads stdin when omitted.
   --speaker <value>      Named speaker for qwen, or the numeric speaker id for Supertonic.
   --engine <name>        Speech engine: qwen or supertonic (default: qwen).
@@ -378,42 +525,71 @@ Options:
   --json                 Print a structured result to stdout.
   --help, -h             Show this help.
   --version, -v          Print the version.
+
+Resource policy: the nearest frameyard.policy.json from the working directory upward sets light, authoring, or full; FRAMEYARD_POLICY overrides it. tts, transcribe, and render are blocked outside full. Use --dry-run to validate and produce a handoff command without doing heavy work.
 `);
 }
 
 function printCommandHelp(command: string): void {
   switch (command) {
     case "init":
-      process.stdout.write("Usage: frameyard init [directory]\nScaffold a minimal Frameyard project.\n");
+      process.stdout.write(
+        "Usage: frameyard init [directory] [--local-models]\nScaffold a minimal Frameyard project. --local-models also installs the optional policy, OpenCode, and Pi scaffold.\n",
+      );
       return;
     case "dev":
       process.stdout.write(
         "Usage: frameyard dev [--port <port>] [--project <dir>]\nStart the browser preview server.\n",
       );
       return;
+    case "context":
+      process.stdout.write(
+        "Usage: frameyard context [--project <dir>] [--json]\nPrint a compact digest of the project, resolved timelines, assets, diagnostics, active policy, and next commands. It never launches Chromium.\n",
+      );
+      return;
+    case "lint":
+      process.stdout.write(
+        "Usage: frameyard lint <composition-or-timeline-id> [--props <file>] [--project <dir>] [--json]\nRun static validation, timeline resolution, scene and keyframe projection for every timeline frame, and a controller determinism scan without launching Chromium. It does not run validateProps or capture frames; use check for the full gate.\n",
+      );
+      return;
     case "check":
       process.stdout.write(
-        "Usage: frameyard check <composition-id> [--props <file>] [--project <dir>] [--json]\nValidate props, assets, audio, and every frame without encoding.\n",
+        "Usage: frameyard check <composition-id> [--props <file>] [--project <dir>] [--profile <name>] [--low-priority] [--json]\nValidate props, assets, audio, and every frame without encoding. The authoring policy lowers process priority for check.\n",
       );
       return;
     case "still":
       process.stdout.write(
-        "Usage: frameyard still <composition-or-timeline-id> --frame <spec> [--out <path>] [--props <file>] [--project <dir>] [--overwrite] [--json]\nCapture one or more frames through the production rendering path. <spec> is a frame number, an inclusive range like 2-12, or a comma-separated list, with at most 32 unique frames per invocation. With one frame, --out is a .png file; with multiple frames, --out is a directory. A static composition exposes only frame 0.\n",
+        "Usage: frameyard still <composition-or-timeline-id> --frame <spec> [--out <path>] [--props <file>] [--project <dir>] [--overwrite] [--profile <name>] [--low-priority] [--json]\nCapture one or more frames through the production rendering path. <spec> is a frame number, an inclusive range like 2-12, or a comma-separated list; the policy caps unique frames per invocation. With one frame, --out is a .png file; with multiple frames, --out is a directory. A static composition exposes only frame 0.\n",
+      );
+      return;
+    case "inspect":
+      process.stdout.write(
+        "Usage: frameyard inspect <image> [--json]\nDecode the first frame and report dimensions, alpha coverage, blank detection, background and dominant colors, content bbox, a coarse luminance grid, and edge density. It never launches Chromium.\n",
+      );
+      return;
+    case "compare":
+      process.stdout.write(
+        "Usage: frameyard compare <first-image> <second-image> [--json]\nCompare two decoded images pixel by pixel and by 3×3 region. Exits 1 when the images differ; the JSON result still has ok: true and identical: false.\n",
       );
       return;
     case "render":
       process.stdout.write(
-        `Usage: frameyard render <composition-or-timeline-id> [--out <file>] [--props <file>] [--project <dir>] [--concurrency <n>] [--workers <n>] [--encoder <name>] [--codec <name>] [--container <name>] [--scratch <dir>] [--overwrite] [--json]\nRender an MP4, MOV, MKV, or WebM with H.264, HEVC, or VP9 video and AAC or Opus audio, or a PNG for a static composition. The default output is out/<id>.<extension> for video and out/<id>.png for a static composition. Animated composition concurrency is 1-${MAX_RENDER_CONCURRENCY}; timeline workers are 1-${MAX_TIMELINE_WORKERS}. Encoder choices are auto, software, nvenc, and qsv; the default auto probes NVENC, then Quick Sync, then the codec's software encoder. WebM and VP9 use Opus audio, and HEVC in MP4/MOV keeps the hvc1 sample entry. A static composition rejects --concurrency, --container, --codec, and --encoder.\n`,
+        `Usage: frameyard render <composition-or-timeline-id> [--out <file>] [--props <file>] [--project <dir>] [--concurrency <n>] [--workers <n>] [--encoder <name>] [--codec <name>] [--container <name>] [--scratch <dir>] [--overwrite] [--dry-run] [--profile <name>] [--low-priority] [--json]\nRender an MP4, MOV, MKV, or WebM with H.264, HEVC, or VP9 video and AAC or Opus audio, or a PNG for a static composition. The default output is out/<id>.<extension> for video and out/<id>.png for a static composition. Animated composition concurrency is 1-${MAX_RENDER_CONCURRENCY}; timeline workers are 1-${MAX_TIMELINE_WORKERS}. The shared-cpu profile caps workers at 2 and concurrency at 1. Encoder choices are auto, software, nvenc, and qsv; the default auto probes NVENC, then Quick Sync, then the codec's software encoder. WebM and VP9 use Opus audio, and HEVC in MP4/MOV keeps the hvc1 sample entry. A static composition rejects --concurrency, --container, --codec, and --encoder. With --dry-run, validates and prints the plan and handoff command without writing outputs or launching Chromium.\n`,
       );
       return;
     case "tts":
       process.stdout.write(
-        "Usage: frameyard tts [--engine qwen] --speaker <name> --talker-model <gguf> --codec-model <gguf> --out <file.wav> [--text-file <file>] [--style <text>] [--language <lang>] [--device <name>] [--executable <path>] [--manifest <file>] [--force] [--json]\n       frameyard tts --engine supertonic --speaker <sid> --model-dir <dir> --language <code> --out <file.wav> [--text-file <file>] [--executable <path>] [--manifest <file>] [--force] [--json]\nProduce one frozen 24 kHz mono WAV with local qwentts.cpp CustomVoice or sherpa-onnx Supertonic 3 synthesis. Supertonic language codes: ar, bg, cs, da, de, el, en, es, et, fi, fr, hi, hr, hu, id, it, ja, ko, lt, lv, nl, pl, pt, ro, ru, sk, sl, sv, tr, uk, vi.\n",
+        "Usage: frameyard tts [--engine qwen] --speaker <name> --talker-model <gguf> --codec-model <gguf> --out <file.wav> [--text-file <file>] [--style <text>] [--language <lang>] [--device <name>] [--executable <path>] [--manifest <file>] [--force] [--dry-run] [--profile <name>] [--low-priority] [--json]\n       frameyard tts --engine supertonic --speaker <sid> --model-dir <dir> --language <code> --out <file.wav> [--text-file <file>] [--executable <path>] [--manifest <file>] [--force] [--dry-run] [--profile <name>] [--low-priority] [--json]\nProduce one frozen 24 kHz mono WAV with local qwentts.cpp CustomVoice or sherpa-onnx Supertonic 3 synthesis. Supertonic language codes: ar, bg, cs, da, de, el, en, es, et, fi, fr, hi, hr, hu, id, it, ja, ko, lt, lv, nl, pl, pt, ro, ru, sk, sl, sv, tr, uk, vi. With --dry-run, validates inputs and prints the plan and command without loading a model.\n",
       );
       return;
     case "transcribe":
       process.stdout.write(
-        "Usage: frameyard transcribe <source> --model <gguf> --out <file.json> [--words] [--export srt,vtt] [--language <lang>] [--executable <path>] [--manifest <file>] [--force] [--json]\nProduce a canonical Frameyard transcript, optionally with word timings and subtitle exports.\n",
+        "Usage: frameyard transcribe <source> --model <gguf> --out <file.json> [--words] [--export srt,vtt] [--language <lang>] [--executable <path>] [--manifest <file>] [--force] [--dry-run] [--profile <name>] [--low-priority] [--json]\nProduce a canonical Frameyard transcript, optionally with word timings and subtitle exports. With --dry-run, validates inputs and prints the plan and command without loading a model.\n",
+      );
+      return;
+    case "add":
+      process.stdout.write(
+        "Usage: frameyard add --list [--json]\n       frameyard add local-models [--project <dir>] [--json]\n       frameyard add <composition|timeline> <id> --template <name> [--project <dir>] [--json]\nWrite a valid template entry and print the exact video.config.js registration snippet, or install the optional local-model host scaffold. Templates are static-poster, title-card, lower-third, and slideshow. The command refuses to overwrite an existing file or an already registered id.\n",
       );
       return;
     case "doctor":
@@ -595,11 +771,108 @@ function printJson(value: unknown): void {
   process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
 }
 
+async function pathExists(filePath: string): Promise<boolean> {
+  try {
+    await stat(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function shellQuote(value: string): string {
+  return /^[A-Za-z0-9_./:@%+=,-]+$/.test(value) ? value : `'${value.replaceAll("'", "'\\''")}'`;
+}
+
+function handoffCommand(args: readonly string[]): string {
+  return ["npx", "frameyard", ...args].map(shellQuote).join(" ");
+}
+
+function collectPrerequisites(timeline: ResolvedTimeline): string[] {
+  const values = new Set<string>();
+  const visit = (current: ResolvedTimeline): void => {
+    for (const clip of current.clips) {
+      const source = clip.source;
+      if (source.kind === "video" || source.kind === "image" || source.kind === "audio") {
+        values.add(source.src);
+      } else if (source.kind === "composition") {
+        values.add(source.entry);
+        for (const audio of source.audioClips) {
+          values.add(audio.src);
+        }
+        for (const transcript of source.transcriptClips) {
+          values.add(transcript.src);
+        }
+      } else if (source.kind === "timeline") {
+        visit(source.timeline);
+      }
+    }
+  };
+  visit(timeline);
+  return [...values].sort();
+}
+
+interface DryRunBlocker {
+  code: string;
+  message: string;
+  suggestion?: string;
+}
+
+function printDryRun(
+  label: string,
+  plan: Record<string, unknown>,
+  commandLine: string,
+  prerequisites: readonly string[],
+  blockers: readonly DryRunBlocker[],
+): void {
+  process.stdout.write(`${label} dry run\n`);
+  process.stdout.write(`  plan: ${JSON.stringify(plan)}\n`);
+  process.stdout.write(`  command: ${commandLine}\n`);
+  if (prerequisites.length > 0) {
+    process.stdout.write(`  prerequisites: ${prerequisites.join(", ")}\n`);
+  }
+  for (const blocker of blockers) {
+    process.stdout.write(`  blocker [${blocker.code}]: ${blocker.message}\n`);
+  }
+}
+
+async function prerequisiteBlockers(
+  items: ReadonlyArray<{ label: string; path: string; directory?: boolean }>,
+): Promise<DryRunBlocker[]> {
+  const blockers: DryRunBlocker[] = [];
+  for (const item of items) {
+    let info;
+    try {
+      info = await stat(item.path);
+    } catch {
+      blockers.push({
+        code: "ASSET_NOT_FOUND",
+        message: `${item.label} does not exist: ${item.path}`,
+        suggestion: "Check the path before running the heavy operation.",
+      });
+      continue;
+    }
+    if (item.directory === true ? !info.isDirectory() : !info.isFile()) {
+      blockers.push({
+        code: "ASSET_NOT_FOUND",
+        message: `${item.label} is not a ${item.directory === true ? "directory" : "file"}: ${item.path}`,
+        suggestion: "Check the path before running the heavy operation.",
+      });
+    }
+  }
+  return blockers;
+}
+
 async function runInit(parsed: ParsedArgs): Promise<number> {
   const target = path.resolve(process.cwd(), parsed.positionals[0] ?? ".");
   const json = parsed.flags.has("json") === true;
+  const localModels = parsed.flags.has("local-models") === true;
 
-  const files = scaffoldFiles(path.basename(target) || "frameyard-project");
+  const files = {
+    ...scaffoldFiles(path.basename(target) || "frameyard-project"),
+    ...(localModels ? localModelScaffoldFiles() : {}),
+  };
+  const next = localModels ? [...SCAFFOLD_NEXT, "Review .pi/settings.json and run pi --approve"] : [...SCAFFOLD_NEXT];
 
   for (const relativePath of Object.keys(files)) {
     try {
@@ -630,7 +903,8 @@ async function runInit(parsed: ParsedArgs): Promise<number> {
     command: "init",
     project: target,
     files: Object.keys(files),
-    next: [...SCAFFOLD_NEXT],
+    next,
+    ...(localModels ? { localModels: true } : {}),
   };
 
   if (json) {
@@ -640,7 +914,7 @@ async function runInit(parsed: ParsedArgs): Promise<number> {
     for (const file of Object.keys(files)) {
       process.stdout.write(`  ${file}\n`);
     }
-    process.stdout.write("Next: " + SCAFFOLD_NEXT.slice(0, 2).join(" && ") + "\n");
+    process.stdout.write("Next: " + next.slice(0, 2).join(" && ") + "\n");
   }
   return 0;
 }
@@ -674,7 +948,336 @@ async function runDev(parsed: ParsedArgs): Promise<number> {
   return 0;
 }
 
-async function runCheck(parsed: ParsedArgs, signal: AbortSignal): Promise<number> {
+async function runContext(parsed: ParsedArgs, signal: AbortSignal, policy: LoadedResourcePolicy): Promise<number> {
+  assertOperationAllowed(policy, "context");
+  const project = await projectFromFlag(parsed.flags);
+  const result = await buildProjectContext({ project, policy, signal });
+  const json = parsed.flags.has("json") === true;
+
+  if (json) {
+    printJson({ ok: true, command: "context", ...result });
+    return 0;
+  }
+
+  process.stdout.write(`Frameyard project: ${result.root}\n`);
+  if (result.format !== undefined) {
+    process.stdout.write(`format: ${result.format.width}×${result.format.height} @ ${result.format.fps} fps\n`);
+  }
+  process.stdout.write(`policy: ${describePolicy(policy)}\n`);
+  process.stdout.write(`compositions: ${result.compositions.length}\n`);
+  for (const composition of result.compositions) {
+    const metadata = composition.metadata;
+    const detail =
+      metadata === undefined
+        ? composition.kind
+        : metadata.static === true
+          ? `static ${metadata.width}×${metadata.height}`
+          : `${metadata.width}×${metadata.height} @ ${metadata.fps} fps, ${metadata.durationInFrames} frames`;
+    process.stdout.write(
+      `  ${composition.id}: ${detail}, ${composition.props.length} props, ${composition.diagnostics.errors} errors/${composition.diagnostics.warnings} warnings\n`,
+    );
+  }
+  process.stdout.write(`timelines: ${result.timelines.length}\n`);
+  for (const timeline of result.timelines) {
+    const detail =
+      timeline.durationInFrames === undefined
+        ? "unresolved"
+        : `${timeline.durationInFrames} frames (${timeline.durationSeconds?.toFixed(1)}s), ${timeline.tracks} tracks, ${timeline.clips?.length ?? 0} clips, ${timeline.transitions} transitions, ${timeline.audio} audio, ${timeline.transcripts} transcripts`;
+    process.stdout.write(
+      `  ${timeline.id}: ${detail}, ${timeline.diagnostics.errors} errors/${timeline.diagnostics.warnings} warnings\n`,
+    );
+  }
+  process.stdout.write(`assets: ${result.assets.length}\n`);
+  process.stdout.write(`next:\n`);
+  for (const command of result.next) {
+    process.stdout.write(`  ${command}\n`);
+  }
+  return 0;
+}
+
+async function runInspect(parsed: ParsedArgs): Promise<number> {
+  const startedAt = performance.now();
+  const filePath = path.resolve(process.cwd(), parsed.positionals[0] as string);
+  const probed = await probeImage(filePath);
+  const pixels = await decodeRgba(filePath, probed.width, probed.height);
+  const stats = analyzeRgba(pixels, probed.width, probed.height);
+  const json = parsed.flags.has("json") === true;
+  const result = {
+    ok: true,
+    command: "inspect",
+    path: filePath,
+    bytes: probed.bytes,
+    ...stats,
+    elapsedMs: performance.now() - startedAt,
+  };
+
+  if (json) {
+    printJson(result);
+    return 0;
+  }
+
+  process.stdout.write(`Inspected ${filePath} (${stats.width}×${stats.height}, ${probed.bytes} bytes)\n`);
+  process.stdout.write(
+    `  blank: ${stats.blank}; alpha ${stats.alpha.min}..${stats.alpha.max}, coverage ${(stats.alpha.coverage * 100).toFixed(1)}%\n`,
+  );
+  process.stdout.write(
+    `  background: ${stats.background.hex} (${(stats.background.share * 100).toFixed(1)}%); content: ${stats.content.pixels} px (${(stats.content.share * 100).toFixed(1)}%)${stats.content.bbox === null ? "" : ` at ${stats.content.bbox.x},${stats.content.bbox.y} ${stats.content.bbox.width}×${stats.content.bbox.height}`}\n`,
+  );
+  process.stdout.write(
+    `  colors: ${stats.colors.map((color) => `${color.hex} ${(color.share * 100).toFixed(1)}%`).join(", ") || "(none)"}\n`,
+  );
+  process.stdout.write(`  edge density: ${stats.edgeDensity}\n`);
+  return 0;
+}
+
+async function runCompare(parsed: ParsedArgs): Promise<number> {
+  const startedAt = performance.now();
+  const firstPath = path.resolve(process.cwd(), parsed.positionals[0] as string);
+  const secondPath = path.resolve(process.cwd(), parsed.positionals[1] as string);
+  const [first, second] = await Promise.all([probeImage(firstPath), probeImage(secondPath)]);
+  if (first.width !== second.width || first.height !== second.height) {
+    throw new FrameyardError(
+      "IMAGE_INVALID",
+      `Images have different dimensions: ${firstPath} is ${first.width}×${first.height}, ${secondPath} is ${second.width}×${second.height}.`,
+      { details: { first: firstPath, second: secondPath } },
+    );
+  }
+  const [firstPixels, secondPixels] = await Promise.all([
+    decodeRgba(firstPath, first.width, first.height),
+    decodeRgba(secondPath, second.width, second.height),
+  ]);
+  const stats = compareRgba(firstPixels, secondPixels, first.width, first.height);
+  const json = parsed.flags.has("json") === true;
+  const result = {
+    ok: true,
+    command: "compare",
+    first: firstPath,
+    second: secondPath,
+    ...stats,
+    elapsedMs: performance.now() - startedAt,
+  };
+
+  if (json) {
+    printJson(result);
+  } else if (stats.identical) {
+    process.stdout.write(`${firstPath} and ${secondPath} are pixel-identical (${stats.width}×${stats.height}).\n`);
+  } else {
+    process.stdout.write(`${firstPath} and ${secondPath} differ:\n`);
+    process.stdout.write(`  dimensions: ${stats.width}×${stats.height}\n`);
+    process.stdout.write(`  differing pixels: ${stats.differingPixels} / ${stats.totalPixels} (${stats.percent}%)\n`);
+    process.stdout.write(`  max channel delta: ${stats.maxChannelDelta}; mean ${stats.meanChannelDelta}\n`);
+    process.stdout.write(
+      `  bounding box: ${stats.bbox === null ? "(none)" : `x=${stats.bbox.x}..${stats.bbox.x + stats.bbox.width - 1}, y=${stats.bbox.y}..${stats.bbox.y + stats.bbox.height - 1}`}\n`,
+    );
+  }
+  return stats.identical ? 0 : 1;
+}
+
+async function runAdd(parsed: ParsedArgs): Promise<number> {
+  const json = parsed.flags.has("json") === true;
+  if (parsed.flags.has("list")) {
+    const templates = listTemplates().map((template) => ({
+      name: template.name,
+      kind: template.kind,
+      description: template.description,
+      ...(template.prerequisites !== undefined ? { prerequisites: template.prerequisites } : {}),
+    }));
+    const scaffolds = [
+      {
+        name: "local-models",
+        description: "Optional policy, OpenCode permissions, and Pi settings for a shared local model.",
+      },
+    ];
+    if (json) {
+      printJson({ ok: true, command: "add", templates, scaffolds });
+    } else {
+      for (const template of templates) {
+        process.stdout.write(`${template.kind}\t${template.name}\t${template.description}\n`);
+      }
+      for (const scaffold of scaffolds) {
+        process.stdout.write(`scaffold\t${scaffold.name}\t${scaffold.description}\n`);
+      }
+    }
+    return 0;
+  }
+
+  if (parsed.positionals[0] === "local-models") {
+    const root = await assetRootFromFlag(parsed.flags);
+    const files = localModelScaffoldFiles();
+    const conflicts: string[] = [];
+    for (const relative of Object.keys(files)) {
+      if (await pathExists(path.join(root, relative))) {
+        conflicts.push(relative);
+      }
+    }
+    if (conflicts.length > 0) {
+      throw new FrameyardError(
+        "OUTPUT_EXISTS",
+        `Refusing to overwrite local-model scaffold files: ${conflicts.join(", ")}.`,
+        { details: { conflicts } },
+      );
+    }
+
+    for (const [relative, content] of Object.entries(files)) {
+      const target = path.join(root, relative);
+      await mkdir(path.dirname(target), { recursive: true });
+      await writeFile(target, content, { flag: "wx" });
+    }
+
+    const result = {
+      ok: true,
+      command: "add",
+      kind: "scaffold",
+      scaffold: "local-models",
+      path: root,
+      files: Object.keys(files),
+      next: [
+        "Review .opencode/opencode.jsonc and .pi/settings.json",
+        "Run pi --approve in the project",
+        "Run npx frameyard context --json from the project",
+      ],
+    };
+    if (json) {
+      printJson(result);
+    } else {
+      process.stdout.write(`Installed local-model scaffold in ${root}\n`);
+      for (const file of result.files) {
+        process.stdout.write(`  ${file}\n`);
+      }
+      process.stdout.write(`Next: ${result.next[0]}\n`);
+    }
+    return 0;
+  }
+
+  const kind = parsed.positionals[0] as TemplateKind;
+  const id = parsed.positionals[1] as string;
+  const templateName = flagString(parsed.flags, "template") as string;
+  const template = findTemplate(templateName);
+  if (template === undefined) {
+    usage(`Unknown template "${templateName}".`);
+  }
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(id)) {
+    throw new FrameyardError(
+      "CONFIG_INVALID",
+      `Invalid id "${id}". Use letters, digits, dots, underscores, or hyphens, starting with a letter or digit.`,
+    );
+  }
+
+  const project = await projectFromFlag(parsed.flags);
+  if (project.compositions.has(id) || project.timelines.has(id)) {
+    throw new FrameyardError("OUTPUT_EXISTS", `Project id "${id}" is already registered in video.config.js.`);
+  }
+  if (project.format === undefined) {
+    throw new FrameyardError(
+      "CONFIG_INVALID",
+      "Project templates inherit the project format. Add format { width, height, fps } to video.config.js first.",
+    );
+  }
+
+  const entry = template.entry(id);
+  const targetPath = path.resolve(project.root, entry);
+  if (await pathExists(targetPath)) {
+    throw new FrameyardError("OUTPUT_EXISTS", `Refusing to overwrite ${targetPath}.`);
+  }
+
+  try {
+    await mkdir(path.dirname(targetPath), { recursive: true });
+    await writeFile(targetPath, template.content, { flag: "wx" });
+  } catch (error) {
+    throw new FrameyardError("OUTPUT_FAILED", `Could not write ${targetPath}: ${errorMessage(error)}`, {
+      cause: error,
+    });
+  }
+
+  const registration = templateRegistration(template, id);
+  const register = Object.fromEntries(Object.entries(registration).filter(([, value]) => value !== undefined));
+  const result = {
+    ok: true,
+    command: "add",
+    kind,
+    id,
+    template: template.name,
+    entry,
+    path: targetPath,
+    register,
+    prerequisites: template.prerequisites ?? [],
+    next: ["Add the register entry to video.config.js", `npx frameyard lint ${id} --json`],
+  };
+
+  if (json) {
+    printJson(result);
+  } else {
+    process.stdout.write(`Created ${targetPath}\n`);
+    const key = kind === "composition" ? "compositions" : "timelines";
+    process.stdout.write(`Add to video.config.js:\n  ${key}: { "${id}": "./${entry}" }\n`);
+    if ((template.prerequisites ?? []).length > 0) {
+      process.stdout.write(`Provide: ${(template.prerequisites ?? []).join(", ")}\n`);
+    }
+  }
+  return 0;
+}
+
+async function runLint(parsed: ParsedArgs, signal: AbortSignal, policy: LoadedResourcePolicy): Promise<number> {
+  const project = await projectFromFlag(parsed.flags);
+  const props = await readPropsFile(parsed.flags);
+  const targetId = parsed.positionals[0] as string;
+  const json = parsed.flags.has("json") === true;
+
+  if (project.timelines.has(targetId)) {
+    if (props !== undefined && !isPlainObject(props)) {
+      usage("Timeline --props must be a JSON object keyed by composition clip id.");
+    }
+    const result = await lintTimeline({
+      project,
+      timelineId: targetId,
+      ...(props !== undefined ? { propsOverrides: props as Record<string, unknown> } : {}),
+      signal,
+    });
+    printDiagnostics(result.diagnostics);
+    if (json) {
+      printJson({ ok: true, command: "lint", policy: policyDetails(policy), ...result });
+    } else {
+      process.stdout.write(
+        `✓ lint timeline ${targetId}: ${result.framesProjected} frames projected, ${result.segments} segment${result.segments === 1 ? "" : "s"}, ${result.tracks} track${result.tracks === 1 ? "" : "s"}, ${result.clips} clip${result.clips === 1 ? "" : "s"}\n`,
+      );
+      process.stdout.write(
+        `  policy: ${describePolicy(policy)}; lint does not replace check (props hooks and frame runtime are not evaluated)\n`,
+      );
+    }
+    return 0;
+  }
+
+  const compositionId = targetId;
+  const result = await lintComposition({
+    project,
+    compositionId,
+    props,
+    signal,
+  });
+  printDiagnostics(result.diagnostics);
+  if (json) {
+    printJson({ ok: true, command: "lint", policy: policyDetails(policy), ...result });
+  } else if (result.metadata.static === true) {
+    process.stdout.write(
+      `✓ lint ${compositionId}: static ${result.metadata.width}×${result.metadata.height}; controller and document validated\n`,
+    );
+    process.stdout.write(`  policy: ${describePolicy(policy)}; lint does not replace check\n`);
+  } else {
+    process.stdout.write(
+      `✓ lint ${compositionId}: document and controller validated for ${result.metadata.durationInFrames} frames; frame runtime is not evaluated\n`,
+    );
+    process.stdout.write(`  policy: ${describePolicy(policy)}; use check for props hooks and every frame\n`);
+  }
+  return 0;
+}
+
+async function runCheck(parsed: ParsedArgs, signal: AbortSignal, policy: LoadedResourcePolicy): Promise<number> {
+  assertOperationAllowed(policy, "check");
+  const profile = resolveProfile(policy, flagString(parsed.flags, "profile"));
+  if (shouldLowerPriority(policy, profile, parsed.flags.has("low-priority") === true)) {
+    lowerProcessPriority();
+  }
+
   const project = await projectFromFlag(parsed.flags);
   const props = await readPropsFile(parsed.flags);
   const targetId = parsed.positionals[0] as string;
@@ -916,7 +1519,16 @@ function printStillResult(
   }
 }
 
-async function runStill(parsed: ParsedArgs, signal: AbortSignal): Promise<number> {
+async function runStill(parsed: ParsedArgs, signal: AbortSignal, policy: LoadedResourcePolicy): Promise<number> {
+  assertOperationAllowed(policy, "still");
+  if (parsed.flags.has("overwrite")) {
+    assertOverwriteAllowed(policy, "overwrite");
+  }
+  const profile = resolveProfile(policy, flagString(parsed.flags, "profile"));
+  if (shouldLowerPriority(policy, profile, parsed.flags.has("low-priority") === true)) {
+    lowerProcessPriority();
+  }
+
   const project = await projectFromFlag(parsed.flags);
   const props = await readPropsFile(parsed.flags);
   const targetId = parsed.positionals[0] as string;
@@ -926,6 +1538,7 @@ async function runStill(parsed: ParsedArgs, signal: AbortSignal): Promise<number
   }
 
   const frames = parseFrameSpec(frameValue);
+  assertStillFrameLimit(policy, frames.length);
   const outputPlan = await resolveStillOutputs({
     targetId,
     frames,
@@ -972,7 +1585,16 @@ async function runStill(parsed: ParsedArgs, signal: AbortSignal): Promise<number
   }
 }
 
-async function runRender(parsed: ParsedArgs, signal: AbortSignal): Promise<number> {
+async function runRender(parsed: ParsedArgs, signal: AbortSignal, policy: LoadedResourcePolicy): Promise<number> {
+  const dryRun = parsed.flags.has("dry-run") === true;
+  const profile = resolveProfile(policy, flagString(parsed.flags, "profile"));
+  if (!dryRun) {
+    assertOperationAllowed(policy, "render");
+  }
+  if (parsed.flags.has("overwrite")) {
+    assertOverwriteAllowed(policy, "overwrite");
+  }
+
   const project = await projectFromFlag(parsed.flags);
   const props = await readPropsFile(parsed.flags);
   const encoder = encoderChoice(parsed.flags);
@@ -1011,11 +1633,114 @@ async function runRender(parsed: ParsedArgs, signal: AbortSignal): Promise<numbe
     const scratchValue = flagString(parsed.flags, "scratch");
     const scratchDir = scratchValue === undefined ? undefined : path.resolve(process.cwd(), scratchValue);
 
+    let effectiveWorkers = workers;
+    if (profile === "shared-cpu") {
+      if (workers !== undefined) {
+        assertProfileLimit(profile, "workers", workers, SHARED_CPU_MAX_WORKERS);
+      }
+      effectiveWorkers = workers ?? SHARED_CPU_MAX_WORKERS;
+    }
+
+    if (dryRun) {
+      const projectTimeline = project.timelines.get(targetId);
+      if (!projectTimeline) {
+        throw new FrameyardError("TIMELINE_NOT_FOUND", `Timeline "${targetId}" is not listed in video.config.js.`);
+      }
+      const resolved = await resolveProjectTimeline({
+        project,
+        timeline: projectTimeline,
+        ...(props !== undefined ? { propsOverrides: props as Record<string, unknown> } : {}),
+        signal,
+      });
+      const firstError = resolved.diagnostics.find((diagnostic) => diagnostic.severity === "error");
+      if (!resolved.timeline || firstError) {
+        throw new FrameyardError(
+          firstError?.code ?? "TIMELINE_INVALID",
+          firstError?.message ?? "Timeline resolution failed.",
+          { diagnostics: resolved.diagnostics },
+        );
+      }
+      const lintResult = await lintResolvedTimeline({
+        timeline: resolved.timeline,
+        projectRoot: project.root,
+        diagnostics: resolved.diagnostics,
+        signal,
+      });
+      const lintError = lintResult.diagnostics.find((diagnostic) => diagnostic.severity === "error");
+      if (lintError) {
+        throw new FrameyardError(lintError.code, lintError.message, { diagnostics: lintResult.diagnostics });
+      }
+
+      const plan = planTimelineRender(resolved.timeline);
+      const planWorkers = effectiveWorkers ?? 8;
+      const planDetails = {
+        kind: "video" as const,
+        frames: resolved.timeline.durationInFrames,
+        durationSeconds: resolved.timeline.durationInFrames / resolved.timeline.format.fps,
+        segments: plan.segments.length,
+        workers: planWorkers,
+        encoder: encoder ?? "auto",
+        codec,
+        container,
+        probed: false,
+        ...(scratchDir !== undefined ? { scratch: scratchDir } : {}),
+      };
+      const outputExists = await pathExists(timelineOutPath);
+      const blockers: DryRunBlocker[] = outputExists
+        ? [
+            {
+              code: "OUTPUT_EXISTS",
+              message: `Output already exists: ${timelineOutPath}.`,
+              suggestion: policy.allowOverwrite
+                ? "Pass --overwrite to replace it."
+                : "Choose a new --out path or ask the user to run with FRAMEYARD_POLICY=full.",
+            },
+          ]
+        : [];
+      const prerequisites = collectPrerequisites(resolved.timeline);
+      const args = ["render", targetId];
+      if (outValue !== undefined) args.push("--out", outValue);
+      const propsValue = flagString(parsed.flags, "props");
+      if (propsValue !== undefined) args.push("--props", propsValue);
+      args.push("--workers", String(planWorkers));
+      if (encoder !== undefined) args.push("--encoder", encoder);
+      args.push("--codec", codec, "--container", container);
+      if (scratchValue !== undefined) args.push("--scratch", scratchValue);
+      if (profile !== undefined) args.push("--profile", profile);
+      if (parsed.flags.has("low-priority")) args.push("--low-priority");
+      const prefix = policy.tier === "full" ? "" : "FRAMEYARD_POLICY=full ";
+      const commandLine = prefix + handoffCommand(args);
+      printDiagnostics(lintResult.diagnostics);
+      if (json) {
+        printJson({
+          ok: true,
+          command: "render",
+          dryRun: true,
+          deferred: true,
+          policy: policyDetails(policy),
+          ...(profile !== undefined ? { profile } : {}),
+          plan: planDetails,
+          commandLine,
+          prerequisites,
+          blockers,
+          diagnostics: lintResult.diagnostics,
+          output: { path: timelineOutPath, exists: outputExists },
+        });
+      } else {
+        printDryRun("render", planDetails, commandLine, prerequisites, blockers);
+      }
+      return 0;
+    }
+
+    if (shouldLowerPriority(policy, profile, parsed.flags.has("low-priority") === true)) {
+      lowerProcessPriority();
+    }
+
     const result = await renderTimeline({
       project,
       timelineId: targetId,
       outPath: timelineOutPath,
-      ...(workers !== undefined ? { workers } : {}),
+      ...(effectiveWorkers !== undefined ? { workers: effectiveWorkers } : {}),
       ...(scratchDir !== undefined ? { scratchDir } : {}),
       ...(encoder !== undefined ? { encoder } : {}),
       codec,
@@ -1046,6 +1771,104 @@ async function runRender(parsed: ParsedArgs, signal: AbortSignal): Promise<numbe
   const concurrency =
     typeof concurrencyValue === "string" ? validateRenderConcurrency(Number(concurrencyValue)) : undefined;
 
+  let effectiveConcurrency = concurrency;
+  if (profile === "shared-cpu") {
+    if (concurrency !== undefined) {
+      assertProfileLimit(profile, "concurrency", concurrency, SHARED_CPU_MAX_CONCURRENCY);
+    }
+    effectiveConcurrency = concurrency ?? SHARED_CPU_MAX_CONCURRENCY;
+  }
+
+  if (dryRun) {
+    const lintResult = await lintComposition({ project, compositionId, props, signal });
+    const metadata = lintResult.metadata;
+    const staticTarget = metadata.static === true;
+    if (
+      staticTarget &&
+      (parsed.flags.has("concurrency") ||
+        parsed.flags.has("container") ||
+        parsed.flags.has("codec") ||
+        parsed.flags.has("encoder"))
+    ) {
+      usage("A static composition render rejects --concurrency, --container, --codec, and --encoder.");
+    }
+    const compositionOutPath =
+      explicitOutPath ??
+      path.join(
+        project.root,
+        "out",
+        staticTarget ? `${compositionId}.png` : `${compositionId}.${CONTAINER_EXTENSION[container]}`,
+      );
+    const outputExists = await pathExists(compositionOutPath);
+    const blockers: DryRunBlocker[] = outputExists
+      ? [
+          {
+            code: "OUTPUT_EXISTS",
+            message: `Output already exists: ${compositionOutPath}.`,
+            suggestion: policy.allowOverwrite
+              ? "Pass --overwrite to replace it."
+              : "Choose a new --out path or ask the user to run with FRAMEYARD_POLICY=full.",
+          },
+        ]
+      : [];
+    const planDetails =
+      metadata.static === true
+        ? {
+            kind: "image" as const,
+            width: metadata.width,
+            height: metadata.height,
+            frames: 1,
+          }
+        : {
+            kind: "video" as const,
+            frames: metadata.durationInFrames,
+            durationSeconds: metadata.durationInFrames / metadata.fps,
+            concurrency: effectiveConcurrency ?? 1,
+            encoder: encoder ?? "auto",
+            codec,
+            container,
+            probed: false,
+          };
+    const args = ["render", compositionId];
+    if (outValue !== undefined) args.push("--out", outValue);
+    const propsValue = flagString(parsed.flags, "props");
+    if (propsValue !== undefined) args.push("--props", propsValue);
+    if (!staticTarget) {
+      args.push("--concurrency", String(effectiveConcurrency ?? 1));
+      if (encoder !== undefined) args.push("--encoder", encoder);
+      if (codecValue !== undefined) args.push("--codec", codecValue);
+      if (containerValue !== undefined) args.push("--container", containerValue);
+    }
+    if (profile !== undefined) args.push("--profile", profile);
+    if (parsed.flags.has("low-priority")) args.push("--low-priority");
+    const prefix = policy.tier === "full" ? "" : "FRAMEYARD_POLICY=full ";
+    const commandLine = prefix + handoffCommand(args);
+    printDiagnostics(lintResult.diagnostics);
+    if (json) {
+      printJson({
+        ok: true,
+        command: "render",
+        dryRun: true,
+        deferred: true,
+        policy: policyDetails(policy),
+        ...(profile !== undefined ? { profile } : {}),
+        plan: planDetails,
+        commandLine,
+        prerequisites: [],
+        blockers,
+        diagnostics: lintResult.diagnostics,
+        output: { path: compositionOutPath, exists: outputExists },
+      });
+    } else {
+      printDryRun("render", planDetails, commandLine, [], blockers);
+    }
+    return 0;
+  }
+
+  if (shouldLowerPriority(policy, profile, parsed.flags.has("low-priority") === true)) {
+    lowerProcessPriority();
+  }
+
   const result = await renderComposition({
     project,
     compositionId,
@@ -1075,7 +1898,16 @@ async function runRender(parsed: ParsedArgs, signal: AbortSignal): Promise<numbe
   return 0;
 }
 
-async function runTts(parsed: ParsedArgs, signal: AbortSignal): Promise<number> {
+async function runTts(parsed: ParsedArgs, signal: AbortSignal, policy: LoadedResourcePolicy): Promise<number> {
+  const dryRun = parsed.flags.has("dry-run") === true;
+  const profile = resolveProfile(policy, flagString(parsed.flags, "profile"));
+  if (!dryRun) {
+    assertOperationAllowed(policy, "tts");
+  }
+  if (parsed.flags.has("force")) {
+    assertOverwriteAllowed(policy, "force");
+  }
+
   const projectRoot = await assetRootFromFlag(parsed.flags);
   const json = parsed.flags.has("json") === true;
   const engine = (flagString(parsed.flags, "engine") ?? "qwen") as SpeechEngine;
@@ -1101,6 +1933,103 @@ async function runTts(parsed: ParsedArgs, signal: AbortSignal): Promise<number> 
     text = await readStdin();
   }
 
+  const outPath = path.resolve(process.cwd(), outValue);
+  const force = parsed.flags.has("force") === true;
+  const manifestPath = resolveManifestPath(projectRoot, flagString(parsed.flags, "manifest"));
+
+  if (dryRun) {
+    if (text.trim().length === 0) {
+      throw new FrameyardError("TTS_FAILED", "Speech synthesis requires non-empty text.");
+    }
+    if (!outPath.toLowerCase().endsWith(".wav")) {
+      throw new FrameyardError("TTS_FAILED", `Speech output must use a .wav extension: ${outPath}`);
+    }
+    const executableValue = flagString(parsed.flags, "executable");
+    const prerequisites =
+      engine === "supertonic"
+        ? [
+            {
+              label: "Supertonic model directory",
+              path: path.resolve(process.cwd(), flagString(parsed.flags, "model-dir") as string),
+              directory: true,
+            },
+            ...(executableValue !== undefined ? [{ label: "TTS executable", path: executableValue }] : []),
+          ]
+        : [
+            {
+              label: "talker model",
+              path: path.resolve(process.cwd(), flagString(parsed.flags, "talker-model") as string),
+            },
+            {
+              label: "codec model",
+              path: path.resolve(process.cwd(), flagString(parsed.flags, "codec-model") as string),
+            },
+            ...(executableValue !== undefined ? [{ label: "TTS executable", path: executableValue }] : []),
+          ];
+    const blockers = await prerequisiteBlockers(prerequisites);
+    if (engine === "supertonic") {
+      try {
+        await resolveSupertonicModelFiles(path.resolve(process.cwd(), flagString(parsed.flags, "model-dir") as string));
+      } catch (error) {
+        blockers.push({
+          code: isFrameyardError(error) ? error.code : "TTS_FAILED",
+          message: errorMessage(error),
+          suggestion: "Check --model-dir and the seven Supertonic model files.",
+        });
+      }
+    }
+    const outputExists = await pathExists(outPath);
+    if (outputExists) {
+      blockers.push({
+        code: "OUTPUT_EXISTS",
+        message: `Output already exists: ${outPath}.`,
+        suggestion: policy.allowOverwrite
+          ? "Pass --force to replace it."
+          : "Choose a new --out path or ask the user to run with FRAMEYARD_POLICY=full.",
+      });
+    }
+    const plan = {
+      kind: "tts" as const,
+      engine,
+      speaker,
+      textCharacters: text.length,
+      out: outPath,
+      manifest: manifestPath,
+      probed: false,
+    };
+    const args = process.argv.slice(2).filter((argument) => argument !== "--dry-run" && argument !== "--json");
+    const prefix = policy.tier === "full" ? "" : "FRAMEYARD_POLICY=full ";
+    const commandLine = prefix + handoffCommand(args);
+    if (json) {
+      printJson({
+        ok: true,
+        command: "tts",
+        dryRun: true,
+        deferred: true,
+        policy: policyDetails(policy),
+        ...(profile !== undefined ? { profile } : {}),
+        plan,
+        commandLine,
+        prerequisites: prerequisites.map((item) => item.path),
+        blockers,
+        output: { path: outPath, exists: outputExists },
+      });
+    } else {
+      printDryRun(
+        "tts",
+        plan,
+        commandLine,
+        prerequisites.map((item) => item.path),
+        blockers,
+      );
+    }
+    return 0;
+  }
+
+  if (shouldLowerPriority(policy, profile, parsed.flags.has("low-priority") === true)) {
+    lowerProcessPriority();
+  }
+
   const result =
     engine === "supertonic"
       ? await synthesizeSpeech({
@@ -1110,14 +2039,14 @@ async function runTts(parsed: ParsedArgs, signal: AbortSignal): Promise<number> 
           speaker,
           modelDir: path.resolve(process.cwd(), flagString(parsed.flags, "model-dir") as string),
           language: flagString(parsed.flags, "language") as string,
-          outPath: path.resolve(process.cwd(), outValue),
+          outPath,
           ...(flagString(parsed.flags, "executable") !== undefined
             ? { executable: flagString(parsed.flags, "executable") as string }
             : {}),
           ...(flagString(parsed.flags, "manifest") !== undefined
             ? { manifestPath: flagString(parsed.flags, "manifest") as string }
             : {}),
-          force: parsed.flags.has("force") === true,
+          force,
           signal,
         })
       : await synthesizeSpeech({
@@ -1127,7 +2056,7 @@ async function runTts(parsed: ParsedArgs, signal: AbortSignal): Promise<number> 
           speaker,
           talkerModelPath: path.resolve(process.cwd(), flagString(parsed.flags, "talker-model") as string),
           codecModelPath: path.resolve(process.cwd(), flagString(parsed.flags, "codec-model") as string),
-          outPath: path.resolve(process.cwd(), outValue),
+          outPath,
           ...(flagString(parsed.flags, "style") !== undefined
             ? { style: flagString(parsed.flags, "style") as string }
             : {}),
@@ -1143,7 +2072,7 @@ async function runTts(parsed: ParsedArgs, signal: AbortSignal): Promise<number> 
           ...(flagString(parsed.flags, "manifest") !== undefined
             ? { manifestPath: flagString(parsed.flags, "manifest") as string }
             : {}),
-          force: parsed.flags.has("force") === true,
+          force,
           signal,
         });
 
@@ -1158,7 +2087,16 @@ async function runTts(parsed: ParsedArgs, signal: AbortSignal): Promise<number> 
   return 0;
 }
 
-async function runTranscribe(parsed: ParsedArgs, signal: AbortSignal): Promise<number> {
+async function runTranscribe(parsed: ParsedArgs, signal: AbortSignal, policy: LoadedResourcePolicy): Promise<number> {
+  const dryRun = parsed.flags.has("dry-run") === true;
+  const profile = resolveProfile(policy, flagString(parsed.flags, "profile"));
+  if (!dryRun) {
+    assertOperationAllowed(policy, "transcribe");
+  }
+  if (parsed.flags.has("force")) {
+    assertOverwriteAllowed(policy, "force");
+  }
+
   const projectRoot = await assetRootFromFlag(parsed.flags);
   const json = parsed.flags.has("json") === true;
   const outValue = flagString(parsed.flags, "out");
@@ -1167,13 +2105,90 @@ async function runTranscribe(parsed: ParsedArgs, signal: AbortSignal): Promise<n
     usage('"transcribe" requires --out and --model.');
   }
 
+  const outPath = path.resolve(process.cwd(), outValue);
+  const sourcePath = path.resolve(process.cwd(), parsed.positionals[0] as string);
+  const modelPath = path.resolve(process.cwd(), modelValue);
+  const formats = parseSubtitleFormats(parsed.flags.get("export"));
+  const exports = formats.map((format) => ({
+    format,
+    path: `${outPath.toLowerCase().endsWith(".json") ? outPath.slice(0, -5) : outPath}.${format}`,
+  }));
+  const force = parsed.flags.has("force") === true;
+  const manifestPath = resolveManifestPath(projectRoot, flagString(parsed.flags, "manifest"));
+
+  if (dryRun) {
+    if (!outPath.toLowerCase().endsWith(".json")) {
+      throw new FrameyardError("TRANSCRIPT_INVALID", `Transcript output must use a .json extension: ${outPath}`);
+    }
+    const executableValue = flagString(parsed.flags, "executable");
+    const prerequisites = [
+      { label: "transcription source", path: sourcePath },
+      { label: "Whisper model", path: modelPath },
+      ...(executableValue !== undefined ? [{ label: "transcribe executable", path: executableValue }] : []),
+    ];
+    const blockers = await prerequisiteBlockers(prerequisites);
+    for (const destination of [outPath, ...exports.map((entry) => entry.path)]) {
+      if (await pathExists(destination)) {
+        blockers.push({
+          code: "OUTPUT_EXISTS",
+          message: `Output already exists: ${destination}.`,
+          suggestion: policy.allowOverwrite
+            ? "Pass --force to replace it."
+            : "Choose a new --out path or ask the user to run with FRAMEYARD_POLICY=full.",
+        });
+      }
+    }
+    const plan = {
+      kind: "transcribe" as const,
+      source: sourcePath,
+      model: modelPath,
+      words: parsed.flags.has("words") === true,
+      exports: formats,
+      out: outPath,
+      manifest: manifestPath,
+      probed: false,
+    };
+    const args = process.argv.slice(2).filter((argument) => argument !== "--dry-run" && argument !== "--json");
+    const prefix = policy.tier === "full" ? "" : "FRAMEYARD_POLICY=full ";
+    const commandLine = prefix + handoffCommand(args);
+    if (json) {
+      printJson({
+        ok: true,
+        command: "transcribe",
+        dryRun: true,
+        deferred: true,
+        policy: policyDetails(policy),
+        ...(profile !== undefined ? { profile } : {}),
+        plan,
+        commandLine,
+        prerequisites: prerequisites.map((item) => item.path),
+        blockers,
+        output: { path: outPath, exists: await pathExists(outPath) },
+        exports,
+      });
+    } else {
+      printDryRun(
+        "transcribe",
+        plan,
+        commandLine,
+        prerequisites.map((item) => item.path),
+        blockers,
+      );
+    }
+    return 0;
+  }
+
+  if (shouldLowerPriority(policy, profile, parsed.flags.has("low-priority") === true)) {
+    lowerProcessPriority();
+  }
+
   const result = await transcribeAudio({
     projectRoot,
-    sourcePath: path.resolve(process.cwd(), parsed.positionals[0] as string),
-    outPath: path.resolve(process.cwd(), outValue),
-    modelPath: path.resolve(process.cwd(), modelValue),
+    sourcePath,
+    outPath,
+    modelPath,
     words: parsed.flags.has("words") === true,
-    exports: parseSubtitleFormats(parsed.flags.get("export")),
+    exports: formats,
     ...(flagString(parsed.flags, "language") !== undefined
       ? { language: flagString(parsed.flags, "language") as string }
       : {}),
@@ -1183,7 +2198,7 @@ async function runTranscribe(parsed: ParsedArgs, signal: AbortSignal): Promise<n
     ...(flagString(parsed.flags, "manifest") !== undefined
       ? { manifestPath: flagString(parsed.flags, "manifest") as string }
       : {}),
-    force: parsed.flags.has("force") === true,
+    force,
     signal,
   });
 
@@ -1202,6 +2217,18 @@ async function runTranscribe(parsed: ParsedArgs, signal: AbortSignal): Promise<n
 }
 
 async function runDoctorCommand(parsed: ParsedArgs, signal: AbortSignal): Promise<number> {
+  let policy: LoadedResourcePolicy | undefined;
+  let policyError: FrameyardError | undefined;
+  try {
+    policy = await loadResourcePolicy({ cwd: process.cwd(), env: process.env });
+  } catch (error) {
+    if (isFrameyardError(error) && error.code === "POLICY_INVALID") {
+      policyError = error;
+    } else {
+      throw error;
+    }
+  }
+
   const projectRoot = await assetRootFromFlag(parsed.flags);
   const manifestPath = resolveManifestPath(projectRoot, flagString(parsed.flags, "manifest"));
   const json = parsed.flags.has("json") === true;
@@ -1232,8 +2259,26 @@ async function runDoctorCommand(parsed: ParsedArgs, signal: AbortSignal): Promis
     signal,
   });
 
+  const policyReport =
+    policy !== undefined
+      ? { status: "ok" as const, ...policyDetails(policy) }
+      : {
+          status: "error" as const,
+          code: policyError?.code ?? "POLICY_INVALID",
+          detail: policyError?.message ?? "Resource policy could not be loaded.",
+        };
+  const resources = {
+    platform: process.platform,
+    arch: process.arch,
+    cpus: cpus().length,
+    loadAverage: loadavg(),
+    totalMemoryBytes: totalmem(),
+    freeMemoryBytes: freemem(),
+  };
+  const report = { ...result, policy: policyReport, resources };
+
   if (json) {
-    printJson({ ok: true, command: "doctor", ...result });
+    printJson({ ok: true, command: "doctor", ...report });
   } else {
     for (const check of result.checks) {
       const mark = check.status === "ok" ? "✓" : "✗";
@@ -1258,6 +2303,16 @@ async function runDoctorCommand(parsed: ParsedArgs, signal: AbortSignal): Promis
       const detail = model.detail ? ` — ${model.detail}` : "";
       process.stdout.write(`${mark} model ${model.role}: ${model.path}${detail}\n`);
     }
+    if (policyReport.status === "ok") {
+      process.stdout.write(
+        `✓ policy: ${policyReport.policy}${policyReport.profile ? `, ${policyReport.profile}` : ""}, still ≤${policyReport.maxStillFrames}, ${policyReport.allowOverwrite ? "overwrite allowed" : "overwrite blocked"} (${policyReport.source})\n`,
+      );
+    } else {
+      process.stdout.write(`✗ policy: ${policyReport.detail}\n`);
+    }
+    process.stdout.write(
+      `resources: ${resources.cpus} cpus, load ${resources.loadAverage.map((value) => value.toFixed(2)).join(" ")}, ${(resources.totalMemoryBytes / 1024 ** 3).toFixed(1)} GB RAM\n`,
+    );
     process.stdout.write(`\ndoctor: ${result.healthy ? "healthy" : "problems found"}\n`);
   }
   return result.healthy ? 0 : 1;
@@ -1358,17 +2413,30 @@ async function main(argv: string[]): Promise<number> {
   process.on("SIGTERM", interrupt);
 
   try {
+    const needsPolicy = !["doctor", "inspect", "compare", "add"].includes(parsed.command);
+    const policy = needsPolicy ? await loadResourcePolicy({ cwd: process.cwd(), env: process.env }) : undefined;
+
     switch (parsed.command) {
+      case "context":
+        return await runContext(parsed, controller.signal, policy as LoadedResourcePolicy);
+      case "lint":
+        return await runLint(parsed, controller.signal, policy as LoadedResourcePolicy);
       case "check":
-        return await runCheck(parsed, controller.signal);
+        return await runCheck(parsed, controller.signal, policy as LoadedResourcePolicy);
       case "still":
-        return await runStill(parsed, controller.signal);
+        return await runStill(parsed, controller.signal, policy as LoadedResourcePolicy);
+      case "inspect":
+        return await runInspect(parsed);
+      case "compare":
+        return await runCompare(parsed);
       case "render":
-        return await runRender(parsed, controller.signal);
+        return await runRender(parsed, controller.signal, policy as LoadedResourcePolicy);
       case "tts":
-        return await runTts(parsed, controller.signal);
+        return await runTts(parsed, controller.signal, policy as LoadedResourcePolicy);
       case "transcribe":
-        return await runTranscribe(parsed, controller.signal);
+        return await runTranscribe(parsed, controller.signal, policy as LoadedResourcePolicy);
+      case "add":
+        return await runAdd(parsed);
       case "doctor":
         return await runDoctorCommand(parsed, controller.signal);
       default:

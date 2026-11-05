@@ -1,6 +1,6 @@
 import { execFile, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -177,7 +177,11 @@ function toneWav(seconds = 0.6): Buffer {
 async function run(
   args: string[],
   cwd = process.cwd(),
-  options: { pinEncoder?: boolean } = {},
+  options: {
+    pinEncoder?: boolean;
+    env?: NodeJS.ProcessEnv;
+    policy?: "light" | "authoring" | "full" | null;
+  } = {},
 ): Promise<{ code: number; stdout: string; stderr: string }> {
   // The CLI default probes the host GPU. Pin software encoding so the suite
   // exercises the same path on every machine; opt out only to test the default.
@@ -189,6 +193,11 @@ async function run(
     const { stdout, stderr } = await exec(process.execPath, [cli, ...pinned], {
       cwd,
       maxBuffer: 10 * 1024 * 1024,
+      env: {
+        ...process.env,
+        ...(options.policy === null ? {} : { FRAMEYARD_POLICY: options.policy ?? "full" }),
+        ...options.env,
+      },
     });
     return { code: 0, stdout, stderr };
   } catch (error) {
@@ -1591,6 +1600,404 @@ describe("composition format inheritance", () => {
       });
     } finally {
       await rm(projectRoot, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("resource policy and lint", () => {
+  const policyComposition = `<script type="application/json" data-fy="props">{ "label": "Hello" }</script>
+<fy-composition width="160" height="90" fps="10" duration-in-frames="6">
+  <div data-fy-text="label" style="color: white; font: 12px monospace"></div>
+</fy-composition>
+`;
+
+  const riskyComposition = `<fy-composition width="160" height="90" fps="10" duration-in-frames="6">
+  <div style="width: 100%; height: 100%; background: #123456"></div>
+</fy-composition>
+<script type="text/fy-controller">
+export default {
+  update() {
+    return Math.random();
+  },
+};
+</script>
+`;
+
+  const policyTimeline = {
+    version: 1,
+    tracks: [{ id: "v1", kind: "video" }],
+    clips: [
+      {
+        id: "hello",
+        track: "v1",
+        source: { kind: "composition", id: "hello" },
+        start: 0,
+      },
+    ],
+    transitions: [],
+  };
+
+  async function createPolicyProject(): Promise<string> {
+    const root = await mkdtemp(path.join(tmpdir(), "frameyard-policy-cli-"));
+    await mkdir(path.join(root, "compositions"), { recursive: true });
+    await mkdir(path.join(root, "timelines"), { recursive: true });
+    await writeFile(path.join(root, "compositions", "hello.html"), policyComposition);
+    await writeFile(path.join(root, "compositions", "risky.html"), riskyComposition);
+    await writeFile(path.join(root, "timelines", "main.timeline.json"), JSON.stringify(policyTimeline, null, 2));
+    await writeFile(
+      path.join(root, "video.config.js"),
+      `export default { format: { width: 160, height: 90, fps: 10 }, compositions: { hello: "./compositions/hello.html", risky: "./compositions/risky.html" }, timelines: { main: "./timelines/main.timeline.json" } };\n`,
+    );
+    return root;
+  }
+
+  it("discovers the workspace policy from a nested working directory", async () => {
+    const root = await createPolicyProject();
+    const nested = path.join(root, "nested", "deeper");
+    await mkdir(nested, { recursive: true });
+    await writeFile(
+      path.join(root, "frameyard.policy.json"),
+      JSON.stringify({ version: 1, policy: "authoring" }, null, 2),
+    );
+    try {
+      const result = await run(["render", "main", "--project", root, "--json"], nested, { policy: null });
+      expect(result.code).not.toBe(0);
+      expect(JSON.parse(result.stdout)).toMatchObject({
+        ok: false,
+        command: "render",
+        error: { code: "RESOURCE_POLICY_BLOCKED", details: { operation: "render" } },
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("lets an explicit env override replace the file for a dry run", async () => {
+    const root = await createPolicyProject();
+    await writeFile(
+      path.join(root, "frameyard.policy.json"),
+      JSON.stringify({ version: 1, policy: "authoring" }, null, 2),
+    );
+    try {
+      const result = await run(["render", "main", "--project", root, "--dry-run", "--json"], root, {
+        env: { FRAMEYARD_POLICY: "full" },
+      });
+      expect(result.code).toBe(0);
+      const body = JSON.parse(result.stdout);
+      expect(body).toMatchObject({ ok: true, dryRun: true, plan: { frames: 6, segments: 1 } });
+      expect(body.commandLine).not.toContain("FRAMEYARD_POLICY=full");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("prints a dry-run plan without creating output or launching Chromium", async () => {
+    const root = await createPolicyProject();
+    try {
+      const result = await run(["render", "main", "--project", root, "--dry-run", "--json"], root, {
+        env: { FRAMEYARD_POLICY: "authoring" },
+      });
+      expect(result.code).toBe(0);
+      const body = JSON.parse(result.stdout);
+      expect(body).toMatchObject({
+        ok: true,
+        command: "render",
+        dryRun: true,
+        policy: { policy: "authoring" },
+        plan: { kind: "video", frames: 6, probed: false },
+        output: { exists: false },
+      });
+      expect(body.commandLine).toContain("FRAMEYARD_POLICY=full");
+      await expect(stat(path.join(root, "out"))).rejects.toThrow();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("enforces the still cap and overwrite permission before capture", async () => {
+    const root = await createPolicyProject();
+    try {
+      const limited = await run(["still", "main", "--project", root, "--frame", "0-4", "--json"], root, {
+        env: { FRAMEYARD_POLICY: "authoring" },
+      });
+      expect(limited.code).not.toBe(0);
+      expect(JSON.parse(limited.stdout)).toMatchObject({
+        error: { code: "RESOURCE_POLICY_LIMIT", details: { limit: 4, requested: 5 } },
+      });
+
+      const overwrite = await run(
+        ["still", "hello", "--project", root, "--frame", "0", "--overwrite", "--json"],
+        root,
+        { env: { FRAMEYARD_POLICY: "authoring" } },
+      );
+      expect(overwrite.code).not.toBe(0);
+      expect(JSON.parse(overwrite.stdout)).toMatchObject({
+        error: { code: "RESOURCE_POLICY_BLOCKED", details: { operation: "overwrite" } },
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects worker values above the shared-cpu profile cap", async () => {
+    const root = await createPolicyProject();
+    try {
+      const result = await run(
+        ["render", "main", "--project", root, "--dry-run", "--profile", "shared-cpu", "--workers", "4", "--json"],
+        root,
+        { env: { FRAMEYARD_POLICY: "full" } },
+      );
+      expect(result.code).not.toBe(0);
+      expect(JSON.parse(result.stdout)).toMatchObject({
+        error: { code: "RESOURCE_PROFILE_CONFLICT", details: { option: "workers", limit: 2 } },
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("lints a timeline without Chromium and reports controller determinism warnings", async () => {
+    const root = await createPolicyProject();
+    try {
+      const timeline = await run(["lint", "main", "--project", root, "--json"], root, {
+        env: { FRAMEYARD_POLICY: "authoring" },
+      });
+      expect(timeline.code).toBe(0);
+      expect(JSON.parse(timeline.stdout)).toMatchObject({
+        ok: true,
+        command: "lint",
+        kind: "timeline",
+        framesProjected: 6,
+        segments: 1,
+      });
+
+      const risky = await run(["lint", "risky", "--project", root, "--json"], root, {
+        env: { FRAMEYARD_POLICY: "authoring" },
+      });
+      expect(risky.code).toBe(0);
+      expect(JSON.parse(risky.stdout).diagnostics).toContainEqual(
+        expect.objectContaining({ severity: "warning", code: "DETERMINISM_WARNING" }),
+      );
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("does not spawn tts or transcribe executables during a dry run", async () => {
+    const root = await createPolicyProject();
+    const log = path.join(root, "fake.log");
+    const fake = path.join(root, "fake-tool.sh");
+    const modelDir = path.join(root, "model");
+    const textFile = path.join(root, "text.txt");
+    const source = path.join(root, "source.wav");
+    const model = path.join(root, "model.gguf");
+    await mkdir(modelDir, { recursive: true });
+    await writeFile(textFile, "hello");
+    await writeFile(source, "fake");
+    await writeFile(model, "fake");
+    await writeFile(fake, `#!/bin/sh\necho invoked >> "$FRAMEYARD_FAKE_LOG"\n`);
+    await chmod(fake, 0o755);
+    const env = { FRAMEYARD_POLICY: "authoring", FRAMEYARD_FAKE_LOG: log };
+    try {
+      const tts = await run(
+        [
+          "tts",
+          "--engine",
+          "supertonic",
+          "--speaker",
+          "0",
+          "--model-dir",
+          modelDir,
+          "--language",
+          "en",
+          "--out",
+          path.join(root, "voice.wav"),
+          "--text-file",
+          textFile,
+          "--executable",
+          fake,
+          "--project",
+          root,
+          "--dry-run",
+          "--json",
+        ],
+        root,
+        { env },
+      );
+      expect(tts.code).toBe(0);
+      expect(JSON.parse(tts.stdout)).toMatchObject({ ok: true, dryRun: true, plan: { kind: "tts" } });
+
+      const transcribe = await run(
+        [
+          "transcribe",
+          source,
+          "--model",
+          model,
+          "--out",
+          path.join(root, "voice.json"),
+          "--executable",
+          fake,
+          "--project",
+          root,
+          "--dry-run",
+          "--json",
+        ],
+        root,
+        { env },
+      );
+      expect(transcribe.code).toBe(0);
+      expect(JSON.parse(transcribe.stdout)).toMatchObject({ ok: true, dryRun: true, plan: { kind: "transcribe" } });
+
+      await expect(stat(log)).rejects.toThrow();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("writes template entries and reports the exact registration snippet", async () => {
+    const root = await createPolicyProject();
+    try {
+      const list = await run(["add", "--list", "--json"], root);
+      expect(list.code).toBe(0);
+      expect(JSON.parse(list.stdout).templates.map((entry: { name: string }) => entry.name)).toEqual([
+        "static-poster",
+        "title-card",
+        "lower-third",
+        "slideshow",
+      ]);
+
+      const composition = await run(
+        ["add", "composition", "intro", "--template", "lower-third", "--project", root, "--json"],
+        root,
+      );
+      expect(composition.code).toBe(0);
+      expect(JSON.parse(composition.stdout)).toMatchObject({
+        ok: true,
+        command: "add",
+        kind: "composition",
+        id: "intro",
+        register: { compositions: { intro: "./compositions/intro.html" } },
+      });
+      expect((await stat(path.join(root, "compositions", "intro.html"))).isFile()).toBe(true);
+
+      const timeline = await run(
+        ["add", "timeline", "reel", "--template", "slideshow", "--project", root, "--json"],
+        root,
+      );
+      expect(timeline.code).toBe(0);
+      expect(JSON.parse(timeline.stdout)).toMatchObject({
+        ok: true,
+        command: "add",
+        kind: "timeline",
+        id: "reel",
+        register: { timelines: { reel: "./timelines/reel.timeline.json" } },
+      });
+      expect((await stat(path.join(root, "timelines", "reel.timeline.json"))).isFile()).toBe(true);
+
+      const duplicate = await run(
+        ["add", "composition", "intro", "--template", "lower-third", "--project", root, "--json"],
+        root,
+      );
+      expect(duplicate.code).not.toBe(0);
+      expect(JSON.parse(duplicate.stdout)).toMatchObject({ error: { code: "OUTPUT_EXISTS" } });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("reports the active policy and resources from doctor", async () => {
+    const root = await createPolicyProject();
+    await writeFile(
+      path.join(root, "frameyard.policy.json"),
+      JSON.stringify({ version: 1, policy: "authoring", profile: "shared-cpu" }, null, 2),
+    );
+    try {
+      const result = await run(["doctor", "--json"], root, { policy: null });
+      const body = JSON.parse(result.stdout);
+      expect(body).toMatchObject({
+        ok: true,
+        command: "doctor",
+        policy: { status: "ok", policy: "authoring", profile: "shared-cpu" },
+        resources: { cpus: expect.any(Number) },
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("reports an invalid policy as a doctor finding without hiding the environment checks", async () => {
+    const root = await createPolicyProject();
+    await writeFile(path.join(root, "frameyard.policy.json"), JSON.stringify({ version: 1, policy: "turbo" }, null, 2));
+    try {
+      const result = await run(["doctor", "--json"], root, { policy: null });
+      const body = JSON.parse(result.stdout);
+      expect(body).toMatchObject({
+        ok: true,
+        command: "doctor",
+        policy: { status: "error", code: "POLICY_INVALID" },
+        checks: expect.any(Array),
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("local-model scaffold installation", () => {
+  const expectedFiles = [
+    "frameyard.policy.json",
+    ".opencode/opencode.jsonc",
+    ".pi/settings.json",
+    ".pi/APPEND_SYSTEM.md",
+    ".pi/sandbox.json",
+    "LOCAL-MODELS.md",
+  ];
+
+  it("installs the scaffold with init --local-models", async () => {
+    const target = path.join(root, "init-local-models");
+    const result = await run(["init", target, "--local-models", "--json"], root);
+    try {
+      expect(result.code).toBe(0);
+      const body = JSON.parse(result.stdout);
+      expect(body).toMatchObject({ ok: true, command: "init", localModels: true });
+      expect(body.files).toEqual(expect.arrayContaining(expectedFiles));
+      expect(body.next).toContain("Review .pi/settings.json and run pi --approve");
+      for (const file of expectedFiles) {
+        expect((await stat(path.join(target, file))).isFile(), file).toBe(true);
+      }
+      expect(JSON.parse(await readFile(path.join(target, "frameyard.policy.json"), "utf8"))).toMatchObject({
+        version: 1,
+        policy: "authoring",
+        profile: "shared-cpu",
+      });
+    } finally {
+      await rm(target, { recursive: true, force: true });
+    }
+  });
+
+  it("installs the scaffold with add local-models and refuses overwrite", async () => {
+    const target = path.join(root, "add-local-models");
+    await mkdir(target, { recursive: true });
+    try {
+      const result = await run(["add", "local-models", "--project", target, "--json"], root);
+      expect(result.code).toBe(0);
+      expect(JSON.parse(result.stdout)).toMatchObject({
+        ok: true,
+        command: "add",
+        kind: "scaffold",
+        scaffold: "local-models",
+      });
+      for (const file of expectedFiles) {
+        expect((await stat(path.join(target, file))).isFile(), file).toBe(true);
+      }
+
+      const duplicate = await run(["add", "local-models", "--project", target, "--json"], root);
+      expect(duplicate.code).not.toBe(0);
+      expect(JSON.parse(duplicate.stdout)).toMatchObject({
+        error: { code: "OUTPUT_EXISTS", details: { conflicts: expect.arrayContaining(["frameyard.policy.json"]) } },
+      });
+    } finally {
+      await rm(target, { recursive: true, force: true });
     }
   });
 });

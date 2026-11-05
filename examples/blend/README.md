@@ -81,7 +81,7 @@ pnpm build
 node dist/cli.js check blend-timeline --project examples/blend
 node dist/cli.js still blend-timeline --frame 15,45,75,105,135,165,195,225,255,285,315,345 --project examples/blend --out blend-stills
 node dist/cli.js still blend-timeline --frame 285 --project examples/blend --out blend-soft-light.png
-node dist/cli.js render blend-timeline --project examples/blend
+FRAMEYARD_POLICY=full node dist/cli.js render blend-timeline --project examples/blend
 node dist/cli.js dev --project examples/blend
 ```
 

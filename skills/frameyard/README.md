@@ -25,6 +25,7 @@ When you work inside the Frameyard repository itself, `npx frameyard` resolves t
 ## Contents
 
 - `SKILL.md`: trigger description and operating workflow
+- `references/quick-reference.md`: compact skeletons, command table, policy table, and common fixes
 - `references/deterministic-authoring.md`
 - `references/bindings.md`
 - `references/controllers.md`

@@ -273,16 +273,23 @@ Transcript paths resolve from the project root. `words` requires actual measured
 
 | Command | Purpose |
 | --- | --- |
-| `frameyard init [directory]` | Scaffold a timeline-first HTML/JSON project with an `AGENTS.md` guide and pinned scripts |
+| `frameyard init [directory] [--local-models]` | Scaffold a timeline-first HTML/JSON project with an `AGENTS.md` guide and pinned scripts; optionally add the local-model host scaffold |
 | `frameyard dev [--port <port>]` | Start the preview server; preview compositions or open a timeline |
+| `frameyard context [--project <dir>]` | Print a compact digest of format, composition metadata, props, timelines, assets, diagnostics, policy, and next commands |
+| `frameyard lint <id> [--props <file>]` | Run static validation, timeline resolution, scene/keyframe projection, and a controller determinism scan without Chromium |
 | `frameyard check <id> [--props <file>]` | Run static validation, then evaluate every animated frame or the single state of a static composition without capture |
 | `frameyard still <id> --frame <spec>` | Capture one or more PNGs through the production path for a composition or timeline; a static composition exposes frame 0 |
+| `frameyard inspect <image>` | Report dimensions, alpha, blank detection, colors, content bbox, luminance grid, and edge density |
+| `frameyard compare <first> <second>` | Compare decoded pixels and 3×3 regions; exits 1 when the images differ |
 | `frameyard render <id> [--out <video.mp4>]` | Render an animated composition directly, a static composition to PNG, or a timeline through the segmented lossless pipeline; defaults to `out/<id>.<ext>` |
 | `frameyard tts ...` | Produce one frozen 24 kHz mono WAV with local qwentts.cpp or sherpa-onnx Supertonic 3 |
 | `frameyard transcribe ...` | Produce canonical transcript JSON with optional word timings and SRT/VTT exports |
-| `frameyard doctor` | Inspect core requirements, optional integrations, and manifest integrity |
+| `frameyard add --list` | List the built-in project templates and scaffolds |
+| `frameyard add local-models` | Install the optional policy, OpenCode, and Pi scaffold into a workspace |
+| `frameyard add <composition\|timeline> <id> --template <name>` | Write a template entry and print the exact `video.config.js` registration snippet |
+| `frameyard doctor` | Inspect core requirements, optional integrations, policy, resources, and manifest integrity |
 
-Common options: `--project <dir>`, `--json`, `--help`, and `--version`. `still` and `render` accept `--overwrite`. `still` accepts `--frame <spec>`, where `<spec>` is a frame number, an inclusive range such as `2-12`, or a comma-separated list; duplicates are removed preserving the first occurrence, order is preserved, and one invocation captures at most 32 unique frames. With one frame, `--out` is a `.png` file; with multiple frames, it is a directory and the files are named `still-<id>-<frame>.png`, defaulting to the current working directory. A static composition exposes only frame 0. Animated composition renders accept `--concurrency <n>` (1-16); timeline renders accept `--workers <n>` (1-16) and `--scratch <dir>`. `render` also accepts `--container <mp4|mov|mkv|webm>`, `--codec <h264|hevc|vp9>`, and `--encoder <auto|software|nvenc|qsv>`. MP4 and MOV hold H.264 and HEVC with AAC; MKV holds H.264, HEVC, and VP9; WebM holds VP9 with Opus and defaults to VP9. `--out` must use the container's extension, and `render` defaults to `out/<id>.<ext>` accordingly. A static composition always writes `out/<id>.png` and rejects `--container`, `--codec`, `--encoder`, and `--concurrency`; use a timeline image clip when the deliverable must be video. `--encoder` defaults to `auto`, which probes NVENC, then Quick Sync with a one-frame encode, and falls back to the codec's software encoder; `software` forces `libx264`, `libx265`, or `libvpx-vp9`. For a timeline, `--props` is a JSON object keyed by composition clip id; for a composition, it is the props object. `tts` and `transcribe` accept `--force`. `init` takes the target directory as a positional argument. Explicit output paths passed with `--out` are relative to the current working directory.
+Common options: `--project <dir>`, `--json`, `--help`, and `--version`. `still` and `render` accept `--overwrite`; `tts` and `transcribe` accept `--force`. The resource policy denies both outside the `full` tier. `still` accepts `--frame <spec>`, where `<spec>` is a frame number, an inclusive range such as `2-12`, or a comma-separated list; duplicates are removed preserving the first occurrence, order is preserved, and one invocation captures at most 32 unique frames, while the active policy may cap it lower (1 in `light`, 4 in `authoring`). With one frame, `--out` is a `.png` file; with multiple frames, it is a directory and the files are named `still-<id>-<frame>.png`, defaulting to the current working directory. A static composition exposes only frame 0. Animated composition renders accept `--concurrency <n>` (1-16); timeline renders accept `--workers <n>` (1-16) and `--scratch <dir>`. `render` also accepts `--container <mp4|mov|mkv|webm>`, `--codec <h264|hevc|vp9>`, and `--encoder <auto|software|nvenc|qsv>`. MP4 and MOV hold H.264 and HEVC with AAC; MKV holds H.264, HEVC, and VP9; WebM holds VP9 with Opus and defaults to VP9. `--out` must use the container's extension, and `render` defaults to `out/<id>.<ext>` accordingly. A static composition always writes `out/<id>.png` and rejects `--container`, `--codec`, `--encoder`, and `--concurrency`; use a timeline image clip when the deliverable must be video. `--encoder` defaults to `auto`, which probes NVENC, then Quick Sync with a one-frame encode, and falls back to the codec's software encoder; `software` forces `libx264`, `libx265`, or `libvpx-vp9`. For a timeline, `--props` is a JSON object keyed by composition clip id; for a composition, it is the props object. `tts` and `transcribe` accept `--force`. `init` takes the target directory as a positional argument. Explicit output paths passed with `--out` are relative to the current working directory. `tts`, `transcribe`, and `render` accept `--dry-run`, which validates inputs and prints the plan, handoff command, prerequisites, and blockers without writing outputs, loading a model, launching Chromium, or encoding. `--profile shared-cpu` caps timeline workers at 2 and composition concurrency at 1, lowers process priority, and leaves the encoder at `auto`; `--low-priority` lowers priority without the caps. `add --template <name>` selects a project template and `add --list` lists them. See [Resource policy](#resource-policy), [Project context and image inspection](#project-context-and-image-inspection), and [Templates](#templates).
 
 A render fails immediately on an uncaught error, unhandled rejection, missing required asset, or invalid composition output. It writes to a temporary file and publishes only after FFmpeg succeeds. Existing outputs are not replaced unless `--overwrite` is supplied.
 
@@ -382,7 +389,61 @@ npx frameyard doctor --talker-model models/talker.gguf --codec-model models/code
 npx frameyard doctor --sherpa-onnx-tts /path/to/sherpa-onnx-offline-tts --model-dir models/supertonic
 ```
 
-`doctor` checks Node, FFmpeg and required encoders, FFprobe, Playwright Chromium, manifest integrity (artifact, source, model, and derived-export hashes), explicitly supplied model readability, and optional `qwen-tts`, `sherpa-onnx-offline-tts`, and `whisper-cli` capabilities. Pass `--talker-model`, `--codec-model`, `--model-dir`, or `--model` to inspect model readability before generation. It does not repair, download, or modify anything. Missing optional integrations do not fail, but a found executable with incompatible capabilities does.
+`doctor` checks Node, FFmpeg and required encoders, FFprobe, Playwright Chromium, manifest integrity (artifact, source, model, and derived-export hashes), explicitly supplied model readability, and optional `qwen-tts`, `sherpa-onnx-offline-tts`, and `whisper-cli` capabilities. It also reports the active resource policy and basic CPU, load, and memory resources. Pass `--talker-model`, `--codec-model`, `--model-dir`, or `--model` to inspect model readability before generation. It does not repair, download, or modify anything. Missing optional integrations do not fail, but a found executable with incompatible capabilities does.
+
+## Project context and image inspection
+
+`frameyard context --json` is a compact, read-only digest for agents and editors. It reports the project root and format, each composition's resolved metadata, prop keys and types, controller, and diagnostics; each timeline's duration, tracks, clip summaries, transitions, audio/transcript counts, and diagnostics; unique assets; the active policy; and a short list of next commands. It never launches Chromium.
+
+`frameyard inspect <image> --json` decodes the first frame and reports dimensions, bytes, alpha range and coverage, blank detection, the dominant background and colors, the content bounding box, a coarse luminance grid, and edge density. `frameyard compare <first> <second> --json` reports differing pixels, percentage, maximum and mean channel delta, a bounding box, and a 3×3 region breakdown. `compare` exits 1 when the images differ; its JSON result still has `ok: true` and `identical: false`. Neither command replaces viewing a still when the host supports images.
+
+## Templates
+
+`frameyard add --list` lists the built-in project templates: `static-poster`, `title-card`, `lower-third`, and `slideshow`. Add writes one valid entry and prints the exact `video.config.js` registration snippet; it deliberately does not edit the config.
+
+```sh
+npx frameyard add composition intro --template lower-third
+npx frameyard add timeline reel --template slideshow
+npx frameyard add local-models
+```
+
+`init --local-models` installs the same optional host scaffold for a new project:
+
+```sh
+npx frameyard init my-project --local-models
+```
+
+The composition and timeline templates inherit the project `format`. The slideshow timeline expects `assets/slide-1.png` through `assets/slide-3.png`; provide them before `check`. An existing file or registered id is never overwritten.
+
+## Resource policy
+
+Frameyard reads an optional `frameyard.policy.json` from the working directory or the nearest ancestor to gate expensive operations. The file is workspace-local and independent of `video.config.js`, so it also covers commands that target another project with `--project`. A standalone project can keep the file at its root.
+
+This repository does not enable a policy or host configuration by default. Install [`scaffolds/local-models/`](./scaffolds/local-models) when a local model and Frameyard share the machine with `npx frameyard add local-models`, or include it in a new project with `npx frameyard init my-project --local-models`. It contains an `authoring` policy, OpenCode permissions, and Pi settings. See [`LOCAL-MODELS.md`](./scaffolds/local-models/LOCAL-MODELS.md).
+
+```json
+{
+  "version": 1,
+  "policy": "authoring",
+  "profile": "shared-cpu"
+}
+```
+
+The three tiers are:
+
+| Tier | `still` | `check` | `tts` / `transcribe` / `render` | `--force` / `--overwrite` |
+| --- | --- | --- | --- | --- |
+| `light` | 1 frame | blocked | blocked | denied |
+| `authoring` | 4 frames | allowed at low priority | blocked | denied |
+| `full` | 32 frames | allowed | allowed | allowed |
+
+`lint`, `doctor`, `init`, `dev`, and the heavy commands' `--dry-run` are available in every tier. `frameyard.policy.json` can only tighten its tier: `maxStillFrames` cannot exceed the tier default, and `allowOverwrite` cannot become true outside `full`. Unknown fields and invalid values fail with `POLICY_INVALID`.
+
+`FRAMEYARD_POLICY=light|authoring|full` replaces the file for a human override, including its profile and tightened limits. Without a file or variable, the default is `full`. `--profile shared-cpu` caps timeline workers at 2 and composition concurrency at 1, lowers process priority with the platform's best-effort mechanism, and leaves the encoder at `auto`. Values above the cap fail with `RESOURCE_PROFILE_CONFLICT` instead of being silently clamped. `authoring` also lowers priority for `check` and `still`.
+
+`frameyard lint <id>` validates the document or timeline, projects every timeline scene and keyframe channel, scans controller source for wall-clock and randomness calls, and probes media metadata without launching Chromium. It does not run `validateProps` or composition runtime; `check` remains the full gate. Use `--dry-run` on `tts`, `transcribe`, or `render` to produce a handoff plan when the policy blocks the operation; the command line includes `FRAMEYARD_POLICY=full` when needed.
+
+The policy is a guardrail for cooperative agents, not a security boundary: the file is editable, and a process with shell access can bypass it. Host permissions and the CLI environment are the second layer. See [ADR 0022](./docs/adr/0022-gate-heavy-operations-with-a-workspace-resource-policy.md).
 
 ## Agent skill
 
@@ -413,7 +474,7 @@ Both targets encode H.264 in MP4 by default. `--container` selects `mp4`, `mov`,
 
 For the same composition or timeline revision, props, assets, segment plan, frame, and pinned runtime/browser/FFmpeg environment, the captured composition frames and deterministic composite are identical. Encoded bytes are not a reproducibility guarantee, even on the same machine; they depend on the FFmpeg build, encoder threading, and runtime environment. Preview composites in Chromium while timeline production composites with FFmpeg, so small differences in scaling, alpha, and video color conversion are expected; parity is guaranteed at clip capture.
 
-For a repeatable local measurement of seek, capture, encode, and full-render time, run `pnpm bench`; `pnpm bench:static` compares an animated composition with the same visual rendered as a static PNG. See `bench/README.md` for the measurement recipe. Timeline performance is tracked separately with the long-form benchmarks; the representative target and worst-case measurements are in [ADR 0012](./docs/adr/0012-render-timelines-with-segmented-lossless-clip-intermediates.md).
+For a repeatable local measurement of seek, capture, encode, and full-render time, run `pnpm bench`; `pnpm bench:static` compares an animated composition with the same visual rendered as a static PNG. See `bench/README.md` for the measurement recipe. For local-model authoring evals against a llama.cpp router, run `pnpm eval:local`; see `evals/README.md`. It is opt-in, never renders, and is not part of `pnpm check`. Timeline performance is tracked separately with the long-form benchmarks; the representative target and worst-case measurements are in [ADR 0012](./docs/adr/0012-render-timelines-with-segmented-lossless-clip-intermediates.md).
 
 ## Current limits
 
@@ -432,7 +493,7 @@ Deferred from this implementation slice:
 - `qwentts.cpp` reference-audio voice cloning and VoiceDesign; Supertonic voice cloning and emotion selection
 - Automatic long-text chunking, streaming synthesis, and alternative generated-audio formats
 - Automatic upstream builds, model downloads, environment repair, and hosted rendering
-- Unbounded batch still capture and general image-sequence output; `still` accepts at most 32 inspection frames per invocation
+- Unbounded batch still capture and general image-sequence output; `still` accepts at most 32 inspection frames per invocation, and the active resource policy may cap it lower
 - Audio, transcripts, or embedded video in a static composition; use a timeline
 - A `--video` escape hatch for static composition renders; use a timeline image clip
 - Exporting a fully static timeline as a PNG or recursively optimizing static nested timelines
@@ -453,9 +514,16 @@ See the [design baseline](./docs/v0.1-design.md) for the full product contract, 
 - `src/server/`: native ES-module server, host injection, and inline-controller route
 - `src/renderer/`: Chromium capture, static validation integration, audio mixing, transcript inspection, FFmpeg encoding
 - `src/assets/`: local TTS/transcription wrappers, executable resolution, atomic publishing, provenance
+- `src/policy.ts`: workspace resource policy discovery, tiers, profiles, and operation gating
+- `src/lint.ts`: Node-only static validation, scene/keyframe projection, and controller determinism scanning
+- `src/context.ts`: compact project digest for agents and editors
+- `src/inspect.ts`: image analysis and pixel/region comparison
+- `src/templates.ts`: built-in project templates for `add`
 - `src/doctor.ts`: environment, integration, and manifest inspection
 - `src/scaffold.ts`: `init` scaffold templates, including the generated package manifest, project README, and agent guide
 - `src/cli.ts`: command-line entry point
+- `scaffolds/init/`: `init` template sources for the composition, timeline, config, props, README, agent guide, and package manifest
+- `scaffolds/local-models/`: optional `authoring` policy, OpenCode permissions, and Pi configuration for a workspace shared with a local model
 - `skills/`: official host-neutral agent skill
 - `examples/demo/`: the 30-second reference composition
 - `examples/webgl/`: the focused WebGL shader example

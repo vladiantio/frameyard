@@ -116,8 +116,8 @@ node dist/cli.js check transitions --project examples/transitions
 node dist/cli.js check audio-crossfade --project examples/transitions
 node dist/cli.js still transitions --frame 0,52,60,97 --project examples/transitions --out transitions-stills
 node dist/cli.js still audio-crossfade --frame 52 --project examples/transitions --out audio-crossfade-still.png
-node dist/cli.js render transitions --project examples/transitions
-node dist/cli.js render audio-crossfade --project examples/transitions
+FRAMEYARD_POLICY=full node dist/cli.js render transitions --project examples/transitions
+FRAMEYARD_POLICY=full node dist/cli.js render audio-crossfade --project examples/transitions
 node dist/cli.js dev --project examples/transitions
 ```
 

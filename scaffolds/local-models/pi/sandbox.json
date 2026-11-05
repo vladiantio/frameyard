@@ -1,0 +1,15 @@
+{
+  "enabled": false,
+  "allowBrowserProcess": false,
+  "network": {
+    "allowLocalBinding": true,
+    "allowAllUnixSockets": true,
+    "allowedDomains": [],
+    "deniedDomains": []
+  },
+  "filesystem": {
+    "allowRead": [".", "~/.config", "~/.local"],
+    "allowWrite": [".", "/tmp"],
+    "denyWrite": ["frameyard.policy.json", ".pi", ".opencode", "skills/frameyard"]
+  }
+}

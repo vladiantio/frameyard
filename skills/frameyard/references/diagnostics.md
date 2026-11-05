@@ -83,6 +83,11 @@ Static validation covers:
 | `DETERMINISM_WARNING` | warning | Forbidden clock/randomness, CSS transition, or runtime diagnostic |
 | `COMPOSITION_NOT_READY` | error | `seek`/`settle` before a successful load |
 | `COMPOSITION_DISPOSED` | error | Operation after the host was disposed |
+| `IMAGE_INVALID` | error | An inspect/compare input is missing, unreadable, not an image, or has different dimensions in a comparison |
+| `POLICY_INVALID` | error | `frameyard.policy.json` or `FRAMEYARD_POLICY` is missing a required field, has an unknown field, or uses an invalid value |
+| `RESOURCE_POLICY_BLOCKED` | error | The active tier blocks the operation, `--force`, or `--overwrite`; use `--dry-run` or ask the user for a `full` run |
+| `RESOURCE_POLICY_LIMIT` | error | A still request exceeds the active tier's frame cap |
+| `RESOURCE_PROFILE_CONFLICT` | error | `--workers` or `--concurrency` exceeds the `shared-cpu` profile cap |
 
 ## Results
 
@@ -95,6 +100,12 @@ Static validation covers:
 `check` and `render` are discriminated unions. Animated/video results report `kind: "animated"` or `kind: "video"`; static composition results report `kind: "static"` or `kind: "image"`. A static check exposes `metadata: { width, height, static: true }` and `framesChecked: 1` with no audio/transcript fields. An image render exposes the PNG path, dimensions, bytes, diagnostics, and elapsed time with no fps, duration, frame count, codec, container, encoder, audio, or transcript fields. `still` exposes `frames`, `width`, and `height`, plus `frame` and `path` when exactly one frame was captured; a static composition only accepts frame 0.
 
 Failures use the same envelope with `error.code`, `error.message`, optional `error.details`, and top-level `diagnostics`.
+
+## Lint and resource policy
+
+`lint` returns the same diagnostic shape as `check` but does not launch Chromium. It reports static composition and timeline errors, scene and keyframe projection errors for every timeline frame, media metadata errors, and `DETERMINISM_WARNING` for controller source that calls wall-clock or randomness APIs. It does not run `validateProps` or composition runtime.
+
+Policy failures use the normal error envelope. `RESOURCE_POLICY_BLOCKED` details include `policy`, `operation`, `allowed`, and a `suggestion`; `RESOURCE_POLICY_LIMIT` includes `limit` and `requested`; `RESOURCE_PROFILE_CONFLICT` includes `profile`, `option`, `limit`, and `requested`. Run the blocked `tts`, `transcribe`, or `render` command with `--dry-run` to get the handoff plan instead of treating the block as a render failure.
 
 ## Working with diagnostics
 

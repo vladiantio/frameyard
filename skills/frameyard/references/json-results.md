@@ -53,6 +53,84 @@ Additional fields are command-specific and stable within the 0.8 contract. `chec
 
 Static validation diagnostics include source locations. Runtime diagnostics may include a `frame`. Timeline diagnostics add `timeline`, `clip`, `track`, `jsonPath`, and, for keyframe errors, `channel` and the zero-based `keyframe` index; transition diagnostics add `from` and `to`. Audio and transcript warnings use `AUDIO_WARNING` and `TRANSCRIPT_WARNING`; controller clock/randomness and CSS transition warnings use `DETERMINISM_WARNING`. See [diagnostics](diagnostics.md) for the code table.
 
+## lint
+
+`lint` reports `kind: "composition"` or `kind: "timeline"` and the same diagnostic shape. A timeline result includes `framesProjected`, `segments`, `tracks`, `clips`, and `transitions`; a composition result includes `metadata` and reports `framesProjected: 0` because lint does not seek frames. The result also includes the active `policy` details.
+
+```json
+{
+  "ok": true,
+  "command": "lint",
+  "policy": { "policy": "authoring", "maxStillFrames": 4, "allowOverwrite": false, "source": "env" },
+  "kind": "timeline",
+  "timeline": "main",
+  "entry": "timelines/main.timeline.json",
+  "format": { "width": 1920, "height": 1080, "fps": 30 },
+  "durationInFrames": 900,
+  "framesProjected": 900,
+  "segments": 3,
+  "diagnostics": [],
+  "elapsedMs": 2
+}
+```
+
+`lint` does not run `validateProps` or composition runtime. A clean lint is not a successful `check`.
+
+## context
+
+`context` returns a read-only project digest. It includes `root`, `format`, `policy`, `compositions`, `timelines`, `assets`, `next`, and `truncated`. Each composition carries its resolved `metadata`, prop `path`/`type` pairs, controller, and diagnostic counts; each timeline carries duration, tracks, clip summaries, transitions, audio/transcript counts, and diagnostic counts.
+
+```json
+{
+  "ok": true,
+  "command": "context",
+  "root": "/path/to/project",
+  "format": { "width": 1920, "height": 1080, "fps": 30 },
+  "policy": { "policy": "authoring", "profile": "shared-cpu", "maxStillFrames": 4, "allowOverwrite": false, "source": "file" },
+  "compositions": [
+    { "id": "main", "entry": "compositions/main.html", "kind": "animated", "metadata": { "width": 1920, "height": 1080, "fps": 30, "durationInFrames": 900 }, "controller": { "kind": "external", "src": "compositions/main.controller.js" }, "props": [{ "path": "title", "type": "string" }], "diagnostics": { "errors": 0, "warnings": 0, "codes": [] } }
+  ],
+  "timelines": [],
+  "assets": [],
+  "next": ["npx frameyard lint main --json"],
+  "truncated": { "clips": false, "assets": false, "props": false }
+}
+```
+
+## inspect
+
+`inspect` decodes the first frame and reports `width`, `height`, `bytes`, `alpha`, `blank`, `background`, `content`, `colors`, `luminanceGrid`, and `edgeDensity`. `alpha.coverage` is the opaque fraction; `content.bbox` is `null` when no pixels differ from the background. It never launches Chromium.
+
+## compare
+
+`compare` reports `identical`, `differingPixels`, `totalPixels`, `percent`, `maxChannelDelta`, `meanChannelDelta`, `bbox`, and 3×3 `regions`. It exits 1 when the images differ; the JSON body still has `ok: true` and `identical: false`. Different dimensions fail with `IMAGE_INVALID`.
+
+## add
+
+`add --list` returns `templates` with `name`, `kind`, `description`, and optional `prerequisites`. Adding an entry returns `kind`, `id`, `template`, `entry`, `path`, `register`, `prerequisites`, and `next`. `register` is the exact object to merge into `video.config.js`; `add` does not edit the config itself.
+
+## dry run
+
+`tts`, `transcribe`, and `render` accept `--dry-run`. The result has `dryRun: true`, the active `policy`, a command-specific `plan`, a shell-ready `commandLine`, `prerequisites`, `blockers`, and the output path. It does not create the output directory, write the manifest, load a model, launch Chromium, or encode.
+
+```json
+{
+  "ok": true,
+  "command": "render",
+  "dryRun": true,
+  "deferred": true,
+  "policy": { "policy": "authoring", "maxStillFrames": 4, "allowOverwrite": false, "source": "env" },
+  "plan": { "kind": "video", "frames": 900, "segments": 3, "workers": 2, "encoder": "auto", "codec": "h264", "container": "mp4", "probed": false },
+  "commandLine": "FRAMEYARD_POLICY=full npx frameyard render main --workers 2 --codec h264 --container mp4",
+  "prerequisites": ["assets/voice.wav"],
+  "blockers": [],
+  "diagnostics": [],
+  "output": { "path": "out/main.mp4", "exists": false }
+}
+```
+
+An existing output appears in `blockers` with `OUTPUT_EXISTS`; the dry run still exits 0. The handoff command includes `FRAMEYARD_POLICY=full` when the active tier is not `full`. A dry run is not a render; `deferred: true` means the heavy operation was not executed and the `commandLine` is the handoff.
+
 ## check
 
 Animated composition results report `kind: "animated"`. `metadata` reports the resolved format, combining declared values with the project `format`.
@@ -243,6 +321,8 @@ A successful render means the final path exists and was published atomically. A 
 `words` is `0` when word timings were not requested. `language` is omitted when it could not be determined.
 
 ## doctor
+
+The doctor result adds `policy` and `resources` fields. `policy.status` is `ok` or `error`; an invalid policy is reported as a finding without preventing the environment checks. `resources` reports platform, architecture, CPU count, load average, and total/free memory.
 
 Doctor reports findings rather than throwing for environment problems. `ok: true` means the inspection completed; `healthy` says whether required checks, manifest integrity, explicitly supplied models, and integration compatibility passed. `ffmpeg-opus-encoder` and `ffmpeg-video-encoders` are optional: the video check probes each supported encoder with a one-frame encode and lists any that FFmpeg advertises but cannot open (an old driver, for example), and neither check affects `healthy`.
 

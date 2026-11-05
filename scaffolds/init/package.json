@@ -1,0 +1,11 @@
+{
+  "name": "{{PROJECT_NAME}}",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "npx --yes frameyard@{{VERSION}} dev",
+    "check": "npx --yes frameyard@{{VERSION}} check",
+    "render": "npx --yes frameyard@{{VERSION}} render",
+    "still": "npx --yes frameyard@{{VERSION}} still"
+  }
+}

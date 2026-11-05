@@ -8,7 +8,7 @@ import { assertFreshDist } from "./helpers/dist.ts";
 
 const exec = promisify(execFile);
 const cli = path.resolve("dist/cli.js");
-const REPO_CLI = /^node\s+(?:\.\.?\/)?dist\/cli\.js\s/;
+const REPO_CLI = /^(?:FRAMEYARD_POLICY=full\s+)?node\s+(?:\.\.?\/)?dist\/cli\.js\s/;
 const USER_CLI = /^(?:npx\s+)?frameyard\b/;
 
 const examples = [

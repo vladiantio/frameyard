@@ -89,8 +89,8 @@ pnpm build
 node dist/cli.js check chapter-a --project examples/nested
 node dist/cli.js check nested-reel --project examples/nested
 node dist/cli.js still nested-reel --frame 60,180,300 --project examples/nested --out nested-stills
-node dist/cli.js render chapter-a --project examples/nested
-node dist/cli.js render nested-reel --project examples/nested
+FRAMEYARD_POLICY=full node dist/cli.js render chapter-a --project examples/nested
+FRAMEYARD_POLICY=full node dist/cli.js render nested-reel --project examples/nested
 node dist/cli.js dev --project examples/nested
 ```
 

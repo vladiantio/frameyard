@@ -352,6 +352,46 @@ _Avoid_: Frame export, image sequence
 The guarantee that, for the same timeline or composition revision, props, assets, and frame under a pinned runtime/browser environment, the visual state is identical. It does not imply identical encoded bytes, even on the same machine; encoded output depends on the encoder and its runtime.
 _Avoid_: Bit-for-bit encoding equality
 
+### Resource policy
+
+**Resource policy**:
+A workspace-local `frameyard.policy.json` declaration of which CLI operations are allowed and which resource limits apply. It is discovered from the working directory upward, independent of `video.config.js`, and can only tighten its tier.
+_Avoid_: Project config, agent runtime
+
+**Policy tier**:
+One of `light`, `authoring`, or `full`. A tier fixes the allowed heavy operations, the still-frame cap (1, 4, or the library cap of 32), and overwrite permission. `FRAMEYARD_POLICY` replaces the policy file for a human override.
+_Avoid_: Permission mode, sandbox
+
+**Resource profile**:
+A named set of runtime caps and priority settings for a shared machine. `shared-cpu` caps timeline workers at two, composition concurrency at one, and lowers process priority.
+_Avoid_: Encoder preset, render mode
+
+**Lint**:
+A Node-only validation pass that resolves a composition or timeline, projects every timeline scene and keyframe channel, scans controller source for wall-clock and randomness calls, and probes media metadata without launching Chromium. Lint is not a substitute for `check`.
+_Avoid_: Static check, fast render
+
+**Dry run**:
+A heavy command mode that validates inputs and returns a plan, handoff command, prerequisites, and blockers without writing outputs, loading a model, launching Chromium, or encoding.
+_Avoid_: Preview, partial render
+
+### Inspection and templates
+
+**Project context**:
+A compact, read-only digest of a project's format, composition metadata, prop types, timeline clips, assets, diagnostics, active policy, and next commands.
+_Avoid_: Project dump, repo summary
+
+**Image inspection**:
+Text facts extracted from a decoded still: dimensions, alpha coverage, blank detection, background and dominant colors, content bounding box, luminance grid, and edge density.
+_Avoid_: Visual review, AI vision
+
+**Image comparison**:
+A pixel and region diff between two decoded images. It reports differing pixels, channel deltas, a bounding box, and a 3×3 region breakdown.
+_Avoid_: Pixel hash, visual diff
+
+**Project template**:
+A known-good composition or timeline entry that `add` writes while printing the explicit `video.config.js` registration snippet.
+_Avoid_: Generator, project scaffold
+
 ### Agent operation
 
 **Agent-assisted authoring and operation**:

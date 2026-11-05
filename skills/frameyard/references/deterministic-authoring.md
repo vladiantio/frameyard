@@ -226,12 +226,13 @@ Images declared in the fragment are awaited by the host. Static fonts should be 
 ## Validation and inspection
 
 ```sh
+npx frameyard lint hello --json
 npx frameyard check hello --json
 npx frameyard still hello --frame 42 --out hello-42.png --json
 npx frameyard still hello --frame 0,118-126 --out out/stills --json
 ```
 
-`check` runs static validation before Chromium, then evaluates every animated frame and validates audio and declared transcripts without capturing or encoding. A static composition is inspected once. Read the structured `diagnostics` array. Do not replace `check` with a single still. Inspect several representative frames in one `still` call with a range or list; the batch seeks sequentially in one session and is limited to 32 unique frames. A static composition exposes only frame 0.
+`lint` runs static validation, timeline resolution, scene and keyframe projection for every timeline frame, and a controller determinism scan without Chromium. Use it while editing; it does not run `validateProps` or composition runtime. `check` runs static validation before Chromium, then evaluates every animated frame and validates audio and declared transcripts without capturing or encoding. A static composition is inspected once. Read the structured `diagnostics` array. Do not replace `check` with a single still. Inspect several representative frames in one `still` call with a range or list; the batch seeks sequentially in one session and is limited to 32 unique frames in `full` (4 in `authoring`, 1 in `light`). A static composition exposes only frame 0.
 
 ## Metadata is fixed
 

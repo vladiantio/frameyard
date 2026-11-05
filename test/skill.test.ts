@@ -87,6 +87,7 @@ describe("official agent skill", () => {
 
     expect(packageJson.files).toContain("skills");
     expect(skill).toContain(`frameyard-api-version: ${packageJson.version}`);
+    expect(skill).toContain("references/quick-reference.md");
     expect(skill).toContain("references/deterministic-authoring.md");
     expect(skill).toContain("references/audio-assets.md");
     expect(skill).toContain("references/subtitles-karaoke.md");

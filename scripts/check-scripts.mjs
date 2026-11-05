@@ -5,7 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
-const directories = ["scripts", "bench"];
+const directories = ["scripts", "bench", "evals"];
 
 const scripts = [];
 for (const directory of directories) {
@@ -19,7 +19,7 @@ for (const directory of directories) {
 scripts.sort();
 
 if (scripts.length === 0) {
-  console.error("frameyard: no scripts/*.mjs or bench/*.mjs files to check");
+  console.error("frameyard: no scripts/*.mjs, bench/*.mjs, or evals/*.mjs files to check");
   process.exit(1);
 }
 
@@ -36,4 +36,4 @@ if (failures.length > 0) {
   process.exit(1);
 }
 
-console.log(`frameyard: syntax checked ${scripts.length} scripts/*.mjs and bench/*.mjs files`);
+console.log(`frameyard: syntax checked ${scripts.length} scripts/*.mjs, bench/*.mjs, and evals/*.mjs files`);

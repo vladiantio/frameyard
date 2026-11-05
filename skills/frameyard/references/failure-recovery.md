@@ -59,6 +59,11 @@ Do not claim success after a nonzero exit. Fix the cause, rerun `check`, and onl
 | `ASSET_NOT_FOUND` | Required file is missing or unreadable | Restore the asset, model, or text file. |
 | `DETERMINISM_WARNING` | Forbidden clock/randomness, CSS transition, or runtime warning | Derive state from `frame`/`props`; use `random("stable:key")`. |
 | `OUTPUT_EXISTS` | Output exists and replacement was not approved | Reuse it, choose another path, or pass `--overwrite`/`--force` with permission. |
+| `IMAGE_INVALID` | An inspected or compared image is missing, unreadable, or has different dimensions | Check the paths; for `compare`, use images with the same width and height. |
+| `POLICY_INVALID` | The workspace policy file or `FRAMEYARD_POLICY` is malformed | Read the `details.path`/`jsonPath`, fix the field, or ask the user to remove the override. |
+| `RESOURCE_POLICY_BLOCKED` | The active tier blocks the operation, `--force`, or `--overwrite` | Use `--dry-run` for a handoff plan, or ask the user to run the heavy command with `FRAMEYARD_POLICY=full`. |
+| `RESOURCE_POLICY_LIMIT` | The still request exceeds the tier frame cap | Split the frames into smaller calls; do not assume the 32-frame library cap is available. |
+| `RESOURCE_PROFILE_CONFLICT` | `--workers` or `--concurrency` exceeds the `shared-cpu` cap | Lower the value or omit `--profile`; the CLI does not clamp it. |
 | `OUTPUT_FAILED` | An output or manifest could not be written atomically | Check directory permissions and free space; rerun. |
 | `EXECUTABLE_NOT_FOUND` | `qwen-tts`, `sherpa-onnx-offline-tts`, or `whisper-cli` could not be resolved | Pass `--executable`, set `FRAMEYARD_QWEN_TTS`, `FRAMEYARD_SHERPA_ONNX_TTS`, or `FRAMEYARD_WHISPER_CLI`, or fix `PATH`. |
 | `TTS_FAILED` | Speech synthesis failed or produced an invalid WAV | Read stderr; verify the engine-specific models (`--talker-model`/`--codec-model` for qwen, `--model-dir` for Supertonic) and CLI compatibility. |
@@ -70,6 +75,8 @@ Do not claim success after a nonzero exit. Fix the cause, rerun `check`, and onl
 | `RENDER_FAILED` | Capture or encoding failed | Read stderr; rerun `check` and a representative `still`. |
 | `CANCELLED` | The operation was interrupted | Rerun when ready. Partial outputs are removed. |
 | `INTERNAL` | Unexpected internal failure | Rerun with `FRAMEYARD_DEBUG=1` and report the stack. |
+
+When a heavy command is blocked, run it once with `--dry-run`. The result contains `commandLine`, `prerequisites`, and `blockers`; report `deferred: true` and the command instead of claiming the render or asset exists. The command line already includes `FRAMEYARD_POLICY=full` when the active tier is not `full`.
 
 ## Behavior to rely on
 

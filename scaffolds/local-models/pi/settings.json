@@ -1,0 +1,15 @@
+{
+  "$schema": "https://pi.dev/schemas/settings.schema.json",
+  "llamaSettings": {
+    "servers": [
+      {
+        "url": "http://127.0.0.1:9931",
+        "id": "local",
+        "name": "Local llama.cpp"
+      }
+    ]
+  },
+  "defaultTools": ["read", "bash", "edit", "write"],
+  "defaultProvider": "local",
+  "defaultModel": "LFM3-1.7B-Q8_0"
+}

@@ -2,6 +2,7 @@ node_modules/
 dist/
 coverage/
 out/
+.pi/sessions/
 *.tmp
 .DS_Store
 package-lock.json

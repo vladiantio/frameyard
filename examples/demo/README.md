@@ -19,13 +19,13 @@ From the repository root:
 pnpm build
 node dist/cli.js check demo-timeline --project examples/demo
 node dist/cli.js still demo-timeline --frame 240 --project examples/demo --out demo-still.png
-node dist/cli.js render demo-timeline --project examples/demo --props examples/demo/props/demo.json
+FRAMEYARD_POLICY=full node dist/cli.js render demo-timeline --project examples/demo --props examples/demo/props/demo.json
 ```
 
 The composition remains renderable on its own:
 
 ```sh
-node dist/cli.js render demo --project examples/demo --props examples/demo/props/demo.json
+FRAMEYARD_POLICY=full node dist/cli.js render demo --project examples/demo --props examples/demo/props/demo.json
 ```
 
 Start the interactive preview with:

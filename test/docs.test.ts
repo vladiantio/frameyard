@@ -7,7 +7,7 @@ import { VERSION } from "../src/version.ts";
 
 const BARE_CLI_LINE = /^\s*(?:frameyard(?:\s|$)|node\s+(?:\.\.?\/)?dist\/cli\.js(?:\s|$))/;
 const CLI_COMMAND =
-  /^(?:npx\s+)?(?:frameyard(?:@[^\s]+)?|node\s+(?:\.\.?\/)?dist\/cli\.js)\s+(?:init|dev|check|still|render|tts|transcribe|doctor|help)(?:\s|$)/;
+  /^(?:npx\s+)?(?:frameyard(?:@[^\s]+)?|node\s+(?:\.\.?\/)?dist\/cli\.js)\s+(?:init|dev|context|lint|check|still|inspect|compare|render|tts|transcribe|add|doctor|help)(?:\s|$)/;
 const PUBLISHED_CLI = /^npx\s+frameyard(?:@[^\s]+)?\s/;
 const PACKAGE_SCRIPT_COMMAND = /^(?:npm run|pnpm run|pnpm)\s+([^\s]+)(?:\s|$)/;
 const PNPM_BUILTINS = new Set([
@@ -46,7 +46,7 @@ const STILL_CAP_DOCS = [
   "skills/frameyard/references/deterministic-authoring.md",
   "skills/frameyard/references/timelines.md",
   "skills/frameyard/references/common-mistakes.md",
-  "src/scaffold.ts",
+  "scaffolds/init/AGENTS.md",
 ];
 
 const STILL_CAP_PATTERNS = [
@@ -232,10 +232,12 @@ describe("documentation command examples", () => {
     expect(agents).toContain("npx skills add vladiantio/frameyard");
   });
 
-  it("states one still frame cap in every command document", async () => {
-    const cli = await readFile("src/cli.ts", "utf8");
-    const cap = /const MAX_STILL_FRAMES = (\d+);/.exec(cli)?.[1];
-    expect(cap, "src/cli.ts must define MAX_STILL_FRAMES").toBeDefined();
+  it("states the still frame cap and the policy tier caps in every command document", async () => {
+    const policy = await readFile("src/policy.ts", "utf8");
+    const cap = /MAX_STILL_FRAMES = (\d+);/.exec(policy)?.[1];
+    expect(cap, "src/policy.ts must define MAX_STILL_FRAMES").toBeDefined();
+    const tierCaps = [...policy.matchAll(/maxStillFrames: (\d+)/g)].map((match) => match[1] as string);
+    const allowed = new Set([cap as string, ...tierCaps]);
 
     const offenders: string[] = [];
     for (const file of STILL_CAP_DOCS) {
@@ -247,8 +249,13 @@ describe("documentation command examples", () => {
         offenders.push(`${file}: does not state the still frame cap`);
         continue;
       }
+      if (!values.includes(cap as string)) {
+        offenders.push(`${file}: does not state the library cap of ${cap}`);
+      }
       for (const value of values) {
-        if (value !== cap) offenders.push(`${file}: states ${value}, src/cli.ts sets ${cap}`);
+        if (!allowed.has(value)) {
+          offenders.push(`${file}: states ${value}, which is not a policy cap (${[...allowed].join(", ")})`);
+        }
       }
     }
 

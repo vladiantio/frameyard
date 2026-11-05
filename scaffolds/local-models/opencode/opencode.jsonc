@@ -1,0 +1,17 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "skills": ["./skills"],
+  "permissions": [
+    { "action": "edit", "resource": "frameyard.policy.json", "effect": "deny" },
+    { "action": "edit", "resource": ".opencode/**", "effect": "deny" },
+    { "action": "edit", "resource": ".pi/**", "effect": "deny" },
+    { "action": "edit", "resource": "skills/frameyard/**", "effect": "deny" },
+    { "action": "shell", "resource": "*frameyard render*", "effect": "deny" },
+    { "action": "shell", "resource": "*frameyard tts*", "effect": "deny" },
+    { "action": "shell", "resource": "*frameyard transcribe*", "effect": "deny" },
+    { "action": "shell", "resource": "*dist/cli.js render*", "effect": "deny" },
+    { "action": "shell", "resource": "*dist/cli.js tts*", "effect": "deny" },
+    { "action": "shell", "resource": "*dist/cli.js transcribe*", "effect": "deny" },
+    { "action": "shell", "resource": "*--dry-run*", "effect": "allow" },
+  ],
+}

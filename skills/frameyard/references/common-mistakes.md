@@ -95,6 +95,26 @@
 - Passing `--container`, `--codec`, `--encoder`, or `--concurrency` to `render` for a static composition. Use a timeline image clip if the deliverable must be video.
 - Requesting a still frame other than 0 from a static composition.
 
+## Context, inspection, and templates
+
+- Reading the whole repository before a small edit. Run `npx frameyard context --json` first; it returns the format, props, timelines, assets, policy, and next commands.
+- Treating `inspect`/`compare` as a vision model. They return facts such as blank, alpha coverage, bbox, and changed pixels; they do not judge whether a design looks right.
+- Expecting `compare` to exit 0 when the images differ. It exits 1 and still returns `ok: true` with `identical: false`.
+- Forgetting that `add` does not edit `video.config.js`. Merge the returned `register` object yourself, then run `lint`.
+- Adding a composition template to a project without `format`. Composition templates inherit the project format; add `format { width, height, fps }` first.
+- Adding the slideshow timeline before `assets/slide-1.png` through `assets/slide-3.png` exist. `check` will report the missing assets.
+
+## Resource policy and lint
+
+- Using `check` as the edit loop. Use `lint`; it resolves the timeline, projects every scene and keyframe channel, and scans the controller without Chromium.
+- Treating a clean `lint` as a successful `check`. Lint does not run `validateProps` or composition runtime.
+- Running `tts`, `transcribe`, or `render` while the workspace policy is `authoring` or `light`. Use `--dry-run` and hand off the command.
+- Editing `frameyard.policy.json`, `.opencode/`, `.pi/`, or `skills/frameyard/` to bypass the policy. Those files are protected by host permissions and are not part of the authoring task.
+- Passing `--force` or `--overwrite` outside `full`. Ask the user before replacing an output; the CLI will fail with `RESOURCE_POLICY_BLOCKED`.
+- Requesting more still frames than the tier allows. The caps are 1 for `light`, 4 for `authoring`, and 32 for `full`; split larger ranges.
+- Passing `--workers 8` with `--profile shared-cpu`. The profile caps workers at 2 and fails with `RESOURCE_PROFILE_CONFLICT` instead of clamping.
+- Forgetting that the policy is discovered from the working directory upward, independent of `video.config.js`. Running from a nested directory still finds the workspace file.
+
 ## Validation
 
 - Replacing `check` with a single `still`.

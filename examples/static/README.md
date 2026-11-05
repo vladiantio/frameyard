@@ -7,9 +7,9 @@ timeline uses the same composition as an image layer for 90 frames.
 
 ```sh
 node dist/cli.js check still --project examples/static
-node dist/cli.js render still --project examples/static --out examples/static/out/still.png
+FRAMEYARD_POLICY=full node dist/cli.js render still --project examples/static --out examples/static/out/still.png
 node dist/cli.js check still-timeline --project examples/static
-node dist/cli.js render still-timeline --project examples/static --out examples/static/out/still-timeline.mp4
+FRAMEYARD_POLICY=full node dist/cli.js render still-timeline --project examples/static --out examples/static/out/still-timeline.mp4
 ```
 
 `render still` defaults to `out/still.png`. Static compositions render to PNG;

@@ -12,6 +12,14 @@ Frameyard is a local-first framework for deterministic, parameterized videos aut
 - **For usage and project layout**: read `README.md`, `docs/migration-0.4.md`, and `docs/migration-0.8.md`.
 - **For preview tests or browser probes**: read `docs/preview-testing.md`.
 
+## Local-model scaffold
+
+Local-model host setup is opt-in. The repository does not commit a root `frameyard.policy.json`, `.opencode/`, or `.pi/`; install `scaffolds/local-models/` with `npx frameyard add local-models`, or use `npx frameyard init <dir> --local-models` for a new project. See `scaffolds/local-models/LOCAL-MODELS.md`.
+
+The scaffold provides an `authoring` policy with the `shared-cpu` profile, OpenCode shell/edit restrictions, Pi settings and append prompt, and a disabled Pi sandbox. Without it, the CLI defaults to `full`. The policy blocks `tts`, `transcribe`, and `render`, allows `check` at low priority, and caps `still` at four frames. Use `context` for a project digest, `lint` for the edit loop, `--dry-run` for a handoff command, and `inspect`/`compare` for text-only still checks. `add` writes a template and prints the exact `video.config.js` registration snippet. The nearest policy file is discovered from the working directory upward, independent of `video.config.js`; see `docs/adr/0022-gate-heavy-operations-with-a-workspace-resource-policy.md`.
+
+The policy is a guardrail, not a security boundary. A human who intentionally runs a heavy command prefixes it with `FRAMEYARD_POLICY=full`, for example `FRAMEYARD_POLICY=full node dist/cli.js render demo-timeline --project examples/demo`. Tests and benchmarks that render through the CLI from the repository root do the same; tests that exercise the policy set `FRAMEYARD_POLICY=authoring` explicitly.
+
 ## Commands
 
 Use pnpm. The browser host and preview are served from `dist/`, so build before starting the preview or running a single server/browser test.
@@ -34,6 +42,7 @@ pnpm test:unit                         # tool-free subset used by the pre-commit
 pnpm test test/contracts.test.ts       # one test file, builds first
 pnpm bench                             # seek/capture/encode/full-render timings
 pnpm bench:static                      # animated composition vs the same visual as a static PNG
+pnpm eval:local --model <id> --only <task>   # opt-in local-model authoring eval; never renders
 pnpm compare-stills a.png b.png        # exact decoded-pixel diff; exits nonzero on any difference
 pnpm check:changelog                   # commits since the last tag touch CHANGELOG.md or declare Changelog: skip
 pnpm verify-package                    # packed tarball contains every required path and bin target
@@ -48,14 +57,15 @@ Releases are tag-driven. Read `RELEASING.md` before publishing. Feature and fix 
 Reference project:
 
 ```sh
+node dist/cli.js lint demo-timeline --project examples/demo
 node dist/cli.js check demo-timeline --project examples/demo
 node dist/cli.js dev --project examples/demo
 node dist/cli.js still demo-timeline --frame 240 --project examples/demo --out still.png
-node dist/cli.js render demo-timeline --project examples/demo --props examples/demo/props/demo.json
-node dist/cli.js render demo --project examples/demo --props examples/demo/props/demo.json
+FRAMEYARD_POLICY=full node dist/cli.js render demo-timeline --project examples/demo --props examples/demo/props/demo.json
+FRAMEYARD_POLICY=full node dist/cli.js render demo --project examples/demo --props examples/demo/props/demo.json
 node dist/cli.js check still --project examples/static
-node dist/cli.js render still --project examples/static --out examples/static/out/still.png
-node dist/cli.js render still-timeline --project examples/static
+FRAMEYARD_POLICY=full node dist/cli.js render still --project examples/static --out examples/static/out/still.png
+FRAMEYARD_POLICY=full node dist/cli.js render still-timeline --project examples/static
 node dist/cli.js doctor
 ```
 
@@ -63,7 +73,7 @@ node dist/cli.js doctor
 
 Documentation command examples: runnable examples in `README.md`, `skills/frameyard/`, the `init` scaffold, and `init --json` `next` use `npx frameyard`; repository-internal commands (this file, `examples/*/README.md`, and README's `Development` section) use `node dist/cli.js` after `pnpm build`. Command reference tables and `--help` usage lines keep the bare `frameyard` name. `test/docs.test.ts` enforces the user-facing rule, including the generated scaffold markdown in `src/scaffold.ts`; `test/examples.test.ts` enforces the example README rule.
 
-A full 30-second demo timeline render is segmented and uses 8 workers by default; `--scratch <dir>` selects the FFV1 intermediate directory. Composition renders are sequential unless `--concurrency <n>` (1-16) is passed. Run `pnpm bench` for current composition timings; the timeline benchmark scripts under `bench/` are measurement tools, not production code; pass `--work`, `--project`, `--output`, and `--scratch` instead of editing paths. The test fixtures render tiny compositions/timelines. TTS and transcription tests use fake `qwen-tts`, `sherpa-onnx-offline-tts`, and `whisper-cli` executables; real-model tests are opt-in.
+A full 30-second demo timeline render is segmented and uses 8 workers by default; `--scratch <dir>` selects the FFV1 intermediate directory. Composition renders are sequential unless `--concurrency <n>` (1-16) is passed. Run `pnpm bench` for current composition timings; the timeline benchmark scripts under `bench/` are measurement tools, not production code; pass `--work`, `--project`, `--output`, and `--scratch` instead of editing paths. The test fixtures render tiny compositions/timelines. TTS and transcription tests use fake `qwen-tts`, `sherpa-onnx-offline-tts`, and `whisper-cli` executables; real-model tests are opt-in. `pnpm eval:local` is an opt-in local-model authoring eval against a llama.cpp router; it never renders and is not part of `pnpm check`. See `evals/README.md`.
 
 ## Architecture
 
@@ -111,9 +121,18 @@ A full 30-second demo timeline render is segmented and uses 8 workers by default
 | `src/assets/` | TTS (qwentts.cpp and sherpa-onnx Supertonic) and transcription wrappers, executable resolution, atomic publishing, provenance |
 | `src/doctor.ts` | Environment, integration, and manifest inspection |
 | `src/project.ts` | `video.config.js` loading: project format, explicit `.html` compositions, `.json` timelines |
-| `src/scaffold.ts` | `init` timeline-first scaffold: composition, timeline, config, props, README, agent guide |
-| `src/cli.ts` | Argument parsing, composition/timeline routing, human/JSON results, diagnostics |
+| `src/policy.ts` | Workspace resource policy discovery, strict validation, tiers, profiles, operation gating, and process priority |
+| `src/lint.ts` | Node-only lint: static validation, timeline resolution, scene/keyframe projection, and controller determinism scanning |
+| `src/context.ts` | Compact project digest: format, composition metadata, prop types, timeline clips, assets, diagnostics, policy, and next commands |
+| `src/inspect.ts` | Image decoding through FFmpeg, blank/alpha/color/bbox analysis, and pixel/region comparison |
+| `src/templates.ts` | Project templates for `frameyard add` |
+| `frameyard.policy.json` | Workspace resource tier when installed; the local-model scaffold uses `authoring` + `shared-cpu` |
+| `scaffolds/init/` | `init` template sources: composition, timeline, config, props, README, agent guide, package manifest |
+| `src/scaffold.ts` | Reads `scaffolds/init/` and `scaffolds/local-models/`, renders placeholders, and exposes the scaffold file maps |
+| `src/cli.ts` | Argument parsing, composition/timeline/lint/context/inspect/compare/add routing, policy gating, dry-run handoff, human/JSON results, diagnostics |
 | `skills/frameyard/` | Official host-neutral agent skill and references |
+| `scaffolds/local-models/` | Opt-in policy, OpenCode, and Pi configuration for a workspace shared with a local model |
+| `evals/` | Opt-in local-model authoring eval: tasks, llama.cpp router runner, token/time/resource report |
 | `examples/demo/` | 30-second reference HTML composition, external controller, and timeline |
 | `examples/webgl/` | Focused WebGL shader example with an external controller |
 | `examples/video/` | Embedded-video compositions (WebM and MP4) and WebM/MP4 timelines with video clips under a transparent HTML overlay |
@@ -225,13 +244,16 @@ Timeline path: `src/timeline/resolve.ts` resolves the JSON and references; `src/
 - **Server routes, document shell generation, inline controller, `project.json`, timeline preview/data** → `src/server/server.ts`, `src/server/composition-html.ts`; extend `test/project-server.test.ts`, `test/server-html.test.ts`, `test/timeline-preview.test.ts`.
 - **Chromium capture, audio/transcript inspection, FFmpeg** → `src/renderer/`; extend `test/cli-e2e.test.ts`, `test/video-determinism.test.ts`, and verify artifacts with FFprobe.
 - **CLI commands, flags, and their result contracts** → `src/cli.ts`; update `README.md` (commands table, options, non-goals), `docs/v0.1-design.md` §5-§6 and non-goals, `GLOSSARY.md`, `skills/frameyard/SKILL.md` and its references (`json-results`, `diagnostics`, `failure-recovery`, `common-mistakes`, `deterministic-authoring`, `timelines`), `src/scaffold.ts`, and `CHANGELOG.md`; extend `test/cli-e2e.test.ts` and `test/docs.test.ts`.
+- **Resource policy, lint, and dry-run handoff** → `src/policy.ts`, `src/lint.ts`, `src/cli.ts`, `scaffolds/local-models/`; update ADR 0022, README, design baseline §6-§7, GLOSSARY, skill references, scaffold, and CHANGELOG; extend `test/policy.test.ts`, `test/cli-e2e.test.ts`, `test/docs.test.ts`, `test/skill.test.ts`, and `test/scaffold.test.ts`.
+- **Project context, image inspection, and templates** → `src/context.ts`, `src/inspect.ts`, `src/templates.ts`, `src/cli.ts`; add the `context`, `inspect`, `compare`, and `add` commands; update README, design baseline §6, GLOSSARY, skill quick reference and references, scaffold, and CHANGELOG; extend `test/context.test.ts`, `test/inspect.test.ts`, `test/templates.test.ts`, `test/cli-e2e.test.ts`, `test/docs.test.ts`, and `test/skill.test.ts`.
 - **Static validation integration and result schemas** → `src/renderer/index.ts`, `src/renderer/timeline.ts`, `src/cli.ts`; extend `test/cli-e2e.test.ts`, `test/agent-workflow.test.ts`, `test/timeline-render.test.ts`.
 - **TTS, transcription, provenance, executable resolution** → `src/assets/`; extend `test/assets-e2e.test.ts` with fake executables. `tts --engine supertonic` resolves the seven Supertonic files from `--model-dir`, records them in the manifest, and normalizes the engine output to 24 kHz mono.
 - **Doctor checks** → `src/doctor.ts`, `src/cli.ts`; extend `test/assets-e2e.test.ts`.
-- **Init scaffold content** → `src/scaffold.ts` (project format, composition, timeline, config, props, README, agent guide, and `next`); keep the agent guide aligned with `skills/frameyard/`; extend `test/scaffold.test.ts`, `test/docs.test.ts`, and the `init` case. When the scaffold file set changes, update `README.md`, `docs/v0.1-design.md` §6, and the scaffold README/agent guide.
+- **Init scaffold content** → `scaffolds/init/` (project format, composition, timeline, config, props, README, agent guide, and package manifest) plus `src/scaffold.ts` for placeholder rendering and `next`; keep the agent guide aligned with `skills/frameyard/`; extend `test/scaffold.test.ts`, `test/docs.test.ts`, and the `init` case. When the scaffold file set changes, update `README.md`, `docs/v0.1-design.md` §6, and the scaffold README/agent guide.
 - **Agent skill contract** → `skills/frameyard/`, `package.json`; extend `test/skill.test.ts`.
 - **Reference behavior** → `examples/demo/`, `examples/webgl/`, `examples/video/`, `examples/blend/`, `examples/keyframes/`, `examples/transitions/`, `examples/nested/`, and `examples/static/`; keep their README commands working. The demo includes a timeline wrapping its composition; the video example includes WebM and MP4 timelines with video clips under a transparent overlay composition; the blend example sequences static blend modes on composition and video clips; the keyframes example animates one timeline clip through every presentation channel; the transitions example dissolves three timed chord cards across one video track and crossfades their audio, and its `audio-crossfade` timeline places the chords directly on an audio track; the nested example places two inner timelines in an outer timeline as full-frame and transformed group clips with nested audio; the static example renders a timeless composition to PNG and reuses it as a timeline image. Extend `test/examples.test.ts` when the example set or entry layout changes.
 - **Performance benchmarks** → `scripts/bench-render.mjs`, `bench/fixtures/`, `bench/keyframe-timeline.mjs`, `bench/README.md`; keep `pnpm bench` representative of the composition capture path and the keyframe timeline script representative of the animated composite path. Timeline benchmark scripts are temporary measurement tools; the production projection is in ADR 0012.
+- **Local-model evals** → `evals/runner.mjs`, `evals/tasks.mjs`, `evals/README.md`; keep the eight tasks small, keep `lint`/`check`/`still`/`inspect` as the gates, keep the harness outside `pnpm check`, and keep resource sampling opt-in. The system prompt reads `skills/frameyard/references/quick-reference.md`; update both together.
 - **Lint and formatting** → `.oxlintrc.json`, `.oxfmtrc.json`, `package.json`, `.githooks/pre-commit`, `.githooks/commit-msg`, and CI/release workflows; run `pnpm check:static`.
 - **Release checks and versioning** → `scripts/set-version.mjs`, `scripts/verify-release.mjs`, `scripts/check-changelog.mjs`, `scripts/verify-package.mjs`, `scripts/check-stamp.mjs`, `scripts/retag-release.mjs`, `RELEASING.md`, `.github/workflows/release.yml`; run `pnpm verify-release` after tagging.
 
@@ -245,6 +267,11 @@ Test at public seams, not private helpers:
 - `test/server-html.test.ts`: `.html` entries, fragment wrapping and head ordering, virtual inline controller, static error pages, `project.json` diagnostics.
 - `test/host-runtime.test.ts`: host bindings, repeat/if/class, animation scheduling, frame variables, inline/external controllers, props validation, load atomicity, dispose, diagnostics, auto mode, media settle, and static load (mount-only, no frame state, paused CSS animations, `update()`/media warnings and errors).
 - `test/random.test.ts`: frame/time conversion and stateless keyed deterministic randomness.
+- `test/policy.test.ts`: workspace policy discovery, env precedence, strict schema and tighten-only limits, tier gates, still limits, profile caps, and priority selection.
+- `test/context.test.ts`: project digest composition metadata, prop types, timeline clip summaries, policy, next commands, and the CLI context result.
+- `test/inspect.test.ts`: RGBA analysis, blank/alpha/color/bbox facts, pixel and region comparison, and the inspect/compare CLI results.
+- `test/templates.test.ts`: unique template names, valid composition and timeline templates, and registration snippets.
+- `test/evals.test.ts`: local-model eval task names, targets, seed configs, composition validity, and timeline schema validity.
 - `test/project-server.test.ts`: config loading, static routes, import map, ranges, traversal rejection.
 - `test/timeline-config.test.ts`: `video.config.js` timeline entries, format requirements, timeline-only projects, and duplicate or missing entries.
 - `test/preview-runtime.test.ts`: HTML iframe preview, props, seeking, transport keys, CSS animation, Canvas, WebGL, embedded video, determinism, diagnostics, and static composition preview without a transport.

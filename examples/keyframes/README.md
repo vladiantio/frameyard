@@ -66,7 +66,7 @@ pnpm build
 node dist/cli.js check keyframes --project examples/keyframes
 node dist/cli.js still keyframes --frame 12,90,170 --project examples/keyframes --out keyframes-stills
 node dist/cli.js still keyframes --frame 90 --project examples/keyframes --out keyframes-center.png
-node dist/cli.js render keyframes --project examples/keyframes
+FRAMEYARD_POLICY=full node dist/cli.js render keyframes --project examples/keyframes
 node dist/cli.js dev --project examples/keyframes
 ```
 

@@ -92,10 +92,10 @@ node dist/cli.js still video --frame 210 --project examples/video --out video-st
 node dist/cli.js still video-mp4 --frame 210 --project examples/video --out video-mp4-still.png
 node dist/cli.js still video-timeline --frame 210 --project examples/video --out video-timeline-still.png
 node dist/cli.js still video-timeline-mp4 --frame 210 --project examples/video --out video-timeline-mp4-still.png
-node dist/cli.js render video --project examples/video --props examples/video/props/video.json
-node dist/cli.js render video-mp4 --project examples/video --props examples/video/props/video.json
-node dist/cli.js render video-timeline --project examples/video --props examples/video/props/video-timeline.json
-node dist/cli.js render video-timeline-mp4 --project examples/video --props examples/video/props/video-timeline.json
+FRAMEYARD_POLICY=full node dist/cli.js render video --project examples/video --props examples/video/props/video.json
+FRAMEYARD_POLICY=full node dist/cli.js render video-mp4 --project examples/video --props examples/video/props/video.json
+FRAMEYARD_POLICY=full node dist/cli.js render video-timeline --project examples/video --props examples/video/props/video-timeline.json
+FRAMEYARD_POLICY=full node dist/cli.js render video-timeline-mp4 --project examples/video --props examples/video/props/video-timeline.json
 ```
 
 Start the interactive preview with:

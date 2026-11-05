@@ -12,6 +12,45 @@ contract change may ship in a minor release and is called out explicitly below.
 
 ### Added
 
+- `frameyard.policy.json` is a workspace resource policy discovered from the
+  working directory upward. It gates `tts`, `transcribe`, and `render`, caps
+  `still`, denies `--force`/`--overwrite`, and supports the `shared-cpu`
+  profile. `FRAMEYARD_POLICY` overrides the file. See
+  `docs/adr/0022-gate-heavy-operations-with-a-workspace-resource-policy.md`.
+- `frameyard lint <id>` runs static validation, timeline resolution, scene and
+  keyframe projection for every frame, a controller determinism scan, and media
+  metadata probing without Chromium. It is the edit-loop gate; `check` remains
+  the full gate.
+- `frameyard context --json` prints a compact project digest with resolved
+  composition metadata, prop keys and types, timeline clip summaries, unique
+  assets, diagnostics, the active policy, and next commands.
+- `frameyard inspect <image> --json` reports dimensions, alpha coverage, blank
+  detection, background and dominant colors, a content bounding box, a coarse
+  luminance grid, and edge density. `frameyard compare <a> <b> --json` reports
+  pixel and 3×3 region differences and exits 1 when the images differ.
+- `frameyard add --list` and `frameyard add <composition|timeline> <id>
+  --template <name>` write `static-poster`, `title-card`, `lower-third`, or
+  `slideshow` entries and print the exact `video.config.js` registration
+  snippet. `add local-models` and `init --local-models` install the optional
+  policy, OpenCode permissions, and Pi settings. `add` never edits the config
+  and never overwrites an existing entry. The skill adds a compact quick
+  reference for limited-context hosts.
+- `init` templates now live under `scaffolds/init/`; `src/scaffold.ts` reads
+  them and renders the project-name and version placeholders.
+- `pnpm eval:local` runs an opt-in local-model authoring eval against a
+  llama.cpp router. It covers eight tasks, feeds `quick-reference.md` into the
+  system prompt, repairs lint failures, and reports first-pass status, turns,
+  tokens, wall time, sampled server CPU/RSS/GPU, and optional budgets. It never
+  renders and stays outside `pnpm check`.
+- `tts`, `transcribe`, and `render` accept `--dry-run`, which validates inputs
+  and returns `plan`, `commandLine`, `prerequisites`, and `blockers` without
+  writing outputs, loading a model, launching Chromium, or encoding.
+  `--profile shared-cpu` caps timeline workers at 2 and composition concurrency
+  at 1; `--low-priority` lowers process priority without the caps.
+- `doctor` reports the active resource policy and basic CPU, load, and memory
+  resources. Local-model host setup is opt-in through
+  `scaffolds/local-models/`, which contains the `authoring` policy, OpenCode
+  permissions, and Pi settings; the repository does not enable it by default.
 - `tts --engine supertonic` synthesizes 31-language speech through
   `sherpa-onnx-offline-tts` and the Supertonic 3 model archive. It normalizes
   the engine output to the frozen 24 kHz mono WAV contract, records the seven

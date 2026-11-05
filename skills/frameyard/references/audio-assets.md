@@ -102,6 +102,10 @@ npx frameyard transcribe assets/voice.wav \
 - Executable resolution: `--executable`, then `FRAMEYARD_WHISPER_CLI`, then `PATH`.
 - Frameyard does not download Whisper models or execute Whisper's generated karaoke shell script.
 
+## Pinned upstream revisions
+
+The wrappers target the CLI surfaces of qwentts.cpp commit `5916bf7c79dbb4e66fc059cdc507a79a23a28bb4`, sherpa-onnx commit `af2d8d81dbfa61c4cea4c568da78f3982edca005` (v2.0.1), and whisper.cpp commit `284029c07012d2000941a08d38a31ffb71f4734e`.
+
 ## Provenance manifest
 
 Both commands update `frameyard.assets.json` in the project root unless `--manifest <file>` is supplied. The manifest records:

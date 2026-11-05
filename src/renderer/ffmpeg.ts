@@ -1221,7 +1221,8 @@ function buildCompositeGraph(options: {
         "-f",
         "lavfi",
         "-i",
-        `color=c=black@0.0:s=1x1:r=${formatNumber(options.fps)}:d=${formatNumber(durationSeconds)}`,
+        // FFmpeg 6 rejects a 1x1 yuv420p source (chroma planes round to zero).
+        `color=c=black@0.0:s=2x2:r=${formatNumber(options.fps)}:d=${formatNumber(durationSeconds)}`,
       );
       inputIndex += 1;
       maskInput = inputIndex;

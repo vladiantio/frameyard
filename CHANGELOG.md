@@ -82,6 +82,9 @@ contract change may ship in a minor release and is called out explicitly below.
 - Rotated timeline clips keep their full corners. Keyed rotation uses a
   segment-stable diagonal bound; static rotation uses its exact rotated
   bounding box.
+- Animated-opacity masks use a 2×2 FFmpeg source instead of 1×1. FFmpeg 6
+  rejects a 1×1 `yuv420p` frame, which broke keyframe, transition, and example
+  renders on Ubuntu 24.04 runners.
 
 [Unreleased]: https://github.com/vladiantio/frameyard/compare/v0.8.0...HEAD
 

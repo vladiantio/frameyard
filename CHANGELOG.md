@@ -83,6 +83,8 @@ contract change may ship in a minor release and is called out explicitly below.
   segment-stable diagonal bound; static rotation uses its exact rotated
   bounding box.
 
+[Unreleased]: https://github.com/vladiantio/frameyard/compare/v0.8.0...HEAD
+
 ## [0.8.0] - 2026-11-03
 
 ### Changed
@@ -143,6 +145,8 @@ contract change may ship in a minor release and is called out explicitly below.
 - Static composition validation, host, CLI, timeline, preview, and example
   coverage.
 
+[0.8.0]: https://github.com/vladiantio/frameyard/compare/v0.7.0...v0.8.0
+
 ## [0.7.0] - 2026-11-02
 
 ### Added
@@ -186,7 +190,6 @@ contract change may ship in a minor release and is called out explicitly below.
   layer iframes reach the preview transport, while text entry does not step
   frames across iframe boundaries.
 
-[0.8.0]: https://github.com/vladiantio/frameyard/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/vladiantio/frameyard/compare/v0.6.0...v0.7.0
 
 ## [0.6.0] - 2026-11-01
@@ -451,4 +454,3 @@ contract change may ship in a minor release and is called out explicitly below.
   test suite, design baseline, and architecture decision records.
 
 [0.1.0]: https://github.com/vladiantio/frameyard/releases/tag/v0.1.0
-[Unreleased]: https://github.com/vladiantio/frameyard/compare/v0.8.0...HEAD

@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   assertOperationAllowed,
   assertOverwriteAllowed,
+  assertPolicyTier,
   assertProfileLimit,
   assertStillFrameLimit,
   describePolicy,
@@ -148,6 +149,18 @@ describe("resource policy gates", () => {
       expect.objectContaining({ code: "RESOURCE_POLICY_BLOCKED" }),
     );
     expect(() => assertOperationAllowed(policy({ tier: "full" }), "render")).not.toThrow();
+    expect(() => assertOperationAllowed(policy({ tier: "light" }), "font")).not.toThrow();
+  });
+
+  it("requires a higher tier for font writes and removal", () => {
+    expect(() => assertPolicyTier(policy({ tier: "light" }), "authoring", "font add")).toThrow(
+      expect.objectContaining({ code: "RESOURCE_POLICY_BLOCKED" }),
+    );
+    expect(() => assertPolicyTier(policy({ tier: "authoring" }), "authoring", "font add")).not.toThrow();
+    expect(() => assertPolicyTier(policy({ tier: "authoring" }), "full", "font remove")).toThrow(
+      expect.objectContaining({ code: "RESOURCE_POLICY_BLOCKED" }),
+    );
+    expect(() => assertPolicyTier(policy({ tier: "full", allowOverwrite: true }), "full", "font remove")).not.toThrow();
   });
 
   it("lets every tier run a dry run", () => {

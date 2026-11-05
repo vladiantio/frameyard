@@ -8,6 +8,8 @@ import type { CompositionDiagnostic, ControllerDeclaration } from "../contracts.
 import { FrameyardError } from "../errors.js";
 import { validateHtmlComposition } from "../html/validate.js";
 import { loadProject, type Project, type ProjectComposition } from "../project.js";
+import { renderFontCss } from "../fonts/css.js";
+import { readFontManifest } from "../fonts/manifest.js";
 import { renderCompositionDocument } from "./composition-html.js";
 import { buildTimelinePreviewData } from "./timeline-preview-data.js";
 import { renderTimelinePreviewHtml } from "./timeline-preview-html.js";
@@ -204,6 +206,15 @@ function sendJavaScript(response: ServerResponse, status: number, body: string, 
   response.end(headOnly ? undefined : body);
 }
 
+function sendCss(response: ServerResponse, status: number, body: string, headOnly = false): void {
+  response.writeHead(status, {
+    "Content-Type": "text/css; charset=utf-8",
+    "Content-Length": Buffer.byteLength(body),
+    "Cache-Control": "no-store",
+  });
+  response.end(headOnly ? undefined : body);
+}
+
 function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, (character) => {
     switch (character) {
@@ -325,6 +336,21 @@ export async function startPreviewServer(options: PreviewServerOptions): Promise
         return;
       }
 
+      if (pathname === "/__frameyard/fonts.css") {
+        try {
+          const manifest = await readFontManifest(project.root);
+          sendCss(response, 200, renderFontCss(manifest), request.method === "HEAD");
+        } catch (error) {
+          if (error instanceof FrameyardError) {
+            const message = error.message.replaceAll("*/", "* /");
+            sendCss(response, 500, `/* ${error.code}: ${message} */\n`, request.method === "HEAD");
+          } else {
+            throw error;
+          }
+        }
+        return;
+      }
+
       const timelineDataMatch = /^\/__frameyard\/timeline\/(.+)\.json$/.exec(pathname);
       if (timelineDataMatch) {
         try {
@@ -413,7 +439,11 @@ export async function startPreviewServer(options: PreviewServerOptions): Promise
         sendHtml(
           response,
           200,
-          renderCompositionDocument({ fragment, ...(project.format ? { format: project.format } : {}) }),
+          renderCompositionDocument({
+            fragment,
+            ...(project.format ? { format: project.format } : {}),
+            fontStylesheetUrl: "/__frameyard/fonts.css",
+          }),
           request.method === "HEAD",
         );
         return;

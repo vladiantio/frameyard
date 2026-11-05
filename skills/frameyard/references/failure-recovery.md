@@ -57,6 +57,14 @@ Do not claim success after a nonzero exit. Fix the cause, rerun `check`, and onl
 | `TRANSCRIPT_WORDS_UNAVAILABLE` | Karaoke requested without measured word timings | Re-run transcription with `--words` or remove `words`. |
 | `TRANSCRIPT_WARNING` | Empty transcript text or no timed segments | Regenerate the transcript. |
 | `ASSET_NOT_FOUND` | Required file is missing or unreadable | Restore the asset, model, or text file. |
+| `FONT_MANIFEST_INVALID` | Invalid or unknown manifest field, version, id, family, path, face, or weight | Fix `frameyard.fonts.json`; reinstall with `npx frameyard font add --file` instead of hand-editing paths. |
+| `FONT_FILE_MISSING` | A font file in the manifest does not exist | Restore the file or remove the face/family. |
+| `FONT_FILE_INVALID` | Wrong extension, signature, or non-file path | Reinstall the font from a valid WOFF2/WOFF/TTF/OTF source. |
+| `FONT_HASH_MISMATCH` | A vendored font file changed size or hash | Restore the file, or reinstall with `npx frameyard font add --force` after approval. |
+| `FONT_LICENSE_MISSING` | License type/file is unknown or absent | Add `--license`/`--license-file`; do not redistribute the project until resolved. |
+| `FONT_LOAD_FAILED` | Chromium could not load a used `@font-face` | Run `npx frameyard font verify`; fix the manifest or file. |
+| `FONT_REMOTE` | CSS still references a remote font/stylesheet | Vendor the font with `npx frameyard font add --file`; remote fonts are not reproducible. |
+| `FONT_NOT_FOUND` | `font remove` id is not installed | Run `npx frameyard font list --json`. |
 | `DETERMINISM_WARNING` | Forbidden clock/randomness, CSS transition, or runtime warning | Derive state from `frame`/`props`; use `random("stable:key")`. |
 | `OUTPUT_EXISTS` | Output exists and replacement was not approved | Reuse it, choose another path, or pass `--overwrite`/`--force` with permission. |
 | `IMAGE_INVALID` | An inspected or compared image is missing, unreadable, or has different dimensions | Check the paths; for `compare`, use images with the same width and height. |

@@ -78,6 +78,14 @@ Static validation covers:
 | `MEDIA_INVALID` | error | Invalid or missing audio/video source or attributes |
 | `TRANSCRIPT_INVALID` | error | Invalid or missing transcript source |
 | `ASSET_NOT_FOUND` | error | Missing image, stylesheet, media, or transcript file |
+| `FONT_MANIFEST_INVALID` | error | Invalid font manifest schema, path, face, weight, or duplicate family |
+| `FONT_FILE_MISSING` | error | A manifest font file is missing |
+| `FONT_FILE_INVALID` | error | Wrong extension, signature, or non-file font path |
+| `FONT_HASH_MISMATCH` | error | A vendored font file changed size or SHA-256 |
+| `FONT_LICENSE_MISSING` | warning | Font license type or file is unknown or absent |
+| `FONT_LOAD_FAILED` | error | Chromium failed to load a used `@font-face` |
+| `FONT_REMOTE` | warning | CSS references a remote font or stylesheet |
+| `FONT_NOT_FOUND` | error | `font remove` id is not installed |
 | `AUDIO_WARNING` | warning | Audio timeline overrun or silent embedded media |
 | `TRANSCRIPT_WARNING` | warning | Empty transcript text or no timed segments |
 | `DETERMINISM_WARNING` | warning | Forbidden clock/randomness, CSS transition, or runtime diagnostic |
@@ -105,7 +113,7 @@ Failures use the same envelope with `error.code`, `error.message`, optional `err
 
 `lint` returns the same diagnostic shape as `check` but does not launch Chromium. It reports static composition and timeline errors, scene and keyframe projection errors for every timeline frame, media metadata errors, and `DETERMINISM_WARNING` for controller source that calls wall-clock or randomness APIs. It does not run `validateProps` or composition runtime.
 
-Policy failures use the normal error envelope. `RESOURCE_POLICY_BLOCKED` details include `policy`, `operation`, `allowed`, and a `suggestion`; `RESOURCE_POLICY_LIMIT` includes `limit` and `requested`; `RESOURCE_PROFILE_CONFLICT` includes `profile`, `option`, `limit`, and `requested`. Run the blocked `tts`, `transcribe`, or `render` command with `--dry-run` to get the handoff plan instead of treating the block as a render failure.
+Policy failures use the normal error envelope. `RESOURCE_POLICY_BLOCKED` details include `policy`, `operation`, `allowed`, and a `suggestion`; `RESOURCE_POLICY_LIMIT` includes `limit` and `requested`; `RESOURCE_PROFILE_CONFLICT` includes `profile`, `option`, `limit`, and `requested`. Run the blocked `tts`, `transcribe`, or `render` command with `--dry-run` to get the handoff plan instead of treating the block as a render failure. `font add` requires `authoring` or `full`; `font remove` and `font add --force` require `full`.
 
 ## Working with diagnostics
 

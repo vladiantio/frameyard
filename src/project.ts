@@ -3,6 +3,8 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { FrameyardError } from "./errors.js";
 import { isPlainObject, type CompositionFormat } from "./contracts.js";
+import { readFontManifest } from "./fonts/manifest.js";
+import type { FontManifest } from "./fonts/types.js";
 
 export type CompositionKind = "html";
 export type TimelineKind = "timeline";
@@ -32,6 +34,13 @@ export interface Project {
   format?: ProjectFormat;
   compositions: Map<string, ProjectComposition>;
   timelines: Map<string, ProjectTimeline>;
+  /** Parsed optional project font manifest. */
+  fonts?: FontManifest;
+}
+
+export interface LoadProjectOptions {
+  /** Set to false when the caller wants to read the font manifest itself. */
+  fonts?: boolean;
 }
 
 const PROJECT_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
@@ -117,7 +126,7 @@ function entryPath(
 }
 
 /** Loads video.config.js and validates its explicit composition and timeline entries. */
-export async function loadProject(projectRoot: string): Promise<Project> {
+export async function loadProject(projectRoot: string, options: LoadProjectOptions = {}): Promise<Project> {
   const root = path.resolve(projectRoot);
   const configPath = path.join(root, "video.config.js");
 
@@ -210,11 +219,13 @@ export async function loadProject(projectRoot: string): Promise<Project> {
     );
   }
 
+  const fonts = options.fonts === false ? undefined : await readFontManifest(root);
   return {
     root,
     configPath,
     ...(format ? { format } : {}),
     compositions,
     timelines,
+    ...(fonts !== undefined ? { fonts } : {}),
   };
 }

@@ -234,6 +234,7 @@ class HtmlCompositionValidator {
     await this.validateTranscriptFiles(transcripts.declarations);
 
     await this.validateOrdinaryAssets();
+    await this.validateRemoteFonts();
 
     const metadata = this.metadata;
     const declaredFormat = this.declaredFormat;
@@ -975,6 +976,70 @@ class HtmlCompositionValidator {
           path: file.relative,
           ...this.elementDetails(declaration.element),
         });
+      }
+    }
+  }
+
+  private async validateRemoteFonts(): Promise<void> {
+    const seen = new Set<string>();
+    const report = (url: string, details: CompositionDiagnosticDetails): void => {
+      if (seen.has(url)) {
+        return;
+      }
+      seen.add(url);
+      this.warning(
+        "FONT_REMOTE",
+        `Remote font or stylesheet URL "${url}" is not deterministic. Vendor the font into the project with "npx frameyard font add --file".`,
+        { ...details, url },
+      );
+    };
+    const scan = (css: string, details: CompositionDiagnosticDetails): void => {
+      const stripped = css.replace(/\/\*[\s\S]*?\*\//g, "");
+      for (const match of stripped.matchAll(/@import\s+(?:url\(\s*)?["']?((?:https?:)?\/\/[^"')\s]+)/gi)) {
+        const url = match[1];
+        if (url !== undefined) {
+          report(url, details);
+        }
+      }
+      for (const block of stripped.matchAll(/@font-face\s*\{([^}]*)\}/gi)) {
+        const body = block[1] ?? "";
+        for (const match of body.matchAll(/url\(\s*["']?((?:https?:)?\/\/[^"')\s]+)/gi)) {
+          const url = match[1];
+          if (url !== undefined) {
+            report(url, details);
+          }
+        }
+      }
+    };
+
+    for (const style of findElements(this.fragment, (element) => element.tagName === "style")) {
+      scan(getTextContent(style), this.elementDetails(style));
+    }
+
+    for (const link of findElements(this.fragment, (element) => element.tagName === "link")) {
+      const rel = getAttribute(link, "rel")?.toLowerCase().split(/\s+/) ?? [];
+      if (!rel.includes("stylesheet")) {
+        continue;
+      }
+      const href = getAttribute(link, "href");
+      if (href === undefined) {
+        continue;
+      }
+      if (isRemote(href)) {
+        report(href, this.attributeDetails(link, "href", { value: href }));
+        continue;
+      }
+      if (!isLocalRelative(href)) {
+        continue;
+      }
+      const absolute = path.resolve(this.compositionDir, href);
+      if (absolute !== this.projectRoot && !absolute.startsWith(this.projectRoot + path.sep)) {
+        continue;
+      }
+      try {
+        scan(await readFile(absolute, "utf8"), { path: href, element: "link", attribute: "href" });
+      } catch {
+        // Missing local stylesheets are already reported by ordinary asset validation.
       }
     }
   }

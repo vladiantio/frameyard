@@ -51,6 +51,28 @@ Declare both `width` and `height` together. Never derive metadata from props.
 A static composition has no frame clock: no `data-fy-anim-*`, no `<video>`,
 `<audio>`, or `<fy-transcript>`. Its controller runs `mount()` only.
 
+## Fonts
+
+Vendor a local `.woff2`/`.woff`/`.ttf`/`.otf` file; do not rely on a remote
+Google Fonts link for a deterministic render.
+
+```sh
+npx frameyard font add --file ./fonts/SpaceGrotesk.woff2 \
+  --family "Space Grotesk" --weight 300-700 --subset latin \
+  --license OFL-1.1 --license-file ./fonts/OFL.txt
+```
+
+Then use the family name normally:
+
+```css
+h1 { font-family: "Space Grotesk", system-ui, sans-serif; font-weight: 700; }
+```
+
+The server injects `@font-face` before author styles, uses `font-display: block`,
+and the host waits for `document.fonts.ready`. Run `font verify` after moving
+files. Remote font URLs produce `FONT_REMOTE`; a used face that fails to load
+produces `FONT_LOAD_FAILED`. See [fonts](fonts.md).
+
 ## Timeline
 
 ```json
@@ -126,7 +148,11 @@ code. Use `random("stable:key")` from `frameyard/runtime`, never `Math.random()`
 | `npx frameyard render <id> --json` | Produce the video when the policy allows it |
 | `npx frameyard add --list --json` | List project templates |
 | `npx frameyard add composition <id> --template <name> --json` | Write a valid fragment and print the config snippet |
-| `npx frameyard doctor --json` | Environment, integrations, policy, and resources |
+| `npx frameyard font add --file <path> --family <name> --json` | Vendor a local font into `assets/fonts/` and update `frameyard.fonts.json` |
+| `npx frameyard font list --json` | Installed families, subsets, licenses, files, and status |
+| `npx frameyard font verify --json` | Manifest paths, hashes, licenses, and orphaned directories |
+| `npx frameyard font remove <id> --json` | Remove a font and its directory; `--keep-files` keeps the binaries |
+| `npx frameyard doctor --json` | Environment, integrations, policy, fonts, and resources |
 
 Every non-interactive command accepts `--json`. Parse stdout; read stderr for
 progress and diagnostics.
@@ -143,9 +169,10 @@ independent of `video.config.js`.
 | `full` | 32 frames | allowed | allowed | allowed |
 
 `lint`, `context`, `doctor`, `add`, `inspect`, `compare`, and `--dry-run` are
-available in every tier. When a heavy command is blocked, run it with
-`--dry-run`, report `deferred: true`, and give the user `commandLine`,
-`prerequisites`, and `blockers`.
+available in every tier. `font list` and `font verify` are available in every
+tier; `font add` requires `authoring` or `full`; `font remove` and `font add
+--force` require `full`. When a heavy command is blocked, run it with `--dry-run`, report `deferred: true`, and give the user
+`commandLine`, `prerequisites`, and `blockers`.
 
 ## Ten diagnostics that matter
 
@@ -162,6 +189,11 @@ available in every tier. When a heavy command is blocked, run it with
 | `TIMELINE_CLIP_OVERLAP` | Declare a transition or move the clip |
 | `RESOURCE_POLICY_BLOCKED` | Use `--dry-run`, or ask the user for `FRAMEYARD_POLICY=full` |
 
+Font diagnostics: `FONT_HASH_MISMATCH` means the vendored file changed; restore
+it or reinstall with `font add --force`. `FONT_LOAD_FAILED` means a used face
+did not load; check the manifest and `font verify`. `FONT_REMOTE` is a warning
+that the composition still depends on a remote font URL.
+
 ## Do not
 
 - Use `Date.now()`, `performance.now()`, timers, `requestAnimationFrame` loops, or CSS transitions as animation inputs.
@@ -174,6 +206,7 @@ available in every tier. When a heavy command is blocked, run it with
 ## Next
 
 - Full authoring rules: [deterministic authoring](deterministic-authoring.md)
+- Fonts: [fonts](fonts.md)
 - Timelines and keyframes: [timelines](timelines.md)
 - Error codes: [diagnostics](diagnostics.md)
 - Result shapes: [JSON results](json-results.md)

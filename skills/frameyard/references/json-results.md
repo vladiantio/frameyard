@@ -78,7 +78,7 @@ Static validation diagnostics include source locations. Runtime diagnostics may 
 
 ## context
 
-`context` returns a read-only project digest. It includes `root`, `format`, `policy`, `compositions`, `timelines`, `assets`, `next`, and `truncated`. Each composition carries its resolved `metadata`, prop `path`/`type` pairs, controller, and diagnostic counts; each timeline carries duration, tracks, clip summaries, transitions, audio/transcript counts, and diagnostic counts.
+`context` returns a read-only project digest. It includes `root`, `format`, `policy`, `compositions`, `timelines`, `assets`, `fonts`, `next`, and `truncated`. Each composition carries its resolved `metadata`, prop `path`/`type` pairs, controller, and diagnostic counts; each timeline carries duration, tracks, clip summaries, transitions, audio/transcript counts, and diagnostic counts. Each font carries `id`, `family`, `provider`, optional `version`, `variable`, `subsets`, `styles`, `license`, `files`, `bytes`, and `status`. `truncated.fonts` reports a clipped font list.
 
 ```json
 {
@@ -108,6 +108,26 @@ Static validation diagnostics include source locations. Runtime diagnostics may 
 ## add
 
 `add --list` returns `templates` with `name`, `kind`, `description`, and optional `prerequisites`. Adding an entry returns `kind`, `id`, `template`, `entry`, `path`, `register`, `prerequisites`, and `next`. `register` is the exact object to merge into `video.config.js`; `add` does not edit the config itself.
+
+## font
+
+`font add --file` returns `action: "add"`, a `font` summary (`id`, `family`, `provider`, optional `version`, `variable`, `subsets`, `styles`, `license`, `files`, `bytes`, `status`), the `manifest` path, the generated `css` text, installed `files`, and `warnings`. `font list` returns `manifest` and a `fonts` array of the same summaries. `font verify` returns `manifest`, `fonts`, `files`, `bytes`, `valid`, and `diagnostics`; errors exit 1, warnings exit 0. `font remove` returns `id`, `family`, `manifest`, `files`, and `keptFiles`.
+
+```json
+{
+  "ok": true,
+  "command": "font",
+  "action": "verify",
+  "manifest": "/project/frameyard.fonts.json",
+  "fonts": 1,
+  "files": 1,
+  "bytes": 22288,
+  "valid": true,
+  "diagnostics": []
+}
+```
+
+A present-but-invalid manifest fails with `FONT_MANIFEST_INVALID`; missing files use `FONT_FILE_MISSING`, changed content uses `FONT_HASH_MISMATCH`, and a failed browser load uses `FONT_LOAD_FAILED`. Remote font CSS is a `FONT_REMOTE` warning.
 
 ## dry run
 
@@ -322,7 +342,7 @@ A successful render means the final path exists and was published atomically. A 
 
 ## doctor
 
-The doctor result adds `policy` and `resources` fields. `policy.status` is `ok` or `error`; an invalid policy is reported as a finding without preventing the environment checks. `resources` reports platform, architecture, CPU count, load average, and total/free memory.
+The doctor result adds `policy` and `resources` fields. `policy.status` is `ok` or `error`; an invalid policy is reported as a finding without preventing the environment checks. `resources` reports platform, architecture, CPU count, load average, and total/free memory. `fonts` reports the project font manifest path, whether it exists, `valid`, installed `fonts`/`files`/`bytes`, and an optional `detail` for the first integrity problem.
 
 Doctor reports findings rather than throwing for environment problems. `ok: true` means the inspection completed; `healthy` says whether required checks, manifest integrity, explicitly supplied models, and integration compatibility passed. `ffmpeg-opus-encoder` and `ffmpeg-video-encoders` are optional: the video check probes each supported encoder with a one-frame encode and lists any that FFmpeg advertises but cannot open (an old driver, for example), and neither check affects `healthy`.
 

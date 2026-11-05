@@ -94,6 +94,10 @@ The repository ships runnable example projects. Each example README has the comm
 | `frameyard add --list` | List the built-in project templates and scaffolds |
 | `frameyard add local-models` | Install the optional policy, OpenCode, and Pi scaffold into a workspace |
 | `frameyard add <composition\|timeline> <id> --template <name>` | Write a template entry and print the exact `video.config.js` registration snippet |
+| `frameyard font add --file <path> --family <name>` | Vendor a local font into `assets/fonts/<id>/` and update `frameyard.fonts.json` |
+| `frameyard font list` | List installed families, subsets, licenses, files, and status |
+| `frameyard font verify` | Verify manifest paths, formats, hashes, licenses, and orphaned directories |
+| `frameyard font remove <id>` | Remove a font from the manifest and delete its directory unless `--keep-files` is supplied |
 | `frameyard doctor` | Inspect core requirements, optional integrations, policy, resources, and manifest integrity |
 
 ### Options
@@ -105,6 +109,8 @@ Common options: `--project <dir>`, `--json`, `--help`, and `--version`. `still` 
 `render` accepts `--concurrency <n>` (1-16) for compositions, `--workers <n>` (1-16) and `--scratch <dir>` for timelines, and `--container`, `--codec`, and `--encoder` (see [Containers, codecs, and encoders](#containers-codecs-and-encoders)). `--out` must match the container; the default is `out/<id>.<ext>`. A static composition writes `out/<id>.png` and rejects the video flags.
 
 For a timeline, `--props` is keyed by composition clip id; for a composition, it is the props object. `init` takes the directory positionally; `add --template <name>` selects a template and `add --list` lists them. `--out` paths are relative to the working directory. `tts`, `transcribe`, and `render` accept `--dry-run`, which prints the plan, handoff command, prerequisites, and blockers without writing, loading a model, launching Chromium, or encoding. `--profile shared-cpu` and `--low-priority` adjust caps and priority; see [Resource policy](#resource-policy).
+
+`font add --file` accepts `--id`, `--weight` (a number or an inclusive range), `--style normal|italic`, `--subset`, `--unicode-range`, `--license`, and `--license-file`. Font files are copied, hashed, and recorded in `frameyard.fonts.json`; adding another subset, style, or weight to the same family merges it into the existing entry. `--force` replaces a face or provider and is denied outside `full`.
 
 A render fails immediately on an uncaught error, unhandled rejection, missing required asset, or invalid composition output. It writes to a temporary file and publishes only after FFmpeg succeeds; existing outputs are not replaced unless `--overwrite` is supplied.
 
@@ -155,7 +161,7 @@ export default {
 };
 ```
 
-The project `format` fixes width, height, and fps for timelines and supplies defaults for compositions that omit dimensions. A composition that declares no dimensions in a project without `format` fails with `COMPOSITION_FORMAT_UNRESOLVED`: declare `width`/`height` or add `format { width, height, fps }` to `video.config.js`. A composition-only project stays valid without `format` as long as its compositions declare their own.
+The project `format` fixes width, height, and fps for timelines and supplies defaults for compositions that omit dimensions. A composition that declares no dimensions in a project without `format` fails with `COMPOSITION_FORMAT_UNRESOLVED`: declare `width`/`height` or add `format { width, height, fps }` to `video.config.js`. A composition-only project stays valid without `format` as long as its compositions declare their own. Fonts are independent of `video.config.js`: install them with `npx frameyard font add`, which maintains `frameyard.fonts.json` and `assets/fonts/`.
 
 ## Composition authoring
 
@@ -298,6 +304,27 @@ Audio clips are `<audio>` elements with `data-fy-start` (composition frames), `d
 
 Declare canonical transcripts with `<fy-transcript src="assets/voice.transcript.json" words>`. Paths resolve from the project root; `words` requires measured word timings and fails with `TRANSCRIPT_WORDS_UNAVAILABLE` rather than interpolating them. `check`, `still`, and `render` validate declared transcripts; rendering timed text is the composition's responsibility. See [subtitles and karaoke](./skills/frameyard/references/subtitles-karaoke.md).
 
+### Fonts
+
+Frameyard reads installed fonts from `frameyard.fonts.json` and serves one generated `@font-face` sheet to every composition. Vendor a local font with its family name:
+
+```sh
+npx frameyard font add --file ./fonts/SpaceGrotesk.woff2 \
+  --family "Space Grotesk" --weight 300-700 --subset latin \
+  --license OFL-1.1 --license-file ./fonts/OFL.txt
+```
+
+The command copies the file and license under `assets/fonts/space-grotesk/`, records the SHA-256 in the manifest, and injects the face into compositions before author styles. Use the family name in CSS as usual:
+
+```css
+.title {
+  font-family: "Space Grotesk", system-ui, sans-serif;
+  font-weight: 700;
+}
+```
+
+`font list` and `font verify` report the installed families and integrity. The generated sheet uses `font-display: block`; the host waits for `document.fonts.ready` and fails with `FONT_LOAD_FAILED` when a used face cannot load. Remote font URLs produce a `FONT_REMOTE` warning and are not a reproducibility guarantee. Commit `frameyard.fonts.json`, `assets/fonts/`, and license files with the project. See [fonts](./skills/frameyard/references/fonts.md).
+
 ## Rendering and reproducibility
 
 Production rendering has two targets.
@@ -365,11 +392,11 @@ npx frameyard doctor --talker-model models/talker.gguf --codec-model models/code
 npx frameyard doctor --sherpa-onnx-tts /path/to/sherpa-onnx-offline-tts --model-dir models/supertonic
 ```
 
-`doctor` checks Node, FFmpeg and required encoders, FFprobe, Playwright Chromium, manifest integrity (artifact, source, model, and derived-export hashes), explicitly supplied model readability, and optional `qwen-tts`, `sherpa-onnx-offline-tts`, and `whisper-cli` capabilities. It also reports the active resource policy and basic CPU, load, and memory resources. Pass `--talker-model`, `--codec-model`, `--model-dir`, or `--model` to inspect model readability before generation. It does not repair, download, or modify anything. Missing optional integrations do not fail, but a found executable with incompatible capabilities does.
+`doctor` checks Node, FFmpeg and required encoders, FFprobe, Playwright Chromium, manifest integrity (artifact, source, model, and derived-export hashes), installed fonts, explicitly supplied model readability, and optional `qwen-tts`, `sherpa-onnx-offline-tts`, and `whisper-cli` capabilities. It also reports the active resource policy and basic CPU, load, and memory resources. Pass `--talker-model`, `--codec-model`, `--model-dir`, or `--model` to inspect model readability before generation. It does not repair, download, or modify anything. Missing optional integrations do not fail, but a found executable with incompatible capabilities does.
 
 ### Context, inspect, and compare
 
-`frameyard context --json` is a compact, read-only digest for agents and editors. It reports the project root and format, each composition's resolved metadata, prop keys and types, controller, and diagnostics; each timeline's duration, tracks, clip summaries, transitions, audio/transcript counts, and diagnostics; unique assets; the active policy; and a short list of next commands. It never launches Chromium.
+`frameyard context --json` is a compact, read-only digest for agents and editors. It reports the project root and format, each composition's resolved metadata, prop keys and types, controller, and diagnostics; each timeline's duration, tracks, clip summaries, transitions, audio/transcript counts, and diagnostics; unique assets; installed fonts; the active policy; and a short list of next commands. It never launches Chromium.
 
 `frameyard inspect <image> --json` decodes the first frame and reports dimensions, bytes, alpha range and coverage, blank detection, the dominant background and colors, the content bounding box, a coarse luminance grid, and edge density. `frameyard compare <first> <second> --json` reports differing pixels, percentage, maximum and mean channel delta, a bounding box, and a 3×3 region breakdown. `compare` exits 1 when the images differ; its JSON result still has `ok: true` and `identical: false`. Neither command replaces viewing a still when the host supports images.
 
@@ -401,13 +428,13 @@ An optional `frameyard.policy.json` in the working directory or nearest ancestor
 | `authoring` | 4 frames | allowed at low priority | blocked | denied |
 | `full` | 32 frames | allowed | allowed | allowed |
 
-`lint`, `doctor`, `init`, `dev`, and `--dry-run` are available in every tier. A policy file can only tighten its tier; unknown fields fail with `POLICY_INVALID`. `FRAMEYARD_POLICY=light|authoring|full` overrides the file; the default is `full`. `--profile shared-cpu` caps timeline workers at 2 and composition concurrency at 1, lowers priority, and leaves the encoder at `auto`; `--low-priority` lowers priority without the caps. Values above the cap fail with `RESOURCE_PROFILE_CONFLICT`. The policy is a guardrail, not a security boundary.
+`lint`, `doctor`, `init`, `dev`, and `--dry-run` are available in every tier. `font list` and `font verify` are available in every tier; `font add` requires `authoring` or `full`; `font remove` and `font add --force` require `full`. A policy file can only tighten its tier; unknown fields fail with `POLICY_INVALID`. `FRAMEYARD_POLICY=light|authoring|full` overrides the file; the default is `full`. `--profile shared-cpu` caps timeline workers at 2 and composition concurrency at 1, lowers priority, and leaves the encoder at `auto`; `--low-priority` lowers priority without the caps. Values above the cap fail with `RESOURCE_PROFILE_CONFLICT`. The policy is a guardrail, not a security boundary.
 
 Install the optional local-model scaffold with `npx frameyard add local-models`, or `npx frameyard init my-project --local-models`; see [`LOCAL-MODELS.md`](./scaffolds/local-models/LOCAL-MODELS.md). See [ADR 0022](./docs/adr/0022-gate-heavy-operations-with-a-workspace-resource-policy.md) for the full contract.
 
 ### Agent skill
 
-The optional host-neutral agent skill lives in [`skills/frameyard/`](./skills/frameyard). It uses the same project format and CLI as humans, documents HTML authoring, bindings, controllers, static diagnostics, audio assets, subtitle/karaoke recipes, JSON results, and failure recovery, and ships a thin CLI wrapper. The npm package includes the skill files matching its API version. Install it with `npx skills add vladiantio/frameyard`, or see [`skills/frameyard/README.md`](./skills/frameyard/README.md) for host-specific installation or referencing.
+The optional host-neutral agent skill lives in [`skills/frameyard/`](./skills/frameyard). It uses the same project format and CLI as humans, documents HTML authoring, bindings, controllers, static diagnostics, fonts, audio assets, subtitle/karaoke recipes, JSON results, and failure recovery, and ships a thin CLI wrapper. The npm package includes the skill files matching its API version. Install it with `npx skills add vladiantio/frameyard`, or see [`skills/frameyard/README.md`](./skills/frameyard/README.md) for host-specific installation or referencing.
 
 ## Limits and non-goals
 

@@ -221,7 +221,7 @@ Declare canonical transcript requirements with:
 
 Remote data, images, fonts, and other assets must resolve during the loading phase before frame production. The production browser blocks network requests after loading begins. A fetch from `update()` is a bug.
 
-Images declared in the fragment are awaited by the host. Static fonts should be loaded with `document.fonts.ready` or an explicit `FontFace` before frame production.
+Images declared in the fragment are awaited by the host. Fonts should be vendored into the project with `npx frameyard font add --file`; the server injects the generated `@font-face` sheet and the host awaits `document.fonts.ready`. A used face that fails to load fails the capture with `FONT_LOAD_FAILED`. A remote font URL produces a `FONT_REMOTE` warning and is not reproducible. See [fonts](fonts.md).
 
 ## Validation and inspection
 

@@ -198,6 +198,28 @@ _Avoid_: Linear fade
 A timeline used as a clip source inside another timeline.
 _Avoid_: Compound composition
 
+### Fonts
+
+**Font manifest**:
+The versioned `frameyard.fonts.json` file that records vendored font families, their CSS family names, providers, licenses, and file hashes. It is the source of truth for the generated `@font-face` sheet.
+_Avoid_: Font config, font cache
+
+**Font family entry**:
+One manifest entry keyed by a stable id. It contains the CSS family name, provider metadata, license, optional variable axes, and one or more font files.
+_Avoid_: Font face, font package
+
+**Font face**:
+One file entry inside a family: a subset, style, weight or weight range, format, optional unicode range, SHA-256, and byte size.
+_Avoid_: Font variant, font weight
+
+**Font subset**:
+A provider-defined slice of a family's glyph coverage, such as `latin` or `latin-ext`. Subsets are recorded per face and may carry a CSS `unicode-range`.
+_Avoid_: Language, charset
+
+**Variable font**:
+A font file that carries a continuous range for one or more axes instead of separate static weights. Frameyard records the axes and emits a CSS weight range; the first version installs the `wght` axis only.
+_Avoid_: Dynamic font, multiple weight font
+
 ### Deterministic execution
 
 **Frame**:
@@ -377,7 +399,7 @@ _Avoid_: Preview, partial render
 ### Inspection and templates
 
 **Project context**:
-A compact, read-only digest of a project's format, composition metadata, prop types, timeline clips, assets, diagnostics, active policy, and next commands.
+A compact, read-only digest of a project's format, composition metadata, prop types, timeline clips, assets, installed fonts, diagnostics, active policy, and next commands.
 _Avoid_: Project dump, repo summary
 
 **Image inspection**:

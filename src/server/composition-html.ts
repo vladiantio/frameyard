@@ -23,6 +23,8 @@ export interface RenderCompositionDocumentOptions {
   importMap?: Record<string, string>;
   hostScriptUrl?: string;
   styleText?: string;
+  /** Project font stylesheet served by the preview server. */
+  fontStylesheetUrl?: string;
 }
 
 /**
@@ -95,6 +97,17 @@ export function renderCompositionDocument(options: RenderCompositionDocumentOpti
   const hostStyle = createElement("style", [{ name: "data-fy-host", value: "" }]);
   appendText(hostStyle, options.styleText ?? COMPOSITION_HOST_STYLE);
   appendChild(head, hostStyle);
+
+  if (options.fontStylesheetUrl !== undefined) {
+    appendChild(
+      head,
+      createElement("link", [
+        { name: "rel", value: "stylesheet" },
+        { name: "href", value: options.fontStylesheetUrl },
+        { name: "data-fy-host", value: "" },
+      ]),
+    );
+  }
 
   for (const style of styleNodes) {
     appendChild(head, style);

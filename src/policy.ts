@@ -40,6 +40,7 @@ export type PolicyOperation =
   | "dev"
   | "check"
   | "still"
+  | "font"
   | "tts"
   | "transcribe"
   | "render";
@@ -303,7 +304,7 @@ export function resolveProfile(
 
 /** Returns the operation allowlist for a tier. */
 export function allowedOperations(tier: PolicyTier): PolicyOperation[] {
-  const operations: PolicyOperation[] = ["lint", "context", "doctor", "init", "dev", "still"];
+  const operations: PolicyOperation[] = ["lint", "context", "doctor", "init", "dev", "still", "font"];
   if (tier !== "light") {
     operations.push("check");
   }
@@ -323,6 +324,9 @@ function operationSuggestion(operation: PolicyOperation, tier: PolicyTier): stri
   }
   if (operation === "render" || operation === "tts" || operation === "transcribe") {
     return `Run the command with --dry-run to produce a handoff plan, or set FRAMEYARD_POLICY=full when the user explicitly asks for the heavy operation.`;
+  }
+  if (operation === "font") {
+    return `Font list and verify are available in every tier; adding fonts requires authoring or full.`;
   }
   return `The ${tier} policy does not allow ${operation}.`;
 }
@@ -347,6 +351,28 @@ export function assertOperationAllowed(
         operation,
         allowed: allowedOperations(policy.tier),
         suggestion: operationSuggestion(operation, policy.tier),
+      },
+    },
+  );
+}
+
+const TIER_ORDER: Record<PolicyTier, number> = { light: 0, authoring: 1, full: 2 };
+
+/** Requires a minimum tier for subcommands that share one policy operation. */
+export function assertPolicyTier(policy: LoadedResourcePolicy, required: PolicyTier, operation: string): void {
+  if (TIER_ORDER[policy.tier] >= TIER_ORDER[required]) {
+    return;
+  }
+  throw new FrameyardError(
+    "RESOURCE_POLICY_BLOCKED",
+    `"${operation}" requires the ${required} resource policy; the active policy is ${policy.tier}.`,
+    {
+      details: {
+        policy: policy.tier,
+        required,
+        operation,
+        allowed: allowedOperations(policy.tier),
+        suggestion: `Ask the user to run the command with FRAMEYARD_POLICY=${required} when it is intended.`,
       },
     },
   );

@@ -8,10 +8,13 @@ import type {
 import { validateHtmlComposition } from "./html/validate.js";
 import { policyDetails, type LoadedResourcePolicy, type PolicyDescription } from "./policy.js";
 import type { Project } from "./project.js";
+import { summarizeFont, type FontSummary } from "./fonts/summary.js";
+import { fontStatuses, verifyFontManifest } from "./fonts/verify.js";
 import { resolveProjectTimeline, type ResolvedTimeline, type ResolvedTimelineSource } from "./timeline/resolve.js";
 
 const MAX_CONTEXT_CLIPS = 80;
 const MAX_CONTEXT_ASSETS = 50;
+const MAX_CONTEXT_FONTS = 20;
 const MAX_CONTEXT_PROPS = 40;
 const MAX_CONTEXT_CODES = 12;
 
@@ -79,10 +82,12 @@ export interface ProjectContext {
   compositions: ContextComposition[];
   timelines: ContextTimeline[];
   assets: ContextAsset[];
+  fonts: FontSummary[];
   next: string[];
   truncated: {
     clips: boolean;
     assets: boolean;
+    fonts: boolean;
     props: boolean;
   };
   elapsedMs: number;
@@ -272,7 +277,7 @@ export async function buildProjectContext(options: {
 }): Promise<ProjectContext> {
   const startedAt = performance.now();
   const assets = new Map<string, ContextAsset>();
-  const truncated = { clips: false, assets: false, props: false };
+  const truncated = { clips: false, assets: false, fonts: false, props: false };
 
   const compositions: ContextComposition[] = [];
   for (const composition of [...options.project.compositions.values()].sort((left, right) =>
@@ -353,6 +358,25 @@ export async function buildProjectContext(options: {
     truncated.assets = true;
   }
 
+  const fontVerification =
+    options.project.fonts === undefined
+      ? undefined
+      : await verifyFontManifest({
+          projectRoot: options.project.root,
+          manifest: options.project.fonts,
+          hashes: false,
+          licenses: false,
+          orphans: false,
+        });
+  const statuses = fontVerification === undefined ? new Map() : fontStatuses(fontVerification);
+  const fonts = (options.project.fonts?.fonts ?? [])
+    .slice()
+    .sort((left, right) => left.family.localeCompare(right.family))
+    .map((font) => summarizeFont(font, statuses.get(font.id) ?? "ok"));
+  if (fonts.length > MAX_CONTEXT_FONTS) {
+    truncated.fonts = true;
+  }
+
   const context: ProjectContext = {
     root: options.project.root,
     ...(options.project.format ? { format: options.project.format } : {}),
@@ -362,6 +386,7 @@ export async function buildProjectContext(options: {
     assets: [...assets.values()]
       .slice(0, MAX_CONTEXT_ASSETS)
       .sort((left, right) => left.path.localeCompare(right.path)),
+    fonts: fonts.slice(0, MAX_CONTEXT_FONTS),
     next: [],
     truncated,
     elapsedMs: performance.now() - startedAt,

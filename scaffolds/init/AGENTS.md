@@ -75,8 +75,16 @@ export default {
 - A frame depends only on its integer `frame`, immutable `props`, and assets loaded before frame production.
 - Use `random("stable:key")` from `frameyard/runtime`; never `Math.random()`, `Date.now()`, `performance.now()`, timers, independent `requestAnimationFrame` loops, or CSS transitions.
 - Load remote data, fonts, and images before frames. Network is blocked during capture; do not `fetch()` from `update()`.
+- Vendor fonts with `npx frameyard font add --file`; do not rely on a remote Google Fonts link for a deterministic render. The server injects `@font-face` rules and the host waits for `document.fonts.ready`.
 - Let the runtime seek embedded video; do not play, pause, or set `currentTime`. Redraw Canvas/WebGL from the current frame.
 - Do not run model inference inside `mount()`, `update()`, or frame production.
+
+## Fonts
+
+- `frameyard.fonts.json` records installed families, licenses, and SHA-256 values; commit it with `assets/fonts/`.
+- Add a local font with `npx frameyard font add --file <path> --family "<name>" --license <id> --license-file <path>`, then use the family name in CSS.
+- Run `npx frameyard font list --json` and `npx frameyard font verify --json` after moving files. Do not edit manifest hashes by hand.
+- `font add` requires `authoring` or `full`; `font remove` and `font add --force` require `full`.
 
 ## Media and transcripts
 

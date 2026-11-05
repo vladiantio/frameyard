@@ -77,6 +77,23 @@ async function validate(
 }
 
 describe("HTML composition static validation", () => {
+  it("warns once per remote font or stylesheet URL", async () => {
+    const result = await validate(
+      "remote-fonts",
+      fragmentHtml({
+        top: `<style>
+  @import url("https://fonts.googleapis.com/css2?family=Inter");
+  @font-face { font-family: Remote; src: url(https://cdn.example.com/remote.woff2) format("woff2"); }
+</style>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto">`,
+      }),
+    );
+
+    const remote = result.diagnostics.filter((diagnostic) => diagnostic.code === "FONT_REMOTE");
+    expect(remote).toHaveLength(3);
+    expect(remote.every((diagnostic) => diagnostic.severity === "warning")).toBe(true);
+  });
+
   it("validates a complete composition and resolves metadata, controller, and clips", async () => {
     const result = await validate("valid", fragmentHtml());
 

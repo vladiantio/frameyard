@@ -29,6 +29,16 @@ npx frameyard check hello
 npx frameyard render hello --props props/hello.json
 ```
 
+Install a local font when the design needs one:
+
+```sh
+npx frameyard font add --file ./fonts/SpaceGrotesk.woff2 \
+  --family "Space Grotesk" --license OFL-1.1 --license-file ./fonts/OFL.txt
+npx frameyard font verify
+```
+
+The server injects the font sheet into every composition; use the family name in CSS. Commit `frameyard.fonts.json`, `assets/fonts/`, and license files. See `AGENTS.md` for the policy limits.
+
 Or run the pinned scripts from `package.json`:
 
 ```sh

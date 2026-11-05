@@ -687,6 +687,14 @@ function toHostError(error: unknown): Error {
 
 async function waitForAssets(root: HTMLElement): Promise<void> {
   await document.fonts.ready;
+  const failedFont = Array.from(document.fonts).find((face) => face.status === "error");
+  if (failedFont) {
+    throw new FrameyardError(
+      "FONT_LOAD_FAILED",
+      `Could not load font "${failedFont.family}". Check the project font manifest and files.`,
+      { details: { family: failedFont.family } },
+    );
+  }
   const images = Array.from(root.querySelectorAll("img"));
   await Promise.all(
     images.map(async (image) => {

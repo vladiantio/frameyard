@@ -144,6 +144,10 @@ export interface CompositionDiagnosticDetails {
   composition?: string;
   nestedTimeline?: string;
   media?: string;
+  /** Remote asset URL for diagnostics such as FONT_REMOTE. */
+  url?: string;
+  /** Font family or manifest id for font diagnostics. */
+  font?: string;
   timelineFrame?: number;
   sourceFrame?: number;
   /** Transition source clip ID when the diagnostic targets a transition. */

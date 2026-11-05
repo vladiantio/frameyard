@@ -12,6 +12,15 @@ contract change may ship in a minor release and is called out explicitly below.
 
 ### Added
 
+- `frameyard.fonts.json` records vendored font families, files, licenses, and
+  SHA-256 values. `frameyard font add --file` copies a local WOFF2/WOFF/TTF/OTF
+  font into `assets/fonts/`, `font list`/`verify` inspect it, and `font remove`
+  removes it. The server injects the generated `@font-face` sheet into every
+  composition, the host fails with `FONT_LOAD_FAILED` when a used face does not
+  load, and static validation warns with `FONT_REMOTE` for remote font URLs.
+  Fontsource search and download extend the command after the foundation
+  change. See
+  `docs/adr/0023-pin-fonts-as-project-assets.md`.
 - `frameyard.policy.json` is a workspace resource policy discovered from the
   working directory upward. It gates `tts`, `transcribe`, and `render`, caps
   `still`, denies `--force`/`--overwrite`, and supports the `shared-cpu`

@@ -23,6 +23,8 @@ import { resolveSupertonicModelFiles, SUPERTONIC_CLI_FLAGS } from "./assets/tts-
 import { runChild } from "./assets/process.js";
 import { hashFile, readManifest } from "./assets/provenance.js";
 import { probeVideoEncoder, type VideoEncoderName } from "./renderer/ffmpeg.js";
+import { fontManifestPath, readFontManifest } from "./fonts/manifest.js";
+import { verifyFontManifest } from "./fonts/verify.js";
 
 export type DoctorStatus = "ok" | "error";
 
@@ -71,7 +73,18 @@ export interface DoctorResult {
     sherpaOnnxTts: DoctorIntegration;
   };
   manifest: DoctorManifest;
+  fonts: DoctorFonts;
   models: DoctorModel[];
+}
+
+export interface DoctorFonts {
+  path: string;
+  exists: boolean;
+  valid: boolean;
+  fonts: number;
+  files: number;
+  bytes: number;
+  detail?: string;
 }
 
 function compareVersions(left: string, right: string): number {
@@ -646,6 +659,62 @@ async function checkVideoEncoders(signal?: AbortSignal): Promise<DoctorCheck> {
   };
 }
 
+async function inspectFonts(
+  projectRoot: string,
+  signal?: AbortSignal,
+): Promise<{ fonts: DoctorFonts; check: DoctorCheck }> {
+  if (signal?.aborted) {
+    throw new FrameyardError("CANCELLED", "Operation cancelled.");
+  }
+  const manifestPath = fontManifestPath(projectRoot);
+  let manifest;
+  try {
+    manifest = await readFontManifest(projectRoot);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    return {
+      fonts: { path: manifestPath, exists: true, valid: false, fonts: 0, files: 0, bytes: 0, detail },
+      check: { name: "fonts", required: false, status: "error", detail },
+    };
+  }
+  if (manifest === undefined) {
+    return {
+      fonts: { path: manifestPath, exists: false, valid: true, fonts: 0, files: 0, bytes: 0 },
+      check: { name: "fonts", required: false, status: "ok", detail: "No project fonts installed." },
+    };
+  }
+
+  const verification = await verifyFontManifest({
+    projectRoot,
+    manifest,
+    hashes: true,
+    licenses: true,
+    orphans: true,
+  });
+  const firstError = verification.diagnostics.find((diagnostic) => diagnostic.severity === "error");
+  const warningCount = verification.diagnostics.filter((diagnostic) => diagnostic.severity === "warning").length;
+  const detail = firstError
+    ? firstError.message
+    : `${verification.fonts} fonts, ${verification.files} files, ${verification.bytes} bytes${warningCount > 0 ? `, ${warningCount} warning${warningCount === 1 ? "" : "s"}` : ""}.`;
+  return {
+    fonts: {
+      path: manifestPath,
+      exists: true,
+      valid: verification.valid,
+      fonts: verification.fonts,
+      files: verification.files,
+      bytes: verification.bytes,
+      ...(firstError !== undefined || warningCount > 0 ? { detail } : {}),
+    },
+    check: {
+      name: "fonts",
+      required: false,
+      status: verification.valid ? "ok" : "error",
+      detail,
+    },
+  };
+}
+
 /** Inspects core requirements, optional integrations, and manifest integrity. */
 export async function runDoctor(options: {
   projectRoot: string;
@@ -748,6 +817,8 @@ export async function runDoctor(options: {
 
   const manifestResult = await inspectManifest(options.manifestPath, options.projectRoot, options.signal);
   checks.push(manifestResult.check);
+  const fontsResult = await inspectFonts(options.projectRoot, options.signal);
+  checks.push(fontsResult.check);
 
   const tts = await inspectTts(options.qwenTts, options.signal);
   const transcribe = await inspectWhisper(options.whisperCli, options.signal);
@@ -773,6 +844,7 @@ export async function runDoctor(options: {
 
   const requiredOk = checks.every((check) => !check.required || check.status === "ok");
   const manifestOk = manifestResult.manifest.valid;
+  const fontsOk = fontsResult.fonts.valid;
   const integrations = [tts, transcribe, sherpaOnnxTts];
   const requestedOk = integrations.every(
     (integration) => integration.status !== "incompatible" && (!integration.requested || integration.status === "ok"),
@@ -780,10 +852,11 @@ export async function runDoctor(options: {
   const modelsOk = models.every((model) => model.status === "ok");
 
   return {
-    healthy: requiredOk && manifestOk && requestedOk && modelsOk,
+    healthy: requiredOk && manifestOk && fontsOk && requestedOk && modelsOk,
     checks,
     integrations: { tts, transcribe, sherpaOnnxTts },
     manifest: manifestResult.manifest,
+    fonts: fontsResult.fonts,
     models,
   };
 }

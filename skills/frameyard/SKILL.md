@@ -13,7 +13,7 @@ Use the public project format and CLI. Do not add an agent-only runtime, a hoste
 1. Find `video.config.js` from the working directory upward, or run `npx frameyard init <directory>`.
 2. Run `npx frameyard context --json`; read `format`, `compositions`, `timelines`, the target, its props, and its controller before editing.
 3. Confirm that speech or transcription is requested or explicitly approved before producing assets.
-4. If context is small, read [quick reference](references/quick-reference.md) first. Router: static/card → quick reference; timelines → [timelines](references/timelines.md); captions → [subtitles and karaoke](references/subtitles-karaoke.md); failures → [diagnostics](references/diagnostics.md) and [failure recovery](references/failure-recovery.md); Canvas/WebGL → [controllers](references/controllers.md).
+4. If context is small, read [quick reference](references/quick-reference.md) first. Router: static/card → quick reference; timelines → [timelines](references/timelines.md); fonts → [fonts](references/fonts.md); captions → [subtitles and karaoke](references/subtitles-karaoke.md); failures → [diagnostics](references/diagnostics.md) and [failure recovery](references/failure-recovery.md); Canvas/WebGL → [controllers](references/controllers.md).
 
 ## Workflow
 
@@ -40,7 +40,7 @@ Use the public project format and CLI. Do not add an agent-only runtime, a hoste
 
 - A composition frame depends only on its integer `frame`, immutable `props`, and assets loaded before frame production. A timeline frame derives from its active clips.
 - Use `random("stable:key")` from `frameyard/runtime`; never `Math.random()`. Never use `Date.now()`, `performance.now()`, timers, independent `requestAnimationFrame` loops, or CSS transitions as animation inputs.
-- Load remote data, fonts, and images before frame production. Network is blocked during capture. Keep `update({ frame, props })` synchronous and seek-safe; do not carry state between frames.
+- Load remote data, fonts, and images before frame production. Network is blocked during capture. Prefer project fonts installed with `npx frameyard font add`; remote font URLs produce `FONT_REMOTE` and are not reproducible. Keep `update({ frame, props })` synchronous and seek-safe; do not carry state between frames.
 - Let the runtime seek embedded video; do not play, pause, or set `currentTime` in `update()`. Redraw WebGL from the current frame; production pins software WebGL.
 - Do not run model inference inside `mount()`, `update()`, or frame production.
 
@@ -51,7 +51,7 @@ Use the public project format and CLI. Do not add an agent-only runtime, a hoste
 - `light`: one still frame; blocks `check`, `tts`, `transcribe`, and `render`.
 - `authoring`: four still frames and `check` at low priority; blocks `tts`, `transcribe`, and `render`.
 - `full`: everything up to the 32-frame still cap.
-- `lint`, `context`, `doctor`, `add`, `inspect`, `compare`, and `--dry-run` are available in every tier.
+- `lint`, `context`, `doctor`, `add`, `inspect`, `compare`, and `--dry-run` are available in every tier. `font list` and `font verify` are available in every tier; `font add` requires `authoring` or `full`; `font remove` and `font add --force` require `full`.
 - When blocked, run `--dry-run`, report `deferred: true`, and give the user `commandLine`, `prerequisites`, and `blockers`. Never claim a render or asset exists.
 - `--profile shared-cpu` caps timeline workers at 2 and composition concurrency at 1 and lowers priority; `--low-priority` lowers priority without caps. Values above a cap fail with `RESOURCE_PROFILE_CONFLICT`; do not clamp silently.
 - `light`/`authoring` deny `--force` and `--overwrite`; ask before replacing an output. Do not edit the policy file, host configuration, or skill source. The policy is a guardrail, not a security boundary.
@@ -63,6 +63,7 @@ Use the public project format and CLI. Do not add an agent-only runtime, a hoste
 - For a timeline, `--props` is a map keyed by top-level composition clip ID; for a composition, it is the props object. Use `--concurrency` for animated compositions, `--workers`/`--scratch` for timelines. `--container <mp4|mov|mkv|webm>`, `--codec <h264|hevc|vp9>`, and `--encoder <auto|software|nvenc|qsv>` select delivery; the output extension must match the container.
 - Produce speech and transcripts only with `npx frameyard tts` and `npx frameyard transcribe`, never upstream executables; read [audio assets](references/audio-assets.md). Do not overwrite generated assets without approval.
 - Use `npx frameyard add --list --json` and `add composition|timeline <id> --template <name> --json` for templates; merge the returned registration object into `video.config.js`. `add` never edits the config or overwrites an entry.
+- Use `npx frameyard font add --file <path> --family <name> --json` to vendor a local font, then reference the returned CSS family. `font list`, `font verify`, and `font remove` manage the manifest; never edit `frameyard.fonts.json` hashes by hand. Read [fonts](references/fonts.md).
 - Use `npx frameyard doctor --json` before reporting an environment problem. Read [JSON results](references/json-results.md) and [failure recovery](references/failure-recovery.md).
 
 ## Diagnostics and karaoke
@@ -83,6 +84,7 @@ node scripts/frameyard.mjs check <id> --json
 ## References
 
 - [Quick reference](references/quick-reference.md)
+- [Fonts](references/fonts.md)
 - [Timelines](references/timelines.md)
 - [Deterministic HTML authoring](references/deterministic-authoring.md)
 - [Bindings](references/bindings.md)

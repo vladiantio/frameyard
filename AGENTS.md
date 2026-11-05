@@ -5,6 +5,7 @@ Frameyard is a local-first framework for deterministic, parameterized videos aut
 ## Read first
 
 - **Before changing public composition, props, audio, CLI, or JSON contracts**: read `docs/v0.x-design.md`, then `GLOSSARY.md` for domain terms.
+- **Before changing fonts or the generated font sheet**: read `docs/adr/0023-pin-fonts-as-project-assets.md` and `skills/frameyard/references/fonts.md`.
 - **Before changing timelines or nested timelines**: read `docs/adr/0010-make-timelines-the-render-unit.md`, `docs/adr/0011-compose-timeline-frames-in-a-live-browser-host.md` (preview-only), `docs/adr/0012-render-timelines-with-segmented-lossless-clip-intermediates.md`, `docs/adr/0018-animate-timeline-clips-with-keyframes.md`, `docs/adr/0019-make-same-track-overlap-the-transition-window.md`, `docs/adr/0020-crossfade-audio-clips-on-audio-tracks.md`, `docs/adr/0021-project-timeline-scenes-once.md`, `skills/frameyard/references/timelines.md`, and the reproducibility guarantee in `docs/v0.x-design.md` §3.
 - **Before changing determinism or rendering architecture**: read `docs/adr/0002-make-frame-and-props-the-only-animation-state.md`, `docs/adr/0003-render-browser-frames-offline.md`, `docs/adr/0005-keep-parallel-rendering-opt-in-and-frame-ordered.md`, `docs/adr/0009-composite-production-frames-in-software.md`, and the reproducibility guarantee in `docs/v0.x-design.md` §3.
 - **Before changing authoring APIs or the HTML/controller boundary**: read `docs/adr/0001-keep-composition-authoring-web-native.md` (amended by ADR 0007), `docs/adr/0006-seek-embedded-media-from-the-frame-clock.md` (placement amended by ADR 0007), and `docs/adr/0007-make-html-documents-the-composition-unit.md`.
@@ -87,6 +88,7 @@ A full 30-second demo timeline render is segmented and uses 8 workers by default
 | `src/html/validate.ts` | Static composition validation and diagnostic extraction |
 | `src/html/index.ts` | Node-only HTML validation exports |
 | `src/transcript.ts` | Canonical transcript validation and SRT/VTT formatting (browser-safe) |
+| `src/fonts/` | Browser-safe font manifest schema, CSS generation, options, and Node-only local installation, verification, and removal |
 | `src/timeline/schema.ts` | Browser-safe timeline JSON schema, normalization, and pure validation |
 | `src/timeline/easing.ts` | Browser-safe CSS timing-function parsing and evaluation |
 | `src/timeline/keyframes.ts` | Browser-safe clip-local keyframe evaluation and marker helpers |
@@ -181,12 +183,12 @@ Timeline path: `src/timeline/resolve.ts` resolves the JSON and references; `src/
 - Frame-state variables (`--fy-frame`, `--fy-time`, `--fy-progress`, `--fy-fps`, `--fy-duration`, `--fy-duration-frames`) are set on `document.documentElement` before controller `update`; animations are sought after `update`.
 - Embedded `<video>` and `<audio>` are declared in the composition fragment with `data-fy-*` attributes. The host loads local files during the loading phase, pauses them, and seeks video after each `update()`; `settle()` waits for decode and paint.
 - WebGL canvases must be redrawn from the current frame. Production sessions pin SwiftShader so pixels do not depend on the host GPU.
-- Remote data, fonts, and images belong in the loading phase. Network requests are blocked during capture; a `fetch()` from `update()` is a bug.
+- Remote data, fonts, and images belong in the loading phase. Network requests are blocked during capture; a `fetch()` from `update()` is a bug. Project fonts are vendored with `font add`, served as generated `@font-face` rules, and verified by hash before capture.
 - Verify determinism at the capture boundary: compare captured PNG pixels or `still` output, not MP4 hashes. Encoded bytes are not a reproducibility guarantee; see `docs/v0.x-design.md` §3.
 
 ### Static validation and diagnostics
 
-- `src/html/validate.ts` parses composition fragments with parse5 (and detects legacy document shells) and reports all static diagnostics in source order. It is Node-only. `src/contracts.ts`, `src/bindings.ts`, `src/composition/`, and `src/runtime/` must stay free of `node:` imports; `pnpm typecheck:browser` enforces it.
+- `src/html/validate.ts` parses composition fragments with parse5 (and detects legacy document shells) and reports all static diagnostics in source order. It is Node-only. `src/contracts.ts`, `src/bindings.ts`, `src/composition/`, and `src/runtime/` must stay free of `node:` imports; `pnpm typecheck:browser` enforces it. It also warns with `FONT_REMOTE` for remote font URLs in inline or local linked CSS and for remote stylesheet links.
 - `check`, `still`, and `render` run static validation before Chromium. Static errors fail without launching a browser; warnings allow frame evaluation. `dev` validates on composition request.
 - A composition that omits dimensions in a project without `format` is not a fragment error: validation reports `formatUnresolved`, and the command fails with `COMPOSITION_FORMAT_UNRESOLVED`.
 - A composition with neither `duration-in-frames` nor `fps` is static. Static validation rejects `fps` without `duration-in-frames`, `data-fy-anim-*`, media, and transcripts. A static composition can still inherit `width`/`height` from the project `format`.
@@ -246,6 +248,7 @@ Timeline path: `src/timeline/resolve.ts` resolves the JSON and references; `src/
 - **CLI commands, flags, and their result contracts** → `src/cli.ts`; update `README.md` (commands table, options, non-goals), `docs/v0.x-design.md` §5-§6 and non-goals, `GLOSSARY.md`, `skills/frameyard/SKILL.md` and its references (`json-results`, `diagnostics`, `failure-recovery`, `common-mistakes`, `deterministic-authoring`, `timelines`), `src/scaffold.ts`, and `CHANGELOG.md`; extend `test/cli-e2e.test.ts` and `test/docs.test.ts`.
 - **Resource policy, lint, and dry-run handoff** → `src/policy.ts`, `src/lint.ts`, `src/cli.ts`, `scaffolds/local-models/`; update ADR 0022, README, design baseline §6-§7, GLOSSARY, skill references, scaffold, and CHANGELOG; extend `test/policy.test.ts`, `test/cli-e2e.test.ts`, `test/docs.test.ts`, `test/skill.test.ts`, and `test/scaffold.test.ts`.
 - **Project context, image inspection, and templates** → `src/context.ts`, `src/inspect.ts`, `src/templates.ts`, `src/cli.ts`; add the `context`, `inspect`, `compare`, and `add` commands; update README, design baseline §6, GLOSSARY, skill quick reference and references, scaffold, and CHANGELOG; extend `test/context.test.ts`, `test/inspect.test.ts`, `test/templates.test.ts`, `test/cli-e2e.test.ts`, `test/docs.test.ts`, and `test/skill.test.ts`.
+- **Fonts** → `src/fonts/`, `src/project.ts`, `src/server/server.ts`, `src/server/composition-html.ts`, `src/html/validate.ts`, `src/runtime/host.ts`, `src/context.ts`, `src/doctor.ts`, `src/policy.ts`, `src/cli.ts`; update ADR 0023, README, design baseline §4/§6, GLOSSARY, skill `fonts.md` and references, scaffold, and CHANGELOG; extend `test/fonts.test.ts`, `test/fonts-e2e.test.ts`, `test/server-html.test.ts`, `test/context.test.ts`, `test/policy.test.ts`, `test/host-runtime.test.ts`, `test/docs.test.ts`, `test/skill.test.ts`, and `test/scaffold.test.ts`.
 - **Static validation integration and result schemas** → `src/renderer/index.ts`, `src/renderer/timeline.ts`, `src/cli.ts`; extend `test/cli-e2e.test.ts`, `test/agent-workflow.test.ts`, `test/timeline-render.test.ts`.
 - **TTS, transcription, provenance, executable resolution** → `src/assets/`; extend `test/assets-e2e.test.ts` with fake executables. `tts --engine supertonic` resolves the seven Supertonic files from `--model-dir`, records them in the manifest, and normalizes the engine output to 24 kHz mono.
 - **Doctor checks** → `src/doctor.ts`, `src/cli.ts`; extend `test/assets-e2e.test.ts`.
@@ -268,7 +271,9 @@ Test at public seams, not private helpers:
 - `test/host-runtime.test.ts`: host bindings, repeat/if/class, animation scheduling, frame variables, inline/external controllers, props validation, load atomicity, dispose, diagnostics, auto mode, media settle, and static load (mount-only, no frame state, paused CSS animations, `update()`/media warnings and errors).
 - `test/random.test.ts`: frame/time conversion and stateless keyed deterministic randomness.
 - `test/policy.test.ts`: workspace policy discovery, env precedence, strict schema and tighten-only limits, tier gates, still limits, profile caps, and priority selection.
-- `test/context.test.ts`: project digest composition metadata, prop types, timeline clip summaries, policy, next commands, and the CLI context result.
+- `test/context.test.ts`: project digest composition metadata, prop types, timeline clip summaries, fonts, policy, next commands, and the CLI context result.
+- `test/fonts.test.ts`: font manifest schema, CSS generation, option parsing, local installation, merge/force, license warnings, hash/license/orphan verification, and removal.
+- `test/fonts-e2e.test.ts`: local font CLI installation, list/verify/context results, generated font CSS route, composition injection, deterministic stills, and hash preflight.
 - `test/inspect.test.ts`: RGBA analysis, blank/alpha/color/bbox facts, pixel and region comparison, and the inspect/compare CLI results.
 - `test/templates.test.ts`: unique template names, valid composition and timeline templates, and registration snippets.
 - `test/evals.test.ts`: local-model eval task names, targets, seed configs, composition validity, and timeline schema validity.

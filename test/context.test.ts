@@ -5,6 +5,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { buildProjectContext } from "../src/context.ts";
+import { addLocalFont } from "../src/fonts/add.ts";
 import { loadProject } from "../src/project.ts";
 import { loadResourcePolicy } from "../src/policy.ts";
 import { assertFreshDist } from "./helpers/dist.ts";
@@ -70,6 +71,41 @@ beforeAll(async () => {
 });
 
 describe("project context", () => {
+  it("summarizes installed fonts and their status", async () => {
+    const root = await createProject();
+    await addLocalFont({
+      projectRoot: root,
+      file: path.resolve("test/fixtures/fonts/space-grotesk-latin-wght-normal.woff2"),
+      family: "Space Grotesk",
+      id: "space-grotesk",
+      weight: { min: 300, max: 700 },
+      style: "normal",
+      subset: "latin",
+      license: "OFL-1.1",
+      licenseFile: path.resolve("test/fixtures/fonts/OFL.txt"),
+      force: false,
+    });
+    const project = await loadProject(root);
+    const policy = await loadResourcePolicy({ cwd: root, env: {} });
+    const context = await buildProjectContext({ project, policy });
+
+    expect(context.fonts).toEqual([
+      {
+        id: "space-grotesk",
+        family: "Space Grotesk",
+        provider: "local",
+        variable: true,
+        subsets: ["latin"],
+        styles: ["normal"],
+        license: "OFL-1.1",
+        files: 1,
+        bytes: 22288,
+        status: "ok",
+      },
+    ]);
+    expect(context.truncated.fonts).toBe(false);
+  });
+
   it("summarizes compositions, timelines, props, assets, policy, and next commands", async () => {
     const root = await createProject();
     const project = await loadProject(root);
@@ -80,7 +116,8 @@ describe("project context", () => {
       root,
       format: { width: 160, height: 90, fps: 10 },
       policy: { policy: "authoring", profile: "shared-cpu", maxStillFrames: 4 },
-      truncated: { clips: false, assets: false, props: false },
+      truncated: { clips: false, assets: false, fonts: false, props: false },
+      fonts: [],
     });
 
     const hello = context.compositions.find((composition) => composition.id === "hello");

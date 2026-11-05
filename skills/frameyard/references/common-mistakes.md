@@ -47,8 +47,15 @@
 - Importing libraries from executable `<script>` tags; import them from the controller instead.
 - Using `Math.random()`, `Date.now()`, `performance.now()`, timers, independent `requestAnimationFrame` loops, or CSS transitions.
 
-## Media and transcripts
+## Fonts
 
+- Using a remote Google Fonts `<link>` in a composition that must render reproducibly. Vendor the file with `npx frameyard font add --file`; remote fonts produce `FONT_REMOTE`.
+- Adding a `.woff2` file but forgetting the license or `--family`; `font add` needs the family name and warns when the license is unknown.
+- Hand-editing a path or hash in `frameyard.fonts.json`. Reinstall the face; `check`, `still`, and `render` verify hashes before Chromium.
+- Installing only weight 400 and using `font-weight: 700`, which asks the browser to synthesize a bold face. Add the weight or a variable range.
+- Moving or renaming a vendored font file without updating the manifest; `font verify` reports `FONT_FILE_MISSING`.
+
+## Media and transcripts
 - Using remote, live, or unseekable media sources.
 - Using `<source>` or `<track>` children; use a local `src` and `<fy-transcript>`.
 - Adding or changing media in `update()`; prepare it in the fragment or in `mount()`.

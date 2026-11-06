@@ -108,6 +108,10 @@ contract change may ship in a minor release and is called out explicitly below.
 
 ### Fixed
 
+- Timeline preview layers pin `color-scheme: light` on the embedded document
+  root. A composition that declared a dark scheme could paint an opaque canvas
+  base and hide every layer beneath it, so a timeline with a transparent
+  overlay composition appeared to show only the overlay.
 - Rotated timeline clips keep their full corners. Keyed rotation uses a
   segment-stable diagonal bound; static rotation uses its exact rotated
   bounding box.

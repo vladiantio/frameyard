@@ -36,6 +36,15 @@ const staticComposition = `<style>html, body { margin: 0; width: 100%; height: 1
     </fy-composition>
 `;
 
+const transparentOverlay = `<style>
+  :root { color-scheme: dark; }
+  html, body { margin: 0; width: 100%; height: 100%; background: transparent; }
+</style>
+    <fy-composition width="320" height="180" fps="10" duration-in-frames="10">
+      <div id="overlay-dot" style="position: absolute; right: 4px; bottom: 4px; width: 8px; height: 8px; background: #b8f36b"></div>
+    </fy-composition>
+`;
+
 beforeAll(async () => {
   root = await mkdtemp(path.join(tmpdir(), "frameyard-timeline-preview-runtime-"));
   await mkdir(path.join(root, "compositions"), { recursive: true });
@@ -76,6 +85,7 @@ beforeAll(async () => {
   ]);
   await writeFile(path.join(root, "compositions", "intro.html"), composition);
   await writeFile(path.join(root, "compositions", "still.html"), staticComposition);
+  await writeFile(path.join(root, "compositions", "overlay.html"), transparentOverlay);
   await writeFile(
     path.join(root, "timelines", "static.json"),
     `${JSON.stringify(
@@ -107,6 +117,36 @@ beforeAll(async () => {
             id: "intro",
             track: "v1",
             source: { kind: "composition", id: "intro" },
+            start: 0,
+            duration: 10,
+          },
+        ],
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  await writeFile(
+    path.join(root, "timelines", "scheme.json"),
+    `${JSON.stringify(
+      {
+        version: 1,
+        tracks: [
+          { id: "v1", kind: "video" },
+          { id: "v2", kind: "video" },
+        ],
+        clips: [
+          {
+            id: "blue-base",
+            track: "v1",
+            source: { kind: "image", src: "assets/frame-3.png" },
+            start: 0,
+            duration: 10,
+          },
+          {
+            id: "transparent-overlay",
+            track: "v2",
+            source: { kind: "composition", id: "overlay" },
             start: 0,
             duration: 10,
           },
@@ -279,8 +319,8 @@ beforeAll(async () => {
     path.join(root, "fy.config.js"),
     `export default {
       format: { width: 320, height: 180, fps: 10 },
-      compositions: { intro: "./compositions/intro.html", still: "./compositions/still.html" },
-      timelines: { main: "./timelines/main.json", static: "./timelines/static.json", sized: "./timelines/sized.json", video: "./timelines/video.json", blend: "./timelines/blend.json", motion: "./timelines/motion.json", dissolve: "./timelines/dissolve.json" },
+      compositions: { intro: "./compositions/intro.html", still: "./compositions/still.html", overlay: "./compositions/overlay.html" },
+      timelines: { main: "./timelines/main.json", static: "./timelines/static.json", sized: "./timelines/sized.json", video: "./timelines/video.json", blend: "./timelines/blend.json", motion: "./timelines/motion.json", dissolve: "./timelines/dissolve.json", scheme: "./timelines/scheme.json" },
     };\n`,
   );
   server = await startPreviewServer({ projectRoot: root, port: 0 });
@@ -304,6 +344,41 @@ describe("timeline preview runtime", () => {
       await waitForFrame(page, 5);
       const layers = await page.locator(".timeline-layer").count();
       expect(layers).toBe(1);
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+
+  it("keeps a transparent dark-scheme composition from painting an opaque base", async () => {
+    const page = await browser.newPage({ viewport: { width: 640, height: 360 } });
+    try {
+      await openEmbeddedTimeline(page, new URL("/__frameyard/timeline/scheme?__fy-embed=1", server.url).href);
+      await loadTimeline(page);
+      await seekTimeline(page, 0);
+
+      const overlay = page.locator('[data-clip="transparent-overlay"] iframe');
+      await page.waitForFunction(() => {
+        const iframe = document.querySelector<HTMLIFrameElement>('[data-clip="transparent-overlay"] iframe');
+        return iframe?.contentDocument?.documentElement.style.getPropertyValue("color-scheme") === "light";
+      });
+      expect(
+        await overlay.evaluate((element) => {
+          const root = (element as HTMLIFrameElement).contentDocument?.documentElement;
+          return root ? getComputedStyle(root).colorScheme : null;
+        }),
+      ).toBe("light");
+
+      const stage = page.locator("#stage");
+      const box = await stage.boundingBox();
+      if (box === null) {
+        throw new Error("Missing timeline stage.");
+      }
+      const image = path.join(root, "out", "scheme-preview.png");
+      await writeFile(image, await page.screenshot({ clip: box }));
+      const [red, green, blue] = await mediaPixel(image, Math.floor(box.width / 2), Math.floor(box.height / 2));
+      expect(blue, "the blue base layer must show through the transparent overlay").toBeGreaterThan(200);
+      expect(red).toBeLessThan(60);
+      expect(green).toBeLessThan(60);
     } finally {
       await page.close();
     }

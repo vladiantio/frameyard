@@ -122,6 +122,18 @@ function cloneProps(frame: HTMLIFrameElement, props: unknown): unknown {
   return contentWindow?.JSON ? contentWindow.JSON.parse(serialized) : JSON.parse(serialized);
 }
 
+function pinLightColorScheme(frame: HTMLIFrameElement): void {
+  const root = frame.contentDocument?.documentElement;
+  if (!root) {
+    return;
+  }
+  // `color-scheme` on the iframe element does not reach the embedded document.
+  // A composition that declares a dark scheme would make Chromium paint an
+  // opaque canvas base and hide every layer beneath it. Pin the embedded root
+  // to the same light scheme as the production capture context.
+  root.style.setProperty("color-scheme", "light", "important");
+}
+
 function waitForVideo(video: HTMLVideoElement): Promise<void> {
   if (video.readyState >= 2) {
     video.pause();
@@ -244,6 +256,7 @@ export function createTimelineHost(
       const frame = document.createElement("iframe");
       // The layer is its own document; keydown there does not bubble to the preview.
       frame.addEventListener("load", () => {
+        pinLightColorScheme(frame);
         frame.contentDocument?.addEventListener("keydown", (event) => keyHandler?.(event));
       });
       frame.src = source.url;
@@ -271,13 +284,16 @@ export function createTimelineHost(
         if ("__fyError" in (loaded as object)) {
           throw new Error((loaded as { message?: string }).message ?? `${source.kind} failed to initialize.`);
         }
+        pinLightColorScheme(frame);
         if (source.kind === "composition") {
           const api = await waitFor(() => (frame.contentWindow as unknown as FrameyardFrame | null)?.__fy);
           await api.ready;
+          pinLightColorScheme(frame);
           await api.load({ props: cloneProps(frame, clip.props) });
         } else {
           const api = await waitFor(() => (frame.contentWindow as unknown as FrameyardFrame | null)?.__fyTimeline);
           await api.ready;
+          pinLightColorScheme(frame);
           await api.load();
         }
       })();

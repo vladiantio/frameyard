@@ -1,23 +1,23 @@
+<div align="center">
+
 # Frameyard
+
+[![CI](https://github.com/vladiantio/frameyard/actions/workflows/ci.yml/badge.svg)](https://github.com/vladiantio/frameyard/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/frameyard)](https://www.npmjs.com/package/frameyard)
+[![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
+https://github.com/user-attachments/assets/cade81af-3e87-4577-940d-7d5fee99e357
+
+<sup>It is an Frameyard project: <a href="examples/intro">examples/intro</a>.</sup>
+
+[Quick start](#quick-start) · [Examples](#examples) · [Project setup](#project-setup) · [Composition authoring](#composition-authoring) · [Timelines](#timelines) · [Media](#media) · [Rendering and reproducibility](#rendering-and-reproducibility) · [Tooling](#tooling) · [Limits and non-goals](#limits-and-non-goals) · [Development](#development)
 
 Frameyard is a local-first framework for building parameterized videos with HTML, CSS, and an optional JavaScript controller, assembling them into timelines, and rendering them deterministically.
 
-The [design baseline](./docs/v0.x-design.md) defines the full product contract, and [`GLOSSARY.md`](./GLOSSARY.md) defines the domain terms.
+</div>
 
-**Contents:** [What's implemented](#whats-implemented) · [Quick start](#quick-start) · [Examples](#examples) · [Project setup](#project-setup) · [Composition authoring](#composition-authoring) · [Timelines](#timelines) · [Media](#media) · [Rendering and reproducibility](#rendering-and-reproducibility) · [Tooling](#tooling) · [Limits and non-goals](#limits-and-non-goals) · [Development](#development) · [License](#license)
-
-## What's implemented
-
-The current design is implemented end to end:
-
-- HTML composition fragments, including static compositions captured as PNGs
-- JSON timelines with tracks, clips, keyframes, transitions, and nested timelines
-- Static clip blend modes, declarative bindings, CSS animation scheduling, and frame-state variables
-- Inline and external controllers, plus composition and timeline hosts
-- Static validation with structured diagnostics and an interactive preview with a read-only timeline
-- Direct composition rendering and segmented lossless timeline rendering
-- Audio, transcripts, deterministic Chromium capture, and FFmpeg output
-- An official agent skill
+> [!IMPORTANT]
+> Frameyard is 0.x and evolving. Features may change between releases, and some rough edges remain.
 
 ## Quick start
 
@@ -517,4 +517,4 @@ Releases are tag-driven. See [`RELEASING.md`](./RELEASING.md) for version policy
 
 ## License
 
-MIT
+[MIT](LICENSE)

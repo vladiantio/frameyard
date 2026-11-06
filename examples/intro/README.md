@@ -20,7 +20,7 @@ mirrors it:
 | 0–300 | `opening` | “THE WEB / is the studio.” |
 | 270–600 | `studio` | “THE TIMELINE / is the score.” |
 | 570–900 | `lattice` | “THE FRAME / is the truth.” |
-| 870–1200 | `brand` | FRAMEYARD lockup and `npx frameyard init my-film` |
+| 870–1200 | `brand` | FRAMEYARD lockup and `npx frameyard init my-video` |
 
 The scene clips overlap by 30 frames, and `timelines/intro.timeline.json`
 declares one dissolve per overlap. The HUD is a separate clip on its own track,

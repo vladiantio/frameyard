@@ -10,6 +10,8 @@ contract change may ship in a minor release and is called out explicitly below.
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-06
+
 ### Added
 
 - `fy.fonts.json` records vendored font families, files, licenses, and
@@ -111,7 +113,7 @@ contract change may ship in a minor release and is called out explicitly below.
   rejects a 1×1 `yuv420p` frame, which broke keyframe, transition, and example
   renders on Ubuntu 24.04 runners.
 
-[Unreleased]: https://github.com/vladiantio/frameyard/compare/v0.8.0...HEAD
+[0.9.0]: https://github.com/vladiantio/frameyard/compare/v0.8.0...v0.9.0
 
 ## [0.8.0] - 2026-11-03
 

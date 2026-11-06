@@ -87,6 +87,11 @@ contract change may ship in a minor release and is called out explicitly below.
 - `examples/nested/` places two inner timelines in an outer timeline as
   full-frame and transformed group clips, with nested audio and a static
   inherited-format backdrop.
+- `examples/intro/` is a 20-second, 1920×1080 intro film that combines four
+  scene compositions, a persistent HUD overlay, three 30-frame dissolves,
+  vendored Figtree, Space Mono, and Instrument Serif fonts, and an original
+  procedurally generated score shipped as Ogg Vorbis. Its `scripts/` regenerate
+  the score and grain deterministically.
 
 ### Changed
 

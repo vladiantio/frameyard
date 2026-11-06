@@ -1,0 +1,60 @@
+{
+  "version": 1,
+  "name": "Frameyard / intro film",
+  "durationInFrames": 1200,
+  "background": "#06080b",
+  "tracks": [
+    { "id": "scenes", "kind": "video", "name": "Scenes" },
+    { "id": "hud", "kind": "video", "name": "HUD overlay" },
+    { "id": "score", "kind": "audio", "name": "Original score" }
+  ],
+  "clips": [
+    {
+      "id": "opening",
+      "track": "scenes",
+      "source": { "kind": "composition", "id": "opening" },
+      "start": 0,
+      "duration": 300
+    },
+    {
+      "id": "studio",
+      "track": "scenes",
+      "source": { "kind": "composition", "id": "studio" },
+      "start": 270,
+      "duration": 330
+    },
+    {
+      "id": "lattice",
+      "track": "scenes",
+      "source": { "kind": "composition", "id": "lattice" },
+      "start": 570,
+      "duration": 330
+    },
+    {
+      "id": "brand",
+      "track": "scenes",
+      "source": { "kind": "composition", "id": "brand" },
+      "start": 870,
+      "duration": 330
+    },
+    {
+      "id": "chrome",
+      "track": "hud",
+      "source": { "kind": "composition", "id": "chrome" },
+      "start": 0,
+      "duration": 1200
+    },
+    {
+      "id": "score",
+      "track": "score",
+      "source": { "kind": "audio", "src": "assets/score.ogg" },
+      "start": 0,
+      "duration": 1200
+    }
+  ],
+  "transitions": [
+    { "from": "opening", "to": "studio", "kind": "dissolve", "easing": "ease-in-out" },
+    { "from": "studio", "to": "lattice", "kind": "dissolve", "easing": "ease-in-out" },
+    { "from": "lattice", "to": "brand", "kind": "dissolve", "easing": "ease-in-out" }
+  ]
+}

@@ -13,7 +13,7 @@ const USER_CLI = /^(?:npx\s+)?frameyard\b/;
 
 const examples = [
   { project: "demo", id: "demo", frame: 240 },
-  { project: "intro", id: "intro", frame: 570, timeline: true },
+  { project: "intro", id: "intro", frame: 1140, timeline: true },
   { project: "webgl", id: "webgl", frame: 210 },
   { project: "video", id: "video", frame: 210 },
   { project: "video", id: "video-mp4", frame: 210 },

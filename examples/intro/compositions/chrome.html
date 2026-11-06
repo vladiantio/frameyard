@@ -1,0 +1,256 @@
+<link rel="stylesheet" href="./theme.css" />
+<style>
+  @keyframes hud-life {
+    0% {
+      opacity: 0;
+    }
+    4%,
+    93% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0;
+    }
+  }
+  .chrome {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    pointer-events: none;
+  }
+  .texture {
+    position: absolute;
+    inset: 0;
+    background-image: url("../assets/grain.png");
+    background-size: 256px 256px;
+    mix-blend-mode: soft-light;
+    opacity: 0.17;
+  }
+  .vignette {
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(ellipse at 50% 46%, transparent 46%, rgba(0, 0, 0, 0.34) 100%),
+      linear-gradient(180deg, rgba(0, 0, 0, 0.22), transparent 14%, transparent 86%, rgba(0, 0, 0, 0.28));
+  }
+  .hud {
+    position: absolute;
+    inset: 0;
+    animation: hud-life 1s linear both;
+  }
+  .mark {
+    position: absolute;
+    left: 96px;
+    top: 50px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    color: var(--paper);
+    text-shadow: 0 1px 10px rgba(0, 0, 0, 0.75);
+  }
+  .mark-glyph {
+    display: grid;
+    grid-template-columns: repeat(2, 8px);
+    grid-template-rows: repeat(2, 8px);
+    gap: 2px;
+  }
+  .mark-glyph i {
+    display: block;
+    border: 1px solid rgba(242, 245, 238, 0.54);
+  }
+  .mark-glyph i:nth-child(2) {
+    background: var(--accent);
+    border-color: var(--accent);
+    box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 60%, transparent);
+  }
+  .mark-word {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.32em;
+    text-transform: uppercase;
+  }
+  .mark-slash {
+    color: var(--muted);
+    font-size: 10px;
+    letter-spacing: 0.2em;
+  }
+  .top-meta {
+    position: absolute;
+    right: 96px;
+    top: 48px;
+    text-align: right;
+    font-size: 10px;
+    line-height: 1.9;
+    letter-spacing: 0.18em;
+    color: var(--muted);
+    text-transform: uppercase;
+    text-shadow: 0 1px 10px rgba(0, 0, 0, 0.85);
+  }
+  .top-meta b {
+    color: var(--muted-strong);
+    font-weight: 500;
+  }
+  .bracket {
+    position: absolute;
+    width: 22px;
+    height: 22px;
+    border-color: rgba(242, 245, 238, 0.24);
+    border-style: solid;
+  }
+  .bracket.tl {
+    left: 38px;
+    top: 38px;
+    border-width: 1px 0 0 1px;
+  }
+  .bracket.tr {
+    right: 38px;
+    top: 38px;
+    border-width: 1px 1px 0 0;
+  }
+  .bracket.bl {
+    left: 38px;
+    bottom: 38px;
+    border-width: 0 0 1px 1px;
+  }
+  .bracket.br {
+    right: 38px;
+    bottom: 38px;
+    border-width: 0 1px 1px 0;
+  }
+  .foot {
+    position: absolute;
+    left: 96px;
+    right: 96px;
+    bottom: 52px;
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 32px;
+    font-size: 10px;
+    letter-spacing: 0.17em;
+    color: var(--muted);
+    text-transform: uppercase;
+    text-shadow: 0 1px 10px rgba(0, 0, 0, 0.85);
+  }
+  .foot b {
+    color: var(--paper);
+    font-weight: 500;
+  }
+  .frame-read {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+  }
+  .frame-read strong {
+    color: var(--accent);
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+  }
+  .chapter-stack {
+    position: absolute;
+    left: 50%;
+    bottom: 52px;
+    width: 300px;
+    height: 14px;
+    margin-left: -150px;
+    text-align: center;
+    font-size: 10px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--muted-strong);
+  }
+  .chapter {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    white-space: nowrap;
+    text-shadow: 0 1px 10px rgba(0, 0, 0, 0.85);
+  }
+  .chapter::before {
+    content: "";
+    width: 4px;
+    height: 4px;
+    background: var(--accent);
+    box-shadow: 0 0 10px var(--accent);
+  }
+  .progress {
+    position: absolute;
+    left: 96px;
+    right: 96px;
+    bottom: 32px;
+    height: 1px;
+    background: rgba(238, 245, 235, 0.12);
+  }
+  .progress .fill {
+    width: calc(var(--fy-progress) * 100%);
+    height: 100%;
+    background: var(--accent);
+    box-shadow: 0 0 12px var(--accent);
+  }
+  .progress .ticks {
+    position: absolute;
+    inset: -3px 0 auto;
+    height: 7px;
+    background-image: linear-gradient(90deg, rgba(238, 245, 235, 0.28) 0 1px, transparent 1px);
+    background-size: 10% 100%;
+    opacity: 0.5;
+  }
+  .right-meta {
+    display: flex;
+    align-items: baseline;
+    gap: 22px;
+  }
+</style>
+<fy-composition duration-in-frames="1200">
+  <div class="chrome">
+    <div class="texture"></div>
+    <div class="vignette"></div>
+    <div class="hud" data-fy-anim-start="0" data-fy-anim-duration="1200" data-fy-anim-easing="linear">
+      <div class="bracket tl"></div>
+      <div class="bracket tr"></div>
+      <div class="bracket bl"></div>
+      <div class="bracket br"></div>
+
+      <div class="mark">
+        <span class="mark-glyph"><i></i><i></i><i></i><i></i></span>
+        <span class="mark-word mono">Frameyard</span>
+        <span class="mark-slash mono">/</span>
+        <span class="mark-slash mono">intro film</span>
+      </div>
+      <div class="top-meta mono">
+        <div><b>1920 × 1080</b> / 60 FPS</div>
+        <div>20.00 S / 1200 FRAMES</div>
+      </div>
+
+      <div class="foot mono">
+        <div class="frame-read">
+          <span>frame</span>
+          <strong id="frame">0000</strong>
+          <span>/ <span id="total">1199</span></span>
+          <span class="dim">·</span>
+          <span id="time">00.00 S</span>
+        </div>
+        <div class="chapter-stack">
+          <span class="chapter" id="chapter">01 / author</span>
+        </div>
+        <div class="right-meta">
+          <span>local-first</span>
+          <span>html + json</span>
+          <span><b>frame-exact</b></span>
+        </div>
+      </div>
+
+      <div class="progress">
+        <div class="ticks"></div>
+        <div class="fill"></div>
+      </div>
+    </div>
+  </div>
+</fy-composition>
+
+<script type="text/fy-controller" src="./chrome.controller.js"></script>

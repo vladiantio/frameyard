@@ -1,0 +1,412 @@
+<link rel="stylesheet" href="./theme.css" />
+<script type="application/json" data-fy="props">
+  {
+    "eyebrow": "FRAMEYARD / 04",
+    "tagline": "Deterministic video,",
+    "taglineTwo": "authored with the web platform.",
+    "meta": "Local-first · Frame-exact · HTML + JSON",
+    "accent": "#b8f36b"
+  }
+</script>
+<style>
+  @keyframes mark-in {
+    from {
+      opacity: 0;
+      transform: scale(0.28) rotate(-9deg);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1) rotate(0deg);
+    }
+  }
+  @keyframes sheen {
+    from {
+      transform: translateX(-140%);
+    }
+    to {
+      transform: translateX(140%);
+    }
+  }
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+  @keyframes spin-reverse {
+    to {
+      transform: rotate(-360deg);
+    }
+  }
+  .scene {
+    background: radial-gradient(circle at 50% 38%, rgba(184, 243, 107, 0.075), transparent 33%), #06080b;
+  }
+  .cross {
+    position: absolute;
+    inset: 0;
+    opacity: 0.55;
+  }
+  .cross::before,
+  .cross::after {
+    content: "";
+    position: absolute;
+    background: rgba(242, 245, 238, 0.07);
+  }
+  .cross::before {
+    left: 50%;
+    top: 110px;
+    bottom: 150px;
+    width: 1px;
+    background: linear-gradient(
+      180deg,
+      transparent,
+      rgba(242, 245, 238, 0.08) 18%,
+      rgba(242, 245, 238, 0.08) 82%,
+      transparent
+    );
+  }
+  .cross::after {
+    left: 220px;
+    right: 220px;
+    top: 50%;
+    height: 1px;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgba(242, 245, 238, 0.07) 22%,
+      rgba(242, 245, 238, 0.07) 78%,
+      transparent
+    );
+  }
+  .ring {
+    position: absolute;
+    left: 50%;
+    top: 160px;
+    width: 600px;
+    height: 600px;
+    margin-left: -300px;
+    border: 1px solid rgba(242, 245, 238, 0.055);
+    border-radius: 50%;
+  }
+  .ring.dashed {
+    width: 744px;
+    height: 744px;
+    margin-left: -372px;
+    margin-top: -72px;
+    border: 1px dashed rgba(184, 243, 107, 0.12);
+    animation: spin 96s linear infinite;
+  }
+  .ring.outer {
+    width: 980px;
+    height: 980px;
+    margin-left: -490px;
+    margin-top: -190px;
+    border-color: rgba(242, 245, 238, 0.035);
+    animation: spin-reverse 140s linear infinite;
+  }
+  .glow {
+    position: absolute;
+    left: 50%;
+    top: 106px;
+    width: 1100px;
+    height: 760px;
+    margin-left: -550px;
+    background: radial-gradient(ellipse, rgba(184, 243, 107, 0.1), transparent 64%);
+    filter: blur(22px);
+    animation: glow-pulse 6.5s ease-in-out infinite;
+  }
+  .eyebrow {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 152px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    color: var(--accent);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.32em;
+    text-transform: uppercase;
+    animation: rise-small 1s ease-out both;
+  }
+  .eyebrow::before,
+  .eyebrow::after {
+    content: "";
+    width: 22px;
+    height: 1px;
+    background: rgba(184, 243, 107, 0.55);
+  }
+  .mark {
+    position: absolute;
+    left: 50%;
+    top: 200px;
+    display: grid;
+    grid-template-columns: repeat(2, 108px);
+    grid-template-rows: repeat(2, 108px);
+    gap: 12px;
+    transform: translateX(-50%);
+  }
+  .cell {
+    border: 1px solid rgba(242, 245, 238, 0.42);
+    border-radius: 2px;
+    background: rgba(242, 245, 238, 0.015);
+    animation: mark-in 1s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+  .cell.fill {
+    border-color: var(--accent);
+    background: radial-gradient(circle at 38% 32%, #e6ffc7, var(--accent) 46%, #7cb633 100%);
+    box-shadow:
+      0 0 44px rgba(184, 243, 107, 0.32),
+      0 0 110px rgba(184, 243, 107, 0.14);
+  }
+  .wordmark-block {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 452px;
+    text-align: center;
+  }
+  .wordmark-mask {
+    position: relative;
+    display: inline-flex;
+    overflow: hidden;
+    padding: 0 0.04em 0.1em;
+  }
+  .wordmark {
+    display: flex;
+    color: var(--paper);
+    font-size: 144px;
+    font-weight: 650;
+    line-height: 0.86;
+    letter-spacing: 0.045em;
+  }
+  .glyph {
+    display: inline-block;
+    animation: line-up 1s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+  .sheen {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(104deg, transparent 40%, rgba(184, 243, 107, 0.34) 50%, transparent 60%);
+    animation: sheen 1s ease-in-out both;
+    pointer-events: none;
+  }
+  .rule {
+    width: 470px;
+    height: 1px;
+    margin: 22px auto 0;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgba(184, 243, 107, 0.7) 18%,
+      rgba(184, 243, 107, 0.7) 82%,
+      transparent
+    );
+    box-shadow: 0 0 14px rgba(184, 243, 107, 0.34);
+    transform-origin: center;
+    animation: draw-x 1s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+  .tagline {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 636px;
+    text-align: center;
+    color: #c2ccc6;
+    font-family: "Instrument Serif", Georgia, serif;
+    font-style: italic;
+    font-size: 44px;
+    line-height: 1.18;
+    letter-spacing: -0.005em;
+    animation: rise-in 1s ease-out both;
+  }
+  .tagline b {
+    color: var(--paper);
+    font-weight: 400;
+  }
+  .chip {
+    position: absolute;
+    left: 50%;
+    top: 758px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    height: 44px;
+    padding: 0 22px;
+    border: 1px solid rgba(242, 245, 238, 0.22);
+    border-radius: 3px;
+    background: rgba(242, 245, 238, 0.035);
+    color: var(--paper);
+    font-size: 14px;
+    letter-spacing: 0.015em;
+    translate: -50% 0;
+    box-shadow: 0 14px 44px rgba(0, 0, 0, 0.35);
+    animation: rise-in 1s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+  .chip .prompt {
+    color: var(--accent);
+    font-weight: 500;
+  }
+  .chip .slash {
+    width: 1px;
+    height: 18px;
+    background: rgba(242, 245, 238, 0.18);
+  }
+  .chip .hint {
+    color: var(--muted);
+    font-size: 9px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+  .chip-note {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 818px;
+    text-align: center;
+    color: rgba(139, 152, 146, 0.78);
+    font-size: 8px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    animation: fade-in 1s ease-out both;
+  }
+</style>
+<fy-composition duration-in-frames="330">
+  <div class="scene">
+    <div class="cross"></div>
+    <div class="glow"></div>
+    <div class="ring outer"></div>
+    <div class="ring"></div>
+    <div class="ring dashed"></div>
+
+    <div class="eyebrow mono" data-fy-anim-start="20" data-fy-anim-duration="40" data-fy-anim-easing="ease-out">
+      <span data-fy-text="eyebrow"></span>
+    </div>
+
+    <div class="mark">
+      <span
+        class="cell"
+        data-fy-anim-start="16"
+        data-fy-anim-duration="48"
+        data-fy-anim-easing="cubic-bezier(0.16, 1, 0.3, 1)"
+      ></span>
+      <span
+        class="cell fill"
+        data-fy-anim-start="24"
+        data-fy-anim-duration="48"
+        data-fy-anim-easing="cubic-bezier(0.16, 1, 0.3, 1)"
+      ></span>
+      <span
+        class="cell"
+        data-fy-anim-start="32"
+        data-fy-anim-duration="48"
+        data-fy-anim-easing="cubic-bezier(0.16, 1, 0.3, 1)"
+      ></span>
+      <span
+        class="cell"
+        data-fy-anim-start="40"
+        data-fy-anim-duration="48"
+        data-fy-anim-easing="cubic-bezier(0.16, 1, 0.3, 1)"
+      ></span>
+    </div>
+
+    <div class="wordmark-block">
+      <div class="wordmark-mask">
+        <div class="wordmark" aria-label="Frameyard">
+          <span
+            class="glyph"
+            data-fy-anim-start="48"
+            data-fy-anim-duration="68"
+            data-fy-anim-easing="cubic-bezier(0.16, 1, 0.3, 1)"
+            >F</span
+          >
+          <span
+            class="glyph"
+            data-fy-anim-start="54"
+            data-fy-anim-duration="68"
+            data-fy-anim-easing="cubic-bezier(0.16, 1, 0.3, 1)"
+            >R</span
+          >
+          <span
+            class="glyph"
+            data-fy-anim-start="60"
+            data-fy-anim-duration="68"
+            data-fy-anim-easing="cubic-bezier(0.16, 1, 0.3, 1)"
+            >A</span
+          >
+          <span
+            class="glyph"
+            data-fy-anim-start="66"
+            data-fy-anim-duration="68"
+            data-fy-anim-easing="cubic-bezier(0.16, 1, 0.3, 1)"
+            >M</span
+          >
+          <span
+            class="glyph"
+            data-fy-anim-start="72"
+            data-fy-anim-duration="68"
+            data-fy-anim-easing="cubic-bezier(0.16, 1, 0.3, 1)"
+            >E</span
+          >
+          <span
+            class="glyph"
+            data-fy-anim-start="78"
+            data-fy-anim-duration="68"
+            data-fy-anim-easing="cubic-bezier(0.16, 1, 0.3, 1)"
+            >Y</span
+          >
+          <span
+            class="glyph"
+            data-fy-anim-start="84"
+            data-fy-anim-duration="68"
+            data-fy-anim-easing="cubic-bezier(0.16, 1, 0.3, 1)"
+            >A</span
+          >
+          <span
+            class="glyph"
+            data-fy-anim-start="90"
+            data-fy-anim-duration="68"
+            data-fy-anim-easing="cubic-bezier(0.16, 1, 0.3, 1)"
+            >R</span
+          >
+          <span
+            class="glyph"
+            data-fy-anim-start="96"
+            data-fy-anim-duration="68"
+            data-fy-anim-easing="cubic-bezier(0.16, 1, 0.3, 1)"
+            >D</span
+          >
+        </div>
+        <div class="sheen" data-fy-anim-start="168" data-fy-anim-duration="60" data-fy-anim-easing="ease-in-out"></div>
+      </div>
+      <div
+        class="rule"
+        data-fy-anim-start="152"
+        data-fy-anim-duration="52"
+        data-fy-anim-easing="cubic-bezier(0.16, 1, 0.3, 1)"
+      ></div>
+    </div>
+
+    <div class="tagline" data-fy-anim-start="164" data-fy-anim-duration="56" data-fy-anim-easing="ease-out">
+      <span data-fy-text="tagline"></span><br />
+      <b data-fy-text="taglineTwo"></b>
+    </div>
+
+    <div
+      class="chip mono"
+      data-fy-anim-start="212"
+      data-fy-anim-duration="48"
+      data-fy-anim-easing="cubic-bezier(0.16, 1, 0.3, 1)"
+    >
+      <span class="prompt">$</span>
+      <span>npx frameyard init my-film</span>
+      <span class="slash"></span>
+      <span class="hint">start here</span>
+    </div>
+
+    <div class="chip-note mono" data-fy-anim-start="236" data-fy-anim-duration="36" data-fy-anim-easing="ease-out">
+      one command · ready to render
+    </div>
+  </div>
+</fy-composition>

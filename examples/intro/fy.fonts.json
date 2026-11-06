@@ -1,0 +1,100 @@
+{
+  "version": 1,
+  "fonts": [
+    {
+      "id": "figtree",
+      "family": "Figtree",
+      "provider": "fontsource",
+      "providerId": "figtree",
+      "providerVersion": "5.3.0",
+      "license": {
+        "type": "OFL-1.1",
+        "file": "assets/fonts/figtree/LICENSE.txt",
+        "attribution": "Copyright 2022 The Figtree Project Authors (https://github.com/erikdkennedy/figtree) Figtree-Italic[wght].ttf: Copyright 2022 The Figtree Project Authors (https://github.com/erikdkennedy/figtree)"
+      },
+      "variable": true,
+      "axes": {
+        "wght": {
+          "min": 300,
+          "max": 900,
+          "default": 400
+        }
+      },
+      "files": [
+        {
+          "path": "assets/fonts/figtree/figtree-latin-wght-normal.woff2",
+          "subset": "latin",
+          "style": "normal",
+          "weight": {
+            "min": 300,
+            "max": 900
+          },
+          "format": "woff2",
+          "unicodeRange": "U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD",
+          "sha256": "4ba7d3d096695818fe0686be4f1e82c6b05134e18a22260336130335027462dd",
+          "bytes": 20156,
+          "source": "https://cdn.jsdelivr.net/fontsource/fonts/figtree:vf@5.3.0/latin-wght-normal.woff2"
+        }
+      ]
+    },
+    {
+      "id": "instrument-serif",
+      "family": "Instrument Serif",
+      "provider": "fontsource",
+      "providerId": "instrument-serif",
+      "providerVersion": "5.3.0",
+      "license": {
+        "type": "OFL-1.1",
+        "file": "assets/fonts/instrument-serif/LICENSE.txt"
+      },
+      "files": [
+        {
+          "path": "assets/fonts/instrument-serif/instrument-serif-latin-400-italic.woff2",
+          "subset": "latin",
+          "style": "italic",
+          "weight": 400,
+          "format": "woff2",
+          "unicodeRange": "U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD",
+          "sha256": "5a51946dfffa82972bc98745359c46761515641fda557c25116459a9f83da4a7",
+          "bytes": 22128,
+          "source": "https://cdn.jsdelivr.net/fontsource/fonts/instrument-serif@5.3.0/latin-400-italic.woff2"
+        }
+      ]
+    },
+    {
+      "id": "space-mono",
+      "family": "Space Mono",
+      "provider": "fontsource",
+      "providerId": "space-mono",
+      "providerVersion": "5.3.0",
+      "license": {
+        "type": "OFL-1.1",
+        "file": "assets/fonts/space-mono/LICENSE.txt"
+      },
+      "files": [
+        {
+          "path": "assets/fonts/space-mono/space-mono-latin-400-normal.woff2",
+          "subset": "latin",
+          "style": "normal",
+          "weight": 400,
+          "format": "woff2",
+          "unicodeRange": "U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD",
+          "sha256": "fb4a81a2d0a893e5c38c394a7e716a1cef0b24610a0af49c96f6d529bd66bf2b",
+          "bytes": 16520,
+          "source": "https://cdn.jsdelivr.net/fontsource/fonts/space-mono@5.3.0/latin-400-normal.woff2"
+        },
+        {
+          "path": "assets/fonts/space-mono/space-mono-latin-700-normal.woff2",
+          "subset": "latin",
+          "style": "normal",
+          "weight": 700,
+          "format": "woff2",
+          "unicodeRange": "U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD",
+          "sha256": "2d46bd159b53f55c41167a4f1540a074649464194fd1e416f5b4694a6c0f282c",
+          "bytes": 16724,
+          "source": "https://cdn.jsdelivr.net/fontsource/fonts/space-mono@5.3.0/latin-700-normal.woff2"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,915 @@
+<link rel="stylesheet" href="./theme.css" />
+<script type="application/json" data-fy="props">
+  {
+    "eyebrow": "COMPOSE / 02",
+    "lineOne": "THE TIMELINE",
+    "lineTwo": "is the",
+    "emphasis": "score.",
+    "note": "Every clip is a range. Every range is reproducible.",
+    "accent": "#b8f36b"
+  }
+</script>
+<style>
+  @keyframes editor-in {
+    from {
+      opacity: 0;
+      transform: translateY(42px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  @keyframes playhead-run {
+    from {
+      left: 22.5%;
+    }
+    to {
+      left: 50%;
+    }
+  }
+  @keyframes kf-pop {
+    from {
+      opacity: 0;
+      scale: 0;
+    }
+    to {
+      opacity: 1;
+      scale: 1;
+    }
+  }
+  .scene {
+    background:
+      radial-gradient(circle at 82% 24%, rgba(184, 243, 107, 0.07), transparent 32%),
+      radial-gradient(circle at 22% 82%, rgba(184, 243, 107, 0.05), transparent 36%), #06080b;
+  }
+  .grid {
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(90deg, rgba(242, 245, 238, 0.05) 1px, transparent 1px),
+      linear-gradient(0deg, rgba(242, 245, 238, 0.04) 1px, transparent 1px);
+    background-size: 64px 64px;
+    mask-image: linear-gradient(180deg, black, transparent 64%);
+    opacity: 0.45;
+  }
+  .content {
+    position: absolute;
+    inset: 0;
+    animation: scene-out 1s linear both;
+  }
+  .hero {
+    position: absolute;
+    left: 148px;
+    top: 146px;
+    width: 840px;
+  }
+  .eyebrow {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 40px;
+    color: var(--accent);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    animation: rise-small 1s ease-out both;
+  }
+  .eyebrow::before {
+    content: "";
+    width: 26px;
+    height: 1px;
+    background: var(--accent);
+    box-shadow: 0 0 12px var(--accent);
+  }
+  .headline {
+    margin: 0;
+    color: var(--paper);
+  }
+  .line {
+    display: block;
+    overflow: hidden;
+    padding-bottom: 0.04em;
+  }
+  .line-one {
+    font-size: 96px;
+    line-height: 0.94;
+    font-weight: 540;
+    letter-spacing: -0.045em;
+  }
+  .line-one span {
+    display: inline-block;
+    animation: line-up 1s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+  .line-two {
+    margin-top: 2px;
+    font-size: 144px;
+    line-height: 0.92;
+    letter-spacing: -0.018em;
+  }
+  .line-two span {
+    display: inline-block;
+    animation: line-up 1s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+  .line-two .accent {
+    position: relative;
+  }
+  .line-two .accent::after {
+    content: "";
+    position: absolute;
+    left: 0.04em;
+    right: -0.02em;
+    bottom: 0.03em;
+    height: 2px;
+    background: var(--accent);
+    opacity: 0.6;
+    box-shadow: 0 0 14px var(--accent);
+    animation: wipe-right 1s cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation-delay: 2.1s;
+  }
+  .note {
+    margin: 28px 0 0;
+    max-width: 600px;
+    color: #9ca8a1;
+    font-size: 24px;
+    line-height: 1.5;
+    letter-spacing: -0.012em;
+    animation: rise-in 1s ease-out both;
+  }
+
+  .divider {
+    position: absolute;
+    left: 1074px;
+    top: 168px;
+    bottom: 492px;
+    width: 1px;
+    background: linear-gradient(
+      180deg,
+      transparent,
+      rgba(242, 245, 238, 0.18) 12%,
+      rgba(242, 245, 238, 0.18) 88%,
+      transparent
+    );
+    transform-origin: top center;
+    animation: draw-y 1s ease-out both;
+  }
+  .divider::before {
+    content: "";
+    position: absolute;
+    left: -2px;
+    top: 0;
+    width: 5px;
+    height: 5px;
+    background: var(--accent);
+    box-shadow: 0 0 10px var(--accent);
+  }
+
+  .cue {
+    position: absolute;
+    left: 1152px;
+    top: 172px;
+    width: 620px;
+    animation: rise-in 1s ease-out both;
+  }
+  .cue-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-bottom: 12px;
+    border-bottom: 1px solid rgba(242, 245, 238, 0.14);
+    color: var(--muted);
+    font-size: 9px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+  }
+  .cue-head b {
+    color: var(--paper);
+    font-weight: 500;
+  }
+  .cue-row {
+    display: grid;
+    grid-template-columns: 34px 104px 1fr auto;
+    align-items: baseline;
+    gap: 14px;
+    padding: 14px 0 13px;
+    border-bottom: 1px solid rgba(242, 245, 238, 0.08);
+    font-size: 12px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+  .cue-row i {
+    color: var(--accent);
+    font-size: 9px;
+    font-style: normal;
+    letter-spacing: 0.1em;
+  }
+  .cue-row b {
+    color: var(--paper);
+    font-weight: 500;
+  }
+  .cue-row span {
+    color: var(--muted);
+    font-size: 10px;
+    letter-spacing: 0.13em;
+  }
+  .cue-row em {
+    color: var(--muted-strong);
+    font-size: 9px;
+    font-style: normal;
+    letter-spacing: 0.16em;
+  }
+  .cue-row.live b {
+    color: var(--accent);
+  }
+  .cue-row.live {
+    border-bottom-color: rgba(184, 243, 107, 0.32);
+  }
+  .cue-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-top: 16px;
+    color: var(--muted);
+    font-size: 9px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+  }
+  .cue-foot b {
+    color: var(--muted-strong);
+    font-weight: 500;
+  }
+
+  .callout {
+    position: absolute;
+    left: 846px;
+    top: 452px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--muted);
+    font-size: 9px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    animation: rise-small 1s ease-out both;
+  }
+  .callout b {
+    color: var(--accent);
+    font-weight: 500;
+  }
+
+  .editor-wrap {
+    position: absolute;
+    left: 148px;
+    right: 148px;
+    top: 524px;
+    height: 340px;
+  }
+  .editor {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    border: 1px solid rgba(242, 245, 238, 0.22);
+    border-radius: 6px;
+    background: #080c10;
+    box-shadow:
+      0 44px 120px rgba(0, 0, 0, 0.55),
+      0 0 0 1px rgba(184, 243, 107, 0.05),
+      0 0 90px rgba(184, 243, 107, 0.045);
+    animation: editor-in 1s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+  .toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 36px;
+    padding: 0 16px;
+    border-bottom: 1px solid rgba(242, 245, 238, 0.1);
+    background: rgba(242, 245, 238, 0.025);
+    color: var(--muted);
+    font-size: 9px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+  }
+  .toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--muted-strong);
+  }
+  .toggle .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 10px var(--accent);
+  }
+  .toolbar .mid {
+    display: flex;
+    gap: 22px;
+  }
+  .toolbar .right {
+    display: flex;
+    gap: 20px;
+  }
+  .toolbar b {
+    color: var(--paper);
+    font-weight: 500;
+  }
+  .toolbar .chip {
+    padding: 3px 8px;
+    border: 1px solid rgba(242, 245, 238, 0.16);
+    border-radius: 2px;
+    color: var(--muted-strong);
+  }
+  .toolbar .chip.active {
+    border-color: rgba(184, 243, 107, 0.42);
+    color: var(--accent);
+  }
+
+  .ruler {
+    display: grid;
+    grid-template-columns: 104px 1fr;
+    height: 34px;
+    border-bottom: 1px solid rgba(242, 245, 238, 0.09);
+  }
+  .ruler .label {
+    display: flex;
+    align-items: center;
+    padding-left: 16px;
+    color: rgba(139, 152, 146, 0.7);
+    font-size: 8px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+  }
+  .ruler .lane {
+    position: relative;
+    margin-right: 16px;
+    background-image:
+      repeating-linear-gradient(90deg, rgba(242, 245, 238, 0.13) 0 1px, transparent 1px 2.5%),
+      repeating-linear-gradient(90deg, rgba(242, 245, 238, 0.24) 0 1px, transparent 1px 25%);
+    background-position: left bottom;
+    background-size:
+      100% 7px,
+      100% 13px;
+    background-repeat: no-repeat;
+  }
+  .ruler .lane span {
+    position: absolute;
+    top: 7px;
+    color: rgba(139, 152, 146, 0.8);
+    font-size: 8px;
+    letter-spacing: 0.12em;
+    transform: translateX(-50%);
+  }
+  .ruler .lane span:first-child {
+    transform: none;
+  }
+  .ruler .lane span:last-child {
+    transform: translateX(-100%);
+  }
+
+  .track {
+    display: grid;
+    grid-template-columns: 104px 1fr;
+    border-bottom: 1px solid rgba(242, 245, 238, 0.07);
+  }
+  .track-label {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 5px;
+    padding-left: 16px;
+    border-right: 1px solid rgba(242, 245, 238, 0.07);
+  }
+  .track-label b {
+    color: var(--muted-strong);
+    font-size: 9px;
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+  .track-label span {
+    color: rgba(139, 152, 146, 0.62);
+    font-size: 8px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+  .track-label.accent b {
+    color: var(--accent);
+  }
+  .track .lane {
+    position: relative;
+    margin-right: 16px;
+    background-image: repeating-linear-gradient(90deg, rgba(242, 245, 238, 0.045) 0 1px, transparent 1px 2.5%);
+  }
+  .track.overlay {
+    height: 72px;
+  }
+  .track.scenes {
+    height: 78px;
+  }
+  .track.audio {
+    height: 78px;
+  }
+
+  .clip {
+    position: absolute;
+    top: 14px;
+    height: 44px;
+    overflow: hidden;
+    border: 1px solid rgba(242, 245, 238, 0.16);
+    border-radius: 3px;
+    background: rgba(242, 245, 238, 0.045);
+    color: var(--muted-strong);
+    animation: wipe-right 1s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  .clip .clip-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 7px 10px 0;
+  }
+  .clip .clip-top b {
+    overflow: hidden;
+    color: inherit;
+    font-size: 9px;
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    text-overflow: ellipsis;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+  .clip .clip-top span {
+    flex: none;
+    color: currentColor;
+    font-size: 8px;
+    letter-spacing: 0.12em;
+    opacity: 0.66;
+  }
+  .clip .clip-sub {
+    padding: 4px 10px 0;
+    color: currentColor;
+    font-size: 8px;
+    letter-spacing: 0.12em;
+    opacity: 0.55;
+    text-transform: uppercase;
+  }
+  .clip.hatched {
+    border-style: dashed;
+    background:
+      repeating-linear-gradient(135deg, rgba(184, 243, 107, 0.08) 0 6px, transparent 6px 12px),
+      rgba(242, 245, 238, 0.02);
+    color: var(--muted);
+  }
+  .clip.author,
+  .clip.lattice,
+  .clip.brand {
+    background: rgba(242, 245, 238, 0.055);
+  }
+  .clip.compose {
+    border-color: rgba(184, 243, 107, 0.85);
+    background: linear-gradient(100deg, rgba(184, 243, 107, 0.92), rgba(163, 226, 86, 0.62));
+    color: #0a1006;
+    box-shadow: 0 0 34px rgba(184, 243, 107, 0.16);
+  }
+  .clip.compose .clip-sub {
+    opacity: 0.66;
+  }
+  .clip .kf-line {
+    position: absolute;
+    left: 14px;
+    right: 14px;
+    bottom: 8px;
+    height: 1px;
+    background: rgba(6, 12, 4, 0.28);
+  }
+  .kf {
+    position: absolute;
+    bottom: 4px;
+    width: 7px;
+    height: 7px;
+    margin-left: -3.5px;
+    background: #0a1006;
+    rotate: 45deg;
+    animation: kf-pop 1s ease-out both;
+  }
+  .trans {
+    position: absolute;
+    top: 8px;
+    height: 56px;
+    border-left: 1px dashed rgba(184, 243, 107, 0.5);
+    border-right: 1px dashed rgba(184, 243, 107, 0.5);
+    background: repeating-linear-gradient(135deg, rgba(184, 243, 107, 0.22) 0 2px, transparent 2px 7px);
+    z-index: 3;
+    animation: fade-in 1s ease-out both;
+  }
+  .trans::after {
+    content: "30F";
+    position: absolute;
+    left: 50%;
+    top: -14px;
+    color: var(--accent);
+    font-family: "Space Mono", monospace;
+    font-size: 7px;
+    letter-spacing: 0.1em;
+    transform: translateX(-50%);
+    white-space: nowrap;
+  }
+  .audio-clip {
+    position: absolute;
+    left: 0;
+    top: 10px;
+    width: 100%;
+    height: 58px;
+    overflow: hidden;
+    border: 1px solid rgba(184, 243, 107, 0.32);
+    border-radius: 3px;
+    background: linear-gradient(180deg, rgba(184, 243, 107, 0.12), rgba(184, 243, 107, 0.045));
+    animation: wipe-right 1s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  .audio-clip .audio-head {
+    position: absolute;
+    left: 10px;
+    top: 7px;
+    z-index: 2;
+    display: flex;
+    gap: 10px;
+    color: var(--muted-strong);
+    font-size: 8px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+  .audio-clip .audio-head b {
+    color: var(--accent);
+    font-weight: 500;
+  }
+  .wave {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 4px;
+    width: 100%;
+    height: 44px;
+  }
+  .wave path {
+    stroke: var(--accent);
+    stroke-width: 1.6;
+    opacity: 0.68;
+  }
+  .wave .ghost {
+    stroke: rgba(242, 245, 238, 0.24);
+    stroke-width: 1;
+    opacity: 0.5;
+  }
+
+  .playhead-layer {
+    position: absolute;
+    left: 104px;
+    right: 16px;
+    top: 70px;
+    bottom: 42px;
+    z-index: 5;
+    pointer-events: none;
+  }
+  .playhead {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    background: var(--accent);
+    box-shadow: 0 0 12px rgba(184, 243, 107, 0.75);
+    animation: playhead-run 1s linear both;
+  }
+  .playhead::before {
+    content: "";
+    position: absolute;
+    left: -5px;
+    top: -1px;
+    width: 11px;
+    height: 8px;
+    background: var(--accent);
+    clip-path: polygon(0 0, 100% 0, 50% 100%);
+  }
+
+  .editor-foot {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 42px;
+    padding: 0 16px;
+    border-top: 1px solid rgba(242, 245, 238, 0.08);
+    color: var(--muted);
+    font-size: 8px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+  .editor-foot .group {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+  }
+  .editor-foot .play {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--paper);
+  }
+  .editor-foot .play::before {
+    content: "";
+    width: 0;
+    height: 0;
+    border-top: 4px solid transparent;
+    border-bottom: 4px solid transparent;
+    border-left: 6px solid var(--accent);
+  }
+  .editor-foot b {
+    color: var(--muted-strong);
+    font-weight: 500;
+  }
+</style>
+<fy-composition duration-in-frames="330">
+  <div class="scene">
+    <div class="grid"></div>
+    <div class="content" data-fy-anim-start="288" data-fy-anim-duration="30" data-fy-anim-easing="linear">
+      <div class="hero">
+        <div class="eyebrow mono" data-fy-anim-start="20" data-fy-anim-duration="44" data-fy-anim-easing="ease-out">
+          <span data-fy-text="eyebrow"></span>
+        </div>
+        <h1 class="headline">
+          <span class="line line-one">
+            <span
+              class="mono"
+              data-fy-text="lineOne"
+              data-fy-anim-start="32"
+              data-fy-anim-duration="60"
+              data-fy-anim-easing="cubic-bezier(0.16, 1, 0.3, 1)"
+            ></span>
+          </span>
+          <span class="line line-two">
+            <span
+              class="serif"
+              data-fy-anim-start="48"
+              data-fy-anim-duration="68"
+              data-fy-anim-easing="cubic-bezier(0.16, 1, 0.3, 1)"
+            >
+              <span data-fy-text="lineTwo"></span> <span class="accent" data-fy-text="emphasis"></span>
+            </span>
+          </span>
+        </h1>
+        <p
+          class="note"
+          data-fy-text="note"
+          data-fy-anim-start="80"
+          data-fy-anim-duration="52"
+          data-fy-anim-easing="ease-out"
+        ></p>
+      </div>
+
+      <div class="divider" data-fy-anim-start="24" data-fy-anim-duration="48" data-fy-anim-easing="ease-out"></div>
+
+      <div
+        class="cue"
+        data-fy-anim-start="36"
+        data-fy-anim-duration="60"
+        data-fy-anim-easing="cubic-bezier(0.16, 1, 0.3, 1)"
+      >
+        <div class="cue-head mono">
+          <span><b>Cue sheet</b> / intro</span>
+          <span>4 movements</span>
+        </div>
+        <div class="cue-row mono">
+          <i>01</i>
+          <b>Author</b>
+          <span>00:00:00</span>
+          <em>300 F</em>
+        </div>
+        <div class="cue-row mono live">
+          <i>02</i>
+          <b>Compose</b>
+          <span>00:04:30</span>
+          <em>330 F</em>
+        </div>
+        <div class="cue-row mono">
+          <i>03</i>
+          <b>Render</b>
+          <span>00:09:30</span>
+          <em>330 F</em>
+        </div>
+        <div class="cue-row mono">
+          <i>04</i>
+          <b>Frameyard</b>
+          <span>00:14:30</span>
+          <em>330 F</em>
+        </div>
+        <div class="cue-foot mono">
+          <span>Score / <b>120 bpm</b></span>
+          <span>D minor → D major</span>
+        </div>
+      </div>
+
+      <div class="callout mono" data-fy-anim-start="120" data-fy-anim-duration="44" data-fy-anim-easing="ease-out">
+        <b>30-frame dissolve</b> / same-track overlap
+      </div>
+
+      <div class="editor-wrap">
+        <div
+          class="editor"
+          data-fy-anim-start="52"
+          data-fy-anim-duration="68"
+          data-fy-anim-easing="cubic-bezier(0.16, 1, 0.3, 1)"
+        >
+          <div class="toolbar mono">
+            <div class="toggle">
+              <i class="dot"></i>
+              <b>intro.timeline.json</b>
+              <span>/ &nbsp;4 scenes · 3 dissolves</span>
+            </div>
+            <div class="mid">
+              <span class="chip active">timeline</span>
+              <span class="chip">preview</span>
+              <span class="chip">checks</span>
+            </div>
+            <div class="right">
+              <span><b>1200 F</b> / 60 FPS</span>
+              <span>1920 × 1080</span>
+            </div>
+          </div>
+
+          <div class="ruler mono">
+            <div class="label">Frame</div>
+            <div class="lane">
+              <span style="left: 0%">00:00</span>
+              <span style="left: 25%">00:05</span>
+              <span style="left: 50%">00:10</span>
+              <span style="left: 75%">00:15</span>
+              <span style="left: 100%">00:20</span>
+            </div>
+          </div>
+
+          <div class="track overlay">
+            <div class="track-label mono">
+              <b>V2</b>
+              <span>overlay</span>
+            </div>
+            <div class="lane">
+              <div
+                class="clip hatched"
+                data-fy-anim-start="56"
+                data-fy-anim-duration="48"
+                data-fy-anim-easing="cubic-bezier(0.22, 1, 0.36, 1)"
+                style="left: 0; width: 100%"
+              >
+                <div class="clip-top">
+                  <b>chrome / HUD overlay</b>
+                  <span>1200 F</span>
+                </div>
+                <div class="clip-sub">frame counter · progress · grain</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="track scenes">
+            <div class="track-label mono accent">
+              <b>V1</b>
+              <span>scenes</span>
+            </div>
+            <div class="lane">
+              <div
+                class="clip author"
+                data-fy-anim-start="52"
+                data-fy-anim-duration="52"
+                data-fy-anim-easing="cubic-bezier(0.22, 1, 0.36, 1)"
+                style="left: 0; width: 25%"
+              >
+                <div class="clip-top">
+                  <b>01 / Author</b>
+                  <span>300 F</span>
+                </div>
+                <div class="clip-sub">opening</div>
+              </div>
+              <div
+                class="clip compose"
+                data-fy-anim-start="60"
+                data-fy-anim-duration="52"
+                data-fy-anim-easing="cubic-bezier(0.22, 1, 0.36, 1)"
+                style="left: 22.5%; width: 27.5%"
+              >
+                <div class="clip-top">
+                  <b>02 / Compose</b>
+                  <span>330 F</span>
+                </div>
+                <div class="clip-sub">studio · keyframed</div>
+                <div class="kf-line"></div>
+                <span class="kf" style="left: 22%; animation-delay: 1.5s"></span>
+                <span class="kf" style="left: 46%; animation-delay: 1.6s"></span>
+                <span class="kf" style="left: 71%; animation-delay: 1.7s"></span>
+                <span class="kf" style="left: 88%; animation-delay: 1.8s"></span>
+              </div>
+              <div
+                class="clip lattice"
+                data-fy-anim-start="68"
+                data-fy-anim-duration="52"
+                data-fy-anim-easing="cubic-bezier(0.22, 1, 0.36, 1)"
+                style="left: 47.5%; width: 27.5%"
+              >
+                <div class="clip-top">
+                  <b>03 / Render</b>
+                  <span>330 F</span>
+                </div>
+                <div class="clip-sub">lattice · canvas</div>
+              </div>
+              <div
+                class="clip brand"
+                data-fy-anim-start="76"
+                data-fy-anim-duration="52"
+                data-fy-anim-easing="cubic-bezier(0.22, 1, 0.36, 1)"
+                style="left: 72.5%; width: 27.5%"
+              >
+                <div class="clip-top">
+                  <b>04 / Frameyard</b>
+                  <span>330 F</span>
+                </div>
+                <div class="clip-sub">brand · lockup</div>
+              </div>
+              <span
+                class="trans"
+                data-fy-anim-start="80"
+                data-fy-anim-duration="40"
+                data-fy-anim-easing="ease-out"
+                style="left: 22.5%; width: 2.5%"
+              ></span>
+              <span
+                class="trans"
+                data-fy-anim-start="92"
+                data-fy-anim-duration="40"
+                data-fy-anim-easing="ease-out"
+                style="left: 47.5%; width: 2.5%"
+              ></span>
+              <span
+                class="trans"
+                data-fy-anim-start="104"
+                data-fy-anim-duration="40"
+                data-fy-anim-easing="ease-out"
+                style="left: 72.5%; width: 2.5%"
+              ></span>
+            </div>
+          </div>
+
+          <div class="track audio">
+            <div class="track-label mono">
+              <b>A1</b>
+              <span>score</span>
+            </div>
+            <div class="lane">
+              <div
+                class="audio-clip"
+                data-fy-anim-start="68"
+                data-fy-anim-duration="56"
+                data-fy-anim-easing="cubic-bezier(0.22, 1, 0.36, 1)"
+              >
+                <div class="audio-head mono">
+                  <b>score.ogg</b>
+                  <span>120 bpm · 48 khz · stereo</span>
+                </div>
+                <svg class="wave" viewBox="0 0 1400 100" preserveAspectRatio="none" aria-hidden="true">
+                  <path
+                    class="ghost"
+                    transform="translate(0 1)"
+                    d="M3.9 37.7V62.3M11.7 43.0V57.0M19.4 41.6V58.4M27.2 43.8V56.2M35.0 40.2V59.8M42.8 39.2V60.8M50.6 44.5V55.5M58.3 30.2V69.8M66.1 42.4V57.6M73.9 41.4V58.6M81.7 43.4V56.6M89.4 40.5V59.5M97.2 32.8V67.2M105.0 45.0V55.0M112.8 42.0V58.0M120.6 36.2V63.8M128.3 40.6V59.4M136.1 43.8V56.2M143.9 45.2V54.8M151.7 44.5V55.5M159.4 38.3V61.7M167.2 34.4V65.6M175.0 34.1V65.9M182.8 44.0V56.0M190.6 23.7V76.3M198.3 37.4V62.6M206.1 24.6V75.4M213.9 27.0V73.0M221.7 26.5V73.5M229.4 22.1V77.9M237.2 40.8V59.2M245.0 28.0V72.0M252.8 26.1V73.9M260.6 42.4V57.6M268.3 43.9V56.1M276.1 28.2V71.8M283.9 37.8V62.2M291.7 41.4V58.6M299.4 21.5V78.5M307.2 43.7V56.3M315.0 27.8V72.2M322.8 39.0V61.0M330.6 39.4V60.6M338.3 33.2V66.8M346.1 38.0V62.0M353.9 30.8V69.2M361.7 38.0V62.0M369.4 42.7V57.3M377.2 43.0V57.0M385.0 25.3V74.7M392.8 36.6V63.4M400.6 19.2V80.8M408.3 30.8V69.2M416.1 25.2V74.8M423.9 30.4V69.6M431.7 26.0V74.0M439.4 39.1V60.9M447.2 20.5V79.5M455.0 43.6V56.4M462.8 43.0V57.0M470.6 35.8V64.2M478.3 20.6V79.4M486.1 43.0V57.0M493.9 17.0V83.0M501.7 39.9V60.1M509.4 21.9V78.1M517.2 21.6V78.4M525.0 29.8V70.2M532.8 17.6V82.4M540.6 42.5V57.5M548.3 30.0V70.0M556.1 20.5V79.5M563.9 42.7V57.3M571.7 13.4V86.6M579.4 30.5V69.5M587.2 33.6V66.4M595.0 43.0V57.0M602.8 38.8V61.2M610.6 24.7V75.3M618.3 40.6V59.4M626.1 30.5V69.5M633.9 14.0V86.0M641.7 12.7V87.3M649.4 32.9V67.1M657.2 21.1V78.9M665.0 14.4V85.6M672.8 40.8V59.2M680.6 29.3V70.7M688.3 37.8V62.2M696.1 28.7V71.3M703.9 40.0V60.0M711.7 14.6V85.4M719.4 12.8V87.2M727.2 37.6V62.4M735.0 37.1V62.9M742.8 39.5V60.5M750.6 36.9V63.1M758.3 17.6V82.4M766.1 17.6V82.4M773.9 26.9V73.1M781.7 28.5V71.5M789.4 39.8V60.2M797.2 42.3V57.7M805.0 37.5V62.5M812.8 28.8V71.2M820.6 26.4V73.6M828.3 17.7V82.3M836.1 23.3V76.7M843.9 33.5V66.5M851.7 40.6V59.4M859.4 38.4V61.6M867.2 41.2V58.8M875.0 33.1V66.9M882.8 39.1V60.9M890.6 41.0V59.0M898.3 41.4V58.6M906.1 28.0V72.0M913.9 26.5V73.5M921.7 41.0V59.0M929.4 18.3V81.7M937.2 22.9V77.1M945.0 20.4V79.6M952.8 24.8V75.2M960.6 28.7V71.3M968.3 39.1V60.9M976.1 42.4V57.6M983.9 39.0V61.0M991.7 37.5V62.5M999.4 37.2V62.8M1007.2 23.2V76.8M1015.0 37.8V62.2M1022.8 16.7V83.3M1030.6 40.8V59.2M1038.3 42.2V57.8M1046.1 37.2V62.8M1053.9 17.4V82.6M1061.7 22.5V77.5M1069.4 34.7V65.3M1077.2 21.4V78.6M1085.0 30.7V69.3M1092.8 44.2V55.8M1100.6 29.8V70.2M1108.3 40.3V59.7M1116.1 26.2V73.8M1123.9 42.6V57.4M1131.7 36.4V63.6M1139.4 42.5V57.5M1147.2 23.5V76.5M1155.0 40.3V59.7M1162.8 41.4V58.6M1170.6 36.4V63.6M1178.3 25.7V74.3M1186.1 40.9V59.1M1193.9 30.6V69.4M1201.7 35.2V64.8M1209.4 35.5V64.5M1217.2 27.1V72.9M1225.0 29.6V70.4M1232.8 40.6V59.4M1240.6 35.3V64.7M1248.3 34.0V66.0M1256.1 41.3V58.7M1263.9 27.1V72.9M1271.7 39.1V60.9M1279.4 45.4V54.6M1287.2 33.8V66.2M1295.0 44.6V55.4M1302.8 41.1V58.9M1310.6 39.6V60.4M1318.3 38.4V61.6M1326.1 30.5V69.5M1333.9 32.7V67.3M1341.7 33.1V66.9M1349.4 45.5V54.5M1357.2 38.7V61.3M1365.0 34.6V65.4M1372.8 46.3V53.7M1380.6 47.0V53.0M1388.3 47.1V52.9M1396.1 38.4V61.6"
+                  />
+                  <path
+                    d="M3.9 37.7V62.3M11.7 43.0V57.0M19.4 41.6V58.4M27.2 43.8V56.2M35.0 40.2V59.8M42.8 39.2V60.8M50.6 44.5V55.5M58.3 30.2V69.8M66.1 42.4V57.6M73.9 41.4V58.6M81.7 43.4V56.6M89.4 40.5V59.5M97.2 32.8V67.2M105.0 45.0V55.0M112.8 42.0V58.0M120.6 36.2V63.8M128.3 40.6V59.4M136.1 43.8V56.2M143.9 45.2V54.8M151.7 44.5V55.5M159.4 38.3V61.7M167.2 34.4V65.6M175.0 34.1V65.9M182.8 44.0V56.0M190.6 23.7V76.3M198.3 37.4V62.6M206.1 24.6V75.4M213.9 27.0V73.0M221.7 26.5V73.5M229.4 22.1V77.9M237.2 40.8V59.2M245.0 28.0V72.0M252.8 26.1V73.9M260.6 42.4V57.6M268.3 43.9V56.1M276.1 28.2V71.8M283.9 37.8V62.2M291.7 41.4V58.6M299.4 21.5V78.5M307.2 43.7V56.3M315.0 27.8V72.2M322.8 39.0V61.0M330.6 39.4V60.6M338.3 33.2V66.8M346.1 38.0V62.0M353.9 30.8V69.2M361.7 38.0V62.0M369.4 42.7V57.3M377.2 43.0V57.0M385.0 25.3V74.7M392.8 36.6V63.4M400.6 19.2V80.8M408.3 30.8V69.2M416.1 25.2V74.8M423.9 30.4V69.6M431.7 26.0V74.0M439.4 39.1V60.9M447.2 20.5V79.5M455.0 43.6V56.4M462.8 43.0V57.0M470.6 35.8V64.2M478.3 20.6V79.4M486.1 43.0V57.0M493.9 17.0V83.0M501.7 39.9V60.1M509.4 21.9V78.1M517.2 21.6V78.4M525.0 29.8V70.2M532.8 17.6V82.4M540.6 42.5V57.5M548.3 30.0V70.0M556.1 20.5V79.5M563.9 42.7V57.3M571.7 13.4V86.6M579.4 30.5V69.5M587.2 33.6V66.4M595.0 43.0V57.0M602.8 38.8V61.2M610.6 24.7V75.3M618.3 40.6V59.4M626.1 30.5V69.5M633.9 14.0V86.0M641.7 12.7V87.3M649.4 32.9V67.1M657.2 21.1V78.9M665.0 14.4V85.6M672.8 40.8V59.2M680.6 29.3V70.7M688.3 37.8V62.2M696.1 28.7V71.3M703.9 40.0V60.0M711.7 14.6V85.4M719.4 12.8V87.2M727.2 37.6V62.4M735.0 37.1V62.9M742.8 39.5V60.5M750.6 36.9V63.1M758.3 17.6V82.4M766.1 17.6V82.4M773.9 26.9V73.1M781.7 28.5V71.5M789.4 39.8V60.2M797.2 42.3V57.7M805.0 37.5V62.5M812.8 28.8V71.2M820.6 26.4V73.6M828.3 17.7V82.3M836.1 23.3V76.7M843.9 33.5V66.5M851.7 40.6V59.4M859.4 38.4V61.6M867.2 41.2V58.8M875.0 33.1V66.9M882.8 39.1V60.9M890.6 41.0V59.0M898.3 41.4V58.6M906.1 28.0V72.0M913.9 26.5V73.5M921.7 41.0V59.0M929.4 18.3V81.7M937.2 22.9V77.1M945.0 20.4V79.6M952.8 24.8V75.2M960.6 28.7V71.3M968.3 39.1V60.9M976.1 42.4V57.6M983.9 39.0V61.0M991.7 37.5V62.5M999.4 37.2V62.8M1007.2 23.2V76.8M1015.0 37.8V62.2M1022.8 16.7V83.3M1030.6 40.8V59.2M1038.3 42.2V57.8M1046.1 37.2V62.8M1053.9 17.4V82.6M1061.7 22.5V77.5M1069.4 34.7V65.3M1077.2 21.4V78.6M1085.0 30.7V69.3M1092.8 44.2V55.8M1100.6 29.8V70.2M1108.3 40.3V59.7M1116.1 26.2V73.8M1123.9 42.6V57.4M1131.7 36.4V63.6M1139.4 42.5V57.5M1147.2 23.5V76.5M1155.0 40.3V59.7M1162.8 41.4V58.6M1170.6 36.4V63.6M1178.3 25.7V74.3M1186.1 40.9V59.1M1193.9 30.6V69.4M1201.7 35.2V64.8M1209.4 35.5V64.5M1217.2 27.1V72.9M1225.0 29.6V70.4M1232.8 40.6V59.4M1240.6 35.3V64.7M1248.3 34.0V66.0M1256.1 41.3V58.7M1263.9 27.1V72.9M1271.7 39.1V60.9M1279.4 45.4V54.6M1287.2 33.8V66.2M1295.0 44.6V55.4M1302.8 41.1V58.9M1310.6 39.6V60.4M1318.3 38.4V61.6M1326.1 30.5V69.5M1333.9 32.7V67.3M1341.7 33.1V66.9M1349.4 45.5V54.5M1357.2 38.7V61.3M1365.0 34.6V65.4M1372.8 46.3V53.7M1380.6 47.0V53.0M1388.3 47.1V52.9M1396.1 38.4V61.6"
+                  />
+                </svg>
+              </div>
+            </div>
+          </div>
+
+          <div class="playhead-layer">
+            <div class="playhead" data-fy-anim-duration="330" data-fy-anim-easing="linear"></div>
+          </div>
+
+          <div class="editor-foot mono">
+            <div class="group">
+              <span class="play">Play</span>
+              <span>← → step 1f</span>
+              <span><b>Snap</b> / frame</span>
+            </div>
+            <div class="group">
+              <span>in <b>0270</b> · out <b>0600</b></span>
+              <span><b>Loop</b> / on</span>
+              <span>zoom / fit</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</fy-composition>

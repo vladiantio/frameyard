@@ -66,6 +66,7 @@ The repository ships runnable example projects. Each example README has the comm
 | Example | What it shows |
 | --- | --- |
 | [`examples/demo`](./examples/demo) | The 30-second reference composition and its timeline. |
+| [`examples/intro`](./examples/intro) | A 20-second intro film with four scenes, a HUD overlay, three dissolves, and an original score. |
 | [`examples/webgl`](./examples/webgl) | A focused WebGL shader example with an external controller. |
 | [`examples/video`](./examples/video) | Embedded-video compositions plus WebM and MP4 timelines that place clips on tracks under a transparent HTML overlay. |
 | [`examples/blend`](./examples/blend) | Static CSS blend modes on composition and video clips. |

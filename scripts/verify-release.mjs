@@ -141,6 +141,6 @@ console.log(`  version ${version} is consistent across package.json, src/version
 console.log(`  tag ${tag} is annotated and at HEAD`);
 console.log(`  CHANGELOG.md has a dated ${version} section and comparison link and no unreleased entries`);
 if (previousTag !== "") {
-  console.log(`  commits since ${previousTag} update CHANGELOG.md or declare Changelog: skip`);
+  console.log(`  commits since ${previousTag} update CHANGELOG.md, declare Changelog: skip, or only change examples/`);
 }
 console.log(ci ? "  tag is reachable from origin/main" : "  on main with a clean working tree and a complete package");

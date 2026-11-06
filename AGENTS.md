@@ -48,7 +48,7 @@ pnpm bench                             # seek/capture/encode/full-render timings
 pnpm bench:static                      # animated composition vs the same visual as a static PNG
 pnpm eval:local --model <id> --only <task>   # opt-in local-model authoring eval; never renders
 pnpm compare-stills a.png b.png        # exact decoded-pixel diff; exits nonzero on any difference
-pnpm check:changelog                   # commits since the last tag touch CHANGELOG.md or declare Changelog: skip
+pnpm check:changelog                   # commits since the last tag touch CHANGELOG.md, declare Changelog: skip, or only change examples/
 pnpm verify-package                    # packed tarball contains every required path and bin target
 ```
 
@@ -58,7 +58,7 @@ Vitest runs two projects: `unit` covers source-only tests in parallel without a 
 
 Browser and CLI tests spawn `dist/cli.js`, so run one file with `pnpm test <file>`; a bare `pnpm vitest run <file>` skips the build and tests the previous binary. After edits limited to docs, the skill, or scaffold prose, `pnpm check:static` plus `pnpm vitest run test/docs.test.ts test/skill.test.ts test/scaffold.test.ts` covers the change; reserve the full `pnpm check` for the final state.
 
-Releases are tag-driven. Read `RELEASING.md` before publishing. Feature and fix commits add a `CHANGELOG.md` entry under `## [Unreleased]` or declare `Changelog: skip`; `pnpm check:changelog` and `pnpm verify-release` enforce coverage, and `[Unreleased]` must be empty at tag time. `pnpm set-version <version>` updates the package, runtime, and skill versions together; `pnpm set-version --check` verifies they agree; `pnpm verify-package` checks the packed tarball; `pnpm retag-release <version>` recovers an unpublished tag after a failed release.
+Releases are tag-driven. Read `RELEASING.md` before publishing. Feature and fix commits add a `CHANGELOG.md` entry under `## [Unreleased]` or declare `Changelog: skip`; commits that only change `examples/` are exempt. `pnpm check:changelog` and `pnpm verify-release` enforce coverage, and `[Unreleased]` must be empty at tag time. `pnpm set-version <version>` updates the package, runtime, and skill versions together; `pnpm set-version --check` verifies they agree; `pnpm verify-package` checks the packed tarball; `pnpm retag-release <version>` recovers an unpublished tag after a failed release.
 
 Reference project:
 

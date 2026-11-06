@@ -6,6 +6,7 @@ const root = fileURLToPath(new URL("../", import.meta.url));
 const USER_FACING = /^(?:feat|fix|perf)(?:\([^)]+\))?!?:/;
 const RELEASE = /^chore\(release\):/;
 const SKIP = /^Changelog:\s*skip\s*$/im;
+const EXAMPLE = /^examples\//;
 
 function git(...args) {
   return execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();
@@ -60,11 +61,12 @@ for (const commit of commits) {
 
   let files;
   try {
-    files = git("diff-tree", "--no-commit-id", "--name-only", "-r", commit.sha);
+    files = git("diff-tree", "--no-commit-id", "--name-only", "-r", commit.sha).split(/\r?\n/).filter(Boolean);
   } catch {
     fail(`cannot read the files changed by ${commit.sha.slice(0, 12)}`);
   }
-  if (files.split(/\r?\n/).includes("CHANGELOG.md")) continue;
+  if (files.includes("CHANGELOG.md")) continue;
+  if (files.length > 0 && files.every((file) => EXAMPLE.test(file))) continue;
   missing.push(commit);
 }
 
@@ -73,7 +75,9 @@ if (missing.length > 0) {
   for (const commit of missing) {
     console.error(`  ${commit.sha.slice(0, 12)} ${commit.subject}`);
   }
-  console.error("Add an entry under ## [Unreleased], or include 'Changelog: skip' in the commit body.");
+  console.error(
+    "Add an entry under ## [Unreleased], include 'Changelog: skip' in the commit body, or keep the commit under examples/.",
+  );
   process.exit(1);
 }
 

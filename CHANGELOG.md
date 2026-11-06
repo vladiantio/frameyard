@@ -84,14 +84,6 @@ contract change may ship in a minor release and is called out explicitly below.
   Animated opacity composes through blend modes. See
   `docs/adr/0018-animate-timeline-clips-with-keyframes.md` and
   `examples/keyframes/`.
-- `examples/nested/` places two inner timelines in an outer timeline as
-  full-frame and transformed group clips, with nested audio and a static
-  inherited-format backdrop.
-- `examples/intro/` is a 20-second, 1920×1080 intro film that combines four
-  scene compositions, a persistent HUD overlay, three 30-frame dissolves,
-  vendored Figtree, Space Mono, and Instrument Serif fonts, and an original
-  procedurally generated score shipped as Ogg Vorbis. Its `scripts/` regenerate
-  the score and grain deterministically.
 
 ### Changed
 
@@ -174,12 +166,7 @@ contract change may ship in a minor release and is called out explicitly below.
   applies `mix-blend-mode` and stacks layers by track; production uses an
   alpha-aware FFmpeg composite. Nested timelines blend as flattened groups.
   See ADR 0014 and `examples/blend/`.
-- `examples/static/` demonstrates a timeless composition rendered to PNG and
-  reused as a timeline image.
-- `examples/blend/compositions/backdrop.html` demonstrates an inherited
-  composition format.
-- Static composition validation, host, CLI, timeline, preview, and example
-  coverage.
+- Static composition validation, host, CLI, timeline, and preview coverage.
 
 [0.8.0]: https://github.com/vladiantio/frameyard/compare/v0.7.0...v0.8.0
 
@@ -256,8 +243,6 @@ contract change may ship in a minor release and is called out explicitly below.
   `timelines` map. `project.json` publishes `format` and `timelines`.
 - Timeline-first `init` scaffold with a composition clip, timeline override
   props, and `main` commands.
-- The video example adds WebM and MP4 timelines that place video clips under a
-  transparent HTML overlay.
 - Official skill reference for timelines, clips, tracks, nested timelines,
   props overrides, commands, preview, and determinism.
 - Timeline config, schema, resolution, planning, rendering, preview, and
@@ -287,11 +272,6 @@ contract change may ship in a minor release and is called out explicitly below.
 
 ### Added
 
-- `examples/webgl/` demonstrates a frame-seeked WebGL shader driven by an
-  external controller.
-- `examples/video/` demonstrates two-pass embedded video with the same
-  composition rendered from WebM and MP4 sources, plus a script that
-  regenerates both clips with FFmpeg.
 - `test/examples.test.ts` captures a still from every bundled example.
 - `pnpm compare-stills <a.png> <b.png>` reports an exact decoded-pixel diff and
   exits nonzero on any difference, for checking determinism at the capture

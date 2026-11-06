@@ -23,6 +23,10 @@ Frameyard stays on `0.x` until its public contracts stabilize. See
   in the commit body), and the release moves those entries into the dated
   version section. `pnpm verify-release` checks the commits since the previous
   tag and refuses a tag while `[Unreleased]` still has entries.
+- Changelog entries describe framework changes, not example projects. Reference
+  a bundled example inside the feature entry it documents instead of adding a
+  bullet for the example itself. Commits that only change files under
+  `examples/` do not need an entry.
 - The npm package, `src/version.ts`, and `skills/frameyard/SKILL.md` must all report the
   same version. `pnpm set-version` and `pnpm set-version --check` enforce this.
 
@@ -101,8 +105,8 @@ OIDC token with `id-token: write` and publishes with provenance.
    ```
 
    `pnpm check:changelog` fails when a `feat`, `fix`, `perf`, or breaking commit
-   since the previous tag neither touched `CHANGELOG.md` nor declared
-   `Changelog: skip` in its body.
+   since the previous tag neither touched `CHANGELOG.md`, declared
+   `Changelog: skip` in its body, nor only changed files under `examples/`.
 
 4. Run the release checks locally:
 

@@ -173,6 +173,7 @@ describe("release guardrails", () => {
     const hook = await readFile(".githooks/commit-msg", "utf8");
     expect(hook).toContain("CHANGELOG.md");
     expect(hook).toContain("Changelog: skip");
+    expect(hook).toContain("examples/");
   });
 
   it("reuses a passing check on push", async () => {
@@ -279,6 +280,18 @@ describe("check-changelog", () => {
   it("accepts Changelog: skip in the commit body", async () => {
     fixture = await createReleaseFixture();
     await commitFile(fixture, "feature.txt", "feature\n", "feat(core): add feature", "Changelog: skip");
+    const result = await run(
+      process.execPath,
+      ["scripts/check-changelog.mjs", "--previous", "v1.2.3", "--to", "HEAD"],
+      fixture,
+    );
+    expect(result.code, result.stderr).toBe(0);
+  });
+
+  it("ignores example-only commits", async () => {
+    fixture = await createReleaseFixture();
+    await mkdir(path.join(fixture, "examples", "demo"), { recursive: true });
+    await commitFile(fixture, "examples/demo/example.txt", "example\n", "feat(examples): add example");
     const result = await run(
       process.execPath,
       ["scripts/check-changelog.mjs", "--previous", "v1.2.3", "--to", "HEAD"],

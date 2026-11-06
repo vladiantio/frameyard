@@ -2,6 +2,7 @@
 import { access, mkdir, readFile, rmdir, stat, writeFile } from "node:fs/promises";
 import { cpus, freemem, loadavg, totalmem } from "node:os";
 import path from "node:path";
+import { createInterface } from "node:readline/promises";
 import { isPlainObject } from "./contracts.js";
 import { FrameyardError, errorMessage, isFrameyardError, type FrameyardDiagnostic } from "./errors.js";
 import { loadProject, resolveProjectRoot, type Project } from "./project.js";
@@ -750,7 +751,7 @@ function printCommandHelp(command: string): void {
   switch (command) {
     case "init":
       process.stdout.write(
-        "Usage: frameyard init [directory] [--local-models]\nScaffold a minimal Frameyard project. --local-models also installs the optional policy, OpenCode, and Pi scaffold.\n",
+        "Usage: frameyard init [directory] [--local-models]\nScaffold a minimal Frameyard project. Without a directory, init asks for a project name (default: my-video) and creates that directory; non-interactive and --json runs use the default. --local-models also installs the optional policy, OpenCode, and Pi scaffold.\n",
       );
       return;
     case "dev":
@@ -1084,8 +1085,62 @@ async function prerequisiteBlockers(
   return blockers;
 }
 
+const DEFAULT_INIT_PROJECT_NAME = "my-video";
+
+function assertProjectDirectoryName(name: string): void {
+  if (name === "." || name === ".." || name.includes("/") || name.includes("\\") || name.includes("\0")) {
+    usage(`Project name must be a directory name without path separators; received "${name}".`);
+  }
+}
+
+/**
+ * Asks for the project name on an interactive terminal. EOF accepts the
+ * default; Ctrl+C cancels the command.
+ */
+async function promptProjectName(defaultName: string): Promise<string> {
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  let interrupted = false;
+  rl.on("SIGINT", () => {
+    interrupted = true;
+    rl.close();
+  });
+
+  try {
+    const closed = new Promise<null>((resolve) => {
+      rl.once("close", () => resolve(null));
+    });
+    const answer = await Promise.race([rl.question(`Project name (${defaultName}): `), closed]);
+
+    if (interrupted) {
+      throw new FrameyardError("CANCELLED", "Project creation cancelled.");
+    }
+
+    const name = (answer ?? "").trim();
+    return name === "" ? defaultName : name;
+  } finally {
+    rl.close();
+  }
+}
+
+/**
+ * `init <directory>` scaffolds into that directory. A bare `init` asks for a
+ * project name on an interactive terminal and creates a directory with it;
+ * non-interactive and `--json` runs use the default name without prompting.
+ */
+async function resolveInitTarget(parsed: ParsedArgs): Promise<string> {
+  const positional = parsed.positionals[0];
+  if (positional !== undefined) {
+    return path.resolve(process.cwd(), positional);
+  }
+
+  const interactive = parsed.flags.has("json") !== true && process.stdin.isTTY === true;
+  const name = interactive ? await promptProjectName(DEFAULT_INIT_PROJECT_NAME) : DEFAULT_INIT_PROJECT_NAME;
+  assertProjectDirectoryName(name);
+  return path.resolve(process.cwd(), name);
+}
+
 async function runInit(parsed: ParsedArgs): Promise<number> {
-  const target = path.resolve(process.cwd(), parsed.positionals[0] ?? ".");
+  const target = await resolveInitTarget(parsed);
   const json = parsed.flags.has("json") === true;
   const localModels = parsed.flags.has("local-models") === true;
 
@@ -2874,7 +2929,8 @@ async function runDoctorCommand(parsed: ParsedArgs, signal: AbortSignal): Promis
 
 function reportFailure(error: unknown, command: string, jsonRequested: boolean, signal?: AbortSignal): number {
   const aborted = signal?.aborted === true;
-  const code = aborted ? "CANCELLED" : isFrameyardError(error) ? error.code : "INTERNAL";
+  const cancelled = aborted || (isFrameyardError(error) && error.code === "CANCELLED");
+  const code = cancelled ? "CANCELLED" : isFrameyardError(error) ? error.code : "INTERNAL";
   const message = aborted ? "Operation cancelled." : error instanceof Error ? error.message : String(error);
 
   const details = isFrameyardError(error) ? error.details : undefined;
@@ -2891,7 +2947,7 @@ function reportFailure(error: unknown, command: string, jsonRequested: boolean, 
       ...(diagnostics !== undefined ? { diagnostics } : {}),
     });
   }
-  process.stderr.write(`${aborted ? "Cancelled" : `error [${code}]`}${aborted ? "" : `: ${message}`}\n`);
+  process.stderr.write(`${cancelled ? "Cancelled" : `error [${code}]`}${cancelled ? "" : `: ${message}`}\n`);
   if (diagnostics !== undefined) {
     printDiagnostics(diagnostics);
   }
@@ -2900,7 +2956,7 @@ function reportFailure(error: unknown, command: string, jsonRequested: boolean, 
     process.stderr.write(`${error.stack ?? ""}\n`);
   }
 
-  if (aborted) {
+  if (cancelled) {
     return 130;
   }
   return code === "USAGE" ? 2 : 1;

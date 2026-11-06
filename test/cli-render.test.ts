@@ -540,6 +540,77 @@ describe.concurrent("CLI renders and workflow", () => {
     const manifest = JSON.parse(await readFile(path.join(target, "package.json"), "utf8"));
     expect(manifest.name).toBe("scaffold-dot");
   });
+
+  it("scaffolds into my-video when init has no directory", async () => {
+    const target = path.join(root, "scaffold-default");
+    await mkdir(target);
+
+    const init = await run(["init", "--json"], target);
+    expect(init.code).toBe(0);
+    expect(JSON.parse(init.stdout)).toMatchObject({
+      ok: true,
+      command: "init",
+      project: path.join(target, "my-video"),
+    });
+    expect((await stat(path.join(target, "my-video", "fy.config.js"))).isFile()).toBe(true);
+    const manifest = JSON.parse(await readFile(path.join(target, "my-video", "package.json"), "utf8"));
+    expect(manifest.name).toBe("my-video");
+
+    const humanRoot = path.join(root, "scaffold-default-human");
+    await mkdir(humanRoot);
+    const human = await run(["init"], humanRoot);
+    expect(human.code).toBe(0);
+    expect(human.stdout).not.toContain("Project name");
+    expect(human.stdout).toContain(`Created Frameyard project at ${path.join(humanRoot, "my-video")}`);
+  });
+
+  it.runIf(process.platform === "linux")("prompts for the project name when init has no directory", async () => {
+    const target = path.join(root, "scaffold-prompt");
+    await mkdir(target);
+
+    const child = spawn(
+      "script",
+      ["-qec", `${JSON.stringify(process.execPath)} ${JSON.stringify(cli)} init`, "/dev/null"],
+      {
+        cwd: target,
+        stdio: ["pipe", "pipe", "pipe"],
+      },
+    );
+    let stdout = "";
+    let stderr = "";
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk: string) => {
+      stdout += chunk;
+    });
+    child.stderr.on("data", (chunk: string) => {
+      stderr += chunk;
+    });
+    child.stdin.on("error", () => {});
+    child.stdin.write("demo-film\n");
+
+    const code = await new Promise<number | null>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        child.kill("SIGKILL");
+        reject(new Error(`init did not finish:\n${stdout}\n${stderr}`));
+      }, 20_000);
+      child.once("error", (error) => {
+        clearTimeout(timer);
+        reject(error);
+      });
+      child.once("close", (exitCode) => {
+        clearTimeout(timer);
+        resolve(exitCode);
+      });
+    });
+
+    expect(code, stderr).toBe(0);
+    expect(stdout).toContain("Project name (my-video):");
+    expect((await stat(path.join(target, "demo-film", "fy.config.js"))).isFile()).toBe(true);
+    const manifest = JSON.parse(await readFile(path.join(target, "demo-film", "package.json"), "utf8"));
+    expect(manifest.name).toBe("demo-film");
+    await expect(stat(path.join(target, "fy.config.js"))).rejects.toThrow();
+  });
   describe.concurrent("resource policy and lint", () => {
     const policyComposition = `<script type="application/json" data-fy="props">{ "label": "Hello" }</script>
 <fy-composition width="160" height="90" fps="10" duration-in-frames="6">

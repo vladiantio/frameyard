@@ -95,6 +95,10 @@ contract change may ship in a minor release and is called out explicitly below.
 
 ### Changed
 
+- `frameyard init` without a directory prompts for a project name (default
+  `my-video`) on an interactive terminal and creates a directory with that
+  name. Non-interactive and `--json` runs use `my-video` without prompting.
+  Pass a directory to scaffold into an explicit path or the current directory.
 - The project configuration file is `fy.config.js` (previously
   `video.config.js`), the assets manifest is `fy.assets.json` (previously
   `frameyard.assets.json`), and the workspace resource policy is

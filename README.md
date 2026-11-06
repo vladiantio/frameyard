@@ -39,6 +39,8 @@ cd my-video
 npx frameyard dev
 ```
 
+`init` derives the project name from the positional directory's basename. Run it without a directory to be prompted for a project name (default `my-video`); `init` then creates that directory. Non-interactive shells and `--json` runs use `my-video` without prompting.
+
 `dev` prints a local preview URL. Preview a composition with JSON props editing, or open the timeline for a program monitor, read-only tracks and clips, scrubbing, playback, frame-by-frame stepping, one-second jumps, and diagnostics.
 
 The scaffold includes an `AGENTS.md` guide for coding agents working in the project, covering the HTML authoring rules and the `check`, `still`, and `render` workflow. It also includes a `package.json` with `dev`, `check`, `render`, and `still` scripts pinned to the scaffolding CLI version, so `pnpm dev` or `npm run dev` works without a global install, and a `.gitignore` that ignores `out/`.
@@ -112,7 +114,7 @@ Common options: `--project <dir>`, `--json`, `--help`, and `--version`. `still` 
 
 `render` accepts `--concurrency <n>` (1-16) for compositions, `--workers <n>` (1-16) and `--scratch <dir>` for timelines, and `--container`, `--codec`, and `--encoder` (see [Containers, codecs, and encoders](#containers-codecs-and-encoders)). `--out` must match the container; the default is `out/<id>.<ext>`. A static composition writes `out/<id>.png` and rejects the video flags.
 
-For a timeline, `--props` is keyed by composition clip id; for a composition, it is the props object. `init` takes the directory positionally; `add --template <name>` selects a template and `add --list` lists them. `--out` paths are relative to the working directory. `tts`, `transcribe`, and `render` accept `--dry-run`, which prints the plan, handoff command, prerequisites, and blockers without writing, loading a model, launching Chromium, or encoding. `--profile shared-cpu` and `--low-priority` adjust caps and priority; see [Resource policy](#resource-policy).
+For a timeline, `--props` is keyed by composition clip id; for a composition, it is the props object. `init` takes the directory positionally, or prompts for a project name when no directory is given; `add --template <name>` selects a template and `add --list` lists them. `--out` paths are relative to the working directory. `tts`, `transcribe`, and `render` accept `--dry-run`, which prints the plan, handoff command, prerequisites, and blockers without writing, loading a model, launching Chromium, or encoding. `--profile shared-cpu` and `--low-priority` adjust caps and priority; see [Resource policy](#resource-policy).
 
 `font search` accepts an optional query and `--category`, `--subset`, `--style`, `--variable`, and `--limit` filters. `font add <fontsource-id>` pins the Fontsource `npmVersion`, installs the variable `wght` face by default, and accepts `--static` plus `--weight`/`--style`/`--subset` lists. `font add --file` accepts `--id`, `--weight` (a number or an inclusive range), `--style normal|italic`, `--subset`, `--unicode-range`, `--license`, and `--license-file`. `font add --url` accepts the same metadata plus `--sha256`; HTTPS is required, with loopback HTTP allowed for tests. Font files are copied, hashed, and recorded in `fy.fonts.json`; adding another subset, style, or weight to the same family merges it into the existing entry. `--force` replaces a face or provider and is denied outside `full`.
 

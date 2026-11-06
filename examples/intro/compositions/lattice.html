@@ -106,7 +106,7 @@
         rgba(6, 8, 11, 0.42) 58%,
         transparent 70%
       ),
-      linear-gradient(180deg, rgba(6, 8, 11, 0.55), transparent 18%, transparent 78%, rgba(6, 8, 11, 0.5));
+      linear-gradient(180deg, rgba(6, 8, 11, 0.55), transparent 18%, transparent 74%, rgba(6, 8, 11, 0.86));
   }
   .content {
     position: absolute;
@@ -122,18 +122,18 @@
   .eyebrow {
     display: flex;
     align-items: center;
-    gap: 14px;
-    margin-bottom: 42px;
+    gap: 18px;
+    margin-bottom: 52px;
     color: var(--accent);
-    font-size: 11px;
+    font-size: 19px;
     font-weight: 600;
-    letter-spacing: 0.28em;
+    letter-spacing: 0.22em;
     text-transform: uppercase;
     animation: rise-small 1s ease-out both;
   }
   .eyebrow::before {
     content: "";
-    width: 26px;
+    width: 36px;
     height: 1px;
     background: var(--accent);
     box-shadow: 0 0 12px var(--accent);
@@ -168,32 +168,32 @@
     animation: line-up 1s cubic-bezier(0.16, 1, 0.3, 1) both;
   }
   .note {
-    margin: 34px 0 0;
-    max-width: 620px;
+    margin: 46px 0 0;
+    max-width: 680px;
     color: #9ca8a1;
-    font-size: 24px;
+    font-size: 31px;
     line-height: 1.5;
-    letter-spacing: -0.012em;
+    letter-spacing: -0.01em;
     animation: rise-in 1s ease-out both;
   }
   .badge {
     display: inline-flex;
     align-items: center;
-    gap: 10px;
-    margin-top: 34px;
-    padding: 9px 13px;
+    gap: 12px;
+    margin-top: 44px;
+    padding: 12px 16px;
     border: 1px solid rgba(184, 243, 107, 0.24);
     border-radius: 2px;
     color: var(--accent);
-    font-size: 9px;
-    letter-spacing: 0.18em;
+    font-size: 14px;
+    letter-spacing: 0.14em;
     text-transform: uppercase;
     animation: rise-small 1s ease-out both;
   }
   .badge::before {
     content: "";
-    width: 5px;
-    height: 5px;
+    width: 6px;
+    height: 6px;
     background: var(--accent);
     box-shadow: 0 0 10px var(--accent);
   }
@@ -205,11 +205,12 @@
     display: flex;
     align-items: flex-end;
     justify-content: space-between;
-    gap: 40px;
-    color: var(--muted);
-    font-size: 10px;
-    letter-spacing: 0.18em;
+    gap: 48px;
+    color: var(--muted-strong);
+    font-size: 15px;
+    letter-spacing: 0.14em;
     text-transform: uppercase;
+    text-shadow: 0 1px 12px rgba(0, 0, 0, 0.9);
     animation: rise-small 1s ease-out both;
   }
   .spec::before {
@@ -217,7 +218,7 @@
     position: absolute;
     left: 0;
     right: 0;
-    top: -18px;
+    top: -24px;
     height: 1px;
     background: linear-gradient(90deg, rgba(242, 245, 238, 0.24), rgba(242, 245, 238, 0.06) 68%, transparent);
   }
@@ -228,17 +229,17 @@
   .spec-tags {
     display: flex;
     align-items: center;
-    gap: 22px;
+    gap: 30px;
   }
   .spec-tags span {
     display: flex;
     align-items: center;
-    gap: 9px;
+    gap: 10px;
   }
   .spec-tags span::before {
     content: "";
-    width: 4px;
-    height: 4px;
+    width: 5px;
+    height: 5px;
     background: var(--accent);
   }
 </style>

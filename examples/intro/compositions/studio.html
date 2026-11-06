@@ -61,24 +61,24 @@
   .hero {
     position: absolute;
     left: 148px;
-    top: 146px;
+    top: 134px;
     width: 840px;
   }
   .eyebrow {
     display: flex;
     align-items: center;
-    gap: 14px;
-    margin-bottom: 40px;
+    gap: 18px;
+    margin-bottom: 52px;
     color: var(--accent);
-    font-size: 11px;
+    font-size: 19px;
     font-weight: 600;
-    letter-spacing: 0.28em;
+    letter-spacing: 0.22em;
     text-transform: uppercase;
     animation: rise-small 1s ease-out both;
   }
   .eyebrow::before {
     content: "";
-    width: 26px;
+    width: 36px;
     height: 1px;
     background: var(--accent);
     box-shadow: 0 0 12px var(--accent);
@@ -129,12 +129,12 @@
     animation-delay: 2.1s;
   }
   .note {
-    margin: 28px 0 0;
-    max-width: 600px;
+    margin: 44px 0 0;
+    max-width: 680px;
     color: #9ca8a1;
-    font-size: 24px;
+    font-size: 31px;
     line-height: 1.5;
-    letter-spacing: -0.012em;
+    letter-spacing: -0.01em;
     animation: rise-in 1s ease-out both;
   }
 
@@ -142,7 +142,7 @@
     position: absolute;
     left: 1074px;
     top: 168px;
-    bottom: 492px;
+    bottom: 512px;
     width: 1px;
     background: linear-gradient(
       180deg,
@@ -167,20 +167,20 @@
 
   .cue {
     position: absolute;
-    left: 1152px;
+    left: 1112px;
     top: 172px;
-    width: 620px;
+    width: 660px;
     animation: rise-in 1s ease-out both;
   }
   .cue-head {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding-bottom: 12px;
+    padding-bottom: 14px;
     border-bottom: 1px solid rgba(242, 245, 238, 0.14);
     color: var(--muted);
-    font-size: 9px;
-    letter-spacing: 0.22em;
+    font-size: 13px;
+    letter-spacing: 0.18em;
     text-transform: uppercase;
   }
   .cue-head b {
@@ -189,20 +189,20 @@
   }
   .cue-row {
     display: grid;
-    grid-template-columns: 34px 104px 1fr auto;
+    grid-template-columns: 42px 128px 1fr auto;
     align-items: baseline;
-    gap: 14px;
-    padding: 14px 0 13px;
+    gap: 18px;
+    padding: 17px 0 16px;
     border-bottom: 1px solid rgba(242, 245, 238, 0.08);
-    font-size: 12px;
-    letter-spacing: 0.14em;
+    font-size: 17px;
+    letter-spacing: 0.08em;
     text-transform: uppercase;
   }
   .cue-row i {
     color: var(--accent);
-    font-size: 9px;
+    font-size: 13px;
     font-style: normal;
-    letter-spacing: 0.1em;
+    letter-spacing: 0.06em;
   }
   .cue-row b {
     color: var(--paper);
@@ -210,14 +210,14 @@
   }
   .cue-row span {
     color: var(--muted);
-    font-size: 10px;
-    letter-spacing: 0.13em;
+    font-size: 14px;
+    letter-spacing: 0.08em;
   }
   .cue-row em {
     color: var(--muted-strong);
-    font-size: 9px;
+    font-size: 12px;
     font-style: normal;
-    letter-spacing: 0.16em;
+    letter-spacing: 0.1em;
   }
   .cue-row.live b {
     color: var(--accent);
@@ -229,10 +229,10 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding-top: 16px;
+    padding-top: 18px;
     color: var(--muted);
-    font-size: 9px;
-    letter-spacing: 0.18em;
+    font-size: 13px;
+    letter-spacing: 0.14em;
     text-transform: uppercase;
   }
   .cue-foot b {
@@ -242,14 +242,14 @@
 
   .callout {
     position: absolute;
-    left: 846px;
-    top: 452px;
+    left: 1112px;
+    top: 486px;
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 12px;
     color: var(--muted);
-    font-size: 9px;
-    letter-spacing: 0.16em;
+    font-size: 13px;
+    letter-spacing: 0.14em;
     text-transform: uppercase;
     animation: rise-small 1s ease-out both;
   }
@@ -262,8 +262,8 @@
     position: absolute;
     left: 148px;
     right: 148px;
-    top: 524px;
-    height: 340px;
+    top: 590px;
+    height: 368px;
   }
   .editor {
     position: relative;
@@ -283,42 +283,42 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    height: 36px;
-    padding: 0 16px;
+    height: 40px;
+    padding: 0 20px;
     border-bottom: 1px solid rgba(242, 245, 238, 0.1);
     background: rgba(242, 245, 238, 0.025);
     color: var(--muted);
-    font-size: 9px;
-    letter-spacing: 0.16em;
+    font-size: 12px;
+    letter-spacing: 0.12em;
     text-transform: uppercase;
   }
   .toggle {
     display: inline-flex;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
     color: var(--muted-strong);
   }
   .toggle .dot {
-    width: 6px;
-    height: 6px;
+    width: 7px;
+    height: 7px;
     border-radius: 50%;
     background: var(--accent);
     box-shadow: 0 0 10px var(--accent);
   }
   .toolbar .mid {
     display: flex;
-    gap: 22px;
+    gap: 26px;
   }
   .toolbar .right {
     display: flex;
-    gap: 20px;
+    gap: 24px;
   }
   .toolbar b {
     color: var(--paper);
     font-weight: 500;
   }
   .toolbar .chip {
-    padding: 3px 8px;
+    padding: 4px 10px;
     border: 1px solid rgba(242, 245, 238, 0.16);
     border-radius: 2px;
     color: var(--muted-strong);
@@ -330,17 +330,17 @@
 
   .ruler {
     display: grid;
-    grid-template-columns: 104px 1fr;
-    height: 34px;
+    grid-template-columns: 116px 1fr;
+    height: 36px;
     border-bottom: 1px solid rgba(242, 245, 238, 0.09);
   }
   .ruler .label {
     display: flex;
     align-items: center;
-    padding-left: 16px;
+    padding-left: 20px;
     color: rgba(139, 152, 146, 0.7);
-    font-size: 8px;
-    letter-spacing: 0.16em;
+    font-size: 11px;
+    letter-spacing: 0.14em;
     text-transform: uppercase;
   }
   .ruler .lane {
@@ -357,10 +357,10 @@
   }
   .ruler .lane span {
     position: absolute;
-    top: 7px;
+    top: 8px;
     color: rgba(139, 152, 146, 0.8);
-    font-size: 8px;
-    letter-spacing: 0.12em;
+    font-size: 11px;
+    letter-spacing: 0.1em;
     transform: translateX(-50%);
   }
   .ruler .lane span:first-child {
@@ -372,28 +372,28 @@
 
   .track {
     display: grid;
-    grid-template-columns: 104px 1fr;
+    grid-template-columns: 116px 1fr;
     border-bottom: 1px solid rgba(242, 245, 238, 0.07);
   }
   .track-label {
     display: flex;
     flex-direction: column;
     justify-content: center;
-    gap: 5px;
-    padding-left: 16px;
+    gap: 7px;
+    padding-left: 20px;
     border-right: 1px solid rgba(242, 245, 238, 0.07);
   }
   .track-label b {
     color: var(--muted-strong);
-    font-size: 9px;
+    font-size: 12px;
     font-weight: 500;
-    letter-spacing: 0.14em;
+    letter-spacing: 0.12em;
     text-transform: uppercase;
   }
   .track-label span {
     color: rgba(139, 152, 146, 0.62);
-    font-size: 8px;
-    letter-spacing: 0.12em;
+    font-size: 10px;
+    letter-spacing: 0.1em;
     text-transform: uppercase;
   }
   .track-label.accent b {
@@ -405,19 +405,19 @@
     background-image: repeating-linear-gradient(90deg, rgba(242, 245, 238, 0.045) 0 1px, transparent 1px 2.5%);
   }
   .track.overlay {
-    height: 72px;
+    height: 78px;
   }
   .track.scenes {
-    height: 78px;
+    height: 84px;
   }
   .track.audio {
-    height: 78px;
+    height: 84px;
   }
 
   .clip {
     position: absolute;
-    top: 14px;
-    height: 44px;
+    top: 15px;
+    height: 48px;
     overflow: hidden;
     border: 1px solid rgba(242, 245, 238, 0.16);
     border-radius: 3px;
@@ -429,15 +429,15 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 10px;
-    padding: 7px 10px 0;
+    gap: 12px;
+    padding: 8px 12px 0;
   }
   .clip .clip-top b {
     overflow: hidden;
     color: inherit;
-    font-size: 9px;
+    font-size: 12px;
     font-weight: 500;
-    letter-spacing: 0.14em;
+    letter-spacing: 0.1em;
     text-overflow: ellipsis;
     text-transform: uppercase;
     white-space: nowrap;
@@ -445,15 +445,15 @@
   .clip .clip-top span {
     flex: none;
     color: currentColor;
-    font-size: 8px;
-    letter-spacing: 0.12em;
+    font-size: 10px;
+    letter-spacing: 0.08em;
     opacity: 0.66;
   }
   .clip .clip-sub {
-    padding: 4px 10px 0;
+    padding: 4px 12px 0;
     color: currentColor;
-    font-size: 8px;
-    letter-spacing: 0.12em;
+    font-size: 10px;
+    letter-spacing: 0.08em;
     opacity: 0.55;
     text-transform: uppercase;
   }
@@ -478,17 +478,32 @@
   .clip.compose .clip-sub {
     opacity: 0.66;
   }
+  .clip.compose .clip-top,
+  .clip.lattice .clip-top,
+  .clip.brand .clip-top {
+    padding-left: 52px;
+  }
+  .clip.compose .clip-sub,
+  .clip.lattice .clip-sub,
+  .clip.brand .clip-sub {
+    padding-left: 52px;
+  }
+  .clip.author .clip-top,
+  .clip.compose .clip-top,
+  .clip.lattice .clip-top {
+    padding-right: 52px;
+  }
   .clip .kf-line {
     position: absolute;
-    left: 14px;
-    right: 14px;
+    left: 16px;
+    right: 16px;
     bottom: 8px;
     height: 1px;
     background: rgba(6, 12, 4, 0.28);
   }
   .kf {
     position: absolute;
-    bottom: 4px;
+    bottom: 5px;
     width: 7px;
     height: 7px;
     margin-left: -3.5px;
@@ -498,8 +513,8 @@
   }
   .trans {
     position: absolute;
-    top: 8px;
-    height: 56px;
+    top: 9px;
+    height: 62px;
     border-left: 1px dashed rgba(184, 243, 107, 0.5);
     border-right: 1px dashed rgba(184, 243, 107, 0.5);
     background: repeating-linear-gradient(135deg, rgba(184, 243, 107, 0.22) 0 2px, transparent 2px 7px);
@@ -510,20 +525,20 @@
     content: "30F";
     position: absolute;
     left: 50%;
-    top: -14px;
+    top: -16px;
     color: var(--accent);
     font-family: "Space Mono", monospace;
-    font-size: 7px;
-    letter-spacing: 0.1em;
+    font-size: 10px;
+    letter-spacing: 0.08em;
     transform: translateX(-50%);
     white-space: nowrap;
   }
   .audio-clip {
     position: absolute;
     left: 0;
-    top: 10px;
+    top: 11px;
     width: 100%;
-    height: 58px;
+    height: 62px;
     overflow: hidden;
     border: 1px solid rgba(184, 243, 107, 0.32);
     border-radius: 3px;
@@ -532,14 +547,14 @@
   }
   .audio-clip .audio-head {
     position: absolute;
-    left: 10px;
-    top: 7px;
+    left: 12px;
+    top: 8px;
     z-index: 2;
     display: flex;
-    gap: 10px;
+    gap: 12px;
     color: var(--muted-strong);
-    font-size: 8px;
-    letter-spacing: 0.14em;
+    font-size: 11px;
+    letter-spacing: 0.12em;
     text-transform: uppercase;
   }
   .audio-clip .audio-head b {
@@ -550,9 +565,9 @@
     position: absolute;
     left: 0;
     right: 0;
-    bottom: 4px;
+    bottom: 5px;
     width: 100%;
-    height: 44px;
+    height: 36px;
   }
   .wave path {
     stroke: var(--accent);
@@ -567,10 +582,10 @@
 
   .playhead-layer {
     position: absolute;
-    left: 104px;
+    left: 116px;
     right: 16px;
-    top: 70px;
-    bottom: 42px;
+    top: 76px;
+    bottom: 46px;
     z-index: 5;
     pointer-events: none;
   }
@@ -602,32 +617,32 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    height: 42px;
-    padding: 0 16px;
+    height: 46px;
+    padding: 0 20px;
     border-top: 1px solid rgba(242, 245, 238, 0.08);
     color: var(--muted);
-    font-size: 8px;
-    letter-spacing: 0.14em;
+    font-size: 11px;
+    letter-spacing: 0.1em;
     text-transform: uppercase;
   }
   .editor-foot .group {
     display: flex;
     align-items: center;
-    gap: 18px;
+    gap: 20px;
   }
   .editor-foot .play {
     display: inline-flex;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
     color: var(--paper);
   }
   .editor-foot .play::before {
     content: "";
     width: 0;
     height: 0;
-    border-top: 4px solid transparent;
-    border-bottom: 4px solid transparent;
-    border-left: 6px solid var(--accent);
+    border-top: 5px solid transparent;
+    border-bottom: 5px solid transparent;
+    border-left: 8px solid var(--accent);
   }
   .editor-foot b {
     color: var(--muted-strong);

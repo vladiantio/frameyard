@@ -3,7 +3,7 @@
 **Status:** Accepted
 **Date:** 2026-11-05
 
-`frameyard.policy.json` declares a workspace resource tier (`light`, `authoring`, or `full`), an optional `shared-cpu` profile, and stricter still/overwrite limits. The CLI reads the nearest file from the working directory upward, independent of `video.config.js`; `FRAMEYARD_POLICY` replaces the file for a human override. `tts`, `transcribe`, and `render` are blocked outside `full`; `lint` and `--dry-run` provide a cheap authoring and handoff path. The policy is a guardrail for cooperative agents, not a security boundary.
+`fy.policy.json` declares a workspace resource tier (`light`, `authoring`, or `full`), an optional `shared-cpu` profile, and stricter still/overwrite limits. The CLI reads the nearest file from the working directory upward, independent of `fy.config.js`; `FRAMEYARD_POLICY` replaces the file for a human override. `tts`, `transcribe`, and `render` are blocked outside `full`; `lint` and `--dry-run` provide a cheap authoring and handoff path. The policy is a guardrail for cooperative agents, not a security boundary.
 
 ## Context
 
@@ -11,7 +11,7 @@ Local models, browsers, and FFmpeg often share one CPU and GPU. An agent that ru
 
 `check` evaluates every frame through Chromium and is the correctness gate, but it is too expensive for a tight edit loop. `still` is bounded but still launches Chromium. `tts` and `transcribe` load local models, and `render` runs Chromium plus FFmpeg with up to sixteen workers. These operations need different treatment.
 
-The Frameyard repository itself has no `video.config.js`, so a policy tied to the project root would not protect commands that target `examples/*` with `--project`. The policy therefore belongs to the workspace, not the render target.
+The Frameyard repository itself has no `fy.config.js`, so a policy tied to the project root would not protect commands that target `examples/*` with `--project`. The policy therefore belongs to the workspace, not the render target.
 
 ## Considered Options
 

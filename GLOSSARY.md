@@ -201,7 +201,7 @@ _Avoid_: Compound composition
 ### Fonts
 
 **Font manifest**:
-The versioned `frameyard.fonts.json` file that records vendored font families, their CSS family names, providers, licenses, and file hashes. It is the source of truth for the generated `@font-face` sheet.
+The versioned `fy.fonts.json` file that records vendored font families, their CSS family names, providers, licenses, and file hashes. It is the source of truth for the generated `@font-face` sheet.
 _Avoid_: Font config, font cache
 
 **Font provider**:
@@ -381,7 +381,7 @@ _Avoid_: Bit-for-bit encoding equality
 ### Resource policy
 
 **Resource policy**:
-A workspace-local `frameyard.policy.json` declaration of which CLI operations are allowed and which resource limits apply. It is discovered from the working directory upward, independent of `video.config.js`, and can only tighten its tier.
+A workspace-local `fy.policy.json` declaration of which CLI operations are allowed and which resource limits apply. It is discovered from the working directory upward, independent of `fy.config.js`, and can only tighten its tier.
 _Avoid_: Project config, agent runtime
 
 **Policy tier**:
@@ -415,7 +415,7 @@ A pixel and region diff between two decoded images. It reports differing pixels,
 _Avoid_: Pixel hash, visual diff
 
 **Project template**:
-A known-good composition or timeline entry that `add` writes while printing the explicit `video.config.js` registration snippet.
+A known-good composition or timeline entry that `add` writes while printing the explicit `fy.config.js` registration snippet.
 _Avoid_: Generator, project scaffold
 
 ### Agent operation

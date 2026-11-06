@@ -91,7 +91,7 @@ beforeAll(async () => {
     )}\n`,
   );
   await writeFile(
-    path.join(root, "video.config.js"),
+    path.join(root, "fy.config.js"),
     `export default {
       format: { width: 320, height: 180, fps: 10 },
       compositions: { intro: "./compositions/intro.html", still: "./compositions/still.html" },

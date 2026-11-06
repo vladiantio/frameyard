@@ -24,7 +24,7 @@ describe("local model eval tasks", () => {
     for (const task of TASKS) {
       expect(task.brief.length, `${task.name} brief`).toBeGreaterThan(0);
       expect(task.target.length, `${task.name} target`).toBeGreaterThan(0);
-      expect(task.files["video.config.js"], `${task.name} config`).toContain("format:");
+      expect(task.files["fy.config.js"], `${task.name} config`).toContain("format:");
       expect(task.expect?.stillFrame, `${task.name} still frame`).toBeGreaterThanOrEqual(0);
     }
   });

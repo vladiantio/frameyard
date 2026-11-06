@@ -165,7 +165,7 @@ function compositionFor(project: Project, id: string): ProjectComposition {
     const available = [...project.compositions.keys()].join(", ") || "(none)";
     throw new FrameyardError(
       "COMPOSITION_NOT_FOUND",
-      `Composition "${id}" is not listed in video.config.js. Available: ${available}.`,
+      `Composition "${id}" is not listed in fy.config.js. Available: ${available}.`,
     );
   }
   return composition;

@@ -56,7 +56,7 @@ export async function buildTimelinePreviewData(
 ): Promise<TimelinePreviewData> {
   const projectTimeline = project.timelines.get(timelineId);
   if (!projectTimeline) {
-    throw new FrameyardError("TIMELINE_NOT_FOUND", `Timeline "${timelineId}" is not listed in video.config.js.`);
+    throw new FrameyardError("TIMELINE_NOT_FOUND", `Timeline "${timelineId}" is not listed in fy.config.js.`);
   }
 
   const resolved = await resolveProjectTimeline({

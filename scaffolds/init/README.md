@@ -2,7 +2,7 @@
 
 Coding agents should read `AGENTS.md` for the project rules and the lint, check, still, and render workflow.
 
-The reusable composition is a partial HTML fragment at `compositions/hello.html`. The edit is `timelines/main.timeline.json`, which places that composition as a clip in the project format. The project format is fixed in `video.config.js`.
+The reusable composition is a partial HTML fragment at `compositions/hello.html`. The edit is `timelines/main.timeline.json`, which places that composition as a clip in the project format. The project format is fixed in `fy.config.js`.
 
 Start the preview:
 
@@ -44,7 +44,7 @@ npx frameyard font add --file ./fonts/SpaceGrotesk.woff2 \
 npx frameyard font verify
 ```
 
-The server injects the font sheet into every composition; use the family name in CSS. Commit `frameyard.fonts.json`, `assets/fonts/`, and license files. See `AGENTS.md` for the policy limits.
+The server injects the font sheet into every composition; use the family name in CSS. Commit `fy.fonts.json`, `assets/fonts/`, and license files. See `AGENTS.md` for the policy limits.
 
 Or run the pinned scripts from `package.json`:
 

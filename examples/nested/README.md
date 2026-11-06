@@ -71,10 +71,10 @@ examples/nested/
   timelines/nested-reel.timeline.json
   assets/pulse.wav                 local chapter audio
   scripts/make-pulse.sh            regenerate assets/pulse.wav
-  video.config.js
+  fy.config.js
 ```
 
-`chapter-a` and `chapter-b` are listed in `video.config.js`, so each can be
+`chapter-a` and `chapter-b` are listed in `fy.config.js`, so each can be
 checked, previewed, stilled, or rendered on its own. Timeline `--props` is keyed
 by top-level composition clip ID; a nested timeline clip does not forward prop
 overrides to the compositions inside it. Fix chapter props in the chapter's own

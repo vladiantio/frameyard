@@ -107,7 +107,7 @@ Static validation diagnostics include source locations. Runtime diagnostics may 
 
 ## add
 
-`add --list` returns `templates` with `name`, `kind`, `description`, and optional `prerequisites`. Adding an entry returns `kind`, `id`, `template`, `entry`, `path`, `register`, `prerequisites`, and `next`. `register` is the exact object to merge into `video.config.js`; `add` does not edit the config itself.
+`add --list` returns `templates` with `name`, `kind`, `description`, and optional `prerequisites`. Adding an entry returns `kind`, `id`, `template`, `entry`, `path`, `register`, `prerequisites`, and `next`. `register` is the exact object to merge into `fy.config.js`; `add` does not edit the config itself.
 
 ## font
 
@@ -120,7 +120,7 @@ Static validation diagnostics include source locations. Runtime diagnostics may 
   "ok": true,
   "command": "font",
   "action": "verify",
-  "manifest": "/project/frameyard.fonts.json",
+  "manifest": "/project/fy.fonts.json",
   "fonts": 1,
   "files": 1,
   "bytes": 22288,
@@ -303,7 +303,7 @@ A successful render means the final path exists and was published atomically. A 
   "channels": 1,
   "speaker": "vivian",
   "language": "English",
-  "manifest": "/absolute/path/frameyard.assets.json",
+  "manifest": "/absolute/path/fy.assets.json",
   "elapsedMs": 12000
 }
 ```
@@ -335,7 +335,7 @@ A successful render means the final path exists and was published atomically. A 
       "sha256": "64-character hex digest"
     }
   ],
-  "manifest": "/absolute/path/frameyard.assets.json",
+  "manifest": "/absolute/path/fy.assets.json",
   "elapsedMs": 30000
 }
 ```
@@ -395,7 +395,7 @@ Doctor reports findings rather than throwing for environment problems. `ok: true
       "sha256": "64-character hex digest"
     }
   ],
-  "manifest": { "path": "/absolute/path/frameyard.assets.json", "exists": true, "valid": true, "artifacts": 2 }
+  "manifest": { "path": "/absolute/path/fy.assets.json", "exists": true, "valid": true, "artifacts": 2 }
 }
 ```
 

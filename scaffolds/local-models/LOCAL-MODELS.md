@@ -19,7 +19,7 @@ Manual copy is still possible:
 mkdir -p .opencode .pi
 cp -R scaffolds/local-models/opencode/. .opencode/
 cp -R scaffolds/local-models/pi/. .pi/
-cp scaffolds/local-models/frameyard.policy.json .
+cp scaffolds/local-models/fy.policy.json .
 ```
 
 The CLI refuses to overwrite an existing file. If the target workspace already
@@ -28,7 +28,7 @@ instead of copying over it.
 
 ## What each file does
 
-- `frameyard.policy.json`: the `authoring` tier and `shared-cpu` profile. It
+- `fy.policy.json`: the `authoring` tier and `shared-cpu` profile. It
   blocks `tts`, `transcribe`, and `render`; allows `lint`, `context`, `doctor`,
   `add`, `inspect`, `compare`, `font search`, `font list`, `font verify`,
   `font add` without `--force`, `check`, and at most four still frames; and
@@ -37,7 +37,7 @@ instead of copying over it.
   to the default `full` tier.
 - `.opencode/opencode.jsonc`: project-local OpenCode permissions for a local
   model session. It denies the common heavy shell forms and protects
-  `frameyard.policy.json`, `.opencode/`, `.pi/`, and `skills/frameyard/` from
+  `fy.policy.json`, `.opencode/`, `.pi/`, and `skills/frameyard/` from
   edits. It also adds `./skills` as a skill search path, which assumes the
   official skill lives in the workspace; remove that line if it does not.
 - `.pi/settings.json`: points Pi at `http://127.0.0.1:9931` and defaults to
@@ -73,5 +73,5 @@ global change; the rest stays in the workspace.
 
 ## Opting out
 
-Remove `frameyard.policy.json` and the `.opencode/`/`.pi/` files you copied.
+Remove `fy.policy.json` and the `.opencode/`/`.pi/` files you copied.
 The CLI then defaults to `full`, and the host configuration no longer applies.

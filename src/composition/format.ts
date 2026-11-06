@@ -1,7 +1,7 @@
 import type { CompositionFormat, DeclaredCompositionMetadata, ResolvedCompositionMetadata } from "../contracts.js";
 
 export const COMPOSITION_FORMAT_UNRESOLVED_MESSAGE =
-  "The composition does not declare width and height, and no project format is available. Declare them on <fy-composition> or add format { width, height, fps } to video.config.js.";
+  "The composition does not declare width and height, and no project format is available. Declare them on <fy-composition> or add format { width, height, fps } to fy.config.js.";
 
 /**
  * Resolves declared composition metadata against a project format. Declared

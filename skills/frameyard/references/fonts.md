@@ -25,7 +25,7 @@ npx frameyard font add space-grotesk --subset latin
 
 The command fetches the family metadata, pins the Fontsource `npmVersion`,
 downloads only the requested WOFF2 files, downloads the package `LICENSE`, and
-records the exact CDN URL and SHA-256 in `frameyard.fonts.json`.
+records the exact CDN URL and SHA-256 in `fy.fonts.json`.
 
 - A variable family installs the `wght` axis by default. Use multiple
   `--subset` and `--style` values, for example
@@ -92,7 +92,7 @@ the binaries in place. `font remove`, `font add --force`, and an unlicensed
 
 Adding another subset, style, or weight to the same family merges into the
 existing entry. Adding the same face again fails with `OUTPUT_EXISTS`; pass
-`--force` to replace it. `frameyard.fonts.json` has `version: 1` and one entry
+`--force` to replace it. `fy.fonts.json` has `version: 1` and one entry
 per family. Commit it with `assets/fonts/` and the license files.
 
 ## Use the font

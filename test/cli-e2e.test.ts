@@ -273,7 +273,7 @@ beforeAll(async () => {
   await mkdir(path.join(root, "compositions"), { recursive: true });
   await mkdir(path.join(root, "assets"), { recursive: true });
   await writeFile(
-    path.join(root, "video.config.js"),
+    path.join(root, "fy.config.js"),
     `export default { compositions: { demo: "./compositions/demo.html", media: "./compositions/media.html", webgl: "./compositions/webgl.html", long: "./compositions/long.html", "missing-video": "./compositions/missing-video.html", broken: "./compositions/broken.html", throwing: "./compositions/throwing.html", html: "./compositions/html.html", "html-invalid": "./compositions/html-invalid.html", legacy: "./compositions/legacy.html", static: "./compositions/static.html" } };\n`,
   );
   await writeFile(path.join(root, "compositions", "demo.html"), composition);
@@ -1466,7 +1466,7 @@ describe("CLI end-to-end", () => {
       "npx frameyard check main",
       "npx frameyard render main",
     ]);
-    expect((await stat(path.join(target, "video.config.js"))).isFile()).toBe(true);
+    expect((await stat(path.join(target, "fy.config.js"))).isFile()).toBe(true);
     expect((await stat(path.join(target, "compositions", "hello.html"))).isFile()).toBe(true);
     expect(await readFile(path.join(target, ".gitignore"), "utf8")).toBe("out/\n");
 
@@ -1490,7 +1490,7 @@ describe("CLI end-to-end", () => {
     expect(agents).toContain('random("stable:key")');
     expect(agents).toContain("qwen-tts");
     expect(agents).toContain("whisper-cli");
-    expect(agents).toContain("frameyard.assets.json");
+    expect(agents).toContain("fy.assets.json");
     expect(agents).toContain("npx frameyard@");
     expect(agents).toContain("npx skills add vladiantio/frameyard");
     for (const command of [
@@ -1545,7 +1545,7 @@ describe("composition format inheritance", () => {
     await mkdir(path.join(projectRoot, "compositions"), { recursive: true });
     await writeFile(path.join(projectRoot, "compositions", "plain.html"), inheritedComposition);
     await writeFile(
-      path.join(projectRoot, "video.config.js"),
+      path.join(projectRoot, "fy.config.js"),
       `export default { ${
         options.format === false ? "" : "format: { width: 160, height: 90, fps: 10 }, "
       }compositions: { plain: "./compositions/plain.html" } };\n`,
@@ -1645,7 +1645,7 @@ export default {
     await writeFile(path.join(root, "compositions", "risky.html"), riskyComposition);
     await writeFile(path.join(root, "timelines", "main.timeline.json"), JSON.stringify(policyTimeline, null, 2));
     await writeFile(
-      path.join(root, "video.config.js"),
+      path.join(root, "fy.config.js"),
       `export default { format: { width: 160, height: 90, fps: 10 }, compositions: { hello: "./compositions/hello.html", risky: "./compositions/risky.html" }, timelines: { main: "./timelines/main.timeline.json" } };\n`,
     );
     return root;
@@ -1655,10 +1655,7 @@ export default {
     const root = await createPolicyProject();
     const nested = path.join(root, "nested", "deeper");
     await mkdir(nested, { recursive: true });
-    await writeFile(
-      path.join(root, "frameyard.policy.json"),
-      JSON.stringify({ version: 1, policy: "authoring" }, null, 2),
-    );
+    await writeFile(path.join(root, "fy.policy.json"), JSON.stringify({ version: 1, policy: "authoring" }, null, 2));
     try {
       const result = await run(["render", "main", "--project", root, "--json"], nested, { policy: null });
       expect(result.code).not.toBe(0);
@@ -1674,10 +1671,7 @@ export default {
 
   it("lets an explicit env override replace the file for a dry run", async () => {
     const root = await createPolicyProject();
-    await writeFile(
-      path.join(root, "frameyard.policy.json"),
-      JSON.stringify({ version: 1, policy: "authoring" }, null, 2),
-    );
+    await writeFile(path.join(root, "fy.policy.json"), JSON.stringify({ version: 1, policy: "authoring" }, null, 2));
     try {
       const result = await run(["render", "main", "--project", root, "--dry-run", "--json"], root, {
         env: { FRAMEYARD_POLICY: "full" },
@@ -1908,7 +1902,7 @@ export default {
   it("reports the active policy and resources from doctor", async () => {
     const root = await createPolicyProject();
     await writeFile(
-      path.join(root, "frameyard.policy.json"),
+      path.join(root, "fy.policy.json"),
       JSON.stringify({ version: 1, policy: "authoring", profile: "shared-cpu" }, null, 2),
     );
     try {
@@ -1927,7 +1921,7 @@ export default {
 
   it("reports an invalid policy as a doctor finding without hiding the environment checks", async () => {
     const root = await createPolicyProject();
-    await writeFile(path.join(root, "frameyard.policy.json"), JSON.stringify({ version: 1, policy: "turbo" }, null, 2));
+    await writeFile(path.join(root, "fy.policy.json"), JSON.stringify({ version: 1, policy: "turbo" }, null, 2));
     try {
       const result = await run(["doctor", "--json"], root, { policy: null });
       const body = JSON.parse(result.stdout);
@@ -1945,7 +1939,7 @@ export default {
 
 describe("local-model scaffold installation", () => {
   const expectedFiles = [
-    "frameyard.policy.json",
+    "fy.policy.json",
     ".opencode/opencode.jsonc",
     ".pi/settings.json",
     ".pi/APPEND_SYSTEM.md",
@@ -1965,7 +1959,7 @@ describe("local-model scaffold installation", () => {
       for (const file of expectedFiles) {
         expect((await stat(path.join(target, file))).isFile(), file).toBe(true);
       }
-      expect(JSON.parse(await readFile(path.join(target, "frameyard.policy.json"), "utf8"))).toMatchObject({
+      expect(JSON.parse(await readFile(path.join(target, "fy.policy.json"), "utf8"))).toMatchObject({
         version: 1,
         policy: "authoring",
         profile: "shared-cpu",
@@ -1994,7 +1988,7 @@ describe("local-model scaffold installation", () => {
       const duplicate = await run(["add", "local-models", "--project", target, "--json"], root);
       expect(duplicate.code).not.toBe(0);
       expect(JSON.parse(duplicate.stdout)).toMatchObject({
-        error: { code: "OUTPUT_EXISTS", details: { conflicts: expect.arrayContaining(["frameyard.policy.json"]) } },
+        error: { code: "OUTPUT_EXISTS", details: { conflicts: expect.arrayContaining(["fy.policy.json"]) } },
       });
     } finally {
       await rm(target, { recursive: true, force: true });

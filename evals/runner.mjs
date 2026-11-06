@@ -22,7 +22,7 @@ Write complete file contents, not patches. Paths are relative to the project roo
 Do not run shell commands. The harness will run lint, check, and a still.
 Frameyard rules:
 - A composition is a partial HTML fragment with one top-level <fy-composition>, not a full document.
-- Register every new composition or timeline explicitly in video.config.js.
+- Register every new composition or timeline explicitly in fy.config.js.
 - Animated compositions declare duration-in-frames; static compositions declare neither duration-in-frames nor fps.
 - Use data-fy-text for text bindings, CSS @keyframes for animation, and frame-based timing.
 - Never use Math.random, Date.now, performance.now, timers, or CSS transitions as animation inputs.
@@ -213,10 +213,10 @@ function validateTasks() {
       errors.push(`${task.name}: missing files.`);
       continue;
     }
-    if (typeof task.files["video.config.js"] !== "string") {
-      errors.push(`${task.name}: seed must contain video.config.js.`);
-    } else if (!task.files["video.config.js"].includes("format:")) {
-      errors.push(`${task.name}: seed video.config.js must declare a format.`);
+    if (typeof task.files["fy.config.js"] !== "string") {
+      errors.push(`${task.name}: seed must contain fy.config.js.`);
+    } else if (!task.files["fy.config.js"].includes("format:")) {
+      errors.push(`${task.name}: seed fy.config.js must declare a format.`);
     }
     for (const [file, content] of Object.entries(task.files)) {
       if (typeof content !== "string") {

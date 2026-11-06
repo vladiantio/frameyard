@@ -42,7 +42,7 @@ beforeAll(async () => {
   root = await mkdtemp(path.join(tmpdir(), "frameyard-html-server-"));
   await mkdir(path.join(root, "compositions"), { recursive: true });
   await writeFile(
-    path.join(root, "video.config.js"),
+    path.join(root, "fy.config.js"),
     `export default { compositions: { hello: "./compositions/hello.html", bad: "./compositions/bad.html", old: "./compositions/old.html" }, format: { width: 320, height: 180, fps: 10 } };\n`,
   );
   await writeFile(path.join(root, "compositions", "hello.html"), helloHtml);

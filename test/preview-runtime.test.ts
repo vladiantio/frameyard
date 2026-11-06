@@ -160,7 +160,7 @@ beforeAll(async () => {
   await mkdir(path.join(root, "compositions"), { recursive: true });
   await mkdir(path.join(root, "assets"), { recursive: true });
   await writeFile(
-    path.join(root, "video.config.js"),
+    path.join(root, "fy.config.js"),
     `export default { compositions: { demo: "./compositions/demo.html", diagnostics: "./compositions/diagnostics.html", media: "./compositions/media.html", html: "./compositions/html.html", static: "./compositions/static.html" } };\n`,
   );
   await writeFile(path.join(root, "compositions", "demo.html"), demoHtml);

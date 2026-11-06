@@ -1,5 +1,5 @@
 /** Project-local font manifest shared by the CLI, server, and context digest. */
-export const FONT_MANIFEST_FILENAME = "frameyard.fonts.json";
+export const FONT_MANIFEST_FILENAME = "fy.fonts.json";
 export const FONT_MANIFEST_VERSION = 1 as const;
 export const FONT_ASSET_PREFIX = "assets/fonts/";
 

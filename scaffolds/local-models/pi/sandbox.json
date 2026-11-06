@@ -10,6 +10,6 @@
   "filesystem": {
     "allowRead": [".", "~/.config", "~/.local"],
     "allowWrite": [".", "/tmp"],
-    "denyWrite": ["frameyard.policy.json", ".pi", ".opencode", "skills/frameyard"]
+    "denyWrite": ["fy.policy.json", ".pi", ".opencode", "skills/frameyard"]
   }
 }

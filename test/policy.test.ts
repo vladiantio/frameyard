@@ -25,7 +25,7 @@ async function temporaryDirectory(): Promise<string> {
 }
 
 async function writePolicy(directory: string, value: unknown): Promise<void> {
-  await writeFile(path.join(directory, "frameyard.policy.json"), JSON.stringify(value, null, 2));
+  await writeFile(path.join(directory, "fy.policy.json"), JSON.stringify(value, null, 2));
 }
 
 afterEach(async () => {
@@ -49,7 +49,7 @@ describe("resource policy discovery", () => {
     await mkdir(nested, { recursive: true });
     await writePolicy(directory, { version: 1, policy: "authoring" });
 
-    expect(await findPolicyFile(nested)).toBe(path.join(directory, "frameyard.policy.json"));
+    expect(await findPolicyFile(nested)).toBe(path.join(directory, "fy.policy.json"));
   });
 
   it("defaults to full when no file or env override exists", async () => {
@@ -82,7 +82,7 @@ describe("resource policy discovery", () => {
       allowOverwrite: false,
       source: "file",
     });
-    expect(loaded.path).toBe(path.join(directory, "frameyard.policy.json"));
+    expect(loaded.path).toBe(path.join(directory, "fy.policy.json"));
   });
 
   it("lets FRAMEYARD_POLICY replace the file and its limits", async () => {

@@ -264,7 +264,7 @@ export async function lintComposition(options: {
     const available = [...options.project.compositions.keys()].join(", ") || "(none)";
     throw new FrameyardError(
       "COMPOSITION_NOT_FOUND",
-      `Composition "${options.compositionId}" is not listed in video.config.js. Available: ${available}.`,
+      `Composition "${options.compositionId}" is not listed in fy.config.js. Available: ${available}.`,
     );
   }
 
@@ -318,10 +318,7 @@ export async function lintTimeline(options: {
   throwIfAborted(options.signal);
   const projectTimeline = options.project.timelines.get(options.timelineId);
   if (!projectTimeline) {
-    throw new FrameyardError(
-      "TIMELINE_NOT_FOUND",
-      `Timeline "${options.timelineId}" is not listed in video.config.js.`,
-    );
+    throw new FrameyardError("TIMELINE_NOT_FOUND", `Timeline "${options.timelineId}" is not listed in fy.config.js.`);
   }
 
   const resolved = await resolveProjectTimeline({

@@ -36,7 +36,7 @@ beforeAll(async () => {
   root = await mkdtemp(path.join(tmpdir(), "frameyard-fonts-e2e-"));
   await mkdir(path.join(root, "compositions"), { recursive: true });
   await writeFile(
-    path.join(root, "video.config.js"),
+    path.join(root, "fy.config.js"),
     `export default { format: { width: 320, height: 180, fps: 10 }, compositions: { hello: "./compositions/hello.html" } };\n`,
   );
   await writeFile(path.join(root, "compositions", "hello.html"), composition);
@@ -124,7 +124,7 @@ describe("project fonts", () => {
     const compared = await exec(process.execPath, [cli, "compare", first, second, "--json"], { cwd: root });
     expect(JSON.parse(compared.stdout)).toMatchObject({ ok: true, identical: true });
 
-    const manifest = JSON.parse(await readFile(path.join(root, "frameyard.fonts.json"), "utf8")) as {
+    const manifest = JSON.parse(await readFile(path.join(root, "fy.fonts.json"), "utf8")) as {
       fonts: Array<{ files: Array<{ path: string }> }>;
     };
     const fontPath = path.join(root, manifest.fonts[0]!.files[0]!.path);
@@ -143,7 +143,7 @@ describe("project fonts", () => {
   });
 
   it("reports a malformed manifest from font verify instead of failing to load the project", async () => {
-    const manifestPath = path.join(root, "frameyard.fonts.json");
+    const manifestPath = path.join(root, "fy.fonts.json");
     const original = await readFile(manifestPath, "utf8");
     await writeFile(manifestPath, JSON.stringify({ version: 1, fonts: [], extra: true }, null, 2));
 
@@ -175,7 +175,7 @@ describe("project fonts", () => {
     try {
       await mkdir(path.join(missingRoot, "compositions"), { recursive: true });
       await writeFile(
-        path.join(missingRoot, "video.config.js"),
+        path.join(missingRoot, "fy.config.js"),
         `export default { format: { width: 320, height: 180, fps: 10 }, compositions: { missing: "./compositions/missing.html" } };\n`,
       );
       await writeFile(
@@ -200,7 +200,7 @@ describe("project fonts", () => {
   });
 
   it("gates font removal and forced replacement with the resource policy", async () => {
-    const policyPath = path.join(root, "frameyard.policy.json");
+    const policyPath = path.join(root, "fy.policy.json");
     await writeFile(policyPath, JSON.stringify({ version: 1, policy: "authoring" }, null, 2));
     try {
       const removeFailure = await exec(

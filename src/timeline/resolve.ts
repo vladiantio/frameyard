@@ -391,7 +391,7 @@ async function resolveCompositionSource(options: {
     addError(
       diagnostics,
       "TIMELINE_REFERENCE_NOT_FOUND",
-      `Composition "${sourceId}" is not listed in video.config.js.`,
+      `Composition "${sourceId}" is not listed in fy.config.js.`,
       details,
     );
     return null;
@@ -488,7 +488,7 @@ async function resolveTimelineSource(options: {
     addError(
       diagnostics,
       "TIMELINE_REFERENCE_NOT_FOUND",
-      `Timeline "${sourceId}" is not listed in video.config.js.`,
+      `Timeline "${sourceId}" is not listed in fy.config.js.`,
       details,
     );
     return null;

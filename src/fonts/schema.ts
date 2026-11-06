@@ -322,7 +322,7 @@ function parseFontFamily(value: unknown, label: string): FontFamily {
   };
 }
 
-/** Parses and validates a `frameyard.fonts.json` document. */
+/** Parses and validates a `fy.fonts.json` document. */
 export function parseFontManifest(value: unknown): FontManifest {
   const manifest = requireObject(value, "font manifest");
   requireKeys(manifest, MANIFEST_KEYS, "font manifest");

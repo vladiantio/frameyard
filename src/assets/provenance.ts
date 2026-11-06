@@ -6,7 +6,7 @@ import { isPlainObject, type JsonValue } from "../contracts.js";
 import { FrameyardError } from "../errors.js";
 
 export const MANIFEST_SCHEMA_VERSION = 1;
-export const MANIFEST_FILENAME = "frameyard.assets.json";
+export const MANIFEST_FILENAME = "fy.assets.json";
 
 export interface ManifestGenerator {
   name: "frameyard";

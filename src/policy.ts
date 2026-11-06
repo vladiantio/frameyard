@@ -5,7 +5,7 @@ import { isPlainObject } from "./contracts.js";
 import { FrameyardError } from "./errors.js";
 
 /** Project-local resource policy file discovered from the working directory upward. */
-export const POLICY_FILE_NAME = "frameyard.policy.json";
+export const POLICY_FILE_NAME = "fy.policy.json";
 
 export const POLICY_TIERS = ["light", "authoring", "full"] as const;
 export type PolicyTier = (typeof POLICY_TIERS)[number];
@@ -84,7 +84,7 @@ async function isFile(filePath: string): Promise<boolean> {
   }
 }
 
-/** Walks up from a directory until it finds frameyard.policy.json. */
+/** Walks up from a directory until it finds fy.policy.json. */
 export async function findPolicyFile(start = process.cwd()): Promise<string | undefined> {
   let current = path.resolve(start);
 
@@ -247,7 +247,7 @@ async function loadPolicyFile(filePath: string): Promise<LoadedResourcePolicy> {
  *
  * `FRAMEYARD_POLICY` replaces the policy file entirely, so an explicit human
  * override also resets the file's profile and tightened limits. Without the
- * variable, the nearest `frameyard.policy.json` from `cwd` upward wins; without
+ * variable, the nearest `fy.policy.json` from `cwd` upward wins; without
  * a file, the default is `full`.
  */
 export async function loadResourcePolicy(

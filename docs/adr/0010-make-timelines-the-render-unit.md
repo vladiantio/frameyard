@@ -16,7 +16,7 @@ Frameyard will render timelines as its primary output unit. A timeline is a proj
 
 ## Consequences
 
-- `video.config.js` gains an optional project `format` and an explicit `timelines` map. IDs are unique across compositions and timelines so `render <id>`, `check <id>`, and `still <id>` stay unambiguous.
+- `fy.config.js` gains an optional project `format` and an explicit `timelines` map. IDs are unique across compositions and timelines so `render <id>`, `check <id>`, and `still <id>` stay unambiguous.
 - A composition used in a timeline must share the project frame rate exactly; a different size is fitted and transformed by the clip.
 - Timeline duration is derived from the last clip end, with an optional override. A timeline with no clips is invalid; an audio-only timeline is valid and renders black video with audio.
 - Nested timelines are visual and audio sources, are cycle-checked, and do not accept prop overrides for their internal compositions in 0.6.

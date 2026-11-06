@@ -515,7 +515,7 @@ async function benchComposition({ project, compositionId, options, tempDir }) {
   const composition = project.compositions.get(compositionId);
   if (!composition) {
     const available = [...project.compositions.keys()].join(", ") || "(none)";
-    throw new Error(`Composition "${compositionId}" is not in video.config.js. Available: ${available}.`);
+    throw new Error(`Composition "${compositionId}" is not in fy.config.js. Available: ${available}.`);
   }
 
   const resolvedProps = await resolveProps(project, compositionId, options.props);
@@ -686,7 +686,7 @@ async function main() {
   for (const compositionId of compositionIds) {
     if (!project.compositions.has(compositionId)) {
       throw new Error(
-        `Composition "${compositionId}" is not in video.config.js. Available: ${available.join(", ") || "(none)"}.`,
+        `Composition "${compositionId}" is not in fy.config.js. Available: ${available.join(", ") || "(none)"}.`,
       );
     }
   }

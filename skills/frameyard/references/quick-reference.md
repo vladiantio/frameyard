@@ -155,7 +155,7 @@ code. Use `random("stable:key")` from `frameyard/runtime`, never `Math.random()`
 | `npx frameyard font search <query> --json` | Search Fontsource by name, category, subset, style, or variable |
 | `npx frameyard font add <fontsource-id> --json` | Pin and vendor a Fontsource family; variable `wght` by default |
 | `npx frameyard font add <fontsource-id> --static --weight 400,700 --json` | Install explicit static weights |
-| `npx frameyard font add --file <path> --family <name> --json` | Vendor a local font into `assets/fonts/` and update `frameyard.fonts.json` |
+| `npx frameyard font add --file <path> --family <name> --json` | Vendor a local font into `assets/fonts/` and update `fy.fonts.json` |
 | `npx frameyard font add --url <https-url> --family <name> --json` | Download and vendor an HTTPS font, optionally with `--sha256` |
 | `npx frameyard font list --json` | Installed families, subsets, licenses, files, and status |
 | `npx frameyard font verify --json` | Manifest paths, hashes, licenses, and orphaned directories |
@@ -167,8 +167,8 @@ progress and diagnostics.
 
 ## Resource policy
 
-`frameyard.policy.json` is discovered from the working directory upward,
-independent of `video.config.js`.
+`fy.policy.json` is discovered from the working directory upward,
+independent of `fy.config.js`.
 
 | Tier | `still` | `check` | `tts`/`transcribe`/`render` | overwrite |
 | --- | --- | --- | --- | --- |
@@ -209,7 +209,7 @@ that the composition still depends on a remote font URL.
 - Call `play()`, `pause()`, or set `currentTime` on embedded media.
 - Fetch remote data from `update()`; load during `mount()`.
 - Put visual content outside `<fy-composition>`.
-- Edit `frameyard.policy.json`, host configuration, or the skill source.
+- Edit `fy.policy.json`, host configuration, or the skill source.
 - Claim success when `check` fails, a still is missing, or a render did not run.
 
 ## Next

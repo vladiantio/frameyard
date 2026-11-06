@@ -4,7 +4,7 @@ This project produces deterministic, parameterized video with Frameyard. This fi
 
 ## Project layout
 
-- `video.config.js` explicitly maps project IDs to sources. There is no directory scanning. It declares the project `format`, `compositions`, and `timelines`.
+- `fy.config.js` explicitly maps project IDs to sources. There is no directory scanning. It declares the project `format`, `compositions`, and `timelines`.
 - `compositions/` contains HTML fragments; an optional controller lives beside the fragment as a `.controller.js` module.
 - `timelines/` contains JSON timeline documents that assemble clips into one video.
 - `props/hello.json` contains composition props; `props/main.json` contains timeline overrides keyed by composition clip ID.
@@ -81,7 +81,7 @@ export default {
 
 ## Fonts
 
-- `frameyard.fonts.json` records installed families, licenses, and SHA-256 values; commit it with `assets/fonts/`.
+- `fy.fonts.json` records installed families, licenses, and SHA-256 values; commit it with `assets/fonts/`.
 - Search Fontsource with `npx frameyard font search "<query>" --json`, then install a family with `npx frameyard font add <fontsource-id> --json`. Variable `wght` is the default; add `--static --weight 400,700` for static files.
 - Use `npx frameyard font add --file <path> --family "<name>" --license <id> --license-file <path>` for a local or brand font. Use `--url` for an explicit HTTPS source with `--sha256`.
 - Run `npx frameyard font list --json` and `npx frameyard font verify --json` after moving files. Do not edit manifest hashes by hand.
@@ -92,16 +92,16 @@ export default {
 - Composition audio uses `<audio>` with `data-fy-start` (frames), `data-fy-trim` (seconds), optional `data-fy-duration` (seconds), and `data-fy-volume` (0-1). Timeline audio uses frames and audio tracks.
 - Media and transcript `src` values resolve from the project root; controller `src` and ordinary HTML URLs resolve from the composition URL.
 - Declare transcripts with `<fy-transcript src="assets/voice.transcript.json" words>`. `words` requires measured word timings; never interpolate segment timings.
-- Use Frameyard's `tts`/`transcribe` wrappers; never call `qwen-tts`, `sherpa-onnx-offline-tts`, or `whisper-cli` directly. Do not overwrite generated assets without approval. Commit `frameyard.assets.json` when present; do not edit hashes.
+- Use Frameyard's `tts`/`transcribe` wrappers; never call `qwen-tts`, `sherpa-onnx-offline-tts`, or `whisper-cli` directly. Do not overwrite generated assets without approval. Commit `fy.assets.json` when present; do not edit hashes.
 
 ## Resource policy
 
-A workspace can commit `frameyard.policy.json` to gate expensive operations. The nearest file from the working directory upward applies, independent of `video.config.js`; `FRAMEYARD_POLICY` overrides it. `light` allows one still frame and blocks `check`, `tts`, `transcribe`, and `render`; `authoring` allows four still frames and `check` at low priority and blocks the three heavy operations; `full` allows everything up to the 32-frame still cap. `--profile shared-cpu` caps timeline workers at 2 and composition concurrency at 1. `tts`, `transcribe`, and `render` accept `--dry-run`; use it and report the handoff when blocked. The policy is a guardrail, not a security boundary.
+A workspace can commit `fy.policy.json` to gate expensive operations. The nearest file from the working directory upward applies, independent of `fy.config.js`; `FRAMEYARD_POLICY` overrides it. `light` allows one still frame and blocks `check`, `tts`, `transcribe`, and `render`; `authoring` allows four still frames and `check` at low priority and blocks the three heavy operations; `full` allows everything up to the 32-frame still cap. `--profile shared-cpu` caps timeline workers at 2 and composition concurrency at 1. `tts`, `transcribe`, and `render` accept `--dry-run`; use it and report the handoff when blocked. The policy is a guardrail, not a security boundary.
 
 ## Agent workflow
 
-1. Read `video.config.js`, the timeline, the composition, its controller, and the props. Run `npx frameyard context --json` first.
-2. Author with native HTML, CSS, SVG, Canvas, WebGL, and an optional controller. Use `npx frameyard add --list --json` for templates and merge the returned registration object into `video.config.js`.
+1. Read `fy.config.js`, the timeline, the composition, its controller, and the props. Run `npx frameyard context --json` first.
+2. Author with native HTML, CSS, SVG, Canvas, WebGL, and an optional controller. Use `npx frameyard add --list --json` for templates and merge the returned registration object into `fy.config.js`.
 3. Lint the edit loop with `npx frameyard lint main --json`. It does not run `validateProps` or composition runtime.
 4. Run `npx frameyard check main --json` for the full gate when the policy allows it; read diagnostics and warnings.
 5. Inspect with `npx frameyard still main --frame <spec> --out <dir|file.png> --json`. The policy captures at most 32 unique frames in `full` (4 in `authoring`, 1 in `light`). Use `npx frameyard inspect`/`compare` for text facts; view the PNGs when possible.

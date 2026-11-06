@@ -166,7 +166,7 @@ async function createProject(): Promise<string> {
   temporaryDirectories.push(root);
   await mkdir(path.join(root, "compositions"), { recursive: true });
   await writeFile(
-    path.join(root, "video.config.js"),
+    path.join(root, "fy.config.js"),
     `export default { format: { width: 320, height: 180, fps: 10 }, compositions: { hello: "./compositions/hello.html" } };\n`,
   );
   await writeFile(
@@ -230,7 +230,7 @@ describe("Fontsource acquisition", () => {
     expect(result.files).toEqual(["assets/fonts/space-grotesk/space-grotesk-latin-wght-normal.woff2"]);
     expect(result.warnings).toEqual([]);
 
-    const manifest = JSON.parse(await readFile(path.join(root, "frameyard.fonts.json"), "utf8")) as {
+    const manifest = JSON.parse(await readFile(path.join(root, "fy.fonts.json"), "utf8")) as {
       fonts: Array<{
         provider: string;
         providerVersion: string;
@@ -334,7 +334,7 @@ describe("Fontsource acquisition", () => {
 
   it("requires the full tier for a URL import without a license", async () => {
     const root = await createProject();
-    await writeFile(path.join(root, "frameyard.policy.json"), JSON.stringify({ version: 1, policy: "authoring" }));
+    await writeFile(path.join(root, "fy.policy.json"), JSON.stringify({ version: 1, policy: "authoring" }));
     const result = await failed(
       ["font", "add", "--url", `${baseUrl}/font.woff2`, "--family", "Unlicensed URL Font"],
       root,

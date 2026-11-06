@@ -94,7 +94,7 @@ Static validation covers:
 | `COMPOSITION_NOT_READY` | error | `seek`/`settle` before a successful load |
 | `COMPOSITION_DISPOSED` | error | Operation after the host was disposed |
 | `IMAGE_INVALID` | error | An inspect/compare input is missing, unreadable, not an image, or has different dimensions in a comparison |
-| `POLICY_INVALID` | error | `frameyard.policy.json` or `FRAMEYARD_POLICY` is missing a required field, has an unknown field, or uses an invalid value |
+| `POLICY_INVALID` | error | `fy.policy.json` or `FRAMEYARD_POLICY` is missing a required field, has an unknown field, or uses an invalid value |
 | `RESOURCE_POLICY_BLOCKED` | error | The active tier blocks the operation, `--force`, or `--overwrite`; use `--dry-run` or ask the user for a `full` run |
 | `RESOURCE_POLICY_LIMIT` | error | A still request exceeds the active tier's frame cap |
 | `RESOURCE_PROFILE_CONFLICT` | error | `--workers` or `--concurrency` exceeds the `shared-cpu` profile cap |

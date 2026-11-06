@@ -52,11 +52,11 @@ async function createProject(): Promise<string> {
   await writeFile(path.join(root, "compositions", "poster.html"), staticComposition);
   await writeFile(path.join(root, "timelines", "main.timeline.json"), JSON.stringify(timelineDocument, null, 2));
   await writeFile(
-    path.join(root, "video.config.js"),
+    path.join(root, "fy.config.js"),
     `export default { format: { width: 160, height: 90, fps: 10 }, compositions: { hello: "./compositions/hello.html", poster: "./compositions/poster.html" }, timelines: { main: "./timelines/main.timeline.json" } };\n`,
   );
   await writeFile(
-    path.join(root, "frameyard.policy.json"),
+    path.join(root, "fy.policy.json"),
     JSON.stringify({ version: 1, policy: "authoring", profile: "shared-cpu" }, null, 2),
   );
   return root;

@@ -734,7 +734,7 @@ Options:
   --words                Request measured word timings during transcription.
   --export srt,vtt       Derived subtitle exports next to the transcript.
   --executable <path>    Explicit qwen-tts, sherpa-onnx-offline-tts, or whisper-cli executable.
-  --manifest <file>      Provenance manifest path (default: frameyard.assets.json).
+  --manifest <file>      Provenance manifest path (default: fy.assets.json).
   --qwen-tts <path>      qwen-tts executable to inspect with doctor.
   --sherpa-onnx-tts <path>  sherpa-onnx-offline-tts executable to inspect with doctor.
   --whisper-cli <path>   whisper-cli executable to inspect with doctor.
@@ -742,7 +742,7 @@ Options:
   --help, -h             Show this help.
   --version, -v          Print the version.
 
-Resource policy: the nearest frameyard.policy.json from the working directory upward sets light, authoring, or full; FRAMEYARD_POLICY overrides it. tts, transcribe, and render are blocked outside full. font add requires authoring or full; font remove and font add --force require full. Use --dry-run to validate and produce a handoff command without doing heavy work.
+Resource policy: the nearest fy.policy.json from the working directory upward sets light, authoring, or full; FRAMEYARD_POLICY overrides it. tts, transcribe, and render are blocked outside full. font add requires authoring or full; font remove and font add --force require full. Use --dry-run to validate and produce a handoff command without doing heavy work.
 `);
 }
 
@@ -805,12 +805,12 @@ function printCommandHelp(command: string): void {
       return;
     case "add":
       process.stdout.write(
-        "Usage: frameyard add --list [--json]\n       frameyard add local-models [--project <dir>] [--json]\n       frameyard add <composition|timeline> <id> --template <name> [--project <dir>] [--json]\nWrite a valid template entry and print the exact video.config.js registration snippet, or install the optional local-model host scaffold. Templates are static-poster, title-card, lower-third, and slideshow. The command refuses to overwrite an existing file or an already registered id.\n",
+        "Usage: frameyard add --list [--json]\n       frameyard add local-models [--project <dir>] [--json]\n       frameyard add <composition|timeline> <id> --template <name> [--project <dir>] [--json]\nWrite a valid template entry and print the exact fy.config.js registration snippet, or install the optional local-model host scaffold. Templates are static-poster, title-card, lower-third, and slideshow. The command refuses to overwrite an existing file or an already registered id.\n",
       );
       return;
     case "font":
       process.stdout.write(
-        "Usage: frameyard font search [query] [--category <name>] [--subset <name>] [--style normal|italic] [--variable] [--limit <n>] [--json]\n       frameyard font add <fontsource-id> [--family <alias>] [--subset <name>] [--style normal|italic] [--weight <n>] [--static] [--force] [--project <dir>] [--json]\n       frameyard font add --file <path> --family <name> [--id <id>] [--weight <n|n-n>] [--style normal|italic] [--subset <name>] [--unicode-range <range>] [--license <id>] [--license-file <path>] [--force] [--project <dir>] [--json]\n       frameyard font add --url <https-url> --family <name> [--id <id>] [--weight <n|n-n>] [--style normal|italic] [--subset <name>] [--unicode-range <range>] [--license <id>] [--license-file <path>] [--sha256 <hash>] [--force] [--project <dir>] [--json]\n       frameyard font list|verify [--project <dir>] [--json]\n       frameyard font remove <id> [--keep-files] [--project <dir>] [--json]\nSearch Fontsource, vendor a Fontsource/local/URL font into assets/fonts/<id>/, and manage frameyard.fonts.json. The server serves the generated @font-face sheet at /__frameyard/fonts.css. Project policy allows search/list/verify everywhere, add in authoring and full, and remove or --force only in full. A --url import without --license also requires full.\n",
+        "Usage: frameyard font search [query] [--category <name>] [--subset <name>] [--style normal|italic] [--variable] [--limit <n>] [--json]\n       frameyard font add <fontsource-id> [--family <alias>] [--subset <name>] [--style normal|italic] [--weight <n>] [--static] [--force] [--project <dir>] [--json]\n       frameyard font add --file <path> --family <name> [--id <id>] [--weight <n|n-n>] [--style normal|italic] [--subset <name>] [--unicode-range <range>] [--license <id>] [--license-file <path>] [--force] [--project <dir>] [--json]\n       frameyard font add --url <https-url> --family <name> [--id <id>] [--weight <n|n-n>] [--style normal|italic] [--subset <name>] [--unicode-range <range>] [--license <id>] [--license-file <path>] [--sha256 <hash>] [--force] [--project <dir>] [--json]\n       frameyard font list|verify [--project <dir>] [--json]\n       frameyard font remove <id> [--keep-files] [--project <dir>] [--json]\nSearch Fontsource, vendor a Fontsource/local/URL font into assets/fonts/<id>/, and manage fy.fonts.json. The server serves the generated @font-face sheet at /__frameyard/fonts.css. Project policy allows search/list/verify everywhere, add in authoring and full, and remove or --force only in full. A --url import without --license also requires full.\n",
       );
       return;
     case "doctor":
@@ -1393,12 +1393,12 @@ async function runAdd(parsed: ParsedArgs): Promise<number> {
 
   const project = await projectFromFlag(parsed.flags);
   if (project.compositions.has(id) || project.timelines.has(id)) {
-    throw new FrameyardError("OUTPUT_EXISTS", `Project id "${id}" is already registered in video.config.js.`);
+    throw new FrameyardError("OUTPUT_EXISTS", `Project id "${id}" is already registered in fy.config.js.`);
   }
   if (project.format === undefined) {
     throw new FrameyardError(
       "CONFIG_INVALID",
-      "Project templates inherit the project format. Add format { width, height, fps } to video.config.js first.",
+      "Project templates inherit the project format. Add format { width, height, fps } to fy.config.js first.",
     );
   }
 
@@ -1429,7 +1429,7 @@ async function runAdd(parsed: ParsedArgs): Promise<number> {
     path: targetPath,
     register,
     prerequisites: template.prerequisites ?? [],
-    next: ["Add the register entry to video.config.js", `npx frameyard lint ${id} --json`],
+    next: ["Add the register entry to fy.config.js", `npx frameyard lint ${id} --json`],
   };
 
   if (json) {
@@ -1437,7 +1437,7 @@ async function runAdd(parsed: ParsedArgs): Promise<number> {
   } else {
     process.stdout.write(`Created ${targetPath}\n`);
     const key = kind === "composition" ? "compositions" : "timelines";
-    process.stdout.write(`Add to video.config.js:\n  ${key}: { "${id}": "./${entry}" }\n`);
+    process.stdout.write(`Add to fy.config.js:\n  ${key}: { "${id}": "./${entry}" }\n`);
     if ((template.prerequisites ?? []).length > 0) {
       process.stdout.write(`Provide: ${(template.prerequisites ?? []).join(", ")}\n`);
     }
@@ -2194,7 +2194,7 @@ async function runRender(parsed: ParsedArgs, signal: AbortSignal, policy: Loaded
     if (dryRun) {
       const projectTimeline = project.timelines.get(targetId);
       if (!projectTimeline) {
-        throw new FrameyardError("TIMELINE_NOT_FOUND", `Timeline "${targetId}" is not listed in video.config.js.`);
+        throw new FrameyardError("TIMELINE_NOT_FOUND", `Timeline "${targetId}" is not listed in fy.config.js.`);
       }
       const resolved = await resolveProjectTimeline({
         project,

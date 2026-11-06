@@ -93,10 +93,10 @@ The repository ships runnable example projects. Each example README has the comm
 | `frameyard transcribe ...` | Produce canonical transcript JSON with optional word timings and SRT/VTT exports |
 | `frameyard add --list` | List the built-in project templates and scaffolds |
 | `frameyard add local-models` | Install the optional policy, OpenCode, and Pi scaffold into a workspace |
-| `frameyard add <composition\|timeline> <id> --template <name>` | Write a template entry and print the exact `video.config.js` registration snippet |
+| `frameyard add <composition\|timeline> <id> --template <name>` | Write a template entry and print the exact `fy.config.js` registration snippet |
 | `frameyard font search [query]` | Search the Fontsource catalog by name, category, subset, style, or variable axis |
 | `frameyard font add <fontsource-id>` | Install a pinned Fontsource family (variable `wght` by default, or static weights with `--static`) |
-| `frameyard font add --file <path> --family <name>` | Vendor a local font into `assets/fonts/<id>/` and update `frameyard.fonts.json` |
+| `frameyard font add --file <path> --family <name>` | Vendor a local font into `assets/fonts/<id>/` and update `fy.fonts.json` |
 | `frameyard font add --url <https-url> --family <name>` | Download and vendor a font from HTTPS (loopback HTTP for tests) |
 | `frameyard font list` | List installed families, subsets, licenses, files, and status |
 | `frameyard font verify` | Verify manifest paths, formats, hashes, licenses, and orphaned directories |
@@ -113,7 +113,7 @@ Common options: `--project <dir>`, `--json`, `--help`, and `--version`. `still` 
 
 For a timeline, `--props` is keyed by composition clip id; for a composition, it is the props object. `init` takes the directory positionally; `add --template <name>` selects a template and `add --list` lists them. `--out` paths are relative to the working directory. `tts`, `transcribe`, and `render` accept `--dry-run`, which prints the plan, handoff command, prerequisites, and blockers without writing, loading a model, launching Chromium, or encoding. `--profile shared-cpu` and `--low-priority` adjust caps and priority; see [Resource policy](#resource-policy).
 
-`font search` accepts an optional query and `--category`, `--subset`, `--style`, `--variable`, and `--limit` filters. `font add <fontsource-id>` pins the Fontsource `npmVersion`, installs the variable `wght` face by default, and accepts `--static` plus `--weight`/`--style`/`--subset` lists. `font add --file` accepts `--id`, `--weight` (a number or an inclusive range), `--style normal|italic`, `--subset`, `--unicode-range`, `--license`, and `--license-file`. `font add --url` accepts the same metadata plus `--sha256`; HTTPS is required, with loopback HTTP allowed for tests. Font files are copied, hashed, and recorded in `frameyard.fonts.json`; adding another subset, style, or weight to the same family merges it into the existing entry. `--force` replaces a face or provider and is denied outside `full`.
+`font search` accepts an optional query and `--category`, `--subset`, `--style`, `--variable`, and `--limit` filters. `font add <fontsource-id>` pins the Fontsource `npmVersion`, installs the variable `wght` face by default, and accepts `--static` plus `--weight`/`--style`/`--subset` lists. `font add --file` accepts `--id`, `--weight` (a number or an inclusive range), `--style normal|italic`, `--subset`, `--unicode-range`, `--license`, and `--license-file`. `font add --url` accepts the same metadata plus `--sha256`; HTTPS is required, with loopback HTTP allowed for tests. Font files are copied, hashed, and recorded in `fy.fonts.json`; adding another subset, style, or weight to the same family merges it into the existing entry. `--force` replaces a face or provider and is denied outside `full`.
 
 A render fails immediately on an uncaught error, unhandled rejection, missing required asset, or invalid composition output. It writes to a temporary file and publishes only after FFmpeg succeeds; existing outputs are not replaced unless `--overwrite` is supplied.
 
@@ -150,7 +150,7 @@ Diagnostics carry `severity`, `code`, `message`, and optional `details` with sou
 
 ## Project setup
 
-A project is ordinary HTML, CSS, JSON timelines, assets, and optional native JavaScript controller modules. `video.config.js` explicitly lists the project format, composition entry points, and timeline entry points; there is no directory scanning:
+A project is ordinary HTML, CSS, JSON timelines, assets, and optional native JavaScript controller modules. `fy.config.js` explicitly lists the project format, composition entry points, and timeline entry points; there is no directory scanning:
 
 ```js
 export default {
@@ -164,7 +164,7 @@ export default {
 };
 ```
 
-The project `format` fixes width, height, and fps for timelines and supplies defaults for compositions that omit dimensions. A composition that declares no dimensions in a project without `format` fails with `COMPOSITION_FORMAT_UNRESOLVED`: declare `width`/`height` or add `format { width, height, fps }` to `video.config.js`. A composition-only project stays valid without `format` as long as its compositions declare their own. Fonts are independent of `video.config.js`: install them with `npx frameyard font add`, which maintains `frameyard.fonts.json` and `assets/fonts/`.
+The project `format` fixes width, height, and fps for timelines and supplies defaults for compositions that omit dimensions. A composition that declares no dimensions in a project without `format` fails with `COMPOSITION_FORMAT_UNRESOLVED`: declare `width`/`height` or add `format { width, height, fps }` to `fy.config.js`. A composition-only project stays valid without `format` as long as its compositions declare their own. Fonts are independent of `fy.config.js`: install them with `npx frameyard font add`, which maintains `fy.fonts.json` and `assets/fonts/`.
 
 ## Composition authoring
 
@@ -309,7 +309,7 @@ Declare canonical transcripts with `<fy-transcript src="assets/voice.transcript.
 
 ### Fonts
 
-Frameyard reads installed fonts from `frameyard.fonts.json` and serves one generated `@font-face` sheet to every composition. Fontsource is the default catalog:
+Frameyard reads installed fonts from `fy.fonts.json` and serves one generated `@font-face` sheet to every composition. Fontsource is the default catalog:
 
 ```sh
 npx frameyard font search "space grotesk" --subset latin --json
@@ -340,7 +340,7 @@ A URL import without `--license` or `--license-file` is recorded as unknown, war
 }
 ```
 
-`font list` and `font verify` report the installed families and integrity. The generated sheet uses `font-display: block`; the host waits for `document.fonts.ready` and fails with `FONT_LOAD_FAILED` when a used face cannot load. Remote font URLs produce a `FONT_REMOTE` warning and are not a reproducibility guarantee. Commit `frameyard.fonts.json`, `assets/fonts/`, and license files with the project. See [fonts](./skills/frameyard/references/fonts.md) for Fontsource filters, static weights, URL imports, and licensing.
+`font list` and `font verify` report the installed families and integrity. The generated sheet uses `font-display: block`; the host waits for `document.fonts.ready` and fails with `FONT_LOAD_FAILED` when a used face cannot load. Remote font URLs produce a `FONT_REMOTE` warning and are not a reproducibility guarantee. Commit `fy.fonts.json`, `assets/fonts/`, and license files with the project. See [fonts](./skills/frameyard/references/fonts.md) for Fontsource filters, static weights, URL imports, and licensing.
 
 ## Rendering and reproducibility
 
@@ -396,7 +396,7 @@ npx frameyard transcribe assets/voice.wav --model models/ggml-base.en.bin \
   --out assets/voice.transcript.json --words --export srt,vtt
 ```
 
-`tts` defaults to qwentts.cpp CustomVoice; `--engine supertonic` requires `--model-dir`, a numeric `--speaker`, and a language code. Executable resolution is `--executable`, then the engine's environment variable, then `PATH`. Outputs are atomic and replaced only with `--force`; successful operations update `frameyard.assets.json` with hashes, generator details, models, parameters, and transcription source identity. Commit it with the project.
+`tts` defaults to qwentts.cpp CustomVoice; `--engine supertonic` requires `--model-dir`, a numeric `--speaker`, and a language code. Executable resolution is `--executable`, then the engine's environment variable, then `PATH`. Outputs are atomic and replaced only with `--force`; successful operations update `fy.assets.json` with hashes, generator details, models, parameters, and transcription source identity. Commit it with the project.
 
 The [audio assets reference](./skills/frameyard/references/audio-assets.md) covers both engines, transcription options, the provenance manifest, regeneration rules, and pinned upstream revisions.
 
@@ -419,7 +419,7 @@ npx frameyard doctor --sherpa-onnx-tts /path/to/sherpa-onnx-offline-tts --model-
 
 ### Templates
 
-`frameyard add --list` lists the built-in project templates: `static-poster`, `title-card`, `lower-third`, and `slideshow`. Add writes one valid entry and prints the exact `video.config.js` registration snippet; it deliberately does not edit the config.
+`frameyard add --list` lists the built-in project templates: `static-poster`, `title-card`, `lower-third`, and `slideshow`. Add writes one valid entry and prints the exact `fy.config.js` registration snippet; it deliberately does not edit the config.
 
 ```sh
 npx frameyard add composition intro --template lower-third
@@ -437,7 +437,7 @@ The composition and timeline templates inherit the project `format`. The slidesh
 
 ### Resource policy
 
-An optional `frameyard.policy.json` in the working directory or nearest ancestor gates expensive operations. It is independent of `video.config.js`, so it also applies with `--project`.
+An optional `fy.policy.json` in the working directory or nearest ancestor gates expensive operations. It is independent of `fy.config.js`, so it also applies with `--project`.
 
 | Tier | `still` | `check` | `tts` / `transcribe` / `render` | `--force` / `--overwrite` |
 | --- | --- | --- | --- | --- |

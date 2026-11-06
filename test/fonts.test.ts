@@ -29,7 +29,7 @@ async function createProject(): Promise<string> {
   temporaryDirectories.push(root);
   await mkdir(path.join(root, "compositions"), { recursive: true });
   await writeFile(
-    path.join(root, "video.config.js"),
+    path.join(root, "fy.config.js"),
     `export default { format: { width: 320, height: 180, fps: 10 }, compositions: { hello: "./compositions/hello.html" } };\n`,
   );
   await writeFile(
@@ -240,6 +240,6 @@ describe("local font installation", () => {
     });
     expect(await readFontManifest(root)).toBeUndefined();
     expect((await stat(path.join(root, removed.files[0]!))).isFile()).toBe(true);
-    expect(fontManifestPath(root)).toContain("frameyard.fonts.json");
+    expect(fontManifestPath(root)).toContain("fy.fonts.json");
   });
 });

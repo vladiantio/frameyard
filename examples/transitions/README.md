@@ -103,7 +103,7 @@ examples/transitions/
   compositions/gamma.html          incoming timed card
   timelines/transitions.timeline.json
   timelines/audio-crossfade.timeline.json
-  video.config.js
+  fy.config.js
 ```
 
 ## Commands

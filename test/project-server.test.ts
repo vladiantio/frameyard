@@ -18,7 +18,7 @@ beforeAll(async () => {
   await mkdir(path.join(root, "compositions"), { recursive: true });
   await mkdir(path.join(root, "assets"), { recursive: true });
   await writeFile(
-    path.join(root, "video.config.js"),
+    path.join(root, "fy.config.js"),
     `export default { compositions: { alpha: "./compositions/alpha.html" } };\n`,
   );
   await writeFile(path.join(root, "compositions", "alpha.html"), compositionSource);
@@ -36,7 +36,7 @@ describe("project configuration", () => {
     const project = await loadProject(root);
 
     expect(project.root).toBe(root);
-    expect(project.configPath).toBe(path.join(root, "video.config.js"));
+    expect(project.configPath).toBe(path.join(root, "fy.config.js"));
     expect(project.compositions.get("alpha")).toEqual({
       id: "alpha",
       entry: "compositions/alpha.html",
@@ -63,10 +63,7 @@ describe("project configuration", () => {
   it("rejects entries that escape the project root", async () => {
     const bad = await mkdtemp(path.join(tmpdir(), "frameyard-bad-"));
     try {
-      await writeFile(
-        path.join(bad, "video.config.js"),
-        `export default { compositions: { bad: "../outside.html" } };\n`,
-      );
+      await writeFile(path.join(bad, "fy.config.js"), `export default { compositions: { bad: "../outside.html" } };\n`);
       await expect(loadProject(bad)).rejects.toMatchObject({ code: "CONFIG_INVALID" });
     } finally {
       await rm(bad, { recursive: true, force: true });
@@ -77,7 +74,7 @@ describe("project configuration", () => {
     const bad = await mkdtemp(path.join(tmpdir(), "frameyard-missing-"));
     try {
       await writeFile(
-        path.join(bad, "video.config.js"),
+        path.join(bad, "fy.config.js"),
         `export default { compositions: { missing: "./compositions/missing.html" } };\n`,
       );
       await expect(loadProject(bad)).rejects.toMatchObject({ code: "CONFIG_INVALID" });
@@ -91,7 +88,7 @@ describe("project configuration", () => {
     try {
       await mkdir(path.join(bad, "compositions"), { recursive: true });
       await writeFile(
-        path.join(bad, "video.config.js"),
+        path.join(bad, "fy.config.js"),
         `export default { compositions: { bad: "./compositions/bad.txt" } };\n`,
       );
       await writeFile(path.join(bad, "compositions", "bad.txt"), "not a composition");
@@ -106,7 +103,7 @@ describe("project configuration", () => {
     try {
       await mkdir(path.join(bad, "compositions"), { recursive: true });
       await writeFile(
-        path.join(bad, "video.config.js"),
+        path.join(bad, "fy.config.js"),
         `export default { compositions: { legacy: "./compositions/legacy.js" } };\n`,
       );
       await writeFile(path.join(bad, "compositions", "legacy.js"), "export default {};\n");
@@ -241,7 +238,7 @@ describe("composition format inheritance", () => {
   async function serveProject(config: string): Promise<{ root: string; server: PreviewServer }> {
     const root = await mkdtemp(path.join(tmpdir(), "frameyard-format-"));
     await mkdir(path.join(root, "compositions"), { recursive: true });
-    await writeFile(path.join(root, "video.config.js"), config);
+    await writeFile(path.join(root, "fy.config.js"), config);
     await writeFile(path.join(root, "compositions", "plain.html"), inheritedSource);
     const server = await startPreviewServer({ projectRoot: root, port: 0 });
     return { root, server };

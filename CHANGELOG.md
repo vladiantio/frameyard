@@ -12,7 +12,7 @@ contract change may ship in a minor release and is called out explicitly below.
 
 ### Added
 
-- `frameyard.fonts.json` records vendored font families, files, licenses, and
+- `fy.fonts.json` records vendored font families, files, licenses, and
   SHA-256 values. `frameyard font search` filters the Fontsource catalog, and
   `font add <id>` pins a Fontsource `npmVersion`, vendors its WOFF2 files and
   license, and supports variable `wght` or explicit static weights. `font add
@@ -23,7 +23,7 @@ contract change may ship in a minor release and is called out explicitly below.
   does not load, and static validation warns with `FONT_REMOTE` for remote font
   URLs. See
   `docs/adr/0023-pin-fonts-as-project-assets.md`.
-- `frameyard.policy.json` is a workspace resource policy discovered from the
+- `fy.policy.json` is a workspace resource policy discovered from the
   working directory upward. It gates `tts`, `transcribe`, and `render`, caps
   `still`, denies `--force`/`--overwrite`, and supports the `shared-cpu`
   profile. `FRAMEYARD_POLICY` overrides the file. See
@@ -41,7 +41,7 @@ contract change may ship in a minor release and is called out explicitly below.
   pixel and 3×3 region differences and exits 1 when the images differ.
 - `frameyard add --list` and `frameyard add <composition|timeline> <id>
   --template <name>` write `static-poster`, `title-card`, `lower-third`, or
-  `slideshow` entries and print the exact `video.config.js` registration
+  `slideshow` entries and print the exact `fy.config.js` registration
   snippet. `add local-models` and `init --local-models` install the optional
   policy, OpenCode permissions, and Pi settings. `add` never edits the config
   and never overwrites an existing entry. The skill adds a compact quick
@@ -87,6 +87,15 @@ contract change may ship in a minor release and is called out explicitly below.
 - `examples/nested/` places two inner timelines in an outer timeline as
   full-frame and transformed group clips, with nested audio and a static
   inherited-format backdrop.
+
+### Changed
+
+- The project configuration file is `fy.config.js` (previously
+  `video.config.js`), the assets manifest is `fy.assets.json` (previously
+  `frameyard.assets.json`), and the workspace resource policy is
+  `fy.policy.json` (previously `frameyard.policy.json`). Rename existing files
+  in place; the loaders read only the new names. `FRAMEYARD_POLICY` keeps
+  its name.
 
 ### Fixed
 

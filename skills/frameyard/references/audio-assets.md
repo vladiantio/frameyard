@@ -108,7 +108,7 @@ The wrappers target the CLI surfaces of qwentts.cpp commit `5916bf7c79dbb4e66fc0
 
 ## Provenance manifest
 
-Both commands update `frameyard.assets.json` in the project root unless `--manifest <file>` is supplied. The manifest records:
+Both commands update `fy.assets.json` in the project root unless `--manifest <file>` is supplied. The manifest records:
 
 - artifact path, content hash, and size;
 - generator command, Frameyard version, executable, and integration revision;

@@ -4,7 +4,7 @@ Frameyard compositions are partial HTML fragments. The preview server wraps them
 
 ## Project configuration
 
-`video.config.js` lists every composition explicitly:
+`fy.config.js` lists every composition explicitly:
 
 ```js
 export default {

@@ -259,11 +259,11 @@ export default {
 
 ## 11. Update preview and render expectations
 
-No command changes. Preview loads the composition in a same-origin iframe; `check`, `still`, and `render` navigate directly to the same document. The composition host is injected by the server, so keep composition entries listed in `video.config.js` and run through `frameyard dev` or `frameyard render`, not `file://`.
+No command changes. Preview loads the composition in a same-origin iframe; `check`, `still`, and `render` navigate directly to the same document. The composition host is injected by the server, so keep composition entries listed in `fy.config.js` and run through `frameyard dev` or `frameyard render`, not `file://`.
 
 ## Migration checklist
 
-- [ ] Change `video.config.js` entries to `.html`.
+- [ ] Change `fy.config.js` entries to `.html`.
 - [ ] Move metadata to `<fy-composition>`.
 - [ ] Move `defaultProps` to the `data-fy="props"` JSON block.
 - [ ] Move `mount()` markup into the document.

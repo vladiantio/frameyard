@@ -49,7 +49,7 @@ examples/keyframes/
   compositions/backdrop.html   opaque static backdrop
   compositions/card.html       transparent static card
   timelines/keyframes.timeline.json
-  video.config.js
+  fy.config.js
 ```
 
 The timeline lives in `timelines/keyframes.timeline.json`. Both compositions are

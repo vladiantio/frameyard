@@ -45,7 +45,7 @@ async function createProject(options: ProjectOptions): Promise<Project> {
   }
 
   await writeFile(
-    path.join(root, "video.config.js"),
+    path.join(root, "fy.config.js"),
     `export default {
       format: { width: 1920, height: 1080, fps: 30 },
       compositions: { intro: "./compositions/main.html" },

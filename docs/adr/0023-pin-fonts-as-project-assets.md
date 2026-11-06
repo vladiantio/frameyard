@@ -3,7 +3,7 @@
 **Status:** Accepted
 **Date:** 2026-11-05
 
-`frameyard.fonts.json` is a versioned project manifest of vendored font files.
+`fy.fonts.json` is a versioned project manifest of vendored font files.
 Font files and their licenses live under `assets/fonts/<font-id>/`; the preview
 server generates the `@font-face` sheet at `/__frameyard/fonts.css` and injects
 it into every composition document before author styles. Fontsource is the
@@ -33,7 +33,7 @@ dependencies of the encoder.
   manifest atomically, record file hashes and licenses, and the server can
   generate one stylesheet without scanning directories. The project remains
   portable and renderable offline.
-- **Declare fonts in `video.config.js`.** Fewer files, but the CLI would need to
+- **Declare fonts in `fy.config.js`.** Fewer files, but the CLI would need to
   edit JavaScript to add a font, and hashes and licenses still need a sidecar.
 - **Depend on `@fontsource/*` packages in `node_modules`.** Familiar for web
   projects, but a Frameyard project is not necessarily an npm package, packages
@@ -44,7 +44,7 @@ dependencies of the encoder.
 
 ## Consequences
 
-- `frameyard.fonts.json` has `version: 1` and a `fonts` array. Each family
+- `fy.fonts.json` has `version: 1` and a `fonts` array. Each family
   records its CSS family, provider, optional provider version, license, variable
   axes, and a non-empty `files` array. Each file records a project-relative path
   below `assets/fonts/<font-id>/`, subset, style, weight or weight range, format,

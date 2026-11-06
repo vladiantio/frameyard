@@ -1,6 +1,6 @@
 # Frameyard resource policy
 
-This workspace uses `frameyard.policy.json` at the repository root. Do not edit that
+This workspace uses `fy.policy.json` at the repository root. Do not edit that
 file, `.pi/`, `.opencode/`, or `skills/frameyard/`.
 
 ## Working loop

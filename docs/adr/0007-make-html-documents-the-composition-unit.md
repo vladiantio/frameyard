@@ -11,7 +11,7 @@ Frameyard compositions will be declarative HTML documents rather than JavaScript
 - **Pure no-JavaScript HTML/CSS.** Rejected because Canvas 2D and WebGL would become impossible without a new declarative drawing language, contradicting the existing visual-source contract.
 - **HTML fragment injected into the preview container.** Rejected because relative asset URLs, document styles, and `<head>` content would need rewriting or scoping, making preview and render behavior fragile.
 - **Add HTML as an alternative authoring format.** Rejected because two public composition models double the documentation, tests, and agent-skill surface; the repository is pre-1.0 and can make a clean breaking change.
-- **Keep metadata and audio in `video.config.js`.** Rejected because it splits a composition across files and makes the HTML document less portable.
+- **Keep metadata and audio in `fy.config.js`.** Rejected because it splits a composition across files and makes the HTML document less portable.
 - **External-only controllers.** Rejected because it forces a second file for small, single-use compositions, which is worse for agent authoring and review; inline source keeps those compositions self-contained while external modules remain available for reuse, tests, and complex logic.
 - **Browser-only validation.** Rejected because agents would pay a Chromium launch for source-level mistakes and would not get line and column locations; the server already parses composition HTML for host injection, script rejection, and inline-controller extraction.
 

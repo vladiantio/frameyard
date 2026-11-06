@@ -10,7 +10,7 @@ Use the public project format and CLI. Do not add an agent-only runtime, a hoste
 
 ## First moves
 
-1. Find `video.config.js` from the working directory upward, or run `npx frameyard init <directory>`.
+1. Find `fy.config.js` from the working directory upward, or run `npx frameyard init <directory>`.
 2. Run `npx frameyard context --json`; read `format`, `compositions`, `timelines`, `fonts`, the target, its props, and its controller before editing.
 3. Confirm that speech or transcription is requested or explicitly approved before producing assets.
 4. If context is small, read [quick reference](references/quick-reference.md) first. Router: static/card → quick reference; timelines → [timelines](references/timelines.md); fonts → [fonts](references/fonts.md); captions → [subtitles and karaoke](references/subtitles-karaoke.md); failures → [diagnostics](references/diagnostics.md) and [failure recovery](references/failure-recovery.md); Canvas/WebGL → [controllers](references/controllers.md).
@@ -46,7 +46,7 @@ Use the public project format and CLI. Do not add an agent-only runtime, a hoste
 
 ## Resource policy
 
-`frameyard.policy.json` is read from the working directory upward, independent of `video.config.js`; `FRAMEYARD_POLICY` overrides it.
+`fy.policy.json` is read from the working directory upward, independent of `fy.config.js`; `FRAMEYARD_POLICY` overrides it.
 
 - `light`: one still frame; blocks `check`, `tts`, `transcribe`, and `render`.
 - `authoring`: four still frames and `check` at low priority; blocks `tts`, `transcribe`, and `render`.
@@ -62,8 +62,8 @@ Use the public project format and CLI. Do not add an agent-only runtime, a hoste
 - Outputs default to `out/<id>.<ext>` for video and `out/<id>.png` for static compositions; explicit `--out` is relative to the current directory. Replace outputs only with approval.
 - For a timeline, `--props` is a map keyed by top-level composition clip ID; for a composition, it is the props object. Use `--concurrency` for animated compositions, `--workers`/`--scratch` for timelines. `--container <mp4|mov|mkv|webm>`, `--codec <h264|hevc|vp9>`, and `--encoder <auto|software|nvenc|qsv>` select delivery; the output extension must match the container.
 - Produce speech and transcripts only with `npx frameyard tts` and `npx frameyard transcribe`, never upstream executables; read [audio assets](references/audio-assets.md). Do not overwrite generated assets without approval.
-- Use `npx frameyard add --list --json` and `add composition|timeline <id> --template <name> --json` for templates; merge the returned registration object into `video.config.js`. `add` never edits the config or overwrites an entry.
-- Use `npx frameyard font search <query> --json` to find a Fontsource family, then `npx frameyard font add <fontsource-id> --json` to pin and vendor it. Use `font add --file` for a local or brand font, or `font add --url` for an explicit HTTPS source. Reference the returned CSS family. `font list`, `font verify`, and `font remove` manage the manifest; never edit `frameyard.fonts.json` hashes by hand. Read [fonts](references/fonts.md).
+- Use `npx frameyard add --list --json` and `add composition|timeline <id> --template <name> --json` for templates; merge the returned registration object into `fy.config.js`. `add` never edits the config or overwrites an entry.
+- Use `npx frameyard font search <query> --json` to find a Fontsource family, then `npx frameyard font add <fontsource-id> --json` to pin and vendor it. Use `font add --file` for a local or brand font, or `font add --url` for an explicit HTTPS source. Reference the returned CSS family. `font list`, `font verify`, and `font remove` manage the manifest; never edit `fy.fonts.json` hashes by hand. Read [fonts](references/fonts.md).
 - Use `npx frameyard doctor --json` before reporting an environment problem. Read [JSON results](references/json-results.md) and [failure recovery](references/failure-recovery.md).
 
 ## Diagnostics and karaoke

@@ -55,7 +55,7 @@ beforeAll(async () => {
   root = await mkdtemp(path.join(tmpdir(), "frameyard-agent-"));
   await mkdir(path.join(root, "compositions"), { recursive: true });
   await writeFile(
-    path.join(root, "video.config.js"),
+    path.join(root, "fy.config.js"),
     `export default { compositions: { agent: "./compositions/agent.html" } };\n`,
   );
   await writeFile(path.join(root, "compositions", "agent.html"), composition);
@@ -69,7 +69,7 @@ afterAll(async () => {
 describe("agent-style workflow", () => {
   it("preserves source, validates, inspects a still, renders, and reports failures", async () => {
     const sourceBefore = {
-      config: digest(await readFile(path.join(root, "video.config.js"))),
+      config: digest(await readFile(path.join(root, "fy.config.js"))),
       composition: digest(await readFile(path.join(root, "compositions", "agent.html"))),
       props: digest(await readFile(path.join(root, "props.json"))),
     };
@@ -130,7 +130,7 @@ describe("agent-style workflow", () => {
     });
 
     const sourceAfter = {
-      config: digest(await readFile(path.join(root, "video.config.js"))),
+      config: digest(await readFile(path.join(root, "fy.config.js"))),
       composition: digest(await readFile(path.join(root, "compositions", "agent.html"))),
       props: digest(await readFile(path.join(root, "props.json"))),
     };

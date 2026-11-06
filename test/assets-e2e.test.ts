@@ -299,7 +299,7 @@ async function waitForFile(filePath: string): Promise<void> {
 }
 
 async function readManifest(): Promise<Record<string, unknown>> {
-  return JSON.parse(await readFile(path.join(root, "frameyard.assets.json"), "utf8")) as Record<string, unknown>;
+  return JSON.parse(await readFile(path.join(root, "fy.assets.json"), "utf8")) as Record<string, unknown>;
 }
 
 function artifacts(manifest: Record<string, unknown>): Array<Record<string, unknown>> {
@@ -356,7 +356,7 @@ beforeAll(async () => {
   await writeFile(path.join(root, "assets", "source.wav"), toneWav());
   await writeFile(path.join(root, "script.txt"), "Hello from Frameyard.");
   await writeFile(
-    path.join(root, "video.config.js"),
+    path.join(root, "fy.config.js"),
     `export default { compositions: { checked: "./compositions/checked.html", karaoke: "./compositions/karaoke.html" } };\n`,
   );
   await writeFile(

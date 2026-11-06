@@ -328,7 +328,7 @@ async function writeProject() {
 
   await writeFile(path.join(projectRoot, "package.json"), JSON.stringify({ type: "module", private: true }, null, 2));
   await writeFile(
-    path.join(projectRoot, "video.config.js"),
+    path.join(projectRoot, "fy.config.js"),
     `export default {\n  format: { width: 1920, height: 1080, fps: 30 },\n  compositions: {\n    base: "./compositions/base.html",\n    overlay: "./compositions/overlay.html",\n  },\n};\n`,
   );
   await writeFile(path.join(projectRoot, "compositions", "base.html"), BASE_COMPOSITION);

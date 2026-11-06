@@ -62,11 +62,11 @@ examples/blend/
   timelines/blend.timeline.json
   assets/ink.mp4               procedural 12-second source clip
   scripts/make-ink.sh          regenerate assets/ink.mp4
-  video.config.js
+  fy.config.js
 ```
 
 The timeline lives in `timelines/blend.timeline.json`; the project format and
-entries are fixed in `video.config.js`. `backdrop.html` is a static composition
+entries are fixed in `fy.config.js`. `backdrop.html` is a static composition
 that omits all dimensions and time metadata, so it inherits the project's
 1920×1080 size. `aurora.html` is a static composition that declares its
 dimensions but no time metadata. `labels.html` is an animated composition and

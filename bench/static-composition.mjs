@@ -37,7 +37,7 @@ const root = await mkdtemp(path.join(tmpdir(), "frameyard-static-bench-"));
 try {
   await mkdir(path.join(root, "compositions"), { recursive: true });
   await writeFile(
-    path.join(root, "video.config.js"),
+    path.join(root, "fy.config.js"),
     `export default {
       format: { width: 1280, height: 720, fps: 30 },
       compositions: {

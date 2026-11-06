@@ -232,7 +232,7 @@ beforeAll(async () => {
   await mkdir(path.join(root, "compositions"), { recursive: true });
   await mkdir(path.join(root, "assets"), { recursive: true });
   await writeFile(
-    path.join(root, "video.config.js"),
+    path.join(root, "fy.config.js"),
     `export default { compositions: { fade: "./compositions/fade.html", stable: "./compositions/stable.html", mapping: "./compositions/mapping.html" } };\n`,
   );
   await writeFile(path.join(root, "compositions", "fade.html"), composition(true));

@@ -2,7 +2,7 @@
 
 ## Using the old authoring model
 
-- **JavaScript composition modules / `defineComposition`** were removed in 0.4. A composition is a `.html` fragment listed in `video.config.js`.
+- **JavaScript composition modules / `defineComposition`** were removed in 0.4. A composition is a `.html` fragment listed in `fy.config.js`.
 - **`data-frameyard-*`** media attributes were removed in 0.4. Use `data-fy-*`.
 
 ## Document structure
@@ -54,7 +54,7 @@
 - Passing `--license` with a Fontsource id; the provider supplies the license and the flag is rejected. Use `--license` only with `--file`/`--url`.
 - Importing a font by URL without a license. It records `unknown`, warns, and requires `full`; add `--license` and `--license-file` when the license allows redistribution.
 - Adding a `.woff2` file but forgetting the license or `--family`; `font add` needs the family name and warns when the license is unknown.
-- Hand-editing a path or hash in `frameyard.fonts.json`. Reinstall the face; `check`, `still`, and `render` verify hashes before Chromium.
+- Hand-editing a path or hash in `fy.fonts.json`. Reinstall the face; `check`, `still`, and `render` verify hashes before Chromium.
 - Installing only weight 400 and using `font-weight: 700`, which asks the browser to synthesize a bold face. Add the weight or a variable range.
 - Moving or renaming a vendored font file without updating the manifest; `font verify` reports `FONT_FILE_MISSING`.
 
@@ -110,7 +110,7 @@
 - Reading the whole repository before a small edit. Run `npx frameyard context --json` first; it returns the format, props, timelines, assets, policy, and next commands.
 - Treating `inspect`/`compare` as a vision model. They return facts such as blank, alpha coverage, bbox, and changed pixels; they do not judge whether a design looks right.
 - Expecting `compare` to exit 0 when the images differ. It exits 1 and still returns `ok: true` with `identical: false`.
-- Forgetting that `add` does not edit `video.config.js`. Merge the returned `register` object yourself, then run `lint`.
+- Forgetting that `add` does not edit `fy.config.js`. Merge the returned `register` object yourself, then run `lint`.
 - Adding a composition template to a project without `format`. Composition templates inherit the project format; add `format { width, height, fps }` first.
 - Adding the slideshow timeline before `assets/slide-1.png` through `assets/slide-3.png` exist. `check` will report the missing assets.
 
@@ -119,11 +119,11 @@
 - Using `check` as the edit loop. Use `lint`; it resolves the timeline, projects every scene and keyframe channel, and scans the controller without Chromium.
 - Treating a clean `lint` as a successful `check`. Lint does not run `validateProps` or composition runtime.
 - Running `tts`, `transcribe`, or `render` while the workspace policy is `authoring` or `light`. Use `--dry-run` and hand off the command.
-- Editing `frameyard.policy.json`, `.opencode/`, `.pi/`, or `skills/frameyard/` to bypass the policy. Those files are protected by host permissions and are not part of the authoring task.
+- Editing `fy.policy.json`, `.opencode/`, `.pi/`, or `skills/frameyard/` to bypass the policy. Those files are protected by host permissions and are not part of the authoring task.
 - Passing `--force` or `--overwrite` outside `full`. Ask the user before replacing an output; the CLI will fail with `RESOURCE_POLICY_BLOCKED`.
 - Requesting more still frames than the tier allows. The caps are 1 for `light`, 4 for `authoring`, and 32 for `full`; split larger ranges.
 - Passing `--workers 8` with `--profile shared-cpu`. The profile caps workers at 2 and fails with `RESOURCE_PROFILE_CONFLICT` instead of clamping.
-- Forgetting that the policy is discovered from the working directory upward, independent of `video.config.js`. Running from a nested directory still finds the workspace file.
+- Forgetting that the policy is discovered from the working directory upward, independent of `fy.config.js`. Running from a nested directory still finds the workspace file.
 
 ## Validation
 

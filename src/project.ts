@@ -53,7 +53,7 @@ async function isFile(filePath: string): Promise<boolean> {
   }
 }
 
-/** Walks up from a directory until it finds video.config.js. */
+/** Walks up from a directory until it finds fy.config.js. */
 export async function resolveProjectRoot(start = process.cwd()): Promise<string> {
   let current = path.resolve(start);
 
@@ -66,14 +66,14 @@ export async function resolveProjectRoot(start = process.cwd()): Promise<string>
   }
 
   while (true) {
-    if (await isFile(path.join(current, "video.config.js"))) {
+    if (await isFile(path.join(current, "fy.config.js"))) {
       return current;
     }
     const parent = path.dirname(current);
     if (parent === current) {
       throw new FrameyardError(
         "CONFIG_NOT_FOUND",
-        `No video.config.js found from ${path.resolve(start)} upward. Run inside a Frameyard project or pass --project.`,
+        `No fy.config.js found from ${path.resolve(start)} upward. Run inside a Frameyard project or pass --project.`,
       );
     }
     current = parent;
@@ -82,18 +82,18 @@ export async function resolveProjectRoot(start = process.cwd()): Promise<string>
 
 function normalizeFormat(value: unknown): ProjectFormat {
   if (!isPlainObject(value)) {
-    throw new FrameyardError("CONFIG_INVALID", "video.config.js format must be an object with width, height, and fps.");
+    throw new FrameyardError("CONFIG_INVALID", "fy.config.js format must be an object with width, height, and fps.");
   }
 
   const { width, height, fps } = value;
   if (!Number.isInteger(width) || (width as number) <= 0) {
-    throw new FrameyardError("CONFIG_INVALID", "video.config.js format.width must be a positive integer.");
+    throw new FrameyardError("CONFIG_INVALID", "fy.config.js format.width must be a positive integer.");
   }
   if (!Number.isInteger(height) || (height as number) <= 0) {
-    throw new FrameyardError("CONFIG_INVALID", "video.config.js format.height must be a positive integer.");
+    throw new FrameyardError("CONFIG_INVALID", "fy.config.js format.height must be a positive integer.");
   }
   if (typeof fps !== "number" || !Number.isFinite(fps) || fps <= 0) {
-    throw new FrameyardError("CONFIG_INVALID", "video.config.js format.fps must be a positive number.");
+    throw new FrameyardError("CONFIG_INVALID", "fy.config.js format.fps must be a positive number.");
   }
 
   return { width: width as number, height: height as number, fps };
@@ -125,13 +125,13 @@ function entryPath(
   return { entry: path.relative(root, absoluteEntry).split(path.sep).join("/"), absoluteEntry };
 }
 
-/** Loads video.config.js and validates its explicit composition and timeline entries. */
+/** Loads fy.config.js and validates its explicit composition and timeline entries. */
 export async function loadProject(projectRoot: string, options: LoadProjectOptions = {}): Promise<Project> {
   const root = path.resolve(projectRoot);
-  const configPath = path.join(root, "video.config.js");
+  const configPath = path.join(root, "fy.config.js");
 
   if (!(await isFile(configPath))) {
-    throw new FrameyardError("CONFIG_NOT_FOUND", `No video.config.js found in ${root}.`);
+    throw new FrameyardError("CONFIG_NOT_FOUND", `No fy.config.js found in ${root}.`);
   }
 
   let configModule: { default?: unknown };
@@ -149,19 +149,19 @@ export async function loadProject(projectRoot: string, options: LoadProjectOptio
 
   const config = configModule.default;
   if (!isPlainObject(config)) {
-    throw new FrameyardError("CONFIG_INVALID", "video.config.js must default-export a configuration object.");
+    throw new FrameyardError("CONFIG_INVALID", "fy.config.js must default-export a configuration object.");
   }
 
   const rawCompositions = config.compositions;
   const rawTimelines = config.timelines;
   if (rawCompositions === undefined && rawTimelines === undefined) {
-    throw new FrameyardError("CONFIG_INVALID", "video.config.js must contain a compositions or timelines object.");
+    throw new FrameyardError("CONFIG_INVALID", "fy.config.js must contain a compositions or timelines object.");
   }
   if (rawCompositions !== undefined && !isPlainObject(rawCompositions)) {
-    throw new FrameyardError("CONFIG_INVALID", "video.config.js must contain a compositions object.");
+    throw new FrameyardError("CONFIG_INVALID", "fy.config.js must contain a compositions object.");
   }
   if (rawTimelines !== undefined && !isPlainObject(rawTimelines)) {
-    throw new FrameyardError("CONFIG_INVALID", "video.config.js timelines must be an object.");
+    throw new FrameyardError("CONFIG_INVALID", "fy.config.js timelines must be an object.");
   }
 
   const format = config.format === undefined ? undefined : normalizeFormat(config.format);
@@ -210,12 +210,12 @@ export async function loadProject(projectRoot: string, options: LoadProjectOptio
   }
 
   if (compositions.size === 0 && timelines.size === 0) {
-    throw new FrameyardError("CONFIG_INVALID", "video.config.js must list at least one composition or timeline.");
+    throw new FrameyardError("CONFIG_INVALID", "fy.config.js must list at least one composition or timeline.");
   }
   if (timelines.size > 0 && !format) {
     throw new FrameyardError(
       "CONFIG_INVALID",
-      "video.config.js must declare format { width, height, fps } when it lists timelines.",
+      "fy.config.js must declare format { width, height, fps } when it lists timelines.",
     );
   }
 

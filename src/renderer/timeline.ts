@@ -1019,10 +1019,7 @@ export async function checkTimeline(options: {
   const startedAt = performance.now();
   const projectTimeline = options.project.timelines.get(options.timelineId);
   if (!projectTimeline) {
-    throw new FrameyardError(
-      "TIMELINE_NOT_FOUND",
-      `Timeline "${options.timelineId}" is not listed in video.config.js.`,
-    );
+    throw new FrameyardError("TIMELINE_NOT_FOUND", `Timeline "${options.timelineId}" is not listed in fy.config.js.`);
   }
 
   const resolved = await resolveProjectTimeline({
@@ -1255,10 +1252,7 @@ export async function captureTimelineStills(options: TimelineStillsOptions): Pro
   const startedAt = performance.now();
   const projectTimeline = options.project.timelines.get(options.timelineId);
   if (!projectTimeline) {
-    throw new FrameyardError(
-      "TIMELINE_NOT_FOUND",
-      `Timeline "${options.timelineId}" is not listed in video.config.js.`,
-    );
+    throw new FrameyardError("TIMELINE_NOT_FOUND", `Timeline "${options.timelineId}" is not listed in fy.config.js.`);
   }
 
   const resolved = await resolveProjectTimeline({
@@ -1387,10 +1381,7 @@ export async function renderTimeline(options: TimelineRenderOptions): Promise<Ti
 
   const projectTimeline = options.project.timelines.get(options.timelineId);
   if (!projectTimeline) {
-    throw new FrameyardError(
-      "TIMELINE_NOT_FOUND",
-      `Timeline "${options.timelineId}" is not listed in video.config.js.`,
-    );
+    throw new FrameyardError("TIMELINE_NOT_FOUND", `Timeline "${options.timelineId}" is not listed in fy.config.js.`);
   }
 
   const resolved = await resolveProjectTimeline({

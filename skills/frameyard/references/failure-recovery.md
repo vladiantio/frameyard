@@ -7,13 +7,13 @@ Do not claim success after a nonzero exit. Fix the cause, rerun `check`, and onl
 | Code | Meaning | Action |
 | --- | --- | --- |
 | `USAGE` | Invalid flags or missing required arguments | Read `npx frameyard <command> --help`. |
-| `CONFIG_NOT_FOUND` | No `video.config.js` found | Run from the project root or pass `--project`. |
-| `CONFIG_INVALID` | Invalid config or composition entry | Fix `video.config.js`; entries must be explicit, local, `.html`, and exist. |
-| `COMPOSITION_NOT_FOUND` | ID is not listed | Add the entry to `video.config.js`. |
+| `CONFIG_NOT_FOUND` | No `fy.config.js` found | Run from the project root or pass `--project`. |
+| `CONFIG_INVALID` | Invalid config or composition entry | Fix `fy.config.js`; entries must be explicit, local, `.html`, and exist. |
+| `COMPOSITION_NOT_FOUND` | ID is not listed | Add the entry to `fy.config.js`. |
 | `COMPOSITION_INVALID` | Invalid root, metadata, fragment structure, or reserved attribute | Fix the composition fragment; check `details.line` and `details.attribute`. |
 | `COMPOSITION_DOCUMENT_SHELL` | A full document shell is present | Remove `<!doctype>`, `<html>`, `<head>`, and `<body>`; keep the fragment body and top-level metadata. See the 0.8 migration guide. |
 | `IMPORT_MAP_INVALID` | Invalid import map placement, JSON, attributes, or reserved specifier | Keep one or more top-level import maps; remove `frameyard`/`frameyard/` keys and forbidden attributes. |
-| `COMPOSITION_FORMAT_UNRESOLVED` | The composition omits `width`/`height` and the project has no `format` | Declare `width`/`height` on `<fy-composition>`, add `format { width, height, fps }` to `video.config.js`, or render through a timeline. |
+| `COMPOSITION_FORMAT_UNRESOLVED` | The composition omits `width`/`height` and the project has no `format` | Declare `width`/`height` on `<fy-composition>`, add `format { width, height, fps }` to `fy.config.js`, or render through a timeline. |
 | `COMPOSITION_ERROR` | Mount, update, or browser page error | Read the frame location; remove forbidden clocks/randomness or fix the controller. |
 | `COMPOSITION_UPDATE_ASYNC` | `update()` returned a promise | Move async work to `mount()`. |
 | `COMPOSITION_NOT_READY` | `seek`/`settle` before a successful load | Await `load`/`ready`. |
@@ -57,7 +57,7 @@ Do not claim success after a nonzero exit. Fix the cause, rerun `check`, and onl
 | `TRANSCRIPT_WORDS_UNAVAILABLE` | Karaoke requested without measured word timings | Re-run transcription with `--words` or remove `words`. |
 | `TRANSCRIPT_WARNING` | Empty transcript text or no timed segments | Regenerate the transcript. |
 | `ASSET_NOT_FOUND` | Required file is missing or unreadable | Restore the asset, model, or text file. |
-| `FONT_MANIFEST_INVALID` | Invalid or unknown manifest field, version, id, family, path, face, or weight | Fix `frameyard.fonts.json`; reinstall with `npx frameyard font add --file` instead of hand-editing paths. |
+| `FONT_MANIFEST_INVALID` | Invalid or unknown manifest field, version, id, family, path, face, or weight | Fix `fy.fonts.json`; reinstall with `npx frameyard font add --file` instead of hand-editing paths. |
 | `FONT_FILE_MISSING` | A font file in the manifest does not exist | Restore the file or remove the face/family. |
 | `FONT_FILE_INVALID` | Wrong extension, signature, or non-file path | Reinstall the font from a valid WOFF2/WOFF/TTF/OTF source. |
 | `FONT_HASH_MISMATCH` | A vendored font file changed size or hash | Restore the file, or reinstall with `npx frameyard font add --force` after approval. |

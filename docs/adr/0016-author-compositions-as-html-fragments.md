@@ -11,7 +11,7 @@ Frameyard 0.8 makes a composition a partial HTML fragment instead of a full HTML
 - **Accept both documents and fragments.** Rejected because two authoring shapes double validation, diagnostics, documentation, and agent examples for a pre-1.0 breaking release.
 - **Inject a fragment into the preview container without a document.** Rejected for the reasons in ADR-0007: relative asset URLs, document styles, and head content would need rewriting. Serving a generated document at the real composition URL avoids that problem.
 - **Generate full documents at build time.** Rejected because Frameyard has no build step and the preview server already renders composition entries per request.
-- **Let projects configure the document head.** Rejected because the author goal is to stop managing the head; a configuration surface would recreate the problem in `video.config.js`.
+- **Let projects configure the document head.** Rejected because the author goal is to stop managing the head; a configuration surface would recreate the problem in `fy.config.js`.
 
 ## Decision
 

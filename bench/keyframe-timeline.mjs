@@ -160,7 +160,7 @@ const timeline = {
 
 await writeFile(path.join(root, "timelines", "main.json"), `${JSON.stringify(timeline, null, 2)}\n`);
 await writeFile(
-  path.join(root, "video.config.js"),
+  path.join(root, "fy.config.js"),
   `export default {
     format: { width: 1280, height: 720, fps: 30 },
     compositions: { card: "./compositions/card.html" },

@@ -9,7 +9,7 @@ const roots: string[] = [];
 async function project(config: string, files: Record<string, string> = {}): Promise<string> {
   const root = await mkdtemp(path.join(tmpdir(), "frameyard-timeline-config-"));
   roots.push(root);
-  await writeFile(path.join(root, "video.config.js"), config);
+  await writeFile(path.join(root, "fy.config.js"), config);
   for (const [relative, contents] of Object.entries(files)) {
     const target = path.join(root, relative);
     await mkdir(path.dirname(target), { recursive: true });

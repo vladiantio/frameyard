@@ -34,7 +34,7 @@ describe("scaffold files", () => {
 
   it("scaffolds a timeline-first project with a composition clip", () => {
     const files = scaffoldFiles("my-video");
-    const config = files["video.config.js"] ?? "";
+    const config = files["fy.config.js"] ?? "";
     expect(config).toContain("format: { width: 1280, height: 720, fps: 30 }");
     expect(config).toContain('main: "./timelines/main.timeline.json"');
 

@@ -103,7 +103,7 @@ async function createProject(compositionSource = compositionHtml): Promise<{ roo
     )}\n`,
   );
   await writeFile(
-    path.join(root, "video.config.js"),
+    path.join(root, "fy.config.js"),
     `export default {
       format: { width: 320, height: 180, fps: 10 },
       compositions: { intro: "./compositions/intro.html" },
@@ -513,7 +513,7 @@ describe("timeline rendering media and alpha", () => {
       )}\n`,
     );
     await writeFile(
-      path.join(root, "video.config.js"),
+      path.join(root, "fy.config.js"),
       `export default {
         format: { width: 320, height: 180, fps: 10 },
         timelines: { main: "./timelines/main.json" },
@@ -587,7 +587,7 @@ describe("timeline rendering media and alpha", () => {
       )}\n`,
     );
     await writeFile(
-      path.join(root, "video.config.js"),
+      path.join(root, "fy.config.js"),
       `export default {
         format: { width: 320, height: 180, fps: 10 },
         compositions: { base: "./compositions/base.html" },
@@ -658,7 +658,7 @@ describe("timeline rendering media and alpha", () => {
         )}\n`,
       );
       await writeFile(
-        path.join(root, "video.config.js"),
+        path.join(root, "fy.config.js"),
         `export default {
         format: { width: 64, height: 36, fps: 30 },
         timelines: { main: "./timelines/main.json" },
@@ -708,7 +708,7 @@ describe("timeline rendering media and alpha", () => {
       )}\n`,
     );
     await writeFile(
-      path.join(root, "video.config.js"),
+      path.join(root, "fy.config.js"),
       `export default {
         format: { width: 320, height: 180, fps: 30 },
         compositions: { barcode: "./compositions/barcode.html" },
@@ -765,7 +765,7 @@ describe("timeline rendering media and alpha", () => {
       )}\n`,
     );
     await writeFile(
-      path.join(root, "video.config.js"),
+      path.join(root, "fy.config.js"),
       `export default {
         format: { width: 320, height: 180, fps: 10 },
         compositions: { intro: "./compositions/intro.html" },
@@ -839,7 +839,7 @@ describe("timeline rendering media and alpha", () => {
       )}\n`,
     );
     await writeFile(
-      path.join(root, "video.config.js"),
+      path.join(root, "fy.config.js"),
       `export default {
         format: { width: 320, height: 180, fps: 10 },
         compositions: { base: "./compositions/base.html", overlay: "./compositions/overlay.html" },
@@ -934,7 +934,7 @@ describe("nested timeline rendering", () => {
       )}\n`,
     );
     await writeFile(
-      path.join(root, "video.config.js"),
+      path.join(root, "fy.config.js"),
       `export default {
         format: { width: 320, height: 180, fps: 10 },
         compositions: { base: "./compositions/base.html", overlay: "./compositions/overlay.html" },
@@ -1020,7 +1020,7 @@ describe("nested timeline rendering", () => {
       )}\n`,
     );
     await writeFile(
-      path.join(root, "video.config.js"),
+      path.join(root, "fy.config.js"),
       `export default {
         format: { width: ${BARCODE.width}, height: ${BARCODE.height}, fps: ${BARCODE.fps} },
         compositions: { barcode: "./compositions/barcode.html" },
@@ -1320,7 +1320,7 @@ describe("timeline blend modes", () => {
       )}\n`,
     );
     await writeFile(
-      path.join(root, "video.config.js"),
+      path.join(root, "fy.config.js"),
       `export default {
         format: { width: 320, height: 180, fps: 10 },
         compositions: { base: "./compositions/base.html", top: "./compositions/top.html" },
@@ -1524,7 +1524,7 @@ describe("timeline blend modes", () => {
       )}\n`,
     );
     await writeFile(
-      path.join(root, "video.config.js"),
+      path.join(root, "fy.config.js"),
       `export default {
         format: { width: 320, height: 180, fps: 10 },
         compositions: { base: "./compositions/base.html" },
@@ -1627,7 +1627,7 @@ describe("timeline blend modes", () => {
       )}\n`,
     );
     await writeFile(
-      path.join(root, "video.config.js"),
+      path.join(root, "fy.config.js"),
       `export default {
         format: { width: 320, height: 180, fps: 10 },
         compositions: { top: "./compositions/top.html" },
@@ -1674,7 +1674,7 @@ describe("timeline keyframe rendering", () => {
   ): Promise<void> {
     await writeFile(path.join(root, "timelines", "main.json"), `${JSON.stringify(timeline, null, 2)}\n`);
     await writeFile(
-      path.join(root, "video.config.js"),
+      path.join(root, "fy.config.js"),
       `export default {
         format: { width: 320, height: 180, fps: 10 },
         compositions: ${JSON.stringify(compositions ?? {})},
@@ -2153,7 +2153,7 @@ describe("timeline keyframe rendering", () => {
       ],
     });
     await writeFile(
-      path.join(root, "video.config.js"),
+      path.join(root, "fy.config.js"),
       `export default {
         format: { width: 320, height: 180, fps: 10 },
         timelines: { main: "./timelines/main.json", inner: "./timelines/inner.json" },
@@ -2305,7 +2305,7 @@ describe("timeline transitions", () => {
   ): Promise<void> {
     await writeFile(path.join(root, "timelines", "main.json"), `${JSON.stringify(timeline, null, 2)}\n`);
     await writeFile(
-      path.join(root, "video.config.js"),
+      path.join(root, "fy.config.js"),
       `export default {
         format: { width: 320, height: 180, fps: 10 },
         compositions: ${JSON.stringify(compositions)},

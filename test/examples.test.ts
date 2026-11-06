@@ -96,7 +96,7 @@ describe("bundled examples", () => {
     }
   });
 
-  it.each(examples)("captures a still from the $id example", async ({ project, id, frame, timeline }) => {
+  it.concurrent.each(examples)("captures a still from the $id example", async ({ project, id, frame, timeline }) => {
     const out = path.join(temp, `${id}.png`);
     const result = await run([
       "still",

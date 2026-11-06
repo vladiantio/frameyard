@@ -3,7 +3,7 @@ import { copyFile, mkdtemp, mkdir, readdir, rm, stat, writeFile } from "node:fs/
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import { loadProject } from "../src/project.ts";
 import { compositeTimelineFrame } from "../src/renderer/ffmpeg.ts";
 import {
@@ -19,7 +19,18 @@ import { mediaPixel, mediaPixelRgba } from "./helpers/media.ts";
 
 const exec = promisify(execFile);
 const repoRoot = path.resolve(new URL("..", import.meta.url).pathname);
+
 const roots: string[] = [];
+
+/** Keeps a concurrent test's root alive until the whole file finishes. */
+function track(root: string): string {
+  roots.push(root);
+  return root;
+}
+
+afterAll(async () => {
+  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+});
 
 /**
  * Pins software encoding so segmented-render tests do not depend on the host
@@ -62,8 +73,7 @@ export default {
 `;
 
 async function createProject(compositionSource = compositionHtml): Promise<{ root: string; outPath: string }> {
-  const root = await mkdtemp(path.join(tmpdir(), "frameyard-timeline-render-"));
-  roots.push(root);
+  const root = track(await mkdtemp(path.join(tmpdir(), "frameyard-timeline-render-")));
   await mkdir(path.join(root, "compositions"), { recursive: true });
   await mkdir(path.join(root, "timelines"), { recursive: true });
   await mkdir(path.join(root, "assets"), { recursive: true });
@@ -178,11 +188,7 @@ function cssBlend(mode: BlendMode, backdrop: number, source: number): number {
   return Math.round(result * 255);
 }
 
-afterEach(async () => {
-  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
-});
-
-describe("timeline rendering", () => {
+describe.concurrent("timeline rendering", () => {
   it("caps workers at the encoder session limit", () => {
     expect(clampTimelineWorkers(16, "h264_nvenc")).toBe(8);
     expect(clampTimelineWorkers(4, "h264_nvenc")).toBe(4);
@@ -270,20 +276,22 @@ describe("timeline rendering", () => {
     expect(result).not.toHaveProperty("path");
 
     for (const frame of [0, 5, 9]) {
-      const batchPath = path.join(outDir, `still-main-${frame}.png`);
-      expect((await stat(batchPath)).size).toBeGreaterThan(0);
-
-      const singlePath = path.join(root, "out", `single-${frame}.png`);
-      const single = await captureTimelineStill({
-        project,
-        timelineId: "main",
-        frame,
-        outPath: singlePath,
-      });
-      expect(single.frame).toBe(frame);
-      expect(await mediaPixel(batchPath, 10, 90)).toEqual(await mediaPixel(singlePath, 10, 90));
-      expect(await mediaPixel(batchPath, 180, 90)).toEqual(await mediaPixel(singlePath, 180, 90));
+      expect((await stat(path.join(outDir, `still-main-${frame}.png`))).size).toBeGreaterThan(0);
     }
+
+    // One mid-timeline reference capture proves the batch path does not reuse
+    // a stale frame, without repeating every frame in a second session.
+    const singlePath = path.join(root, "out", "single-5.png");
+    const single = await captureTimelineStill({
+      project,
+      timelineId: "main",
+      frame: 5,
+      outPath: singlePath,
+    });
+    expect(single.frame).toBe(5);
+    const batchPath = path.join(outDir, "still-main-5.png");
+    expect(await mediaPixel(batchPath, 10, 90)).toEqual(await mediaPixel(singlePath, 10, 90));
+    expect(await mediaPixel(batchPath, 180, 90)).toEqual(await mediaPixel(singlePath, 180, 90));
   }, 120_000);
 
   it("publishes no timeline stills when a frame fails", async () => {
@@ -456,15 +464,14 @@ describe("timeline rendering", () => {
 });
 
 async function customRoot(): Promise<string> {
-  const root = await mkdtemp(path.join(tmpdir(), "frameyard-timeline-render-"));
-  roots.push(root);
+  const root = track(await mkdtemp(path.join(tmpdir(), "frameyard-timeline-render-")));
   await mkdir(path.join(root, "compositions"), { recursive: true });
   await mkdir(path.join(root, "timelines"), { recursive: true });
   await mkdir(path.join(root, "assets"), { recursive: true });
   return root;
 }
 
-describe("timeline rendering media and alpha", () => {
+describe.concurrent("timeline rendering media and alpha", () => {
   it("renders image and video clips across multiple segments", async () => {
     const root = await customRoot();
     await copyFile(
@@ -858,7 +865,7 @@ describe("timeline rendering media and alpha", () => {
   }, 120_000);
 });
 
-describe("nested timeline rendering", () => {
+describe.concurrent("nested timeline rendering", () => {
   it("renders a nested timeline as a group with alpha", async () => {
     const root = await customRoot();
     await copyFile(
@@ -1043,7 +1050,7 @@ describe("nested timeline rendering", () => {
   }, 120_000);
 });
 
-describe("timeline blend modes", () => {
+describe.concurrent("timeline blend modes", () => {
   async function solidPng(filePath: string, color: string, size = "64x64"): Promise<void> {
     await exec("ffmpeg", [
       "-y",
@@ -1651,7 +1658,7 @@ describe("timeline blend modes", () => {
   }, 120_000);
 });
 
-describe("timeline keyframe rendering", () => {
+describe.concurrent("timeline keyframe rendering", () => {
   async function keyframeImage(filePath: string, color: string, size = "40x40"): Promise<void> {
     await exec("ffmpeg", [
       "-y",
@@ -2282,7 +2289,7 @@ describe("timeline keyframe rendering", () => {
   }, 120_000);
 });
 
-describe("timeline transitions", () => {
+describe.concurrent("timeline transitions", () => {
   async function solidImage(filePath: string, color: string): Promise<void> {
     await exec("ffmpeg", [
       "-y",

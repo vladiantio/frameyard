@@ -32,4 +32,4 @@ The Frameyard repository itself has no `fy.config.js`, so a policy tied to the p
 - `authoring` and `light` deny `--overwrite` and `--force`. `still` frames above the limit fail with `RESOURCE_POLICY_LIMIT`.
 - `os.setPriority` is best effort. Linux and macOS use the low nice value; Windows uses below-normal. Unsupported platforms continue without failing.
 - The policy file is editable by the agent, so it is a guardrail. Host permissions and the CLI environment are the second layer; a hostile process with shell access can still bypass it.
-- Tests target `test/policy.test.ts` for parsing, precedence, discovery, tier gates, and profile caps; `test/cli-e2e.test.ts` for blocked commands, dry-run plans, still limits, and process non-spawn; `test/docs.test.ts`, `test/skill.test.ts`, and `test/scaffold.test.ts` for the contract text.
+- Tests target `test/policy.test.ts` for parsing, precedence, discovery, tier gates, and profile caps; `test/cli-render.test.ts` for blocked commands, dry-run plans, still limits, and process non-spawn; `test/docs.test.ts`, `test/skill.test.ts`, and `test/scaffold.test.ts` for the contract text.

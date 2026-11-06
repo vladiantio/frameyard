@@ -82,7 +82,21 @@ node bench/timeline-5050-60s.mjs
 
 # 5. Measure the representative 50/50, 60/30/10 case.
 node bench/timeline-representative-60s.mjs --workers 4
+
+# 6. Generate the 60-minute, one-layer composition-only production gate.
+node bench/timeline-60min-gate.mjs --work /path/to/large-disk
+
+# 7. Generate the representative 60-minute 50/50 production gate.
+node bench/timeline-60min-representative.mjs --work /path/to/large-disk
 ```
+
+The 60-minute gate is 108,000 frames, 120 composition clips of 900 frames,
+and 360 ten-second segments. The representative generator tiles the 60-second
+50/50 pattern 60 times, producing 360 clips and 540 segments; it re-encodes video
+rather than stream-copying it, so the result is a conservative production
+baseline. Both render through the production CLI rather than a bench-specific
+pipeline, so use `FRAMEYARD_TIMINGS=1` and redirect stderr to profile them. The
+generators print the exact render command.
 
 Point long runs at a larger disk without editing source:
 
@@ -145,6 +159,26 @@ The JSON result records the effective additions and removals under `settings`.
   very cheap.
 - `fullRender` is the real CLI path, including startup, audio inspection, and
   process cleanup.
+
+For production-path stage timings, set `FRAMEYARD_TIMINGS=1` and redirect stderr
+to a file. The renderer emits one JSON line per stage (session open, capture,
+PNG write, FFV1, composite, concat, audio, publish) without changing the
+`--json` stdout result. Summarize it with:
+
+```sh
+FRAMEYARD_TIMINGS=1 node dist/cli.js render main --project examples/demo \
+  --workers 4 2> timings.jsonl
+node bench/summarize-timings.mjs timings.jsonl --segments
+```
+
+`FRAMEYARD_FFV1_THREADS=<n>` bounds the streaming FFV1 encoder; `0` uses
+FFmpeg's default. Two threads is the default because four concurrent captures
+already keep the CPU busy. `FRAMEYARD_CAPTURE_CONCURRENCY=<n>` overrides the
+global layer-capture limit; the default is `min(workers * 2, 12)`.
+`FRAMEYARD_DISABLE_DUAL_PIPE=1` forces the segmented fallback for a full-frame
+composition base plus a static overlay, which is useful for A/B measurements.
+`FRAMEYARD_DISABLE_VIDEO_DIRECT=1` forces the composite path for a single
+full-frame video.
 
 Timings are machine-dependent. For an A/B comparison, alternate the two variants
 and compare medians rather than single runs. `--json` records the requested

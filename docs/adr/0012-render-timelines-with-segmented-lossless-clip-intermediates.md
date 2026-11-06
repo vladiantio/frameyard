@@ -1,6 +1,6 @@
 # Render timelines with segmented lossless clip intermediates
 
-**Status:** Accepted
+**Status:** Accepted. Extended by [ADR-0024](./0024-stream-composition-captures-and-skip-trivial-composites.md): captures stream into FFV1, and single full-frame compositions skip the intermediate and composite.
 **Date:** 2026-10-31
 
 Timeline rendering will be segmented and parallel. For each segment, Chromium renders the active composition and nested-timeline clips to lossless FFV1 intermediates; FFmpeg decodes media, applies the clip's fit and static transform, composites the segment, encodes H.264, and the ordered segments are concatenated without re-encoding. Audio is mixed once for the whole timeline and muxed at the end. Preview remains a live Chromium timeline host with a bounded pool of active clips; parity is guaranteed at clip capture, not at the final composite.

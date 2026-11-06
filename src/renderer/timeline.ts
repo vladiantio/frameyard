@@ -24,19 +24,27 @@ import {
   concatTimelineSegments,
   CONTAINER_EXTENSION,
   defaultCodecForContainer,
+  encodeVideoSegmentDirect,
   ENCODER_SESSION_LIMIT,
-  encodePngSequenceToFfv1,
   mixAudioTimeline,
   muxVideoWithAudio,
   resolveVideoEncoder,
   sceneLayerToCompositeLayer,
+  startDirectSegmentEncoder,
+  startDualPipeSegmentEncoder,
+  startFfv1Encoder,
+  type DualPipeEncoder,
   type TimelineCompositeLayer,
   type VideoCodec,
   type VideoContainer,
+  type VideoEncoder,
   type VideoEncoderChoice,
   type VideoEncoderName,
 } from "./ffmpeg.js";
+import { createSemaphore, type Semaphore } from "./concurrency.js";
+import { CompositionSessionPool, type SessionLease } from "./session-pool.js";
 import { inspectTranscriptClips, type TranscriptInspection } from "./transcripts.js";
+import { startTiming } from "./timings.js";
 import { evaluatePresentation } from "../timeline/keyframes.js";
 import { transitionProgress } from "../timeline/transitions.js";
 import { KEYFRAME_CHANNELS } from "../timeline/schema.js";
@@ -180,9 +188,46 @@ export function clampTimelineWorkers(workers: number, encoder: VideoEncoderName)
   return Math.min(workers, ENCODER_SESSION_LIMIT[encoder]);
 }
 
+const MAX_CAPTURE_CONCURRENCY = 12;
+
+/**
+ * Capture sessions are bounded independently from segment workers. A segment
+ * with two or three layers can overlap its captures without letting an
+ * eight-worker render open sixteen browsers.
+ */
+function captureConcurrency(workers: number): number {
+  const raw = process.env.FRAMEYARD_CAPTURE_CONCURRENCY;
+  if (raw !== undefined) {
+    const value = Number(raw);
+    if (Number.isInteger(value) && value > 0) {
+      return Math.min(value, 32);
+    }
+  }
+  return Math.min(workers * 2, MAX_CAPTURE_CONCURRENCY);
+}
+
 function throwIfAborted(signal: AbortSignal | undefined): void {
   if (signal?.aborted) {
     throw new FrameyardError("RENDER_FAILED", "Operation cancelled.");
+  }
+}
+
+async function withCaptureSlot<T>(
+  limiter: Semaphore | undefined,
+  signal: AbortSignal | undefined,
+  task: () => Promise<T>,
+): Promise<T> {
+  if (!limiter) {
+    throwIfAborted(signal);
+    return task();
+  }
+  throwIfAborted(signal);
+  const release = await limiter.acquire();
+  try {
+    throwIfAborted(signal);
+    return await task();
+  } finally {
+    release();
   }
 }
 
@@ -563,7 +608,7 @@ async function captureStaticCompositionLayer(options: {
   }
 }
 
-async function captureCompositionLayer(options: {
+interface CompositionFrameCaptureOptions {
   project: Project;
   timeline: ResolvedTimeline;
   clip: ResolvedTimelineClip;
@@ -571,11 +616,21 @@ async function captureCompositionLayer(options: {
   segment: TimelineRenderSegment;
   layerIndex: number;
   serverUrl: string;
-  segmentDir: string;
   infoCache: Map<string, StaticValidationResult>;
+  sessionPool?: CompositionSessionPool;
   signal?: AbortSignal;
-}): Promise<{ path: string; diagnostics: CompositionDiagnostic[] }> {
-  const { project, timeline, clip, source, segment, layerIndex, serverUrl, segmentDir, infoCache } = options;
+}
+
+/**
+ * Opens a composition session, captures every frame of the segment, and hands
+ * each PNG to `writeFrame`. The caller owns the encoder lifecycle so the same
+ * loop can feed an FFV1 intermediate or a direct delivery segment.
+ */
+async function captureCompositionFrames(
+  options: CompositionFrameCaptureOptions,
+  writeFrame: (png: Buffer) => Promise<void>,
+): Promise<CompositionDiagnostic[]> {
+  const { project, timeline, clip, source, segment, layerIndex, serverUrl, infoCache } = options;
   const propsKey = JSON.stringify(clip.props ?? null);
   const cacheKey = `${source.entry}\u0000${propsKey}`;
   let validation = infoCache.get(cacheKey);
@@ -601,38 +656,344 @@ async function captureCompositionLayer(options: {
     throw new FrameyardError("INTERNAL", `Missing layer ${layerIndex} for segment ${segment.index}.`);
   }
 
-  const prefix = `comp-${layerIndex}`;
-  const session = await openCompositionSession({
+  const sessionTiming = startTiming("timeline.layer.session", {
+    entry: source.entry,
+    layer: layerIndex,
+    segment: segment.index,
+  });
+  const sessionKey = JSON.stringify([source.entry, clip.props ?? null, true]);
+  const openOptions = {
     serverUrl,
     entry: source.entry,
     props: clip.props,
     info: validation.info as CompositionSourceInfo,
     staticDiagnostics: validation.diagnostics,
     transparentBackground: true,
-  });
+  };
+  const lease: SessionLease = options.sessionPool
+    ? await options.sessionPool.acquire(sessionKey, () => openCompositionSession(openOptions))
+    : await (async () => {
+        const session = await openCompositionSession(openOptions);
+        return {
+          session,
+          reused: false,
+          release: () => session.close(),
+          discard: () => session.close(),
+        };
+      })();
+  sessionTiming.finish({ reused: lease.reused });
+  const session = lease.session;
+  let healthy = false;
+
   const diagnostics: CompositionDiagnostic[] = [];
+  const captureTiming = startTiming("timeline.layer.capture_frames", {
+    entry: source.entry,
+    layer: layerIndex,
+    segment: segment.index,
+    frames: segment.frames,
+  });
+  let seekMs = 0;
+  let captureMs = 0;
+  let writeMs = 0;
+  let pngBytes = 0;
   try {
     for (let offset = 0; offset < segment.frames; offset += 1) {
       throwIfAborted(options.signal);
+      const seekStarted = performance.now();
       await session.seek(layer.sourceStart + offset);
+      seekMs += performance.now() - seekStarted;
+      const captureStarted = performance.now();
       const png = await session.capture();
-      await writeFile(path.join(segmentDir, `${prefix}-${String(offset).padStart(4, "0")}.png`), png);
+      captureMs += performance.now() - captureStarted;
+      pngBytes += png.length;
+      const writeStarted = performance.now();
+      await writeFrame(png);
+      writeMs += performance.now() - writeStarted;
     }
     for (const diagnostic of await session.readDiagnostics()) {
       diagnostics.push(compositionDiagnostic(diagnostic, timeline.id, clip, source.id));
     }
+    healthy = true;
   } finally {
-    await session.close();
+    captureTiming.finish({
+      seekMs: Number(seekMs.toFixed(1)),
+      captureMs: Number(captureMs.toFixed(1)),
+      writeMs: Number(writeMs.toFixed(1)),
+      pngBytes,
+    });
+    if (healthy) {
+      await lease.release();
+    } else {
+      await lease.discard();
+    }
+  }
+  return diagnostics;
+}
+
+async function captureCompositionLayer(
+  options: CompositionFrameCaptureOptions & { segmentDir: string },
+): Promise<{ path: string; diagnostics: CompositionDiagnostic[] }> {
+  const prefix = `comp-${options.layerIndex}`;
+  const outputPath = path.join(options.segmentDir, `${prefix}.mkv`);
+  const ffv1Timing = startTiming("timeline.layer.ffv1", {
+    entry: options.source.entry,
+    layer: options.layerIndex,
+    segment: options.segment.index,
+  });
+  let encoder: VideoEncoder;
+  try {
+    encoder = await startFfv1Encoder({
+      outputPath,
+      frames: options.segment.frames,
+      fps: options.timeline.format.fps,
+      ...(options.signal ? { signal: options.signal } : {}),
+    });
+  } catch (error) {
+    ffv1Timing.finish();
+    throw error;
   }
 
-  const outputPath = path.join(segmentDir, `${prefix}.mkv`);
-  await encodePngSequenceToFfv1({
-    pattern: path.join(segmentDir, `${prefix}-%04d.png`),
-    outputPath,
-    fps: timeline.format.fps,
-    signal: options.signal,
+  try {
+    const diagnostics = await captureCompositionFrames(options, (png) => encoder.writeFrame(png));
+    await encoder.finish();
+    return { path: outputPath, diagnostics };
+  } catch (error) {
+    await encoder.abort();
+    throw error;
+  } finally {
+    ffv1Timing.finish();
+  }
+}
+
+/**
+ * A single full-frame composition with no presentation work can go straight to
+ * the delivery encoder. The FFV1 intermediate and the FFmpeg composite would
+ * both be identity operations except for the background fill.
+ */
+type SceneLayer = TimelineRenderSegment["layers"][number];
+
+function isFullFrameComposition(layer: SceneLayer, timeline: ResolvedTimeline): boolean {
+  if (layer.clip.source.kind !== "composition" || layer.capture !== "frames") {
+    return false;
+  }
+  if (layer.transform.width !== undefined || layer.transform.height !== undefined) {
+    return false;
+  }
+  if (layer.sourceWidth !== timeline.format.width || layer.sourceHeight !== timeline.format.height) {
+    return false;
+  }
+  const { x, y, scale, rotation, opacity } = layer.transform;
+  if (x !== 0 || y !== 0 || scale !== 1 || rotation !== 0 || opacity !== 1) {
+    return false;
+  }
+  return layer.blend === "normal" && layer.transition === undefined && layer.keyframes === undefined;
+}
+
+function canEncodeDirectly(options: {
+  segment: TimelineRenderSegment;
+  timeline: ResolvedTimeline;
+  background: string;
+}): boolean {
+  if (options.background === "transparent" || options.segment.layers.length !== 1) {
+    return false;
+  }
+  const layer = options.segment.layers[0];
+  return layer !== undefined && isFullFrameComposition(layer, options.timeline);
+}
+
+function isStaticCompositionOverlay(layer: SceneLayer): boolean {
+  if (layer.clip.source.kind !== "composition" || layer.capture !== "frames") {
+    return false;
+  }
+  const { scale, rotation, opacity } = layer.transform;
+  if (scale !== 1 || rotation !== 0 || opacity !== 1) {
+    return false;
+  }
+  return layer.blend === "normal" && layer.transition === undefined && layer.keyframes === undefined;
+}
+
+function canEncodeVideoDirectly(options: {
+  segment: TimelineRenderSegment;
+  timeline: ResolvedTimeline;
+  background: string;
+}): boolean {
+  if (process.env.FRAMEYARD_DISABLE_VIDEO_DIRECT === "1") {
+    return false;
+  }
+  if (options.background === "transparent" || options.segment.layers.length !== 1) {
+    return false;
+  }
+  const layer = options.segment.layers[0];
+  if (!layer || layer.clip.source.kind !== "video" || layer.capture !== "video") {
+    return false;
+  }
+  if (layer.sourceWidth !== options.timeline.format.width || layer.sourceHeight !== options.timeline.format.height) {
+    return false;
+  }
+  const { x, y, scale, rotation, opacity, width, height } = layer.transform;
+  if (
+    width !== undefined ||
+    height !== undefined ||
+    x !== 0 ||
+    y !== 0 ||
+    scale !== 1 ||
+    rotation !== 0 ||
+    opacity !== 1
+  ) {
+    return false;
+  }
+  return layer.blend === "normal" && layer.transition === undefined && layer.keyframes === undefined;
+}
+
+function canEncodeDualPipe(options: {
+  segment: TimelineRenderSegment;
+  timeline: ResolvedTimeline;
+  background: string;
+}): boolean {
+  // FFmpeg reads the second image pipe through fd 3; keep the conservative
+  // fallback on hosts where extra stdio pipes are not portable.
+  if (
+    process.platform === "win32" ||
+    process.env.FRAMEYARD_DISABLE_DUAL_PIPE === "1" ||
+    options.background === "transparent" ||
+    options.segment.layers.length !== 2
+  ) {
+    return false;
+  }
+  const base = options.segment.layers[0];
+  const overlay = options.segment.layers[1];
+  return (
+    base !== undefined &&
+    overlay !== undefined &&
+    isFullFrameComposition(base, options.timeline) &&
+    isStaticCompositionOverlay(overlay)
+  );
+}
+
+async function captureDirectCompositionLayer(
+  options: CompositionFrameCaptureOptions & {
+    outputPath: string;
+    background: string;
+    codec: VideoCodec;
+    container: VideoContainer;
+    encoderName?: VideoEncoderName;
+  },
+): Promise<{ path: string; diagnostics: CompositionDiagnostic[] }> {
+  const timing = startTiming("timeline.layer.composition", {
+    entry: options.source.entry,
+    layer: options.layerIndex,
+    segment: options.segment.index,
   });
-  return { path: outputPath, diagnostics };
+  let encoder: VideoEncoder;
+  try {
+    encoder = await startDirectSegmentEncoder({
+      outputPath: options.outputPath,
+      width: options.timeline.format.width,
+      height: options.timeline.format.height,
+      fps: options.timeline.format.fps,
+      frames: options.segment.frames,
+      background: options.background,
+      codec: options.codec,
+      container: options.container,
+      ...(options.encoderName !== undefined ? { encoder: options.encoderName } : {}),
+      ...(options.signal ? { signal: options.signal } : {}),
+    });
+  } catch (error) {
+    timing.finish();
+    throw error;
+  }
+
+  try {
+    const diagnostics = await captureCompositionFrames(options, (png) => encoder.writeFrame(png));
+    await encoder.finish();
+    return { path: options.outputPath, diagnostics };
+  } catch (error) {
+    await encoder.abort();
+    throw error;
+  } finally {
+    timing.finish();
+  }
+}
+
+async function captureTwoLayerDirectComposition(
+  options: Omit<CompositionFrameCaptureOptions, "clip" | "source" | "layerIndex"> & {
+    outputPath: string;
+    background: string;
+    codec: VideoCodec;
+    container: VideoContainer;
+    encoderName?: VideoEncoderName;
+    captureLimiter?: Semaphore;
+  },
+): Promise<{ path: string; diagnostics: CompositionDiagnostic[] }> {
+  const overlayLayer = options.segment.layers[1];
+  if (!overlayLayer) {
+    throw new FrameyardError("INTERNAL", "Dual-pipe capture requires an overlay layer.");
+  }
+  const overlay = sceneLayerToCompositeLayer(overlayLayer, { path: "pipe:3", input: "sequence" });
+  const encoder: DualPipeEncoder = await startDualPipeSegmentEncoder({
+    outputPath: options.outputPath,
+    width: options.timeline.format.width,
+    height: options.timeline.format.height,
+    fps: options.timeline.format.fps,
+    frames: options.segment.frames,
+    background: options.background,
+    codec: options.codec,
+    container: options.container,
+    overlay,
+    ...(options.encoderName !== undefined ? { encoder: options.encoderName } : {}),
+    ...(options.signal ? { signal: options.signal } : {}),
+  });
+
+  const tasks = options.segment.layers.map(async (layer, layerIndex): Promise<CompositionDiagnostic[]> => {
+    if (layer.clip.source.kind !== "composition") {
+      throw new FrameyardError("INTERNAL", "Dual-pipe capture requires composition layers.");
+    }
+    const source = layer.clip.source;
+    return withCaptureSlot(options.captureLimiter, options.signal, async () => {
+      const timing = startTiming("timeline.layer.composition", {
+        entry: source.entry,
+        layer: layerIndex,
+        segment: options.segment.index,
+      });
+      try {
+        return await captureCompositionFrames(
+          {
+            project: options.project,
+            timeline: options.timeline,
+            clip: layer.clip,
+            source,
+            segment: options.segment,
+            layerIndex,
+            serverUrl: options.serverUrl,
+            infoCache: options.infoCache,
+            ...(options.sessionPool !== undefined ? { sessionPool: options.sessionPool } : {}),
+            ...(options.signal ? { signal: options.signal } : {}),
+          },
+          (png) => encoder.writeFrame(layerIndex as 0 | 1, png),
+        );
+      } finally {
+        timing.finish();
+      }
+    });
+  });
+
+  const settled = await Promise.allSettled(tasks);
+  const diagnostics: CompositionDiagnostic[] = [];
+  for (const result of settled) {
+    if (result.status === "rejected") {
+      await encoder.abort();
+      throw result.reason;
+    }
+    diagnostics.push(...result.value);
+  }
+
+  try {
+    await encoder.finish();
+  } catch (error) {
+    await encoder.abort();
+    throw error;
+  }
+  return { path: options.outputPath, diagnostics };
 }
 
 async function renderNestedTimelineRange(options: {
@@ -644,6 +1005,8 @@ async function renderNestedTimelineRange(options: {
   scratchRoot: string;
   infoCache: Map<string, StaticValidationResult>;
   staticCache: Map<string, Promise<StaticCapture>>;
+  captureLimiter?: Semaphore;
+  sessionPool?: CompositionSessionPool;
   depth: number;
   signal?: AbortSignal;
 }): Promise<{ path: string; diagnostics: CompositionDiagnostic[] }> {
@@ -667,6 +1030,8 @@ async function renderNestedTimelineRange(options: {
         scratchRoot: options.scratchRoot,
         infoCache: options.infoCache,
         staticCache: options.staticCache,
+        ...(options.captureLimiter !== undefined ? { captureLimiter: options.captureLimiter } : {}),
+        ...(options.sessionPool !== undefined ? { sessionPool: options.sessionPool } : {}),
         codec: "ffv1",
         background: options.timeline.background ?? "transparent",
         prefix,
@@ -691,6 +1056,12 @@ async function renderNestedTimelineRange(options: {
   return { path: outputPath, diagnostics };
 }
 
+interface CapturedLayer {
+  layerIndex: number;
+  compositeLayer: TimelineCompositeLayer;
+  diagnostics: CompositionDiagnostic[];
+}
+
 async function processTimelineSegment(options: {
   project: Project;
   timeline: ResolvedTimeline;
@@ -699,6 +1070,8 @@ async function processTimelineSegment(options: {
   scratchRoot: string;
   infoCache: Map<string, StaticValidationResult>;
   staticCache: Map<string, Promise<StaticCapture>>;
+  captureLimiter?: Semaphore;
+  sessionPool?: CompositionSessionPool;
   codec?: VideoCodec | "ffv1";
   container?: VideoContainer;
   background?: string;
@@ -713,62 +1086,190 @@ async function processTimelineSegment(options: {
   const prefix = options.prefix ?? "timeline";
   const depth = options.depth ?? 0;
   const segmentDir = path.join(scratchRoot, `${prefix}-seg-${String(segment.index).padStart(4, "0")}`);
+  const segmentTiming = startTiming("timeline.segment", {
+    segment: segment.index,
+    start: segment.start,
+    frames: segment.frames,
+    layers: segment.layers.length,
+  });
+  const extension = codec === "ffv1" ? "mkv" : CONTAINER_EXTENSION[options.container ?? "mp4"];
+  const segmentPath = path.join(
+    scratchRoot,
+    `${prefix}-segment-${String(segment.index).padStart(4, "0")}.${extension}`,
+  );
+
+  if (codec !== "ffv1" && canEncodeDirectly({ segment, timeline, background })) {
+    const layer = segment.layers[0];
+    if (!layer) {
+      throw new FrameyardError("INTERNAL", "Direct segment capture requires one composition layer.");
+    }
+    const clip = layer.clip;
+    if (clip.source.kind !== "composition") {
+      throw new FrameyardError("INTERNAL", "Direct segment capture requires one composition layer.");
+    }
+    const source = clip.source;
+    const directTiming = startTiming("timeline.segment.direct", {
+      segment: segment.index,
+      frames: segment.frames,
+      codec,
+      container: options.container ?? "mp4",
+    });
+    const captured = await withCaptureSlot(options.captureLimiter, options.signal, () =>
+      captureDirectCompositionLayer({
+        project,
+        timeline,
+        clip,
+        source,
+        segment,
+        layerIndex: 0,
+        serverUrl,
+        infoCache,
+        outputPath: segmentPath,
+        background,
+        codec,
+        container: options.container ?? "mp4",
+        ...(options.sessionPool !== undefined ? { sessionPool: options.sessionPool } : {}),
+        ...(options.encoder !== undefined ? { encoderName: options.encoder } : {}),
+        ...(options.signal ? { signal: options.signal } : {}),
+      }),
+    );
+    directTiming.finish();
+    segmentTiming.finish();
+    return { path: segmentPath, diagnostics: captured.diagnostics };
+  }
+
+  if (codec !== "ffv1" && canEncodeDualPipe({ segment, timeline, background })) {
+    const directTiming = startTiming("timeline.segment.direct", {
+      segment: segment.index,
+      frames: segment.frames,
+      codec,
+      container: options.container ?? "mp4",
+      layers: 2,
+    });
+    const captured = await captureTwoLayerDirectComposition({
+      project,
+      timeline,
+      segment,
+      serverUrl,
+      infoCache,
+      outputPath: segmentPath,
+      background,
+      codec,
+      container: options.container ?? "mp4",
+      ...(options.captureLimiter !== undefined ? { captureLimiter: options.captureLimiter } : {}),
+      ...(options.sessionPool !== undefined ? { sessionPool: options.sessionPool } : {}),
+      ...(options.encoder !== undefined ? { encoderName: options.encoder } : {}),
+      ...(options.signal ? { signal: options.signal } : {}),
+    });
+    directTiming.finish();
+    segmentTiming.finish();
+    return { path: segmentPath, diagnostics: captured.diagnostics };
+  }
+
+  if (codec !== "ffv1" && canEncodeVideoDirectly({ segment, timeline, background })) {
+    const layer = segment.layers[0];
+    if (!layer || layer.clip.source.kind !== "video") {
+      throw new FrameyardError("INTERNAL", "Direct video capture requires one video layer.");
+    }
+    const source = layer.clip.source;
+    const directTiming = startTiming("timeline.segment.direct", {
+      segment: segment.index,
+      frames: segment.frames,
+      codec,
+      container: options.container ?? "mp4",
+      layers: 1,
+      kind: "video",
+    });
+    await encodeVideoSegmentDirect({
+      inputPath: source.absolutePath,
+      outputPath: segmentPath,
+      sourceStartFrame: layer.sourceStart,
+      frames: segment.frames,
+      fps: timeline.format.fps,
+      codec,
+      container: options.container ?? "mp4",
+      ...(options.encoder !== undefined ? { encoder: options.encoder } : {}),
+      ...(options.signal ? { signal: options.signal } : {}),
+    });
+    directTiming.finish();
+    segmentTiming.finish();
+    return { path: segmentPath, diagnostics: [] };
+  }
+
   await mkdir(segmentDir, { recursive: true });
   const diagnostics: CompositionDiagnostic[] = [];
   const layers: TimelineCompositeLayer[] = [];
-
-  for (const [layerIndex, layer] of segment.layers.entries()) {
+  const layerTasks = segment.layers.map(async (layer, layerIndex): Promise<CapturedLayer> => {
     throwIfAborted(options.signal);
     const clip = layer.clip;
     const source = clip.source;
 
     if (source.kind === "composition") {
       if (layer.capture === "still") {
-        const captured = await captureStaticCompositionLayer({
+        const timing = startTiming("timeline.layer.static", { layer: layerIndex, segment: segment.index });
+        const captured = await withCaptureSlot(options.captureLimiter, options.signal, () =>
+          captureStaticCompositionLayer({
+            project,
+            timeline,
+            clip,
+            source,
+            serverUrl,
+            scratchRoot,
+            infoCache,
+            staticCache: options.staticCache,
+            ...(options.signal ? { signal: options.signal } : {}),
+          }),
+        );
+        timing.finish();
+        return {
+          layerIndex,
+          compositeLayer: sceneLayerToCompositeLayer(layer, { path: captured.path, input: "image" }),
+          diagnostics: captured.diagnostics,
+        };
+      }
+
+      const timing = startTiming("timeline.layer.composition", {
+        entry: source.entry,
+        layer: layerIndex,
+        segment: segment.index,
+      });
+      const captured = await withCaptureSlot(options.captureLimiter, options.signal, () =>
+        captureCompositionLayer({
           project,
           timeline,
           clip,
           source,
+          segment,
+          layerIndex,
           serverUrl,
-          scratchRoot,
+          segmentDir,
           infoCache,
-          staticCache: options.staticCache,
+          ...(options.sessionPool !== undefined ? { sessionPool: options.sessionPool } : {}),
           ...(options.signal ? { signal: options.signal } : {}),
-        });
-        diagnostics.push(...captured.diagnostics);
-        layers.push(sceneLayerToCompositeLayer(layer, { path: captured.path, input: "image" }));
-        continue;
-      }
-
-      const captured = await captureCompositionLayer({
-        project,
-        timeline,
-        clip,
-        source,
-        segment,
+        }),
+      );
+      timing.finish();
+      return {
         layerIndex,
-        serverUrl,
-        segmentDir,
-        infoCache,
-        ...(options.signal ? { signal: options.signal } : {}),
-      });
-      diagnostics.push(...captured.diagnostics);
-      layers.push(sceneLayerToCompositeLayer(layer, { path: captured.path, input: "sequence" }));
-      continue;
+        compositeLayer: sceneLayerToCompositeLayer(layer, { path: captured.path, input: "sequence" }),
+        diagnostics: captured.diagnostics,
+      };
     }
 
     if (source.kind === "video" || source.kind === "image") {
-      layers.push(
-        sceneLayerToCompositeLayer(layer, {
+      return {
+        layerIndex,
+        compositeLayer: sceneLayerToCompositeLayer(layer, {
           path: source.absolutePath,
           input: source.kind,
           ...(source.kind === "video" ? { sourceStartFrame: layer.sourceStart } : {}),
         }),
-      );
-      continue;
+        diagnostics: [],
+      };
     }
 
     if (source.kind === "timeline") {
+      const timing = startTiming("timeline.layer.nested", { layer: layerIndex, segment: segment.index });
       const nested = await renderNestedTimelineRange({
         project,
         timeline: source.timeline,
@@ -778,22 +1279,42 @@ async function processTimelineSegment(options: {
         scratchRoot,
         infoCache,
         staticCache: options.staticCache,
+        ...(options.captureLimiter !== undefined ? { captureLimiter: options.captureLimiter } : {}),
+        ...(options.sessionPool !== undefined ? { sessionPool: options.sessionPool } : {}),
         depth: depth + 1,
         ...(options.signal ? { signal: options.signal } : {}),
       });
-      diagnostics.push(...nested.diagnostics);
-      layers.push(sceneLayerToCompositeLayer(layer, { path: nested.path, input: "sequence" }));
-      continue;
+      timing.finish();
+      return {
+        layerIndex,
+        compositeLayer: sceneLayerToCompositeLayer(layer, { path: nested.path, input: "sequence" }),
+        diagnostics: nested.diagnostics,
+      };
     }
 
     throw new FrameyardError("TIMELINE_INVALID", `Unsupported visual source for clip "${clip.id}".`);
+  });
+
+  const settled = await Promise.allSettled(layerTasks);
+  const capturedLayers: CapturedLayer[] = [];
+  for (const result of settled) {
+    if (result.status === "rejected") {
+      throw result.reason;
+    }
+    capturedLayers.push(result.value);
+  }
+  capturedLayers.sort((left, right) => left.layerIndex - right.layerIndex);
+  for (const captured of capturedLayers) {
+    diagnostics.push(...captured.diagnostics);
+    layers.push(captured.compositeLayer);
   }
 
-  const extension = codec === "ffv1" ? "mkv" : CONTAINER_EXTENSION[options.container ?? "mp4"];
-  const segmentPath = path.join(
-    scratchRoot,
-    `${prefix}-segment-${String(segment.index).padStart(4, "0")}.${extension}`,
-  );
+  const compositeTiming = startTiming("timeline.segment.composite", {
+    segment: segment.index,
+    frames: segment.frames,
+    layers: layers.length,
+    codec,
+  });
   await compositeTimelineSegment({
     outputPath: segmentPath,
     width: timeline.format.width,
@@ -808,7 +1329,11 @@ async function processTimelineSegment(options: {
     ...(options.encoder !== undefined ? { encoder: options.encoder } : {}),
     ...(options.signal ? { signal: options.signal } : {}),
   });
+  compositeTiming.finish();
+  const cleanupTiming = startTiming("timeline.segment.cleanup", { segment: segment.index });
   await rm(segmentDir, { recursive: true, force: true });
+  cleanupTiming.finish();
+  segmentTiming.finish();
   return { path: segmentPath, diagnostics };
 }
 
@@ -1374,22 +1899,27 @@ export async function renderTimeline(options: TimelineRenderOptions): Promise<Ti
   const requestedWorkers = validateWorkers(options.workers);
   const overwrite = options.overwrite ?? false;
   const startedAt = performance.now();
+  const renderTiming = startTiming("timeline.render", { timeline: options.timelineId });
   await ensureOutputAvailable(options.outPath, overwrite);
   await assertFfmpegCapabilities(options.signal, codec);
   const encoder = await resolveVideoEncoder(codec, options.encoder, options.signal);
   const workers = clampTimelineWorkers(requestedWorkers, encoder);
+  const captureLimiter = createSemaphore(captureConcurrency(workers));
+  const sessionPool = new CompositionSessionPool({ maxIdle: Math.max(2, workers) });
 
   const projectTimeline = options.project.timelines.get(options.timelineId);
   if (!projectTimeline) {
     throw new FrameyardError("TIMELINE_NOT_FOUND", `Timeline "${options.timelineId}" is not listed in fy.config.js.`);
   }
 
+  const resolveTiming = startTiming("timeline.resolve", { timeline: options.timelineId });
   const resolved = await resolveProjectTimeline({
     project: options.project,
     timeline: projectTimeline,
     ...(options.signal ? { signal: options.signal } : {}),
     ...(options.propsOverrides ? { propsOverrides: options.propsOverrides } : {}),
   });
+  resolveTiming.finish({ clips: resolved.timeline?.clips.length ?? 0, diagnostics: resolved.diagnostics.length });
   if (!resolved.timeline) {
     const first = resolved.diagnostics.find((diagnostic) => diagnostic.severity === "error");
     throw new FrameyardError(first?.code ?? "TIMELINE_INVALID", first?.message ?? "Timeline resolution failed.", {
@@ -1402,7 +1932,9 @@ export async function renderTimeline(options: TimelineRenderOptions): Promise<Ti
   const scratchBase = options.scratchDir ?? tmpdir();
   await mkdir(scratchBase, { recursive: true });
   const scratchRoot = await mkdtemp(path.join(scratchBase, "frameyard-timeline-"));
+  const serverTiming = startTiming("timeline.server", { project: options.project.root });
   const server = await startPreviewServer({ projectRoot: options.project.root, port: 0 });
+  serverTiming.finish({ url: server.url });
   const infoCache = new Map<string, StaticValidationResult>();
   const staticCache = new Map<string, Promise<StaticCapture>>();
   const diagnostics: CompositionDiagnostic[] = [...resolved.diagnostics];
@@ -1420,6 +1952,7 @@ export async function renderTimeline(options: TimelineRenderOptions): Promise<Ti
   let nextSegment = 0;
 
   const audio = buildAudioClips(timeline);
+  const audioTiming = startTiming("timeline.audio_inspect", { clips: audio.clips.length });
   const audioInspection = audio.clips.length
     ? await inspectTimelineAudio({
         projectRoot: options.project.root,
@@ -1429,6 +1962,7 @@ export async function renderTimeline(options: TimelineRenderOptions): Promise<Ti
         ...(options.signal ? { signal: options.signal } : {}),
       })
     : { clips: [], assets: [], warnings: [] };
+  audioTiming.finish({ assets: audioInspection.assets.length });
   diagnostics.push(
     ...audioInspection.warnings.map((message) => ({
       severity: "warning" as const,
@@ -1437,6 +1971,7 @@ export async function renderTimeline(options: TimelineRenderOptions): Promise<Ti
     })),
   );
 
+  const transcriptTiming = startTiming("timeline.transcript_inspect", { clips: audio.transcripts.length });
   const transcripts = audio.transcripts.length
     ? await inspectTranscriptClips({
         projectRoot: options.project.root,
@@ -1444,6 +1979,7 @@ export async function renderTimeline(options: TimelineRenderOptions): Promise<Ti
         ...(options.signal ? { signal: options.signal } : {}),
       })
     : { clips: [], assets: [], warnings: [] };
+  transcriptTiming.finish({ assets: transcripts.assets.length });
   diagnostics.push(
     ...transcripts.warnings.map((message) => ({
       severity: "warning" as const,
@@ -1479,6 +2015,8 @@ export async function renderTimeline(options: TimelineRenderOptions): Promise<Ti
           scratchRoot,
           infoCache,
           staticCache,
+          captureLimiter,
+          sessionPool,
           codec,
           container,
           encoder,
@@ -1494,7 +2032,14 @@ export async function renderTimeline(options: TimelineRenderOptions): Promise<Ti
         });
       }
     };
+    const segmentsTiming = startTiming("timeline.segments", {
+      segments: plan.segments.length,
+      workers,
+      codec,
+      encoder,
+    });
     await Promise.all(Array.from({ length: workers }, () => worker()));
+    segmentsTiming.finish();
 
     const segmentPaths = segmentResults.map((result) => {
       if (!result) {
@@ -1504,6 +2049,7 @@ export async function renderTimeline(options: TimelineRenderOptions): Promise<Ti
       return result.path;
     });
 
+    const concatTiming = startTiming("timeline.concat", { segments: segmentPaths.length });
     await concatTimelineSegments({
       segmentPaths,
       listPath: path.join(scratchRoot, "segments.txt"),
@@ -1512,10 +2058,12 @@ export async function renderTimeline(options: TimelineRenderOptions): Promise<Ti
       container,
       ...(options.signal ? { signal: options.signal } : {}),
     });
+    concatTiming.finish();
 
     let finalPath = tempVideo;
     if (audioInspection.assets.length > 0) {
       const audioPath = path.join(scratchRoot, "audio.wav");
+      const mixTiming = startTiming("timeline.audio_mix", { assets: audioInspection.assets.length });
       await mixAudioTimeline({
         clips: audioInspection.assets.map((asset) => ({
           path: asset.path,
@@ -1530,6 +2078,8 @@ export async function renderTimeline(options: TimelineRenderOptions): Promise<Ti
         outputPath: audioPath,
         ...(options.signal ? { signal: options.signal } : {}),
       });
+      mixTiming.finish();
+      const muxTiming = startTiming("timeline.mux", { codec, container });
       await muxVideoWithAudio({
         videoPath: tempVideo,
         audioPath,
@@ -1538,6 +2088,7 @@ export async function renderTimeline(options: TimelineRenderOptions): Promise<Ti
         container,
         ...(options.signal ? { signal: options.signal } : {}),
       });
+      muxTiming.finish();
       finalPath = tempFinal;
     }
 
@@ -1547,9 +2098,19 @@ export async function renderTimeline(options: TimelineRenderOptions): Promise<Ti
         `Output already exists: ${options.outPath}. Pass --overwrite to replace it.`,
       );
     }
+    const publishTiming = startTiming("timeline.publish", { out: options.outPath });
     await publishFile(finalPath, options.outPath, overwrite);
+    publishTiming.finish();
 
     const uniqueDiagnostics = mergeDiagnostics(diagnostics);
+    renderTiming.finish({
+      segments: plan.segments.length,
+      workers,
+      codec,
+      encoder,
+      frames: total,
+      outputBytes: (await stat(options.outPath)).size,
+    });
     return {
       timeline: options.timelineId,
       entry: timeline.entry,
@@ -1575,6 +2136,7 @@ export async function renderTimeline(options: TimelineRenderOptions): Promise<Ti
   } finally {
     await rm(tempVideo, { force: true });
     await rm(tempFinal, { force: true });
+    await sessionPool.close();
     try {
       await server.close();
     } catch {

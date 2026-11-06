@@ -1,5 +1,6 @@
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { spawn, type ChildProcess, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { writeFile } from "node:fs/promises";
+import type { Writable } from "node:stream";
 import type { AudioVolumeEnvelope } from "../contracts.js";
 import { FrameyardError } from "../errors.js";
 import { evaluatePresentation } from "../timeline/keyframes.js";
@@ -595,71 +596,22 @@ export interface VideoEncoder {
   abort(): Promise<void>;
 }
 
-export async function startVideoEncoder(options: {
-  outputPath: string;
-  durationSeconds: number;
+interface PipeEncoderOptions {
+  args: string[];
   /** Exact number of frames that must be written. */
   frames: number;
-  fps: number;
-  audioPath?: string;
-  /** Encoder; defaults to `libx264`. */
-  encoder?: VideoEncoderName;
-  /** Delivery codec; selects the audio codec and sample-entry tag. */
-  codec?: VideoCodec;
-  /** Delivery container; defaults to `mp4`. */
-  container?: VideoContainer;
   signal?: AbortSignal;
-}): Promise<VideoEncoder> {
+}
+
+/** Drives an FFmpeg `image2pipe` encoder from PNG buffers. */
+async function startPipeEncoder(options: PipeEncoderOptions): Promise<VideoEncoder> {
   if (options.signal?.aborted) {
     throw abortError();
   }
 
-  const args = [
-    "-hide_banner",
-    "-loglevel",
-    "error",
-    "-nostdin",
-    "-y",
-    "-f",
-    "image2pipe",
-    "-framerate",
-    formatNumber(options.fps),
-    "-i",
-    "pipe:0",
-  ];
-
-  if (options.audioPath) {
-    args.push("-i", options.audioPath);
-  }
-
-  args.push("-map", "0:v:0");
-  if (options.audioPath) {
-    args.push("-map", "1:a:0");
-  }
-
-  const codec = options.codec ?? "h264";
-  const container = options.container ?? "mp4";
-
-  args.push(
-    ...videoEncoderArgs(options.encoder ?? "libx264"),
-    ...videoCodecTagArgs(codec, container),
-    "-r",
-    formatNumber(options.fps),
-    "-frames:v",
-    String(options.frames),
-    "-t",
-    formatNumber(options.durationSeconds),
-  );
-
-  if (options.audioPath) {
-    args.push(...audioEncoderArgs(codec));
-  }
-
-  args.push(...containerMuxFlags(container), ...containerMuxerArgs(container), options.outputPath);
-
   let child: ChildProcessWithoutNullStreams;
   try {
-    child = spawn("ffmpeg", args, { stdio: ["pipe", "pipe", "pipe"] });
+    child = spawn("ffmpeg", options.args, { stdio: ["pipe", "pipe", "pipe"] });
   } catch (error) {
     throw new FrameyardError("FFMPEG_FAILED", "Could not start FFmpeg.", { cause: error });
   }
@@ -773,6 +725,393 @@ export async function startVideoEncoder(options: {
       }
     },
 
+    abort,
+  };
+}
+
+export async function startVideoEncoder(options: {
+  outputPath: string;
+  durationSeconds: number;
+  /** Exact number of frames that must be written. */
+  frames: number;
+  fps: number;
+  audioPath?: string;
+  /** Encoder; defaults to `libx264`. */
+  encoder?: VideoEncoderName;
+  /** Delivery codec; selects the audio codec and sample-entry tag. */
+  codec?: VideoCodec;
+  /** Delivery container; defaults to `mp4`. */
+  container?: VideoContainer;
+  signal?: AbortSignal;
+}): Promise<VideoEncoder> {
+  if (options.signal?.aborted) {
+    throw abortError();
+  }
+
+  const args = [
+    "-hide_banner",
+    "-loglevel",
+    "error",
+    "-nostdin",
+    "-y",
+    "-f",
+    "image2pipe",
+    "-framerate",
+    formatNumber(options.fps),
+    "-i",
+    "pipe:0",
+  ];
+
+  if (options.audioPath) {
+    args.push("-i", options.audioPath);
+  }
+
+  args.push("-map", "0:v:0");
+  if (options.audioPath) {
+    args.push("-map", "1:a:0");
+  }
+
+  const codec = options.codec ?? "h264";
+  const container = options.container ?? "mp4";
+
+  args.push(
+    ...videoEncoderArgs(options.encoder ?? "libx264"),
+    ...videoCodecTagArgs(codec, container),
+    "-r",
+    formatNumber(options.fps),
+    "-frames:v",
+    String(options.frames),
+    "-t",
+    formatNumber(options.durationSeconds),
+  );
+
+  if (options.audioPath) {
+    args.push(...audioEncoderArgs(codec));
+  }
+
+  args.push(...containerMuxFlags(container), ...containerMuxerArgs(container), options.outputPath);
+
+  return startPipeEncoder({ args, frames: options.frames, ...(options.signal ? { signal: options.signal } : {}) });
+}
+
+function ffv1Threads(options: { threads?: number }): number {
+  if (options.threads !== undefined) {
+    return options.threads;
+  }
+  const raw = process.env.FRAMEYARD_FFV1_THREADS;
+  if (raw === undefined) {
+    return 2;
+  }
+  const value = Number(raw);
+  return Number.isInteger(value) && value >= 0 ? value : 2;
+}
+
+/**
+ * Encodes PNG frames streamed over stdin into a lossless alpha-preserving FFV1
+ * file. The encoder starts before capture so encoding overlaps the next frame.
+ */
+export async function startFfv1Encoder(options: {
+  outputPath: string;
+  /** Exact number of frames that must be written. */
+  frames: number;
+  fps: number;
+  /** Encoder threads; bounded so concurrent captures keep CPU headroom. 0 uses FFmpeg's default. */
+  threads?: number;
+  signal?: AbortSignal;
+}): Promise<VideoEncoder> {
+  const threads = ffv1Threads(options);
+  const args = [
+    "-hide_banner",
+    "-loglevel",
+    "error",
+    "-nostdin",
+    "-y",
+    "-f",
+    "image2pipe",
+    "-framerate",
+    formatNumber(options.fps),
+    "-i",
+    "pipe:0",
+    "-c:v",
+    "ffv1",
+    "-level",
+    "3",
+    "-pix_fmt",
+    "bgra",
+    ...(threads > 0 ? ["-threads", String(threads)] : []),
+    options.outputPath,
+  ];
+  return startPipeEncoder({ args, frames: options.frames, ...(options.signal ? { signal: options.signal } : {}) });
+}
+
+/**
+ * Encodes a full-frame composition capture directly into a delivery segment.
+ * The captured PNGs keep their alpha; a solid background is composited first so
+ * the H.264/HEVC/VP9 segment has no transparency.
+ */
+export async function startDirectSegmentEncoder(options: {
+  outputPath: string;
+  width: number;
+  height: number;
+  fps: number;
+  frames: number;
+  /** CSS background color; `transparent` is not a valid delivery background. */
+  background: string;
+  codec: VideoCodec;
+  container: VideoContainer;
+  encoder?: VideoEncoderName;
+  signal?: AbortSignal;
+}): Promise<VideoEncoder> {
+  if (options.background === "transparent") {
+    throw new FrameyardError("INTERNAL", "A direct delivery segment requires an opaque background.");
+  }
+  const encoder = options.encoder ?? encoderNameFor(options.codec, "software");
+  const durationSeconds = options.frames / options.fps;
+  const args = [
+    "-hide_banner",
+    "-loglevel",
+    "error",
+    "-nostdin",
+    "-y",
+    "-f",
+    "image2pipe",
+    "-framerate",
+    formatNumber(options.fps),
+    "-i",
+    "pipe:0",
+    "-f",
+    "lavfi",
+    "-i",
+    `color=c=${ffmpegBackgroundColor(options.background)}:s=${options.width}x${options.height}:r=${formatNumber(options.fps)}:d=${formatNumber(durationSeconds)}`,
+    "-filter_complex",
+    "[1:v][0:v]overlay=0:0:format=auto,format=yuv420p[out]",
+    "-map",
+    "[out]",
+    ...videoEncoderArgs(encoder),
+    ...videoCodecTagArgs(options.codec, options.container),
+    "-r",
+    formatNumber(options.fps),
+    "-frames:v",
+    String(options.frames),
+    "-t",
+    formatNumber(durationSeconds),
+    "-an",
+    ...containerMuxFlags(options.container),
+    ...containerMuxerArgs(options.container),
+    options.outputPath,
+  ];
+  return startPipeEncoder({ args, frames: options.frames, ...(options.signal ? { signal: options.signal } : {}) });
+}
+
+export interface DualPipeEncoder {
+  writeFrame(layer: 0 | 1, png: Buffer): Promise<void>;
+  finish(): Promise<void>;
+  abort(): Promise<void>;
+}
+
+/**
+ * Encodes two full-frame composition captures directly into one delivery
+ * segment. Layer 0 is the base, layer 1 is the overlay, and both keep alpha.
+ */
+export async function startDualPipeSegmentEncoder(options: {
+  outputPath: string;
+  width: number;
+  height: number;
+  fps: number;
+  frames: number;
+  background: string;
+  codec: VideoCodec;
+  container: VideoContainer;
+  /** Static overlay presentation; omitted means a full-frame identity overlay. */
+  overlay?: TimelineCompositeLayer;
+  encoder?: VideoEncoderName;
+  signal?: AbortSignal;
+}): Promise<DualPipeEncoder> {
+  if (options.background === "transparent") {
+    throw new FrameyardError("INTERNAL", "A dual-pipe delivery segment requires an opaque background.");
+  }
+  const encoder = options.encoder ?? encoderNameFor(options.codec, "software");
+  const durationSeconds = options.frames / options.fps;
+  const overlay = options.overlay;
+  const overlayFilters: string[] = [];
+  if (overlay) {
+    const fullFrame =
+      overlay.width === undefined &&
+      overlay.height === undefined &&
+      overlay.sourceWidth === options.width &&
+      overlay.sourceHeight === options.height;
+    if (!fullFrame) {
+      overlayFilters.push(fitFilter(overlay, options.width, options.height));
+    }
+    overlayFilters.push("format=rgba");
+  }
+  const overlayGraph = overlay
+    ? `[1:v]${overlayFilters.join(",")}[ov];[base][ov]overlay=${placementFilter(overlay, 0)}:format=auto,format=yuv420p[out]`
+    : "[base][1:v]overlay=0:0:format=auto,format=yuv420p[out]";
+  const args = [
+    "-hide_banner",
+    "-loglevel",
+    "error",
+    "-nostdin",
+    "-y",
+    "-f",
+    "image2pipe",
+    "-framerate",
+    formatNumber(options.fps),
+    "-i",
+    "pipe:0",
+    "-f",
+    "image2pipe",
+    "-framerate",
+    formatNumber(options.fps),
+    "-i",
+    "pipe:3",
+    "-f",
+    "lavfi",
+    "-i",
+    `color=c=${ffmpegBackgroundColor(options.background)}:s=${options.width}x${options.height}:r=${formatNumber(options.fps)}:d=${formatNumber(durationSeconds)}`,
+    "-filter_complex",
+    `[2:v][0:v]overlay=0:0:format=auto[base];${overlayGraph}`,
+    "-map",
+    "[out]",
+    ...videoEncoderArgs(encoder),
+    ...videoCodecTagArgs(options.codec, options.container),
+    "-r",
+    formatNumber(options.fps),
+    "-frames:v",
+    String(options.frames),
+    "-t",
+    formatNumber(durationSeconds),
+    "-an",
+    ...containerMuxFlags(options.container),
+    ...containerMuxerArgs(options.container),
+    options.outputPath,
+  ];
+
+  let child: ChildProcess;
+  try {
+    child = spawn("ffmpeg", args, { stdio: ["pipe", "ignore", "pipe", "pipe"] });
+  } catch (error) {
+    throw new FrameyardError("FFMPEG_FAILED", "Could not start FFmpeg.", { cause: error });
+  }
+  const stderrTail = captureTail(child as unknown as ChildProcessWithoutNullStreams);
+
+  await new Promise<void>((resolve, reject) => {
+    child.once("spawn", resolve);
+    child.once("error", (error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") {
+        reject(
+          new FrameyardError(
+            "FFMPEG_FAILED",
+            "FFmpeg was not found on PATH. Install FFmpeg and ensure it is available.",
+            { cause: error },
+          ),
+        );
+      } else {
+        reject(new FrameyardError("FFMPEG_FAILED", `FFmpeg could not start: ${error.message}`, { cause: error }));
+      }
+    });
+  });
+
+  const input0 = child.stdio[0] as Writable;
+  const input1 = child.stdio[3] as Writable;
+  const closed = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) => {
+    child.once("close", (code, signal) => resolve({ code, signal }));
+  });
+
+  let finished = false;
+  const framesWritten: [number, number] = [0, 0];
+  const onAbort = () => {
+    input0.destroy();
+    input1.destroy();
+    child.kill("SIGKILL");
+  };
+  options.signal?.addEventListener("abort", onAbort, { once: true });
+
+  async function abort(): Promise<void> {
+    if (finished) {
+      return;
+    }
+    finished = true;
+    options.signal?.removeEventListener("abort", onAbort);
+    input0.destroy();
+    input1.destroy();
+    if (child.exitCode === null && child.signalCode === null) {
+      child.kill("SIGKILL");
+    }
+    await closed.catch(() => undefined);
+  }
+
+  async function write(layer: 0 | 1, png: Buffer): Promise<void> {
+    if (finished) {
+      throw new FrameyardError("FFMPEG_FAILED", "Cannot write a frame after the encoder finished.");
+    }
+    if (options.signal?.aborted) {
+      throw abortError();
+    }
+    const stream = layer === 0 ? input0 : input1;
+    await new Promise<void>((resolve, reject) => {
+      const onError = (error: Error) => {
+        stream.off("error", onError);
+        if (options.signal?.aborted) {
+          reject(abortError());
+        } else {
+          reject(
+            new FrameyardError(
+              "FFMPEG_FAILED",
+              `FFmpeg stopped while accepting layer ${layer} frames: ${error.message}`,
+              {
+                cause: error,
+              },
+            ),
+          );
+        }
+      };
+      stream.once("error", onError);
+      stream.write(png, (error) => {
+        stream.off("error", onError);
+        if (error) {
+          reject(
+            new FrameyardError("FFMPEG_FAILED", `Could not write a layer ${layer} frame to FFmpeg: ${error.message}`, {
+              cause: error,
+            }),
+          );
+        } else {
+          framesWritten[layer] += 1;
+          resolve();
+        }
+      });
+    });
+  }
+
+  return {
+    writeFrame: write,
+    async finish(): Promise<void> {
+      if (finished) {
+        return;
+      }
+      finished = true;
+      options.signal?.removeEventListener("abort", onAbort);
+      input0.end();
+      input1.end();
+      const { code, signal } = await closed;
+      if (options.signal?.aborted) {
+        throw abortError();
+      }
+      if (code !== 0) {
+        const detail = stderrTail();
+        throw new FrameyardError(
+          "FFMPEG_FAILED",
+          `FFmpeg encoding failed${signal ? ` (${signal})` : code === null ? "" : ` (exit ${code})`}${detail ? `:\n${detail}` : "."}`,
+        );
+      }
+      if (framesWritten[0] !== options.frames || framesWritten[1] !== options.frames) {
+        throw new FrameyardError(
+          "FFMPEG_FAILED",
+          `FFmpeg encoded ${framesWritten[0]}/${framesWritten[1]} frames but ${options.frames} were required per layer.`,
+        );
+      }
+    },
     abort,
   };
 }
@@ -951,12 +1290,18 @@ function baseLayerFilters(
   stageHeight: number,
   fps: number,
 ): string[] {
+  const fullFrame =
+    layer.width === undefined &&
+    layer.height === undefined &&
+    layer.sourceWidth === stageWidth &&
+    layer.sourceHeight === stageHeight;
   return [
     // Matroska and WebM timestamps can be quantized to milliseconds. Normalize
     // every timed layer to the project frame rate before overlay framesync so
     // it does not duplicate or drop frames. Still images are already static.
     ...(layer.input === "image" ? [] : [`fps=${formatNumber(fps)}`]),
-    fitFilter(layer, stageWidth, stageHeight),
+    // A source that already matches the stage has no fit work to do.
+    ...(fullFrame ? [] : [fitFilter(layer, stageWidth, stageHeight)]),
     "format=rgba",
   ];
 }
@@ -1308,33 +1653,48 @@ function buildCompositeGraph(options: {
   return { args, filters, output: current };
 }
 
-/** Encode a numbered PNG sequence into a lossless alpha-preserving FFV1 file. */
-export async function encodePngSequenceToFfv1(options: {
-  pattern: string;
+/** Re-encodes one full-frame video range directly into a delivery segment. */
+export async function encodeVideoSegmentDirect(options: {
+  inputPath: string;
   outputPath: string;
+  sourceStartFrame: number;
+  frames: number;
   fps: number;
+  codec: VideoCodec;
+  container: VideoContainer;
+  encoder?: VideoEncoderName;
   signal?: AbortSignal;
 }): Promise<void> {
-  await runCaptured(
-    "ffmpeg",
-    [
-      "-y",
-      "-v",
-      "error",
-      "-framerate",
-      formatNumber(options.fps),
-      "-i",
-      options.pattern,
-      "-c:v",
-      "ffv1",
-      "-level",
-      "3",
-      "-pix_fmt",
-      "bgra",
-      options.outputPath,
-    ],
-    { signal: options.signal },
-  );
+  const encoder = options.encoder ?? encoderNameFor(options.codec, "software");
+  const startSeconds = options.sourceStartFrame / options.fps;
+  const durationSeconds = options.frames / options.fps;
+  const args = [
+    "-hide_banner",
+    "-loglevel",
+    "error",
+    "-nostdin",
+    "-y",
+    ...(startSeconds > 0 ? ["-ss", formatNumber(startSeconds)] : []),
+    "-i",
+    options.inputPath,
+    "-map",
+    "0:v:0",
+    "-an",
+    "-vf",
+    `fps=${formatNumber(options.fps)},format=rgba,format=yuv420p`,
+    ...videoEncoderArgs(encoder),
+    ...videoCodecTagArgs(options.codec, options.container),
+    "-r",
+    formatNumber(options.fps),
+    "-frames:v",
+    String(options.frames),
+    "-t",
+    formatNumber(durationSeconds),
+    ...containerMuxFlags(options.container),
+    ...containerMuxerArgs(options.container),
+    options.outputPath,
+  ];
+  await runCaptured("ffmpeg", args, { signal: options.signal });
 }
 
 /** Composites one timeline segment into H.264 or an alpha-preserving FFV1 file. */

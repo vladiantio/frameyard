@@ -8,6 +8,7 @@ import type {
   ResolvedTranscriptClip,
 } from "../contracts.js";
 import { FrameyardError, isFrameyardError, type FrameyardDiagnostic, type FrameyardErrorCode } from "../errors.js";
+import { startTiming } from "./timings.js";
 
 export interface CompositionSession {
   readonly entry: string;
@@ -143,7 +144,9 @@ export async function openCompositionSession(options: {
   /** Captures the document over a transparent browser background. */
   transparentBackground?: boolean;
 }): Promise<CompositionSession> {
+  const sessionTiming = startTiming("browser.session", { entry: options.entry });
   let browser: Browser;
+  const launchTiming = startTiming("browser.launch", { entry: options.entry });
   try {
     browser = await chromium.launch({
       headless: true,
@@ -156,6 +159,7 @@ export async function openCompositionSession(options: {
       { cause: error },
     );
   }
+  launchTiming.finish();
 
   let context: BrowserContext | undefined;
   let page: Page | undefined;
@@ -186,6 +190,7 @@ export async function openCompositionSession(options: {
 
     const compositionUrl = new URL(options.entry, options.serverUrl);
     compositionUrl.searchParams.set("__fy-manual", "1");
+    const gotoTiming = startTiming("browser.goto", { entry: options.entry });
     await page.goto(compositionUrl.href, {
       waitUntil: "domcontentloaded",
       timeout: 60_000,
@@ -197,6 +202,7 @@ export async function openCompositionSession(options: {
       undefined,
       { timeout: 30_000 },
     );
+    gotoTiming.finish();
 
     const initError = await page.evaluate(
       () =>
@@ -219,6 +225,7 @@ export async function openCompositionSession(options: {
       transcriptClips: ResolvedTranscriptClip[];
       diagnostics: CompositionDiagnostic[];
     };
+    const hostLoadTiming = startTiming("browser.host_load", { entry: options.entry });
     try {
       loaded = await page.evaluate(
         async ({ props }) => {
@@ -244,6 +251,7 @@ export async function openCompositionSession(options: {
     } catch (error) {
       throw browserCommandError(error);
     }
+    hostLoadTiming.finish();
 
     if (!metadataMatches(loaded.metadata, options.info.metadata)) {
       throw new FrameyardError(
@@ -253,6 +261,7 @@ export async function openCompositionSession(options: {
       );
     }
 
+    const networkTiming = startTiming("browser.networkidle", { entry: options.entry });
     try {
       await page.waitForLoadState("networkidle", { timeout: 30_000 });
     } catch (error) {
@@ -262,13 +271,16 @@ export async function openCompositionSession(options: {
         { cause: error },
       );
     }
+    networkTiming.finish();
 
+    const paintTiming = startTiming("browser.first_paint", { entry: options.entry });
     await page.evaluate(
       () =>
         new Promise<void>((resolve) => {
           requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
         }),
     );
+    paintTiming.finish();
 
     // Loading is complete. Frame production must not depend on new network data.
     await page.route("**/*", (route) => route.abort("blockedbyclient"));
@@ -378,6 +390,7 @@ export async function openCompositionSession(options: {
       },
     };
 
+    sessionTiming.finish();
     return session;
   } catch (error) {
     await closeQuietly(async () => cdp?.detach());

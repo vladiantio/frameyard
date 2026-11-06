@@ -140,6 +140,47 @@ async function probe(filePath: string) {
   };
 }
 
+async function decodeRgbFrame(filePath: string): Promise<Buffer> {
+  const { stdout } = await exec(
+    "ffmpeg",
+    ["-v", "error", "-i", filePath, "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
+    { encoding: "buffer", maxBuffer: 32 * 1024 * 1024 },
+  );
+  return Buffer.from(stdout as unknown as Buffer);
+}
+
+/** Compares a decoded frame from the rendered video with a composite still. */
+async function compareRenderedFrame(options: { videoPath: string; frame: number; stillPath: string }): Promise<void> {
+  const framePath = `${options.stillPath}.frame-${options.frame}.png`;
+  await exec("ffmpeg", [
+    "-y",
+    "-v",
+    "error",
+    "-i",
+    options.videoPath,
+    "-vf",
+    `select=eq(n\\,${options.frame})`,
+    "-frames:v",
+    "1",
+    framePath,
+  ]);
+  const [expected, actual] = await Promise.all([decodeRgbFrame(options.stillPath), decodeRgbFrame(framePath)]);
+  if (expected.length !== actual.length) {
+    throw new Error(`Rendered frame and still have different decoded sizes.`);
+  }
+  let maxDelta = 0;
+  let totalDelta = 0;
+  for (let index = 0; index < expected.length; index += 1) {
+    const delta = Math.abs(expected[index]! - actual[index]!);
+    maxDelta = Math.max(maxDelta, delta);
+    totalDelta += delta;
+  }
+  const meanDelta = totalDelta / expected.length;
+  if (maxDelta > 24 || meanDelta > 2) {
+    throw new Error(`Rendered frame differs from the composite still: max ${maxDelta}, mean ${meanDelta.toFixed(3)}.`);
+  }
+}
+
 /** W3C blend math in 0-255 space, matching the FFmpeg recipe. */
 function cssBlend(mode: BlendMode, backdrop: number, source: number): number {
   const cb = backdrop / 255;
@@ -540,6 +581,282 @@ describe.concurrent("timeline rendering media and alpha", () => {
       height: 180,
       nb_read_frames: "10",
     });
+  }, 120_000);
+
+  it("composites a transparent full-frame composition over the timeline background", async () => {
+    const root = await customRoot();
+    await writeFile(
+      path.join(root, "compositions", "base.html"),
+      `<style>html, body { margin: 0; width: 100%; height: 100%; background: transparent; }</style>
+    <fy-composition width="320" height="180" fps="10" duration-in-frames="10">
+      <div style="position: absolute; left: 140px; top: 70px; width: 40px; height: 40px; background: #b8f36b;"></div>
+    </fy-composition>
+`,
+    );
+    await writeFile(
+      path.join(root, "timelines", "main.json"),
+      `${JSON.stringify(
+        {
+          version: 1,
+          background: "#e23b3b",
+          tracks: [{ id: "v1", kind: "video" }],
+          clips: [
+            {
+              id: "base",
+              track: "v1",
+              source: { kind: "composition", id: "base" },
+              start: 0,
+              duration: 10,
+            },
+          ],
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    await writeFile(
+      path.join(root, "fy.config.js"),
+      `export default {
+        format: { width: 320, height: 180, fps: 10 },
+        compositions: { base: "./compositions/base.html" },
+        timelines: { main: "./timelines/main.json" },
+      };\n`,
+    );
+    const outPath = path.join(root, "out", "direct.mp4");
+    const project = await loadProject(root);
+
+    const result = await renderTimelineForTest({ project, timelineId: "main", outPath, workers: 1 });
+
+    expect(result.diagnostics.filter((diagnostic) => diagnostic.severity === "error")).toEqual([]);
+    expect((await probe(outPath)).streams.find((stream) => stream.codec_type === "video")).toMatchObject({
+      width: 320,
+      height: 180,
+      nb_read_frames: "10",
+    });
+    const background = await mediaPixel(outPath, 20, 20);
+    expect(background[0]).toBeGreaterThan(background[1] + 40);
+    const dot = await mediaPixel(outPath, 160, 90);
+    expect(dot[1]).toBeGreaterThan(dot[0] + 40);
+  }, 120_000);
+
+  it("composites two full-frame composition layers without an intermediate", async () => {
+    const root = await customRoot();
+    await writeFile(
+      path.join(root, "compositions", "base.html"),
+      `<style>html, body { margin: 0; width: 100%; height: 100%; background: #e23b3b; }</style>
+    <fy-composition width="320" height="180" fps="10" duration-in-frames="10"></fy-composition>
+`,
+    );
+    await writeFile(
+      path.join(root, "compositions", "overlay.html"),
+      `<style>html, body { margin: 0; width: 100%; height: 100%; background: transparent; }</style>
+    <fy-composition width="320" height="180" fps="10" duration-in-frames="10">
+      <div style="position: absolute; left: 140px; top: 70px; width: 40px; height: 40px; background: #b8f36b;"></div>
+    </fy-composition>
+`,
+    );
+    await writeFile(
+      path.join(root, "timelines", "main.json"),
+      `${JSON.stringify(
+        {
+          version: 1,
+          background: "#3366ff",
+          tracks: [
+            { id: "v1", kind: "video" },
+            { id: "v2", kind: "video" },
+          ],
+          clips: [
+            {
+              id: "base",
+              track: "v1",
+              source: { kind: "composition", id: "base" },
+              start: 0,
+              duration: 10,
+            },
+            {
+              id: "overlay",
+              track: "v2",
+              source: { kind: "composition", id: "overlay" },
+              start: 0,
+              duration: 10,
+            },
+          ],
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    await writeFile(
+      path.join(root, "fy.config.js"),
+      `export default {
+        format: { width: 320, height: 180, fps: 10 },
+        compositions: {
+          base: "./compositions/base.html",
+          overlay: "./compositions/overlay.html",
+        },
+        timelines: { main: "./timelines/main.json" },
+      };\n`,
+    );
+    const outPath = path.join(root, "out", "two-layer-direct.mp4");
+    const project = await loadProject(root);
+
+    const result = await renderTimelineForTest({ project, timelineId: "main", outPath, workers: 1 });
+
+    expect(result.diagnostics.filter((diagnostic) => diagnostic.severity === "error")).toEqual([]);
+    expect((await probe(outPath)).streams.find((stream) => stream.codec_type === "video")).toMatchObject({
+      width: 320,
+      height: 180,
+      nb_read_frames: "10",
+    });
+    const base = await mediaPixel(outPath, 20, 20);
+    expect(base[0]).toBeGreaterThan(base[1] + 40);
+    const dot = await mediaPixel(outPath, 160, 90);
+    expect(dot[1]).toBeGreaterThan(dot[0] + 40);
+    const stillPath = path.join(root, "out", "two-layer-still.png");
+    await captureTimelineStill({ project, timelineId: "main", frame: 5, outPath: stillPath });
+    await compareRenderedFrame({ videoPath: outPath, frame: 5, stillPath });
+  }, 120_000);
+
+  it("composites a full-frame base and a static composition overlay", async () => {
+    const root = await customRoot();
+    await writeFile(
+      path.join(root, "compositions", "base.html"),
+      `<style>html, body { margin: 0; width: 100%; height: 100%; background: #e23b3b; }</style>
+    <fy-composition width="320" height="180" fps="10" duration-in-frames="10"></fy-composition>
+`,
+    );
+    await writeFile(
+      path.join(root, "compositions", "overlay.html"),
+      `<style>html, body { margin: 0; width: 100%; height: 100%; background: #b8f36b; }</style>
+    <fy-composition width="100" height="50" fps="10" duration-in-frames="10"></fy-composition>
+`,
+    );
+    await writeFile(
+      path.join(root, "timelines", "main.json"),
+      `${JSON.stringify(
+        {
+          version: 1,
+          background: "#3366ff",
+          tracks: [
+            { id: "v1", kind: "video" },
+            { id: "v2", kind: "video" },
+          ],
+          clips: [
+            {
+              id: "base",
+              track: "v1",
+              source: { kind: "composition", id: "base" },
+              start: 0,
+              duration: 10,
+            },
+            {
+              id: "overlay",
+              track: "v2",
+              source: { kind: "composition", id: "overlay" },
+              start: 0,
+              duration: 10,
+              transform: { fit: "contain", width: 80, height: 40, x: 0, y: 0 },
+            },
+          ],
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    await writeFile(
+      path.join(root, "fy.config.js"),
+      `export default {
+        format: { width: 320, height: 180, fps: 10 },
+        compositions: {
+          base: "./compositions/base.html",
+          overlay: "./compositions/overlay.html",
+        },
+        timelines: { main: "./timelines/main.json" },
+      };\n`,
+    );
+    const outPath = path.join(root, "out", "pip-dual-pipe.mp4");
+    const project = await loadProject(root);
+
+    const result = await renderTimelineForTest({ project, timelineId: "main", outPath, workers: 1 });
+
+    expect(result.diagnostics.filter((diagnostic) => diagnostic.severity === "error")).toEqual([]);
+    expect((await probe(outPath)).streams.find((stream) => stream.codec_type === "video")).toMatchObject({
+      width: 320,
+      height: 180,
+      nb_read_frames: "10",
+    });
+    const overlay = await mediaPixel(outPath, 160, 90);
+    expect(overlay[1]).toBeGreaterThan(overlay[0] + 40);
+    const base = await mediaPixel(outPath, 40, 40);
+    expect(base[0]).toBeGreaterThan(base[1] + 40);
+    const stillPath = path.join(root, "out", "pip-still.png");
+    await captureTimelineStill({ project, timelineId: "main", frame: 5, outPath: stillPath });
+    await compareRenderedFrame({ videoPath: outPath, frame: 5, stillPath });
+  }, 120_000);
+
+  it("encodes a full-frame video clip directly into the delivery segment", async () => {
+    const root = await customRoot();
+    await exec("ffmpeg", [
+      "-y",
+      "-v",
+      "error",
+      "-f",
+      "lavfi",
+      "-i",
+      "gradients=s=320x180:r=10:d=2",
+      "-c:v",
+      "libx264",
+      "-pix_fmt",
+      "yuv420p",
+      path.join(root, "assets", "clip.mp4"),
+    ]);
+    await writeFile(
+      path.join(root, "timelines", "main.json"),
+      `${JSON.stringify(
+        {
+          version: 1,
+          background: "#000000",
+          tracks: [{ id: "v1", kind: "video" }],
+          clips: [
+            {
+              id: "video",
+              track: "v1",
+              source: { kind: "video", src: "assets/clip.mp4" },
+              start: 0,
+              duration: 10,
+              sourceIn: 0,
+              transform: { fit: "cover" },
+              audio: { muted: true },
+            },
+          ],
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    await writeFile(
+      path.join(root, "fy.config.js"),
+      `export default {
+        format: { width: 320, height: 180, fps: 10 },
+        timelines: { main: "./timelines/main.json" },
+      };\n`,
+    );
+    const outPath = path.join(root, "out", "video-direct.mp4");
+    const project = await loadProject(root);
+
+    const result = await renderTimelineForTest({ project, timelineId: "main", outPath, workers: 1 });
+
+    expect(result.diagnostics.filter((diagnostic) => diagnostic.severity === "error")).toEqual([]);
+    expect((await probe(outPath)).streams.find((stream) => stream.codec_type === "video")).toMatchObject({
+      width: 320,
+      height: 180,
+      nb_read_frames: "10",
+    });
+    const pixel = await mediaPixel(outPath, 160, 90);
+    expect(Math.max(...pixel)).toBeGreaterThan(20);
+    const stillPath = path.join(root, "out", "video-still.png");
+    await captureTimelineStill({ project, timelineId: "main", frame: 5, outPath: stillPath });
+    await compareRenderedFrame({ videoPath: outPath, frame: 5, stillPath });
   }, 120_000);
 
   it("fits a clip into an explicit transform box", async () => {

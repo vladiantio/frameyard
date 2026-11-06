@@ -10,6 +10,48 @@ contract change may ship in a minor release and is called out explicitly below.
 
 ## [Unreleased]
 
+### Added
+
+- `FRAMEYARD_TIMINGS=1` emits one JSON line per render stage to stderr without
+  changing the `--json` result on stdout. `bench/summarize-timings.mjs`
+  aggregates session, capture, PNG-write, FFV1, composite, concat, audio, and
+  publish timings for production-path profiling,
+  `bench/timeline-60min-gate.mjs` generates the 60-minute composition-only
+  production gate, and `bench/timeline-60min-representative.mjs` generates the
+  representative 60-minute 50/50 gate. The representative gate rendered 108,000
+  frames in 16.82 minutes with eight workers, clean scratch, and video
+  re-encoded rather than stream-copied. `FRAMEYARD_FFV1_THREADS` bounds the streaming FFV1 encoder.
+- Composition clips now stream captured PNGs directly into FFV1 instead of
+  writing a PNG sequence to scratch first. A segment with one full-frame,
+  untransformed composition skips the FFV1 intermediate and the FFmpeg
+  composite, encoding the capture directly to the delivery segment over the
+  timeline background. See
+  `docs/adr/0024-stream-composition-captures-and-skip-trivial-composites.md`.
+- Independent layer captures run concurrently under a FIFO semaphore, bounded
+  by `FRAMEYARD_CAPTURE_CONCURRENCY` or `min(workers * 2, 12)` by default. The
+  two-layer 60-second gate fell from 59.60 s to 43.78 s. See
+  `docs/adr/0025-capture-timeline-layers-in-parallel-with-a-global-limit.md`.
+- The timeline renderer reuses loaded composition sessions across segments,
+  keyed by entry, props, and transparency, with a bounded idle pool. The
+  10-minute one-layer gate fell from 211.8 s to 192.6 s, and the 60-minute gate
+  fell from 19.83 to 18.78 minutes with eight sessions instead of 360. See
+  `docs/adr/0026-reuse-loaded-composition-sessions-across-segments.md`.
+- A full-frame composition base and a static composition overlay (including a
+  static PIP box) encode through dual image pipes into one delivery segment,
+  skipping FFV1 and the separate composite. The full-frame two-layer 60-second
+  workload fell from 53.27 s to 34.62 s with byte-identical output, the PIP
+  60-second workload from 43.78 s to 33.90 s with pixel-identical frames, and
+  the full two-layer 60-minute gates completed in 29.69 minutes (full-frame) and
+  25.75 minutes (PIP) with eight workers. Windows keeps the segmented fallback. See
+  `docs/adr/0027-encode-two-full-frame-layers-through-dual-pipes.md`.
+- A single full-frame video with an identity transform re-encodes its source
+  range directly into the delivery segment, skipping the composite filter
+  graph while keeping the normal encoder settings and the RGBA color round trip
+  for pixel parity. A 60-second video-only gate fell from 10.65 s to 7.61 s
+  with identical decoded frames, and the representative 60-minute 50/50 gate
+  fell from 16.82 to 15.57 minutes with a byte-identical file. See
+  `docs/adr/0028-encode-full-frame-video-segments-directly.md`.
+
 ## [0.9.0] - 2026-11-06
 
 ### Added

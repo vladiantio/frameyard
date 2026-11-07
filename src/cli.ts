@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { access, mkdir, readFile, rmdir, stat, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, rm, rmdir, stat, writeFile } from "node:fs/promises";
 import { cpus, freemem, loadavg, totalmem } from "node:os";
 import path from "node:path";
 import { createInterface } from "node:readline/promises";
@@ -27,6 +27,7 @@ import { lintComposition, lintResolvedTimeline, lintTimeline } from "./lint.js";
 import { buildProjectContext } from "./context.js";
 import { analyzeRgba, compareRgba, decodeRgba, probeImage } from "./inspect.js";
 import { findTemplate, listTemplates, templateRegistration, type TemplateKind } from "./templates.js";
+import { findRecipe, listRecipes, recipeInstallPlan, recipeRegistration } from "./recipes.js";
 import { planTimelineRender } from "./timeline/plan.js";
 import { resolveProjectTimeline, type ResolvedTimeline } from "./timeline/resolve.js";
 import {
@@ -249,7 +250,7 @@ function allowedFlags(command: string): Set<string> {
     case "compare":
       return new Set(["json", "help"]);
     case "add":
-      return new Set([...common, "template", "list"]);
+      return new Set([...common, "template", "list", "id"]);
     case "font":
       return new Set([
         ...common,
@@ -390,13 +391,37 @@ function validateArgs(parsed: ParsedArgs): void {
       if (parsed.flags.has("template")) {
         usage('--template is not valid for "add local-models".');
       }
+    } else if (parsed.positionals[0] === "recipe") {
+      if (parsed.positionals.length !== 2) {
+        usage('"add recipe" requires <recipe-id> and --id <project-id>.');
+      }
+      if (parsed.flags.has("template")) {
+        usage('--template is not valid for "add recipe".');
+      }
+      const recipeId = parsed.positionals[1] as string;
+      if (findRecipe(recipeId) === undefined) {
+        usage(
+          `Unknown recipe "${recipeId}". Available: ${listRecipes()
+            .map((entry) => entry.id)
+            .join(", ")}.`,
+        );
+      }
+      const projectId = parsed.flags.get("id");
+      if (typeof projectId !== "string") {
+        usage('"add recipe" requires --id <project-id>.');
+      }
     } else {
       if (parsed.positionals.length !== 2) {
-        usage('"add" requires <composition|timeline> <id> and --template <name>, or "add local-models".');
+        usage(
+          '"add" requires <composition|timeline> <id> and --template <name>, "add recipe" <recipe-id> --id <project-id>, or "add local-models".',
+        );
       }
       const kind = parsed.positionals[0];
       if (kind !== "composition" && kind !== "timeline") {
-        usage('"add" kind must be "composition", "timeline", or "local-models".');
+        usage('"add" kind must be "composition", "timeline", "recipe", or "local-models".');
+      }
+      if (parsed.flags.has("id")) {
+        usage('--id is only valid for "add recipe".');
       }
       const templateName = parsed.flags.get("template");
       if (typeof templateName !== "string") {
@@ -679,6 +704,7 @@ Usage:
   frameyard add --list [--json]
   frameyard add local-models [--project <dir>] [--json]
   frameyard add <composition|timeline> <id> --template <name> [--project <dir>] [--json]
+  frameyard add recipe <recipe-id> --id <project-id> [--project <dir>] [--json]
   frameyard font search [query] [--category <category>] [--subset <subset>] [--style <normal|italic>] [--variable] [--limit <n>] [--json]
   frameyard font add <fontsource-id> [--family <alias>] [--subset <subset>] [--style <normal|italic>] [--weight <n>] [--static] [--force] [--project <dir>] [--json]
   frameyard font add --file <path> --family <name> [--id <id>] [--weight <n|n-n>] [--style normal|italic] [--subset <name>] [--license <id>] [--license-file <path>] [--force] [--project <dir>] [--json]
@@ -704,12 +730,12 @@ Options:
   --profile <name>       Resource profile for shared machines. shared-cpu caps workers at 2, concurrency at 1, and lowers process priority.
   --low-priority         Lower the process priority without changing worker caps.
   --local-models         With init, also install the optional local-model host scaffold.
-  --template <name>      Template for "add": static-poster, title-card, lower-third, or slideshow.
-  --list                 List add templates and scaffolds without writing files.
+  --template <name>      Template for "add composition|timeline": static-poster, title-card, lower-third, or slideshow.
+  --list                 List add templates, recipes, and scaffolds without writing files.
   --file <path>          Local font file for "font add": .woff2, .woff, .ttf, or .otf.
   --url <https-url>      Download a font from HTTPS (loopback HTTP is allowed for tests).
   --family <name>        CSS font-family name or alias for "font add".
-  --id <id>              Override the font manifest id derived from the family name.
+  --id <id>              Project id for "add recipe"; font manifest id for "font add --file/--url".
   --weight <value>       Font weight or variable range; comma-separated weights for Fontsource --static.
   --style <value>        qwen style instruction, or normal|italic (comma list for Fontsource).
   --subset <name>        Font subset label; comma-separated for Fontsource.
@@ -1356,6 +1382,134 @@ async function runCompare(parsed: ParsedArgs): Promise<number> {
   return stats.identical ? 0 : 1;
 }
 
+async function runAddRecipe(parsed: ParsedArgs, json: boolean): Promise<number> {
+  const recipeId = parsed.positionals[1] as string;
+  const id = flagString(parsed.flags, "id") as string;
+  const recipe = findRecipe(recipeId);
+  if (recipe === undefined) {
+    usage(`Unknown recipe "${recipeId}".`);
+  }
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(id)) {
+    throw new FrameyardError(
+      "CONFIG_INVALID",
+      `Invalid id "${id}". Use letters, digits, dots, underscores, or hyphens, starting with a letter or digit.`,
+    );
+  }
+
+  const project = await projectFromFlag(parsed.flags);
+  if (project.format === undefined) {
+    throw new FrameyardError(
+      "CONFIG_INVALID",
+      "Project recipes inherit the project format. Add format { width, height, fps } to fy.config.js first.",
+    );
+  }
+
+  const plan = recipeInstallPlan(recipe, id);
+  const registered: string[] = [];
+  const entryIds = new Set<string>();
+  for (const entry of plan.entries) {
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(entry.id)) {
+      throw new FrameyardError("CONFIG_INVALID", `Recipe "${recipe.id}" produced invalid project id "${entry.id}".`);
+    }
+    if (entryIds.has(entry.id)) {
+      throw new FrameyardError("CONFIG_INVALID", `Recipe "${recipe.id}" produced duplicate project id "${entry.id}".`);
+    }
+    entryIds.add(entry.id);
+    if (project.compositions.has(entry.id) || project.timelines.has(entry.id)) {
+      registered.push(entry.id);
+    }
+  }
+  if (registered.length > 0) {
+    throw new FrameyardError(
+      "OUTPUT_EXISTS",
+      `Project id${registered.length === 1 ? "" : "s"} ${registered.map((entry) => `"${entry}"`).join(", ")} already registered in fy.config.js.`,
+      { details: { ids: registered } },
+    );
+  }
+
+  const conflicts: string[] = [];
+  const filePaths = new Set<string>();
+  for (const file of plan.files) {
+    if (filePaths.has(file.path)) {
+      throw new FrameyardError("CONFIG_INVALID", `Recipe "${recipe.id}" produced duplicate file path "${file.path}".`);
+    }
+    filePaths.add(file.path);
+    const target = path.resolve(project.root, file.path);
+    if (target === project.root || !target.startsWith(project.root + path.sep)) {
+      throw new FrameyardError("CONFIG_INVALID", `Recipe file escapes the project root: ${file.path}`);
+    }
+    if (await pathExists(target)) {
+      conflicts.push(file.path);
+    }
+  }
+  if (conflicts.length > 0) {
+    throw new FrameyardError("OUTPUT_EXISTS", `Refusing to overwrite recipe files: ${conflicts.join(", ")}.`, {
+      details: { conflicts },
+    });
+  }
+
+  const created: string[] = [];
+  try {
+    for (const file of plan.files) {
+      const target = path.resolve(project.root, file.path);
+      await mkdir(path.dirname(target), { recursive: true });
+      await writeFile(target, file.content, { flag: "wx" });
+      created.push(target);
+    }
+  } catch (error) {
+    await Promise.allSettled(created.map((file) => rm(file, { force: true })));
+    throw new FrameyardError("OUTPUT_FAILED", `Could not write recipe "${recipe.id}": ${errorMessage(error)}`, {
+      cause: error,
+      details: { files: plan.files.map((file) => file.path) },
+    });
+  }
+
+  const registration = recipeRegistration(recipe, id);
+  const register = {
+    ...(registration.compositions !== undefined ? { compositions: registration.compositions } : {}),
+    ...(registration.timelines !== undefined ? { timelines: registration.timelines } : {}),
+  };
+  const timeline = plan.entries.find((entry) => entry.kind === "timeline");
+  const lintTarget = timeline?.id ?? plan.entries[0]?.id;
+  const next = [
+    "Add the register entries to fy.config.js",
+    ...(lintTarget !== undefined ? [`npx frameyard lint ${lintTarget} --json`] : []),
+    ...(timeline !== undefined ? [`npx frameyard render ${timeline.id} --json`] : []),
+  ];
+  const result = {
+    ok: true,
+    command: "add",
+    kind: "recipe",
+    recipe: recipe.id,
+    id,
+    path: project.root,
+    files: plan.files.map((file) => file.path),
+    register,
+    prerequisites: recipe.prerequisites ?? [],
+    next,
+  };
+
+  if (json) {
+    printJson(result);
+  } else {
+    process.stdout.write(`Installed recipe ${recipe.id} as ${id}\n`);
+    for (const file of result.files) {
+      process.stdout.write(`  ${file}\n`);
+    }
+    process.stdout.write("Add to fy.config.js:\n");
+    for (const [key, value] of Object.entries(register)) {
+      const entries = Object.entries(value)
+        .map(([entryId, entry]) => `"${entryId}": "${entry}"`)
+        .join(", ");
+      process.stdout.write(`  ${key}: { ${entries} }\n`);
+    }
+    if (result.prerequisites.length > 0) {
+      process.stdout.write(`Provide: ${result.prerequisites.join(", ")}\n`);
+    }
+  }
+  return 0;
+}
+
 async function runAdd(parsed: ParsedArgs): Promise<number> {
   const json = parsed.flags.has("json") === true;
   if (parsed.flags.has("list")) {
@@ -1365,6 +1519,15 @@ async function runAdd(parsed: ParsedArgs): Promise<number> {
       description: template.description,
       ...(template.prerequisites !== undefined ? { prerequisites: template.prerequisites } : {}),
     }));
+    const recipes = listRecipes().map((recipe) => ({
+      id: recipe.id,
+      title: recipe.title,
+      description: recipe.description,
+      tags: recipe.tags,
+      kind: recipe.kind,
+      files: recipe.files.map((file) => file.path),
+      ...(recipe.prerequisites !== undefined ? { prerequisites: recipe.prerequisites } : {}),
+    }));
     const scaffolds = [
       {
         name: "local-models",
@@ -1372,16 +1535,23 @@ async function runAdd(parsed: ParsedArgs): Promise<number> {
       },
     ];
     if (json) {
-      printJson({ ok: true, command: "add", templates, scaffolds });
+      printJson({ ok: true, command: "add", templates, recipes, scaffolds });
     } else {
       for (const template of templates) {
         process.stdout.write(`${template.kind}\t${template.name}\t${template.description}\n`);
+      }
+      for (const recipe of recipes) {
+        process.stdout.write(`recipe\t${recipe.id}\t${recipe.title}\t${recipe.description}\n`);
       }
       for (const scaffold of scaffolds) {
         process.stdout.write(`scaffold\t${scaffold.name}\t${scaffold.description}\n`);
       }
     }
     return 0;
+  }
+
+  if (parsed.positionals[0] === "recipe") {
+    return runAddRecipe(parsed, json);
   }
 
   if (parsed.positionals[0] === "local-models") {

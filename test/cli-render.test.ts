@@ -906,6 +906,94 @@ export default {
       }
     });
 
+    it("installs a recipe bundle and reports the registration snippet", async () => {
+      const root = await createPolicyProject();
+      try {
+        const list = await run(["add", "--list", "--json"], root);
+        expect(list.code).toBe(0);
+        const listing = JSON.parse(list.stdout);
+        expect(listing.recipes).toContainEqual(
+          expect.objectContaining({
+            id: "lower-third",
+            files: expect.arrayContaining(["compositions/{id}.html"]),
+          }),
+        );
+
+        const recipe = await run(["add", "recipe", "lower-third", "--id", "hero", "--project", root, "--json"], root);
+        expect(recipe.code).toBe(0);
+        expect(JSON.parse(recipe.stdout)).toMatchObject({
+          ok: true,
+          command: "add",
+          kind: "recipe",
+          recipe: "lower-third",
+          id: "hero",
+          files: [
+            "compositions/hero.html",
+            "timelines/hero-timeline.timeline.json",
+            "props/hero.json",
+            "recipes/hero.md",
+          ],
+          register: {
+            compositions: { hero: "./compositions/hero.html" },
+            timelines: { "hero-timeline": "./timelines/hero-timeline.timeline.json" },
+          },
+        });
+
+        for (const file of [
+          "compositions/hero.html",
+          "timelines/hero-timeline.timeline.json",
+          "props/hero.json",
+          "recipes/hero.md",
+        ]) {
+          expect((await stat(path.join(root, file))).isFile()).toBe(true);
+        }
+
+        const timeline = JSON.parse(
+          await readFile(path.join(root, "timelines", "hero-timeline.timeline.json"), "utf8"),
+        );
+        expect(timeline.clips[0].source).toEqual({ kind: "composition", id: "hero" });
+
+        await writeFile(
+          path.join(root, "fy.config.js"),
+          `export default { format: { width: 160, height: 90, fps: 10 }, compositions: { hello: "./compositions/hello.html", risky: "./compositions/risky.html", hero: "./compositions/hero.html" }, timelines: { main: "./timelines/main.timeline.json", "hero-timeline": "./timelines/hero-timeline.timeline.json" } };\n`,
+        );
+        const lint = await run(["lint", "hero-timeline", "--project", root, "--json"], root);
+        expect(lint.code).toBe(0);
+        expect(JSON.parse(lint.stdout)).toMatchObject({
+          ok: true,
+          command: "lint",
+          timeline: "hero-timeline",
+        });
+
+        const duplicate = await run(
+          ["add", "recipe", "lower-third", "--id", "hero", "--project", root, "--json"],
+          root,
+        );
+        expect(duplicate.code).not.toBe(0);
+        expect(JSON.parse(duplicate.stdout)).toMatchObject({ error: { code: "OUTPUT_EXISTS" } });
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
+    });
+
+    it("does not write recipe files when one target already exists", async () => {
+      const root = await createPolicyProject();
+      try {
+        await writeFile(path.join(root, "timelines", "hero-timeline.timeline.json"), "{}\n");
+        const result = await run(["add", "recipe", "lower-third", "--id", "hero", "--project", root, "--json"], root);
+        expect(result.code).not.toBe(0);
+        expect(JSON.parse(result.stdout)).toMatchObject({
+          error: {
+            code: "OUTPUT_EXISTS",
+            details: { conflicts: ["timelines/hero-timeline.timeline.json"] },
+          },
+        });
+        await expect(stat(path.join(root, "compositions", "hero.html"))).rejects.toThrow();
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
+    });
+
     it("reports the active policy and resources from doctor", async () => {
       const root = await createPolicyProject();
       await writeFile(

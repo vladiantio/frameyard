@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { validateHtmlComposition } from "../src/html/validate.ts";
 import { parseTimelineDocument } from "../src/timeline/schema.ts";
+import { findRecipe, listRecipes, recipeInstallPlan, recipeRegistration, RECIPES } from "../src/recipes.ts";
 import { findTemplate, TEMPLATES, templateRegistration } from "../src/templates.ts";
 
 const temporaryDirectories: string[] = [];
@@ -87,6 +88,71 @@ describe("project templates", () => {
     expect(templateRegistration(timeline, "reel")).toEqual({
       compositions: undefined,
       timelines: { reel: "./timelines/reel.timeline.json" },
+    });
+  });
+});
+
+describe("project recipes", () => {
+  it("has one unique id per recipe and resolves by id", () => {
+    const ids = RECIPES.map((recipe) => recipe.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const recipe of RECIPES) {
+      expect(findRecipe(recipe.id)).toBe(recipe);
+    }
+    expect(findRecipe("missing")).toBeUndefined();
+    expect(listRecipes()).toEqual([...RECIPES]);
+  });
+
+  it.each(RECIPES)("installs a valid $id recipe", async (recipe) => {
+    const root = await projectDirectory();
+    const plan = recipeInstallPlan(recipe, "hero");
+    const paths = plan.files.map((file) => file.path);
+    expect(new Set(paths).size).toBe(paths.length);
+    expect(paths.some((file) => file.includes("{id}"))).toBe(false);
+
+    for (const file of plan.files) {
+      expect(file.content.length).toBeGreaterThan(0);
+      const target = path.join(root, file.path);
+      await mkdir(path.dirname(target), { recursive: true });
+      await writeFile(target, file.content);
+    }
+
+    const entryIds = plan.entries.map((entry) => entry.id);
+    expect(new Set(entryIds).size).toBe(entryIds.length);
+
+    for (const entry of plan.entries) {
+      expect(paths).toContain(entry.entry);
+      const content = plan.files.find((file) => file.path === entry.entry)?.content;
+      expect(content).toBeDefined();
+      if (content === undefined) {
+        throw new Error(`Recipe ${recipe.id} entry ${entry.entry} has no file`);
+      }
+
+      if (entry.kind === "composition") {
+        const validation = await validateHtmlComposition({
+          projectRoot: root,
+          entry: entry.entry,
+          format: { width: 160, height: 90, fps: 10 },
+        });
+        expect(validation.diagnostics.filter((diagnostic) => diagnostic.severity === "error")).toEqual([]);
+        expect(validation.formatUnresolved).toBe(false);
+      } else {
+        const parsed = parseTimelineDocument(JSON.parse(content) as unknown);
+        expect(parsed.diagnostics.filter((diagnostic) => diagnostic.severity === "error")).toEqual([]);
+      }
+    }
+  });
+
+  it("reports the exact registration snippet for a recipe bundle", () => {
+    const recipe = findRecipe("lower-third");
+    expect(recipe).toBeDefined();
+    if (recipe === undefined) {
+      throw new Error("lower-third recipe missing");
+    }
+
+    expect(recipeRegistration(recipe, "hero")).toEqual({
+      compositions: { hero: "./compositions/hero.html" },
+      timelines: { "hero-timeline": "./timelines/hero-timeline.timeline.json" },
     });
   });
 });

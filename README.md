@@ -94,9 +94,10 @@ The repository ships runnable example projects. Each example README has the comm
 | `frameyard render <id> [--out <video.mp4>]` | Render an animated composition directly, a static composition to PNG, or a timeline through the segmented lossless pipeline; defaults to `out/<id>.<ext>` |
 | `frameyard tts ...` | Produce one frozen 24 kHz mono WAV with local qwentts.cpp or sherpa-onnx Supertonic 3 |
 | `frameyard transcribe ...` | Produce canonical transcript JSON with optional word timings and SRT/VTT exports |
-| `frameyard add --list` | List the built-in project templates and scaffolds |
+| `frameyard add --list` | List the built-in project templates, recipes, and scaffolds |
 | `frameyard add local-models` | Install the optional policy, OpenCode, and Pi scaffold into a workspace |
 | `frameyard add <composition\|timeline> <id> --template <name>` | Write a template entry and print the exact `fy.config.js` registration snippet |
+| `frameyard add recipe <recipe-id> --id <project-id>` | Install a complete recipe bundle and print the exact `fy.config.js` registration snippet |
 | `frameyard font search [query]` | Search the Fontsource catalog by name, category, subset, style, or variable axis |
 | `frameyard font add <fontsource-id>` | Install a pinned Fontsource family (variable `wght` by default, or static weights with `--static`) |
 | `frameyard font add --file <path> --family <name>` | Vendor a local font into `assets/fonts/<id>/` and update `fy.fonts.json` |
@@ -114,7 +115,7 @@ Common options: `--project <dir>`, `--json`, `--help`, and `--version`. `still` 
 
 `render` accepts `--concurrency <n>` (1-16) for compositions, `--workers <n>` (1-16) and `--scratch <dir>` for timelines, and `--container`, `--codec`, and `--encoder` (see [Containers, codecs, and encoders](#containers-codecs-and-encoders)). `--out` must match the container; the default is `out/<id>.<ext>`. A static composition writes `out/<id>.png` and rejects the video flags.
 
-For a timeline, `--props` is keyed by composition clip id; for a composition, it is the props object. `init` takes the directory positionally, or prompts for a project name when no directory is given; `add --template <name>` selects a template and `add --list` lists them. `--out` paths are relative to the working directory. `tts`, `transcribe`, and `render` accept `--dry-run`, which prints the plan, handoff command, prerequisites, and blockers without writing, loading a model, launching Chromium, or encoding. `--profile shared-cpu` and `--low-priority` adjust caps and priority; see [Resource policy](#resource-policy).
+For a timeline, `--props` is keyed by composition clip id; for a composition, it is the props object. `init` takes the directory positionally, or prompts for a project name when no directory is given; `add --template <name>` selects a template, `add recipe <recipe-id> --id <project-id>` installs a bundle, and `add --list` lists both. `--out` paths are relative to the working directory. `tts`, `transcribe`, and `render` accept `--dry-run`, which prints the plan, handoff command, prerequisites, and blockers without writing, loading a model, launching Chromium, or encoding. `--profile shared-cpu` and `--low-priority` adjust caps and priority; see [Resource policy](#resource-policy).
 
 `font search` accepts an optional query and `--category`, `--subset`, `--style`, `--variable`, and `--limit` filters. `font add <fontsource-id>` pins the Fontsource `npmVersion`, installs the variable `wght` face by default, and accepts `--static` plus `--weight`/`--style`/`--subset` lists. `font add --file` accepts `--id`, `--weight` (a number or an inclusive range), `--style normal|italic`, `--subset`, `--unicode-range`, `--license`, and `--license-file`. `font add --url` accepts the same metadata plus `--sha256`; HTTPS is required, with loopback HTTP allowed for tests. Font files are copied, hashed, and recorded in `fy.fonts.json`; adding another subset, style, or weight to the same family merges it into the existing entry. `--force` replaces a face or provider and is denied outside `full`.
 
@@ -422,13 +423,16 @@ npx frameyard doctor --sherpa-onnx-tts /path/to/sherpa-onnx-offline-tts --model-
 
 ### Templates
 
-`frameyard add --list` lists the built-in project templates: `static-poster`, `title-card`, `lower-third`, and `slideshow`. Add writes one valid entry and prints the exact `fy.config.js` registration snippet; it deliberately does not edit the config.
+`frameyard add --list` lists the built-in project templates, recipes, and scaffolds. Templates are single entries: `static-poster`, `title-card`, `lower-third`, and `slideshow`. Recipes are complete bundles that install a composition, timeline, props, and README together. Add writes valid files and prints the exact `fy.config.js` registration snippet; it deliberately does not edit the config.
 
 ```sh
 npx frameyard add composition intro --template lower-third
 npx frameyard add timeline reel --template slideshow
+npx frameyard add recipe lower-third --id hero
 npx frameyard add local-models
 ```
+
+The `lower-third` recipe installs `compositions/hero.html`, `timelines/hero-timeline.timeline.json`, `props/hero.json`, and `recipes/hero.md`, and prints both registration entries. More recipes will be added incrementally.
 
 `init --local-models` installs the same optional host scaffold for a new project:
 

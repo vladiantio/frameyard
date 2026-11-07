@@ -107,7 +107,7 @@ Static validation diagnostics include source locations. Runtime diagnostics may 
 
 ## add
 
-`add --list` returns `templates` with `name`, `kind`, `description`, and optional `prerequisites`. Adding an entry returns `kind`, `id`, `template`, `entry`, `path`, `register`, `prerequisites`, and `next`. `register` is the exact object to merge into `fy.config.js`; `add` does not edit the config itself.
+`add --list` returns `templates` with `name`, `kind`, `description`, and optional `prerequisites`; `recipes` with `id`, `title`, `description`, `tags`, `kind`, `files`, and optional `prerequisites`; and `scaffolds`. `files` entries are path templates where `{id}` is the project id. Adding a template entry returns `kind`, `id`, `template`, `entry`, `path`, `register`, `prerequisites`, and `next`. Adding a recipe returns `kind: "recipe"`, `recipe`, `id`, `path`, `files`, `register`, `prerequisites`, and `next`. `register` is the exact object to merge into `fy.config.js`; `add` does not edit the config itself.
 
 ## font
 

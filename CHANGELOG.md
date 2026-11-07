@@ -10,6 +10,13 @@ contract change may ship in a minor release and is called out explicitly below.
 
 ## [Unreleased]
 
+### Added
+
+- `frameyard add recipe <recipe-id> --id <project-id>` installs a complete
+  recipe bundle with a composition, timeline, props, and README, then prints the
+  exact `fy.config.js` registration entries. `frameyard add --list` now includes
+  the recipe manifest, and the built-in `lower-third` recipe is the first entry.
+
 ## [0.10.0] - 2026-11-07
 
 ### Added

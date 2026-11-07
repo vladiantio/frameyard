@@ -86,6 +86,10 @@ _Avoid_: Options, settings, mutable state
 A local file required by a composition or timeline, whether static or generated.
 _Avoid_: Resource, media file
 
+**Recipe**:
+A named, installable bundle of one or more composition or timeline entries, supporting props, and a README, with the exact `fy.config.js` registration entries. A recipe is an authoring convenience, not a separate runtime kind.
+_Avoid_: Template, preset, project
+
 **Timeline**:
 A top-level edit that assembles tracks and clips into one video under the project format, with a duration derived from its clips or explicitly overridden.
 _Avoid_: Sequence, composition, project

@@ -150,8 +150,9 @@ code. Use `random("stable:key")` from `frameyard/runtime`, never `Math.random()`
 | `npx frameyard compare <a> <b> --json` | Pixel and 3×3 region diff; exits 1 when different |
 | `npx frameyard render <id> --dry-run --json` | Handoff plan without Chromium, FFmpeg, or a model |
 | `npx frameyard render <id> --json` | Produce the video when the policy allows it |
-| `npx frameyard add --list --json` | List project templates |
+| `npx frameyard add --list --json` | List project templates, recipes, and scaffolds |
 | `npx frameyard add composition <id> --template <name> --json` | Write a valid fragment and print the config snippet |
+| `npx frameyard add recipe <recipe-id> --id <project-id> --json` | Install a complete recipe bundle and print the config snippet |
 | `npx frameyard font search <query> --json` | Search Fontsource by name, category, subset, style, or variable |
 | `npx frameyard font add <fontsource-id> --json` | Pin and vendor a Fontsource family; variable `wght` by default |
 | `npx frameyard font add <fontsource-id> --static --weight 400,700 --json` | Install explicit static weights |

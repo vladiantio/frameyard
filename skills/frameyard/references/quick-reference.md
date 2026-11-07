@@ -163,6 +163,10 @@ code. Use `random("stable:key")` from `frameyard/runtime`, never `Math.random()`
 | `npx frameyard font remove <id> --json` | Remove a font and its directory; `--keep-files` keeps the binaries |
 | `npx frameyard doctor --json` | Environment, integrations, policy, fonts, and resources |
 
+Built-in recipes: `lower-third`, `title-card`, `captions`, `audio-visualizer`,
+`countdown`, `stat-card`, `product-showcase`, `logo-sting`, `split-screen`, and
+`slideshow`.
+
 Every non-interactive command accepts `--json`. Parse stdout; read stderr for
 progress and diagnostics.
 

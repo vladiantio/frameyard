@@ -7,6 +7,7 @@ import { defineConfig } from "vitest/config";
 const integrationTests = [
   "test/cli-render.test.ts",
   "test/cli-stills.test.ts",
+  "test/recipes.test.ts",
   "test/timeline-render.test.ts",
   "test/examples.test.ts",
   "test/assets-e2e.test.ts",

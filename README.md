@@ -432,7 +432,22 @@ npx frameyard add recipe lower-third --id hero
 npx frameyard add local-models
 ```
 
-The `lower-third` recipe installs `compositions/hero.html`, `timelines/hero-timeline.timeline.json`, `props/hero.json`, and `recipes/hero.md`, and prints both registration entries. More recipes will be added incrementally.
+The built-in recipes are:
+
+| Recipe | What it installs |
+| --- | --- |
+| `lower-third` | A composition, matching timeline, props, and README for a name/role overlay. |
+| `title-card` | A 150-frame title card with staggered entrance animations. |
+| `captions` | A transcript-driven caption card with word highlighting and a sample transcript. |
+| `audio-visualizer` | A deterministic Canvas waveform with a replaceable synthetic envelope. |
+| `countdown` | A countdown and progress ring driven by the frame clock. |
+| `stat-card` | An animated metric card with a progress bar. |
+| `product-showcase` | A split product layout with a phone mockup and feature chips. |
+| `logo-sting` | A short SVG logo reveal with a drawn mark. |
+| `split-screen` | A diagonal before/after split with two large labels. |
+| `slideshow` | A three-slide composition and timeline with dissolves. |
+
+`lower-third` installs `compositions/hero.html`, `timelines/hero-timeline.timeline.json`, `props/hero.json`, and `recipes/hero.md`, and prints both registration entries. Composition-only recipes print one entry.
 
 `init --local-models` installs the same optional host scaffold for a new project:
 

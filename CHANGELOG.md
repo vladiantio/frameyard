@@ -15,7 +15,9 @@ contract change may ship in a minor release and is called out explicitly below.
 - `frameyard add recipe <recipe-id> --id <project-id>` installs a complete
   recipe bundle with a composition, timeline, props, and README, then prints the
   exact `fy.config.js` registration entries. `frameyard add --list` now includes
-  the recipe manifest, and the built-in `lower-third` recipe is the first entry.
+  the recipe manifest. The initial recipes are `lower-third`, `title-card`,
+  `captions`, `audio-visualizer`, `countdown`, `stat-card`, `product-showcase`,
+  `logo-sting`, `split-screen`, and `slideshow`.
 
 ## [0.10.0] - 2026-11-07
 

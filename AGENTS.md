@@ -301,6 +301,7 @@ Test at public seams, not private helpers:
 - `test/encoders.test.ts`: codec and container matrix, encoder name mapping, encoder arguments, HEVC tags, and NVENC session limits.
 - `test/cli-stills.test.ts`: real CLI with Chromium and FFmpeg for `check`/`still`, JSON envelopes, missing assets, deterministic stills across concurrent sessions, embedded video/WebGL capture, frame ranges and caps, preflight/failure atomicity, HTML/static check/still/render, static diagnostics, and format inheritance.
 - `test/cli-render.test.ts`: real CLI renders and workflow: container/codec/audio output, media audio, overwrite behavior, `dev`, `init`, resource policy, lint, templates, doctor, and the local-model scaffold.
+- `test/recipes.test.ts`: installs every bundled recipe, verifies the add manifest, and captures non-blank stills from each composition and timeline.
 - `test/video-determinism.test.ts`: a full-scene opacity animation over embedded video captures the requested frame, and consecutive composition frames map to consecutive source frames.
 - `test/examples.test.ts`: example README commands use the repository CLI, and each bundled example captures a still, including the static composition and its timeline.
 - `test/assets-e2e.test.ts`: `tts`/`transcribe`/`doctor` with fake upstream executables, normalization, word timings, exports, manifests, cancellation, transcript validation.

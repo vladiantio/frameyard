@@ -1,0 +1,141 @@
+name: Feature or improvement
+description: Propose a user-visible Frameyard change with testable acceptance criteria.
+title: "feat: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for proposing a Frameyard change. Keep one issue to one observable behavior.
+        If you cannot describe a test that fails without the change, split the issue further.
+
+  - type: input
+    id: context
+    attributes:
+      label: Context
+      description: Why now? What user pain does this solve? Link the roadmap phase or tracking issue.
+      placeholder: "Phase 0 · tracking #9 · creators cannot ..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: user-story
+    attributes:
+      label: User story
+      description: Who wants what, and why?
+      placeholder: "As a creator or coding agent, I want ... so that ..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: The smallest shippable behavior. Bullet points are fine.
+      placeholder: |
+        - ...
+        - ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: out-of-scope
+    attributes:
+      label: Out of scope
+      description: What this issue deliberately does not do.
+      placeholder: |
+        - ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance criteria
+      description: Use Given/When/Then, exact commands, JSON fields, and diagnostic codes.
+      placeholder: |
+        - [ ] Given ..., when ..., then ...
+        - [ ] `frameyard ... --json` returns `{ ok: true, ... }` with ...
+        - [ ] Invalid input exits nonzero with `error.code = "..."` and an actionable fix.
+    validations:
+      required: true
+
+  - type: textarea
+    id: test-plan
+    attributes:
+      label: Test plan
+      description: Which public seam proves the behavior?
+      placeholder: |
+        - Unit: test/...
+        - Integration: test/...
+        - Manual: ...
+        - Render: fixture + FFprobe (if applicable)
+        - Preview: pnpm check:preview (if applicable)
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: definition-of-done
+    attributes:
+      label: Definition of Done
+      description: Add these to the issue body if they are not already covered.
+      options:
+        - label: A public behavior test fails without the change.
+          required: true
+        - label: pnpm check (or the scoped check for preview/docs) passes.
+          required: true
+        - label: README and/or the agent skill reference is updated.
+          required: true
+        - label: "CHANGELOG.md is updated, or the commit declares Changelog: skip."
+          required: true
+        - label: Failures exit nonzero and leave no published partial output.
+        - label: Renderer changes add a fixture and FFprobe verification.
+        - label: Preview changes run pnpm check:preview.
+
+  - type: dropdown
+    id: phase
+    attributes:
+      label: Roadmap phase
+      description: Pick the phase from the roadmap. Maintainers may adjust it.
+      options:
+        - Phase 0 — Intuition
+        - Phase 1 — Reuse and finished video
+        - Phase 2 — Creator editing
+        - Phase 3 — Ecosystem
+        - Not on the roadmap
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: persona
+    attributes:
+      label: Affected persona
+      description: Select every persona this change serves.
+      options:
+        - label: Creator
+        - label: Coding agent
+        - label: Programmatic integrator
+
+  - type: dropdown
+    id: size
+    attributes:
+      label: Estimate
+      description: S is one week or less; M is two to four weeks; L is one to two months; XL is two to four months.
+      options:
+        - S
+        - M
+        - L
+        - XL
+        - Needs a spike
+    validations:
+      required: true
+
+  - type: input
+    id: dependencies
+    attributes:
+      label: Dependencies
+      description: Link blocking issues or tracking issues.
+      placeholder: "Blocked by #..."
+    validations:
+      required: false

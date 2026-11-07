@@ -1,0 +1,132 @@
+name: Bug report
+description: Report a reproducible Frameyard bug with the exact command, environment, and diagnostics.
+title: "fix: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Please reduce the report to a minimal project or fixture.
+        Do not paste secrets, private URLs, or large media files.
+
+  - type: input
+    id: version
+    attributes:
+      label: Frameyard version
+      description: Run `npx frameyard --version` or `node dist/cli.js --version`.
+      placeholder: "0.10.0"
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Node version, FFmpeg version, Playwright Chromium version, and whether the resource policy is active.
+      placeholder: |
+        - OS: ...
+        - Node: ...
+        - FFmpeg: ...
+        - Chromium: ...
+        - Policy: ...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Pick the closest area. Maintainers may relabel it.
+      options:
+        - CLI and config
+        - Composition authoring
+        - Timeline JSON and rendering
+        - Preview and dev server
+        - Capture, FFmpeg, or encoding
+        - Fonts
+        - TTS, transcription, or assets
+        - Docs, skill, or templates
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      description: How much does this block you?
+      options:
+        - Blocks rendering or publishing
+        - Wrong or corrupt output
+        - Crash or unhandled error
+        - Performance regression
+        - Documentation or tooling issue
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Exact commands, project structure, and the smallest composition or timeline that triggers the bug.
+      placeholder: |
+        1. `npx frameyard init repro`
+        2. Replace `compositions/hello.html` with ...
+        3. Run `npx frameyard check hello --json`
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What should happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What happened instead? Include the exact diagnostic code if there is one.
+    validations:
+      required: true
+
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics and logs
+      description: Paste the `--json` result, stderr, stack trace, and any relevant FFmpeg or Chromium output.
+      placeholder: |
+        ```json
+        { "ok": false, "command": "...", "error": { "code": "..." } }
+        ```
+      render: shell
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I reproduced this on the latest published version or the current `main` build.
+          required: true
+        - label: I reduced the report to a minimal composition, timeline, or command.
+          required: true
+        - label: I removed secrets, private URLs, and large media files.
+          required: true
+        - label: I searched existing issues for the same error code or symptom.
+          required: true
+
+  - type: input
+    id: related
+    attributes:
+      label: Related issues or examples
+      description: Link any related issue, tracking issue, or example.
+      placeholder: "#..."
+    validations:
+      required: false

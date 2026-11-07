@@ -942,7 +942,11 @@ class HtmlCompositionValidator {
         continue;
       }
       for (const attribute of entry.attributes) {
-        if (attribute !== "data-fy-anim-start" && attribute !== "data-fy-anim-duration") {
+        if (
+          attribute !== "data-fy-anim-start" &&
+          attribute !== "data-fy-anim-duration" &&
+          attribute !== "data-fy-anim-preset"
+        ) {
           continue;
         }
         this.warning(

@@ -1,6 +1,11 @@
 export const BINDING_ATTRIBUTES = ["data-fy-text", "data-fy-if", "data-fy-repeat"] as const;
 
-export const ANIMATION_ATTRIBUTES = ["data-fy-anim-start", "data-fy-anim-duration", "data-fy-anim-easing"] as const;
+export const ANIMATION_ATTRIBUTES = [
+  "data-fy-anim-start",
+  "data-fy-anim-duration",
+  "data-fy-anim-easing",
+  "data-fy-anim-preset",
+] as const;
 
 export const MEDIA_ATTRIBUTES = [
   "data-fy-start",

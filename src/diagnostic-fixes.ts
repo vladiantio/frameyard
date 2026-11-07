@@ -1,3 +1,4 @@
+import { ANIMATION_PRESETS } from "./animation-presets.js";
 import { KNOWN_DATA_FY_ATTRIBUTES } from "./composition/attributes.js";
 import type { DiagnosticFix, FrameyardErrorCode } from "./errors.js";
 
@@ -113,12 +114,23 @@ export function diagnosticFix(code: FrameyardErrorCode, details?: unknown, messa
         message: "Review repeat, text, and attribute binding placement.",
         docs: DOCS.bindings,
       };
-    case "ANIMATION_INVALID":
+    case "ANIMATION_INVALID": {
+      const attribute = detailString(details, "attribute");
+      const value = detailString(details, "value");
+      if (attribute === "data-fy-anim-preset") {
+        return {
+          kind: "value",
+          message: `Use one of: ${ANIMATION_PRESETS.join(", ")}.`,
+          ...(value !== undefined ? { from: value } : {}),
+          docs: DOCS.deterministic,
+        };
+      }
       return {
         kind: "value",
         message: "Use a valid data-fy-anim-* value or remove the animation attribute.",
         docs: DOCS.deterministic,
       };
+    }
     case "STATIC_ANIMATION_UNSUPPORTED":
       return {
         kind: "docs",

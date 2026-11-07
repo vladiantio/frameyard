@@ -32,6 +32,11 @@ contract change may ship in a minor release and is called out explicitly below.
   explain <code>` prints the cause, a failing example, the corrected example,
   and a docs link; `explain --list --json` lists every stable code. Fixes are
   advisory and are never applied automatically.
+- `data-fy-anim-preset` adds deterministic `fade`, `fade-up`, `fade-down`,
+  `slide-left`, `slide-right`, `scale-in`, and `blur-in` entrance animations.
+  Presets compose with `data-fy-anim-start`, `data-fy-anim-duration`, and
+  `data-fy-anim-easing`; unknown presets fail with `ANIMATION_INVALID`, and
+  static compositions reject preset scheduling.
 
 ## [0.10.0] - 2026-11-07
 

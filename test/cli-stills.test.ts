@@ -214,6 +214,25 @@ describe.concurrent("CLI stills and composition checks", () => {
     });
   });
 
+  it("captures the start and end of an animation preset", async () => {
+    const start = await run(
+      ["still", "preset", "--frame", "0", "--out", "preset-start.png", "--project", root, "--json"],
+      root,
+    );
+    expect(start.code, start.stderr).toBe(0);
+    const end = await run(
+      ["still", "preset", "--frame", "10", "--out", "preset-end.png", "--project", root, "--json"],
+      root,
+    );
+    expect(end.code, end.stderr).toBe(0);
+
+    const startPixel = await pngPixel(path.join(root, "preset-start.png"), 80, 45);
+    const endPixel = await pngPixel(path.join(root, "preset-end.png"), 80, 45);
+    expect(startPixel[1]).toBeLessThan(50);
+    expect(endPixel[1]).toBeGreaterThan(200);
+    expect(endPixel).not.toEqual(startPixel);
+  });
+
   it("fails a legacy full document with COMPOSITION_DOCUMENT_SHELL", async () => {
     const result = await run(["check", "legacy", "--project", root, "--json"], root);
     expect(result.code).not.toBe(0);

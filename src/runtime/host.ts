@@ -21,6 +21,7 @@ import {
   type ResolvedCompositionMetadata,
   type ResolvedTranscriptClip,
 } from "../contracts.js";
+import { ANIMATION_PRESET_KEYFRAMES, DEFAULT_ANIMATION_PRESET_DURATION_FRAMES } from "../animation-presets.js";
 import { diagnosticFix } from "../diagnostic-fixes.js";
 import {
   errorMessage,
@@ -757,7 +758,7 @@ async function waitForAssets(root: HTMLElement): Promise<void> {
 }
 
 function animationElements(root: HTMLElement): Element[] {
-  const selector = "[data-fy-anim-start], [data-fy-anim-duration], [data-fy-anim-easing]";
+  const selector = "[data-fy-anim-start], [data-fy-anim-duration], [data-fy-anim-easing], [data-fy-anim-preset]";
   return [...(root.matches(selector) ? [root] : []), ...Array.from(root.querySelectorAll(selector))];
 }
 
@@ -766,6 +767,16 @@ function applyAnimationSchedule(entries: readonly AnimationDeclaration<Node>[], 
     const element = entry.element;
     const style = element instanceof HTMLElement || element instanceof SVGElement ? element.style : null;
     if (!style) {
+      continue;
+    }
+    if (entry.preset !== undefined && "animate" in element && typeof element.animate === "function") {
+      const durationInFrames = entry.durationInFrames ?? DEFAULT_ANIMATION_PRESET_DURATION_FRAMES;
+      element.animate([...ANIMATION_PRESET_KEYFRAMES[entry.preset]], {
+        duration: (durationInFrames / fps) * 1000,
+        delay: ((entry.startFrame ?? 0) / fps) * 1000,
+        easing: entry.easing ?? "ease-out",
+        fill: "both",
+      });
       continue;
     }
     if (entry.startFrame !== undefined) {

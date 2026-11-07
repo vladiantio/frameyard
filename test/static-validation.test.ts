@@ -303,6 +303,59 @@ describe("HTML composition static validation", () => {
     expect(result.diagnostics).toContainEqual(expect.objectContaining({ code: "MEDIA_INVALID" }));
   });
 
+  it("accepts animation presets and rejects unknown preset names with a fix", async () => {
+    const valid = await validate(
+      "preset-valid",
+      fragmentHtml({
+        props: false,
+        body: "",
+        root: `<fy-composition width="320" height="180" fps="10" duration-in-frames="5">
+  <div data-fy-anim-preset="fade-up" data-fy-anim-start="0" data-fy-anim-duration="5" data-fy-anim-easing="ease-out"></div>
+</fy-composition>`,
+      }),
+    );
+    expect(valid.info).not.toBeNull();
+    expect(valid.diagnostics.filter((diagnostic) => diagnostic.severity === "error")).toEqual([]);
+
+    const invalid = await validate(
+      "preset-invalid",
+      fragmentHtml({
+        props: false,
+        body: "",
+        root: `<fy-composition width="320" height="180" fps="10" duration-in-frames="5">
+  <div data-fy-anim-preset="zoom"></div>
+</fy-composition>`,
+      }),
+    );
+    expect(invalid.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: "ANIMATION_INVALID",
+        details: expect.objectContaining({
+          attribute: "data-fy-anim-preset",
+          value: "zoom",
+        }),
+        fix: expect.objectContaining({
+          kind: "value",
+          message: expect.stringContaining("fade-up"),
+          docs: expect.stringContaining("deterministic-authoring.md"),
+        }),
+      }),
+    );
+  });
+
+  it("rejects animation presets in a static composition", async () => {
+    const result = await validate(
+      "static-preset",
+      `<fy-composition width="320" height="180">
+  <div data-fy-anim-preset="fade"></div>
+</fy-composition>`,
+    );
+
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({ severity: "error", code: "STATIC_ANIMATION_UNSUPPORTED" }),
+    );
+  });
+
   it("rejects unknown data-fy attributes", async () => {
     const result = await validate(
       "unknown-attribute",

@@ -238,6 +238,10 @@ _Avoid_: Dynamic font, multiple weight font
 An integer-addressed position on a timeline or composition frame range; use timeline frame or composition frame when the distinction matters.
 _Avoid_: Timestamp, animation tick
 
+**Animation preset**:
+A named, deterministic entrance animation selected with `data-fy-anim-preset` and scheduled by start frame, duration, and easing. It is implemented as a Web Animation, not a separate animation engine.
+_Avoid_: Transition, effect, keyframe library
+
 **Active clip**:
 A clip whose timeline range contains the current timeline frame.
 _Avoid_: Visible clip

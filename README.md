@@ -235,7 +235,7 @@ Schema defaults fill missing values first. Explicit `data-fy="props"` defaults w
 
 ### Animation
 
-CSS `@keyframes` and the Web Animations API are the animation language. The runtime pauses and seeks every animation from the frame clock; `data-fy-anim-start`, `data-fy-anim-duration`, and `data-fy-anim-easing` schedule one animation per element in composition frames. Frame-state variables on `:root` are `--fy-frame`, `--fy-time`, `--fy-progress`, `--fy-fps`, `--fy-duration`, and `--fy-duration-frames`. CSS transitions are not deterministic and are diagnosed. See [deterministic authoring](./skills/frameyard/references/deterministic-authoring.md#animation) for the full rules.
+CSS `@keyframes` and the Web Animations API are the animation language. The runtime pauses and seeks every animation from the frame clock; `data-fy-anim-start`, `data-fy-anim-duration`, and `data-fy-anim-easing` schedule one animation per element in composition frames. For common entrances, `data-fy-anim-preset` selects `fade`, `fade-up`, `fade-down`, `slide-left`, `slide-right`, `scale-in`, or `blur-in`; presets use the same start, duration, and easing attributes. Frame-state variables on `:root` are `--fy-frame`, `--fy-time`, `--fy-progress`, `--fy-fps`, `--fy-duration`, and `--fy-duration-frames`. CSS transitions are not deterministic and are diagnosed. See [deterministic authoring](./skills/frameyard/references/deterministic-authoring.md#animation) for the full rules.
 
 ### Controller
 

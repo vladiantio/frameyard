@@ -7,7 +7,7 @@ Read a topic reference only when the task needs it; the full contract is in
 ## Choose the smallest authoring level
 
 1. **Static composition** for a poster, card, or thumbnail: no `duration-in-frames`, no `fps`, renders to PNG.
-2. **CSS animation** for timed reveals, wipes, and simple motion: `@keyframes` plus `data-fy-anim-*`.
+2. **CSS animation** for timed reveals, wipes, and simple motion: `@keyframes` plus `data-fy-anim-*`; use `data-fy-anim-preset` for `fade`, `fade-up`, `fade-down`, `slide-left`, `slide-right`, `scale-in`, or `blur-in`.
 3. **Bindings** for props-driven text, attributes, classes, conditionals, and repeats.
 4. **Controller** for Canvas 2D, WebGL, karaoke, or per-frame math CSS cannot express.
 5. **Timeline** when several compositions, media clips, or audio tracks must share one deliverable.

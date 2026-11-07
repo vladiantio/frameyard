@@ -1,3 +1,4 @@
+import { ANIMATION_PRESETS, isAnimationPreset, type AnimationPreset } from "../animation-presets.js";
 import type { CompositionDiagnostic } from "../contracts.js";
 import type { DocumentAdapter } from "./adapter.js";
 import { isAnimationAttribute } from "./attributes.js";
@@ -9,6 +10,7 @@ export interface AnimationDeclaration<Node> {
   startFrame?: number;
   durationInFrames?: number;
   easing?: string;
+  preset?: AnimationPreset;
   attributes: readonly string[];
 }
 
@@ -42,6 +44,7 @@ export function readAnimationDeclarations<Node>(
     let startFrame: number | undefined;
     let durationInFrames: number | undefined;
     let easing: string | undefined;
+    let preset: AnimationPreset | undefined;
 
     const start = getAttribute(adapter, target.node, "data-fy-anim-start");
     if (start !== undefined) {
@@ -93,11 +96,32 @@ export function readAnimationDeclarations<Node>(
       }
     }
 
+    const presetValue = getAttribute(adapter, target.node, "data-fy-anim-preset");
+    if (presetValue !== undefined) {
+      const value = presetValue.trim();
+      if (!isAnimationPreset(value)) {
+        diagnostics.push(
+          createDiagnostic(
+            "error",
+            "ANIMATION_INVALID",
+            `Unknown animation preset "${presetValue}". Use one of: ${ANIMATION_PRESETS.join(", ")}.`,
+            attributeDetails(adapter, options.path, target.node, "data-fy-anim-preset", {
+              value: presetValue,
+              suggestion: ANIMATION_PRESETS.join(", "),
+            }),
+          ),
+        );
+      } else {
+        preset = value;
+      }
+    }
+
     entries.push({
       element: target.node,
       ...(startFrame !== undefined ? { startFrame } : {}),
       ...(durationInFrames !== undefined ? { durationInFrames } : {}),
       ...(easing !== undefined ? { easing } : {}),
+      ...(preset !== undefined ? { preset } : {}),
       attributes,
     });
   }

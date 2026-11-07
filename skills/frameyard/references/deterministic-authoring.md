@@ -99,6 +99,18 @@ CSS `@keyframes` and the Web Animations API are paused and seeked by the runtime
 - The root exposes `--fy-frame`, `--fy-time`, `--fy-progress`, `--fy-fps`, `--fy-duration`, and `--fy-duration-frames`. Use them in `calc()` for simple computed motion and progress bars.
 - Do not use CSS transitions. They are diagnosed as non-deterministic.
 
+### Animation presets
+
+For common entrances, use `data-fy-anim-preset` instead of writing keyframes:
+
+```html
+<h1 data-fy-anim-preset="fade-up" data-fy-anim-start="0" data-fy-anim-duration="30" data-fy-anim-easing="ease-out"></h1>
+```
+
+Presets are `fade`, `fade-up`, `fade-down`, `slide-left`, `slide-right`, `scale-in`, and `blur-in`. They use the same start, duration, and easing attributes as CSS animations. The default duration is 30 composition frames and the default easing is `ease-out`.
+
+A preset owns the element's `opacity` and its preset channel (`transform` or `filter`) for the scheduled window. Do not also apply a custom CSS animation to the same element; the runtime will report multiple animations. Static compositions reject all animation scheduling, including presets.
+
 ## Timeline clip keyframes
 
 CSS `@keyframes` animate elements *inside* a composition. A timeline clip's `keyframes` animate the clip's placement in the edit: `x`, `y`, `scale`, `rotation`, and `opacity`. The two mechanisms compose: a composition may animate internally while its timeline clip also fades or moves.

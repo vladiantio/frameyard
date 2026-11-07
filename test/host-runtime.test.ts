@@ -121,6 +121,12 @@ const schemaHtml = `<script type="application/json" data-fy="props">
     </fy-composition>
 `;
 
+const presetHtml = `<fy-composition width="200" height="100" fps="10" duration-in-frames="20">
+      <div id="box" data-fy-anim-preset="fade-up" data-fy-anim-start="2" data-fy-anim-duration="8" data-fy-anim-easing="linear"
+        style="width: 40px; height: 40px; background: #b8f36b;"></div>
+    </fy-composition>
+`;
+
 const staticHtml = `<style>
       @keyframes pulse { from { opacity: 1; } to { opacity: 0.5; } }
       #box { width: 20px; height: 20px; background: #b8f36b; animation: pulse 1s linear infinite; }
@@ -198,6 +204,7 @@ beforeAll(async () => {
       media: "./compositions/media.html",
       bound: "./compositions/bound.html",
       "import-map": "./compositions/import-map.html",
+      preset: "./compositions/preset.html",
       schema: "./compositions/schema.html",
       static: "./compositions/static.html",
       "static-media": "./compositions/static-media.html",
@@ -212,6 +219,7 @@ beforeAll(async () => {
   await writeFile(path.join(root, "compositions", "media.html"), mediaHtml);
   await writeFile(path.join(root, "compositions", "bound.html"), boundHtml);
   await writeFile(path.join(root, "compositions", "import-map.html"), importMapHtml);
+  await writeFile(path.join(root, "compositions", "preset.html"), presetHtml);
   await writeFile(path.join(root, "compositions", "schema.html"), schemaHtml);
   await writeFile(path.join(root, "compositions", "static.html"), staticHtml);
   await writeFile(path.join(root, "compositions", "static-media.html"), staticMediaHtml);
@@ -501,6 +509,46 @@ describe("browser composition host", () => {
       }
     });
     expect(invalid).toContain("[PROPS_SCHEMA_INVALID]");
+    await page.close();
+  });
+
+  it("schedules animation presets with start, duration, and easing", async () => {
+    const page = await openHost("preset.html");
+    await host(page, async (api) => {
+      const load = api.load as (options?: { props?: unknown }) => Promise<void>;
+      await load();
+    });
+
+    const timing = await page.evaluate(() => {
+      const box = document.querySelector("#box") as HTMLElement;
+      const animation = box.getAnimations()[0];
+      const effect = animation?.effect?.getTiming();
+      return {
+        duration: effect?.duration,
+        delay: effect?.delay,
+        easing: effect?.easing,
+      };
+    });
+    expect(timing).toEqual({ duration: 800, delay: 200, easing: "linear" });
+
+    const atZero = await page.evaluate(() => {
+      const box = document.querySelector("#box") as HTMLElement;
+      const style = getComputedStyle(box);
+      return { opacity: style.opacity, transform: style.transform };
+    });
+    expect(atZero.opacity).toBe("0");
+    expect(atZero.transform).not.toBe("none");
+
+    await host(page, (api) => {
+      (api.seek as (frame: number) => void)(10);
+    });
+    const atTen = await page.evaluate(() => {
+      const box = document.querySelector("#box") as HTMLElement;
+      const style = getComputedStyle(box);
+      return { opacity: style.opacity, transform: style.transform };
+    });
+    expect(atTen.opacity).toBe("1");
+    expect(atTen.transform).not.toBe(atZero.transform);
     await page.close();
   });
 

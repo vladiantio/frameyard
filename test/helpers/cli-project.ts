@@ -257,7 +257,7 @@ export async function createCliProject(options: CliProjectOptions = {}): Promise
   await mkdir(path.join(root, "assets"), { recursive: true });
   await writeFile(
     path.join(root, "fy.config.js"),
-    `export default { compositions: { demo: "./compositions/demo.html", media: "./compositions/media.html", long: "./compositions/long.html", "missing-video": "./compositions/missing-video.html", broken: "./compositions/broken.html", throwing: "./compositions/throwing.html", html: "./compositions/html.html", "html-invalid": "./compositions/html-invalid.html", legacy: "./compositions/legacy.html", static: "./compositions/static.html", schema: "./compositions/schema.html", "schema-required": "./compositions/schema-required.html", "schema-malformed": "./compositions/schema-malformed.html" } };\n`,
+    `export default { compositions: { demo: "./compositions/demo.html", media: "./compositions/media.html", long: "./compositions/long.html", "missing-video": "./compositions/missing-video.html", broken: "./compositions/broken.html", throwing: "./compositions/throwing.html", html: "./compositions/html.html", "html-invalid": "./compositions/html-invalid.html", legacy: "./compositions/legacy.html", static: "./compositions/static.html", preset: "./compositions/preset.html", schema: "./compositions/schema.html", "schema-required": "./compositions/schema-required.html", "schema-malformed": "./compositions/schema-malformed.html" } };\n`,
   );
   await writeFile(path.join(root, "compositions", "demo.html"), composition);
   await writeFile(path.join(root, "compositions", "media.html"), mediaComposition);
@@ -267,6 +267,21 @@ export async function createCliProject(options: CliProjectOptions = {}): Promise
   await writeFile(path.join(root, "compositions", "html-invalid.html"), invalidHtmlComposition);
   await writeFile(path.join(root, "compositions", "legacy.html"), legacyComposition);
   await writeFile(path.join(root, "compositions", "static.html"), staticComposition);
+  await writeFile(
+    path.join(root, "compositions", "preset.html"),
+    `<fy-composition width="160" height="90" fps="10" duration-in-frames="12">
+  <main style="position: absolute; inset: 0; background: #101820;">
+    <div
+      data-fy-anim-preset="fade-up"
+      data-fy-anim-start="0"
+      data-fy-anim-duration="10"
+      data-fy-anim-easing="linear"
+      style="position: absolute; left: 60px; top: 25px; width: 40px; height: 40px; background: #b8f36b;"
+    ></div>
+  </main>
+</fy-composition>
+`,
+  );
   await writeFile(
     path.join(root, "compositions", "schema-malformed.html"),
     `<script type="application/json" data-fy="props-schema">

@@ -52,6 +52,7 @@ export interface DoctorManifest {
   exists: boolean;
   valid: boolean;
   artifacts: number;
+  assets: number;
   detail?: string;
 }
 
@@ -171,7 +172,7 @@ async function inspectManifest(
     info = await stat(manifestPath);
   } catch {
     return {
-      manifest: { path: manifestPath, exists: false, valid: true, artifacts: 0 },
+      manifest: { path: manifestPath, exists: false, valid: true, artifacts: 0, assets: 0 },
       check: {
         name: "manifest",
         required: false,
@@ -188,6 +189,7 @@ async function inspectManifest(
         exists: true,
         valid: false,
         artifacts: 0,
+        assets: 0,
         detail: "Manifest path is not a regular file.",
       },
       check: {
@@ -209,6 +211,7 @@ async function inspectManifest(
         exists: true,
         valid: false,
         artifacts: 0,
+        assets: 0,
         detail: error instanceof Error ? error.message : String(error),
       },
       check: {
@@ -270,6 +273,14 @@ async function inspectManifest(
     }
   }
 
+  const assets = manifest.assets ?? [];
+  for (const asset of assets) {
+    if (signal?.aborted) {
+      throw new FrameyardError("CANCELLED", "Operation cancelled.");
+    }
+    await verifyIdentity({ path: asset.src, sha256: asset.sha256, bytes: asset.bytes }, "asset");
+  }
+
   const valid = problems.length === 0;
   return {
     manifest: {
@@ -277,6 +288,7 @@ async function inspectManifest(
       exists: true,
       valid,
       artifacts: manifest.artifacts.length,
+      assets: assets.length,
       ...(valid ? {} : { detail: problems.join("; ") }),
     },
     check: {
@@ -284,7 +296,7 @@ async function inspectManifest(
       required: false,
       status: valid ? "ok" : "error",
       detail: valid
-        ? `${manifest.artifacts.length} artifact${manifest.artifacts.length === 1 ? "" : "s"} verified.`
+        ? `${manifest.artifacts.length} artifact${manifest.artifacts.length === 1 ? "" : "s"} and ${assets.length} asset${assets.length === 1 ? "" : "s"} verified.`
         : problems.join("; "),
     },
   };

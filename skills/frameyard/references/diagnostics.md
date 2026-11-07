@@ -102,6 +102,10 @@ Use `npx frameyard explain <code>` for the cause and examples, or `npx frameyard
 | `MEDIA_INVALID` | error | Invalid or missing audio/video source or attributes |
 | `TRANSCRIPT_INVALID` | error | Invalid or missing transcript source |
 | `ASSET_NOT_FOUND` | error | Missing image, stylesheet, media, or transcript file |
+| `ASSET_URL_INVALID` | error | An `asset add` URL is not HTTPS or loopback HTTP |
+| `ASSET_PATH_INVALID` | error | An asset destination escapes the project root or has an unsupported media extension |
+| `ASSET_HASH_MISMATCH` | error | A downloaded asset does not match the expected SHA-256 |
+| `ASSET_DOWNLOAD_FAILED` | error | A remote asset could not be downloaded or returned an HTTP failure |
 | `FONT_MANIFEST_INVALID` | error | Invalid font manifest schema, path, face, weight, or duplicate family |
 | `FONT_FILE_MISSING` | error | A manifest font file is missing |
 | `FONT_FILE_INVALID` | error | Wrong extension, signature, or non-file font path |

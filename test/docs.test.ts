@@ -7,7 +7,7 @@ import { VERSION } from "../src/version.ts";
 
 const BARE_CLI_LINE = /^\s*(?:frameyard(?:\s|$)|node\s+(?:\.\.?\/)?dist\/cli\.js(?:\s|$))/;
 const CLI_COMMAND =
-  /^(?:npx\s+)?(?:frameyard(?:@[^\s]+)?|node\s+(?:\.\.?\/)?dist\/cli\.js)\s+(?:init|dev|context|lint|check|still|inspect|compare|render|tts|transcribe|add|font|doctor|explain|help)(?:\s|$)/;
+  /^(?:npx\s+)?(?:frameyard(?:@[^\s]+)?|node\s+(?:\.\.?\/)?dist\/cli\.js)\s+(?:init|dev|context|lint|check|still|inspect|compare|render|tts|transcribe|add|asset|font|doctor|explain|help)(?:\s|$)/;
 const PUBLISHED_CLI = /^npx\s+frameyard(?:@[^\s]+)?\s/;
 const PACKAGE_SCRIPT_COMMAND = /^(?:npm run|pnpm run|pnpm)\s+([^\s]+)(?:\s|$)/;
 const PNPM_BUILTINS = new Set([

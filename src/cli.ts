@@ -61,6 +61,7 @@ import {
 import { startPreviewServer } from "./server/server.js";
 import { localModelScaffoldFiles, scaffoldFiles, SCAFFOLD_NEXT } from "./scaffold.js";
 import { VERSION } from "./version.js";
+import { addRemoteAsset } from "./assets/add.js";
 import { transcribeAudio, type SubtitleFormat } from "./assets/transcribe.js";
 import { synthesizeSpeech, type SpeechEngine } from "./assets/tts.js";
 import {
@@ -94,6 +95,7 @@ const COMMANDS = new Set([
   "tts",
   "transcribe",
   "add",
+  "asset",
   "font",
   "doctor",
   "explain",
@@ -346,6 +348,8 @@ function allowedFlags(command: string): Set<string> {
         "model-dir",
         "model",
       ]);
+    case "asset":
+      return new Set([...common, "out", "sha256", "manifest", "force"]);
     case "explain":
       return new Set(["json", "help", "list"]);
     case "help":
@@ -450,6 +454,16 @@ function validateArgs(parsed: ParsedArgs): void {
       if (template.kind !== kind) {
         usage(`Template "${templateName}" is a ${template.kind} template, not ${kind}.`);
       }
+    }
+  } else if (parsed.command === "asset") {
+    if (parsed.positionals[0] !== "add") {
+      usage('"asset" requires the "add" action.');
+    }
+    if (parsed.positionals.length !== 2) {
+      usage('"asset add" requires <url> and --out <path>.');
+    }
+    if (typeof parsed.flags.get("out") !== "string") {
+      usage('"asset add" requires --out <path>.');
     }
   } else if (parsed.command === "explain") {
     if (parsed.flags.has("list")) {
@@ -725,6 +739,7 @@ Usage:
   frameyard add local-models [--project <dir>] [--json]
   frameyard add <composition|timeline> <id> --template <name> [--project <dir>] [--json]
   frameyard add recipe <recipe-id> --id <project-id> [--project <dir>] [--json]
+  frameyard asset add <url> --out <path> [--sha256 <hash>] [--manifest <file>] [--force] [--project <dir>] [--json]
   frameyard explain <code> [--json]
   frameyard explain --list [--json]
   frameyard font search [query] [--category <category>] [--subset <subset>] [--style <normal|italic>] [--variable] [--limit <n>] [--json]
@@ -738,7 +753,7 @@ Usage:
 Options:
   --project <dir>        Use a project other than the current directory.
   --props <file>         Composition props, or a { "<clip-id>": {...} } override map for a timeline.
-  --out <path>           Output path for still, render, tts, or transcribe. For still, one frame uses a .png file and multiple frames use a directory. Render defaults to out/<id>.mp4 for video and out/<id>.png for a static composition.
+  --out <path>           Output path for still, render, tts, transcribe, or asset add. For still, one frame uses a .png file and multiple frames use a directory. Render defaults to out/<id>.mp4 for video and out/<id>.png for a static composition.
   --frame <spec>         Still frames: n, n-m, or a comma-separated list (maximum 32 unique frames).
   --frames <spec>        Render frames: n, n-m, or a comma-separated list; video requires a contiguous range.
   --scale <factor>       Encode-time video scale from 0.25 to 1. Scales during encode; output stays even-sized.
@@ -767,7 +782,7 @@ Options:
   --unicode-range <r>    CSS unicode-range for a local or URL font face.
   --license <id>         License identifier for --file/--url; warns when omitted.
   --license-file <path>  Copy a license file into the font directory.
-  --sha256 <hash>        Expected SHA-256 for --url; the computed hash is always recorded.
+  --sha256 <hash>        Expected SHA-256 for --url or asset add; the computed hash is always recorded.
   --category <name>      Fontsource category filter for "font search".
   --limit <n>            Fontsource result limit for "font search", 1-100 (default: 20).
   --variable             Fontsource search filter: only variable fonts.
@@ -853,6 +868,11 @@ function printCommandHelp(command: string): void {
     case "transcribe":
       process.stdout.write(
         "Usage: frameyard transcribe <source> --model <gguf> --out <file.json> [--words] [--export srt,vtt] [--language <lang>] [--executable <path>] [--manifest <file>] [--force] [--dry-run] [--profile <name>] [--low-priority] [--json]\nProduce a canonical Frameyard transcript, optionally with word timings and subtitle exports. With --dry-run, validates inputs and prints the plan and command without loading a model.\n",
+      );
+      return;
+    case "asset":
+      process.stdout.write(
+        "Usage: frameyard asset add <url> --out <path> [--sha256 <hash>] [--manifest <file>] [--force] [--project <dir>] [--json]\nDownload an HTTPS image, video, or audio asset into the project, verify its SHA-256, and record it in fy.assets.json. Loopback HTTP is allowed for tests. --force replaces an existing destination and requires the full policy tier.\n",
       );
       return;
     case "add":
@@ -2457,6 +2477,36 @@ async function runStill(parsed: ParsedArgs, signal: AbortSignal, policy: LoadedR
   }
 }
 
+async function runAsset(parsed: ParsedArgs, signal: AbortSignal, policy: LoadedResourcePolicy): Promise<number> {
+  const json = parsed.flags.has("json") === true;
+  const force = parsed.flags.has("force") === true;
+  if (force) {
+    assertOverwriteAllowed(policy, "force");
+  }
+  const project = await projectFromFlag(parsed.flags);
+  const outValue = flagString(parsed.flags, "out") as string;
+  const result = await addRemoteAsset({
+    projectRoot: project.root,
+    url: parsed.positionals[1] as string,
+    outPath: path.resolve(process.cwd(), outValue),
+    ...(flagString(parsed.flags, "sha256") !== undefined
+      ? { expectedSha256: flagString(parsed.flags, "sha256") as string }
+      : {}),
+    force,
+    ...(flagString(parsed.flags, "manifest") !== undefined
+      ? { manifestPath: flagString(parsed.flags, "manifest") as string }
+      : {}),
+    signal,
+  });
+
+  if (json) {
+    printJson({ ok: true, command: "asset", action: "add", ...result });
+  } else {
+    process.stdout.write(`Added ${result.src} from ${result.source} (${result.bytes} bytes, ${result.sha256}).\n`);
+  }
+  return 0;
+}
+
 async function runRenderSequence(options: {
   project: Project;
   targetId: string;
@@ -3513,6 +3563,8 @@ async function main(argv: string[]): Promise<number> {
         return await runFont(parsed, controller.signal, policy as LoadedResourcePolicy);
       case "add":
         return await runAdd(parsed);
+      case "asset":
+        return await runAsset(parsed, controller.signal, policy as LoadedResourcePolicy);
       case "explain":
         return runExplain(parsed);
       case "doctor":

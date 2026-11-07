@@ -1,5 +1,6 @@
 import { spawn, execFile } from "node:child_process";
 import { createHash } from "node:crypto";
+import { createServer, type Server } from "node:http";
 import { access, chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -8,6 +9,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 const exec = promisify(execFile);
 const cli = path.resolve("dist/cli.js");
+const assetPayload = Buffer.from("frameyard remote asset\n");
 
 const fakeQwenTts = String.raw`#!/usr/bin/env node
 const fs = require("node:fs");
@@ -251,6 +253,8 @@ function sha256(value: Buffer | string): string {
 let root: string;
 let bin: string;
 let logDir: string;
+let assetServer: Server | undefined;
+let assetServerUrl: string;
 
 interface RunOptions {
   input?: string;
@@ -306,6 +310,10 @@ function artifacts(manifest: Record<string, unknown>): Array<Record<string, unkn
   return manifest.artifacts as Array<Record<string, unknown>>;
 }
 
+function manifestAssets(manifest: Record<string, unknown>): Array<Record<string, unknown>> {
+  return (manifest.assets ?? []) as Array<Record<string, unknown>>;
+}
+
 beforeAll(async () => {
   root = await mkdtemp(path.join(tmpdir(), "frameyard-assets-"));
   bin = path.join(root, "bin");
@@ -316,6 +324,26 @@ beforeAll(async () => {
   await mkdir(path.join(root, "compositions"), { recursive: true });
   await mkdir(bin, { recursive: true });
   await mkdir(logDir, { recursive: true });
+
+  const server = createServer((request, response) => {
+    if (request.url === "/asset.png") {
+      response.writeHead(200, { "content-type": "image/png" });
+      response.end(assetPayload);
+      return;
+    }
+    response.writeHead(404, { "content-type": "text/plain" });
+    response.end("missing");
+  });
+  assetServer = server;
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => resolve());
+  });
+  const address = server.address();
+  if (address === null || typeof address === "string") {
+    throw new Error("Asset test server did not expose a TCP address.");
+  }
+  assetServerUrl = `http://127.0.0.1:${address.port}`;
 
   await writeFile(path.join(bin, "qwen-tts"), fakeQwenTts);
   await writeFile(path.join(bin, "whisper-cli"), fakeWhisperCli);
@@ -389,6 +417,11 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  if (assetServer !== undefined) {
+    await new Promise<void>((resolve, reject) => {
+      assetServer?.close((error) => (error ? reject(error) : resolve()));
+    });
+  }
   await rm(root, { recursive: true, force: true });
 });
 
@@ -1438,5 +1471,99 @@ describe("doctor", () => {
     const checks = json.checks as Array<Record<string, unknown>>;
     expect(checks.find((check) => check.name === "manifest")).toMatchObject({ status: "error" });
     expect(String((json.manifest as Record<string, unknown>).detail)).toContain("hash");
+  });
+
+  it("downloads a remote asset, verifies hashes, and reports tampering in doctor", async () => {
+    const expectedSha256 = sha256(assetPayload);
+    const source = `${assetServerUrl}/asset.png`;
+    const added = await run([
+      "asset",
+      "add",
+      source,
+      "--out",
+      "assets/remote.png",
+      "--sha256",
+      expectedSha256,
+      "--json",
+    ]);
+
+    expect(added.code, added.stderr).toBe(0);
+    const addedJson = JSON.parse(added.stdout) as Record<string, unknown>;
+    expect(addedJson).toMatchObject({
+      ok: true,
+      command: "asset",
+      action: "add",
+      src: "assets/remote.png",
+      sha256: expectedSha256,
+      bytes: assetPayload.length,
+      source,
+      fetchedAt: expect.any(String),
+      manifest: path.join(root, "fy.assets.json"),
+    });
+    expect(await readFile(path.join(root, "assets", "remote.png"))).toEqual(assetPayload);
+
+    const manifest = await readManifest();
+    expect(manifestAssets(manifest)).toContainEqual(
+      expect.objectContaining({
+        src: "assets/remote.png",
+        sha256: expectedSha256,
+        bytes: assetPayload.length,
+        source,
+        fetchedAt: expect.any(String),
+      }),
+    );
+    expect(artifacts(manifest).some((entry) => entry.path === "assets/remote.png")).toBe(false);
+
+    const existing = await run(["asset", "add", source, "--out", "assets/remote.png", "--json"]);
+    expect(existing.code).not.toBe(0);
+    expect(JSON.parse(existing.stdout)).toMatchObject({ error: { code: "OUTPUT_EXISTS" } });
+
+    const mismatch = await run([
+      "asset",
+      "add",
+      source,
+      "--out",
+      "assets/hash-mismatch.png",
+      "--sha256",
+      "0".repeat(64),
+      "--json",
+    ]);
+    expect(mismatch.code).not.toBe(0);
+    expect(JSON.parse(mismatch.stdout)).toMatchObject({ error: { code: "ASSET_HASH_MISMATCH" } });
+    await expect(stat(path.join(root, "assets", "hash-mismatch.png"))).rejects.toThrow();
+    expect(manifestAssets(await readManifest()).some((entry) => entry.src === "assets/hash-mismatch.png")).toBe(false);
+
+    const insecure = await run([
+      "asset",
+      "add",
+      "http://example.com/asset.png",
+      "--out",
+      "assets/insecure.png",
+      "--json",
+    ]);
+    expect(insecure.code).not.toBe(0);
+    expect(JSON.parse(insecure.stdout)).toMatchObject({ error: { code: "ASSET_URL_INVALID" } });
+
+    const outside = await run(["asset", "add", source, "--out", "../outside.png", "--json"]);
+    expect(outside.code).not.toBe(0);
+    expect(JSON.parse(outside.stdout)).toMatchObject({ error: { code: "ASSET_PATH_INVALID" } });
+
+    const unsupported = await run(["asset", "add", source, "--out", "assets/script.exe", "--json"]);
+    expect(unsupported.code).not.toBe(0);
+    expect(JSON.parse(unsupported.stdout)).toMatchObject({ error: { code: "ASSET_PATH_INVALID" } });
+
+    await writeFile(path.join(root, "assets", "remote.png"), "tampered");
+    const doctor = await run(["doctor", "--json"], {
+      env: { PATH: `${bin}${path.delimiter}${process.env.PATH ?? ""}` },
+    });
+    expect(doctor.code).not.toBe(0);
+    const doctorJson = JSON.parse(doctor.stdout) as Record<string, unknown>;
+    expect(doctorJson).toMatchObject({
+      ok: true,
+      command: "doctor",
+      healthy: false,
+      manifest: { exists: true, valid: false, assets: 1 },
+    });
+    expect(String((doctorJson.manifest as Record<string, unknown>).detail)).toContain("assets/remote.png");
   });
 });

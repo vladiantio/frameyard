@@ -32,6 +32,22 @@ Declare required transcripts with:
 
 `words` requires measured word timings. See [subtitles and karaoke](subtitles-karaoke.md).
 
+## Remote media assets
+
+Pin remote images, video, and audio during authoring; rendering never fetches them:
+
+```sh
+npx frameyard asset add https://example.com/cover.png \
+  --out assets/cover.png --sha256 <hash> --json
+```
+
+- HTTPS is required; loopback HTTP is allowed for tests.
+- Destinations must stay inside the project root and use a supported image, video, or audio extension.
+- `--sha256` fails with `ASSET_HASH_MISMATCH` and leaves no file or manifest entry.
+- Existing files fail with `OUTPUT_EXISTS` unless `--force` is supplied; `--force` requires the `full` policy tier.
+- The manifest records `src`, `sha256`, `bytes`, `source`, and `fetchedAt` in the `assets` array of `fy.assets.json`.
+- `doctor` verifies asset files and hashes alongside generated artifacts.
+
 ## Local speech synthesis
 
 Use Frameyard instead of calling the upstream executables directly:
@@ -108,14 +124,16 @@ The wrappers target the CLI surfaces of qwentts.cpp commit `5916bf7c79dbb4e66fc0
 
 ## Provenance manifest
 
-Both commands update `fy.assets.json` in the project root unless `--manifest <file>` is supplied. The manifest records:
+`tts`, `transcribe`, and `asset add` update `fy.assets.json` in the project root unless `--manifest <file>` is supplied. Generated artifacts use the `artifacts` array; remote media uses the `assets` array. The manifest records:
 
 - artifact path, content hash, and size;
 - generator command, Frameyard version, executable, and integration revision;
 - model identities and sizes;
 - operation parameters and, for transcription, source identity and derived exports.
 
-Commit the manifest with the project. It explains how generated inputs were produced. Do not edit hashes by hand.
+Remote `assets` entries record the project-relative `src`, SHA-256, byte size, source URL, and fetch timestamp.
+
+Commit the manifest with the project. It explains how generated and downloaded inputs were produced. Do not edit hashes by hand.
 
 ## Regeneration rules
 

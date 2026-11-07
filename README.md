@@ -98,6 +98,7 @@ The repository ships runnable example projects. Each example README has the comm
 | `frameyard add local-models` | Install the optional policy, OpenCode, and Pi scaffold into a workspace |
 | `frameyard add <composition\|timeline> <id> --template <name>` | Write a template entry and print the exact `fy.config.js` registration snippet |
 | `frameyard add recipe <recipe-id> --id <project-id>` | Install a complete recipe bundle and print the exact `fy.config.js` registration snippet |
+| `frameyard asset add <url> --out <path>` | Download a remote media asset, verify its hash, and record it in `fy.assets.json` |
 | `frameyard font search [query]` | Search the Fontsource catalog by name, category, subset, style, or variable axis |
 | `frameyard font add <fontsource-id>` | Install a pinned Fontsource family (variable `wght` by default, or static weights with `--static`) |
 | `frameyard font add --file <path> --family <name>` | Vendor a local font into `assets/fonts/<id>/` and update `fy.fonts.json` |
@@ -309,6 +310,17 @@ The [timeline reference](./skills/frameyard/references/timelines.md) documents e
 
 Compositions and timelines can use embedded video, audio, and transcripts.
 
+### Remote assets
+
+Rendering never fetches remote media. Download and pin an image, video, or audio file during authoring:
+
+```sh
+npx frameyard asset add https://example.com/cover.png --out assets/cover.png
+npx frameyard asset add https://example.com/score.wav --out assets/score.wav --sha256 <hash>
+```
+
+`asset add` accepts HTTPS; loopback HTTP is allowed for tests. It downloads to a temporary file, verifies `--sha256` when supplied, publishes atomically, and records `src`, `sha256`, `bytes`, `source`, and `fetchedAt` in `fy.assets.json`. Supported destinations are image, video, and audio extensions inside the project root. An existing file fails with `OUTPUT_EXISTS` unless `--force` is supplied; `--force` requires the `full` policy tier. `doctor` reports missing or changed asset files. Commit `fy.assets.json` with the project.
+
 ### Embedded video
 
 Declare videos in the fragment; the runtime pauses and frame-seeks them:
@@ -496,7 +508,7 @@ An optional `fy.policy.json` in the working directory or nearest ancestor gates 
 | `authoring` | 4 frames | allowed at low priority | blocked | denied |
 | `full` | 32 frames | allowed | allowed | allowed |
 
-`lint`, `doctor`, `init`, `dev`, and `--dry-run` are available in every tier. `font search`, `font list`, and `font verify` are available in every tier; `font add` requires `authoring` or `full`; `font remove`, `font add --force`, and `font add --url` without `--license`/`--license-file` require `full`. A policy file can only tighten its tier; unknown fields fail with `POLICY_INVALID`. `FRAMEYARD_POLICY=light|authoring|full` overrides the file; the default is `full`. `--profile shared-cpu` caps timeline workers at 2 and composition concurrency at 1, lowers priority, and leaves the encoder at `auto`; `--low-priority` lowers priority without the caps. Values above the cap fail with `RESOURCE_PROFILE_CONFLICT`. The policy is a guardrail, not a security boundary.
+`lint`, `doctor`, `init`, `dev`, `asset add`, and `--dry-run` are available in every tier; `asset add --force` requires `full`. `font search`, `font list`, and `font verify` are available in every tier; `font add` requires `authoring` or `full`; `font remove`, `font add --force`, and `font add --url` without `--license`/`--license-file` require `full`. A policy file can only tighten its tier; unknown fields fail with `POLICY_INVALID`. `FRAMEYARD_POLICY=light|authoring|full` overrides the file; the default is `full`. `--profile shared-cpu` caps timeline workers at 2 and composition concurrency at 1, lowers priority, and leaves the encoder at `auto`; `--low-priority` lowers priority without the caps. Values above the cap fail with `RESOURCE_PROFILE_CONFLICT`. The policy is a guardrail, not a security boundary.
 
 Install the optional local-model scaffold with `npx frameyard add local-models`, or `npx frameyard init my-project --local-models`; see [`LOCAL-MODELS.md`](./scaffolds/local-models/LOCAL-MODELS.md). See [ADR 0022](./docs/adr/0022-gate-heavy-operations-with-a-workspace-resource-policy.md) for the full contract.
 

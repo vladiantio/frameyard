@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { assertJsonSerializable, mergeProps, normalizeAudioClip, normalizeTranscriptClip } from "../src/index.ts";
+import { upsertAsset } from "../src/assets/provenance.ts";
 import { diagnosticFix } from "../src/diagnostic-fixes.ts";
 import { applyPropsSchemaDefaults, parsePropsSchema, validatePropsAgainstSchema } from "../src/props-schema.ts";
 
@@ -211,6 +212,33 @@ describe("diagnostic fixes", () => {
       message: expect.any(String),
       docs: expect.any(String),
     });
+  });
+});
+
+describe("asset manifest", () => {
+  it("upserts remote assets without dropping generated artifacts", () => {
+    const artifacts = [{ path: "generated/voice.wav" }] as never;
+    const manifest = upsertAsset(
+      { schemaVersion: 1, artifacts },
+      {
+        src: "assets/cover.png",
+        sha256: "a".repeat(64),
+        bytes: 12,
+        source: "https://example.com/cover.png",
+        fetchedAt: "2026-11-07T00:00:00.000Z",
+      },
+    );
+
+    expect(manifest.artifacts).toBe(artifacts);
+    expect(manifest.assets).toEqual([
+      {
+        src: "assets/cover.png",
+        sha256: "a".repeat(64),
+        bytes: 12,
+        source: "https://example.com/cover.png",
+        fetchedAt: "2026-11-07T00:00:00.000Z",
+      },
+    ]);
   });
 });
 

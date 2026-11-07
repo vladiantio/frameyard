@@ -90,6 +90,10 @@ _Avoid_: Input schema, options, JSON Schema
 A local file required by a composition or timeline, whether static or generated.
 _Avoid_: Resource, media file
 
+**Remote asset**:
+An image, video, or audio file downloaded during authoring with `asset add`, hashed, and pinned in `fy.assets.json`. Rendering never fetches it.
+_Avoid_: URL asset, live media
+
 **Recipe**:
 A named, installable bundle of one or more composition or timeline entries, supporting props, and a README, with the exact `fy.config.js` registration entries. A recipe is an authoring convenience, not a separate runtime kind.
 _Avoid_: Template, preset, project

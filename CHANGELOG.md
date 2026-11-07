@@ -43,6 +43,11 @@ contract change may ship in a minor release and is called out explicitly below.
   set the output duration to the range length; sequence output requires
   `--frames` and does not encode a video. Results report `frameRange` and
   `scale`, plus `sequence` for PNG output.
+- `frameyard asset add <url> --out <path> [--sha256 <hash>] [--force]`
+  downloads HTTPS media into the project, verifies the hash, publishes
+  atomically, and records `src`, `sha256`, `bytes`, `source`, and `fetchedAt` in
+  the `assets` array of `fy.assets.json`. Loopback HTTP is allowed for tests;
+  `doctor` verifies downloaded asset files and hashes.
 
 ## [0.10.0] - 2026-11-07
 

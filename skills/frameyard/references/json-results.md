@@ -134,6 +134,25 @@ Static validation diagnostics include source locations. Runtime diagnostics may 
 
 `add --list` returns `templates` with `name`, `kind`, `description`, and optional `prerequisites`; `recipes` with `id`, `title`, `description`, `tags`, `kind`, `files`, and optional `prerequisites`; and `scaffolds`. `files` entries are path templates where `{id}` is the project id. Adding a template entry returns `kind`, `id`, `template`, `entry`, `path`, `register`, `prerequisites`, and `next`. Adding a recipe returns `kind: "recipe"`, `recipe`, `id`, `path`, `files`, `register`, `prerequisites`, and `next`. `register` is the exact object to merge into `fy.config.js`; `add` does not edit the config itself.
 
+## asset
+
+`asset add` returns `action: "add"`, `src` (project-relative), `path` (absolute), `sha256`, `bytes`, `source`, `fetchedAt`, and `manifest`. The manifest gains an entry in its `assets` array with the same fields; generated TTS/transcription entries remain in `artifacts`. Failures use `ASSET_URL_INVALID`, `ASSET_PATH_INVALID`, `ASSET_HASH_MISMATCH`, `ASSET_DOWNLOAD_FAILED`, or `OUTPUT_EXISTS`. A failed hash check publishes neither the file nor a manifest entry.
+
+```json
+{
+  "ok": true,
+  "command": "asset",
+  "action": "add",
+  "src": "assets/cover.png",
+  "path": "/project/assets/cover.png",
+  "sha256": "...",
+  "bytes": 12345,
+  "source": "https://example.com/cover.png",
+  "fetchedAt": "2026-11-07T00:00:00.000Z",
+  "manifest": "/project/fy.assets.json"
+}
+```
+
 ## font
 
 `font search` returns `provider: "fontsource"`, the `query`, applied `filters`, `results`, and `truncated`. Each result has `id`, `family`, `category`, `variable`, `weights`, `styles`, `subsets`, `license`, optional `version`, and `type`.

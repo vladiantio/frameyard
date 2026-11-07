@@ -124,6 +124,13 @@ const EXPLANATIONS: Record<FrameyardErrorCode, ExplanationEntry> = {
   MEDIA_INVALID: entry("A video or audio source is invalid or missing.", DOCS.audio),
   MEDIA_SEEK_FAILED: entry("Chromium could not seek embedded media to the requested frame.", DOCS.timelines),
   ASSET_NOT_FOUND: entry("A local asset is missing or outside the project root.", DOCS.commonMistakes),
+  ASSET_URL_INVALID: entry("Asset URLs must use HTTPS; loopback HTTP is allowed for tests.", DOCS.audio),
+  ASSET_PATH_INVALID: entry(
+    "The asset destination or extension is outside the supported project media path.",
+    DOCS.commonMistakes,
+  ),
+  ASSET_HASH_MISMATCH: entry("The downloaded asset does not match the expected SHA-256.", DOCS.audio),
+  ASSET_DOWNLOAD_FAILED: entry("The remote asset could not be downloaded.", DOCS.failureRecovery),
   FONT_MANIFEST_INVALID: entry("fy.fonts.json is invalid.", DOCS.fonts),
   FONT_FILE_MISSING: entry("A font file in the manifest is missing.", DOCS.fonts),
   FONT_FILE_INVALID: entry("A font file has the wrong extension, signature, or path.", DOCS.fonts),

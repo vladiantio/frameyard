@@ -132,7 +132,7 @@ A full 30-second demo timeline render is segmented and uses 8 workers by default
 | `src/renderer/ffmpeg.ts` | FFmpeg probing, encoding, FFV1, segment/frame composite, concat, mux, and offline audio mixing |
 | `src/renderer/scale.ts` | Render scale validation, even output dimensions, and encode-time scale filters |
 | `src/renderer/keyframe-expressions.ts` | FFmpeg keyframe expressions with the adaptive easing approximation |
-| `src/assets/` | TTS (qwentts.cpp and sherpa-onnx Supertonic) and transcription wrappers, executable resolution, atomic publishing, provenance |
+| `src/assets/` | TTS (qwentts.cpp and sherpa-onnx Supertonic) and transcription wrappers, remote asset download, executable resolution, atomic publishing, provenance |
 | `src/doctor.ts` | Environment, integration, and manifest inspection |
 | `src/project.ts` | `fy.config.js` loading: project format, explicit `.html` compositions, `.json` timelines |
 | `src/policy.ts` | Workspace resource policy discovery, strict validation, tiers, profiles, operation gating, and process priority |
@@ -265,7 +265,7 @@ Timeline path: `src/timeline/resolve.ts` resolves the JSON and references; `src/
 - **Project context, image inspection, templates, and recipes** → `src/context.ts`, `src/inspect.ts`, `src/templates.ts`, `src/recipes.ts`, `src/cli.ts`; add the `context`, `inspect`, `compare`, and `add` commands; update README, design baseline §6, GLOSSARY, skill quick reference and references, scaffold, and CHANGELOG; extend `test/context.test.ts`, `test/inspect.test.ts`, `test/templates.test.ts`, `test/cli-render.test.ts`, `test/docs.test.ts`, and `test/skill.test.ts`.
 - **Fonts** → `src/fonts/`, `src/project.ts`, `src/server/server.ts`, `src/server/composition-html.ts`, `src/html/validate.ts`, `src/runtime/host.ts`, `src/context.ts`, `src/doctor.ts`, `src/policy.ts`, `src/cli.ts`; update ADR 0023, README, design baseline §4/§6, GLOSSARY, skill `fonts.md` and references, scaffold, and CHANGELOG; extend `test/fonts.test.ts`, `test/fonts-e2e.test.ts`, `test/fontsource-e2e.test.ts`, `test/server-html.test.ts`, `test/context.test.ts`, `test/policy.test.ts`, `test/host-runtime.test.ts`, `test/docs.test.ts`, `test/skill.test.ts`, and `test/scaffold.test.ts`. `src/fonts/fontsource.ts` owns the Fontsource API/CDN mapping; `src/fonts/install.ts` merges a family record and publishes payloads atomically; local, Fontsource, and URL adapters build the same `FontFamily` + payload shape.
 - **Static validation integration and result schemas** → `src/renderer/index.ts`, `src/renderer/timeline.ts`, `src/cli.ts`; extend `test/cli-stills.test.ts`, `test/cli-render.test.ts`, `test/agent-workflow.test.ts`, `test/timeline-render.test.ts`.
-- **TTS, transcription, provenance, executable resolution** → `src/assets/`; extend `test/assets-e2e.test.ts` with fake executables. `tts --engine supertonic` resolves the seven Supertonic files from `--model-dir`, records them in the manifest, and normalizes the engine output to 24 kHz mono.
+- **TTS, transcription, remote assets, provenance, executable resolution** → `src/assets/`; extend `test/assets-e2e.test.ts` with fake executables and a loopback HTTP asset server, and `test/contracts.test.ts` for manifest upserts. `tts --engine supertonic` resolves the seven Supertonic files from `--model-dir`, records them in the manifest, and normalizes the engine output to 24 kHz mono. `asset add` records downloaded media in the manifest's `assets` array; rendering never fetches it.
 - **Doctor checks** → `src/doctor.ts`, `src/cli.ts`; extend `test/assets-e2e.test.ts`.
 - **Init scaffold content** → `scaffolds/init/` (project format, composition, timeline, config, props, README, agent guide, and package manifest) plus `src/scaffold.ts` for placeholder rendering and `next`; keep the agent guide aligned with `skills/frameyard/`; extend `test/scaffold.test.ts`, `test/docs.test.ts`, and the `init` case. When the scaffold file set changes, update `README.md`, `docs/v0.x-design.md` §6, and the scaffold README/agent guide.
 - **Agent skill contract** → `skills/frameyard/`, `package.json`; extend `test/skill.test.ts`.
@@ -279,7 +279,7 @@ Timeline path: `src/timeline/resolve.ts` resolves the JSON and references; `src/
 
 Test at public seams, not private helpers:
 
-- `test/contracts.test.ts`: composition metadata, props, props-schema parsing/defaults/validation, JSON serialization, audio clips, transcript requirements, diagnostics, and diagnostic fixes.
+- `test/contracts.test.ts`: composition metadata, props, props-schema parsing/defaults/validation, JSON serialization, audio clips, transcript requirements, diagnostics, diagnostic fixes, and manifest asset upserts.
 - `test/bindings.test.ts`: binding path syntax, resolution, repeat scope, value coercion, suggestions.
 - `test/static-validation.test.ts`: fragment metadata, static metadata matrix, static media/animation rejection, animation presets, defaults, props schemas, bindings, scripts, controllers, import maps, document-shell rejection, media, transcripts, source locations, diagnostics.
 - `test/server-html.test.ts`: `.html` entries, fragment wrapping and head ordering, virtual inline controller, static error pages, `project.json` diagnostics.
@@ -310,7 +310,7 @@ Test at public seams, not private helpers:
 - `test/recipes.test.ts`: installs every bundled recipe, verifies the add manifest, and captures non-blank stills from each composition and timeline.
 - `test/video-determinism.test.ts`: a full-scene opacity animation over embedded video captures the requested frame, and consecutive composition frames map to consecutive source frames.
 - `test/examples.test.ts`: example README commands use the repository CLI, and each bundled example captures a still, including the static composition and its timeline.
-- `test/assets-e2e.test.ts`: `tts`/`transcribe`/`doctor` with fake upstream executables, normalization, word timings, exports, manifests, cancellation, transcript validation.
+- `test/assets-e2e.test.ts`: `tts`/`transcribe`/`doctor` with fake upstream executables, remote asset download and hash checks, normalization, word timings, exports, manifests, cancellation, transcript validation.
 - `test/agent-workflow.test.ts`: source preservation, check/still/render reporting, failure reporting through the CLI.
 - `test/real-integrations.test.ts`: opt-in real-model checks enabled by `FRAMEYARD_REAL_INTEGRATIONS=1` and explicit model paths.
 - `test/skill.test.ts`: skill layout discovery, frontmatter name, single skill, contents, API version, package inclusion, thin wrapper.

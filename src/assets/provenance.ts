@@ -51,9 +51,21 @@ export interface ManifestArtifact {
   derived?: ManifestDerived[];
 }
 
+export interface ManifestAsset {
+  /** Project-relative destination path. */
+  src: string;
+  sha256: string;
+  bytes: number;
+  /** Source URL. */
+  source: string;
+  /** ISO timestamp of the fetch. */
+  fetchedAt: string;
+}
+
 export interface Manifest {
   schemaVersion: typeof MANIFEST_SCHEMA_VERSION;
   artifacts: ManifestArtifact[];
+  assets?: ManifestAsset[];
 }
 
 export interface StagedFile {
@@ -200,7 +212,45 @@ function parseManifest(value: unknown): Manifest {
     artifacts.push(artifact);
   }
 
-  return { schemaVersion: MANIFEST_SCHEMA_VERSION, artifacts };
+  let assets: ManifestAsset[] | undefined;
+  if (value.assets !== undefined) {
+    if (!Array.isArray(value.assets)) {
+      manifestError("Provenance manifest assets must be an array.");
+    }
+    const seen = new Set<string>();
+    assets = value.assets.map((item, index) => {
+      const label = `Provenance manifest assets[${index}]`;
+      if (!isPlainObject(item)) {
+        manifestError(`${label} must be a plain object.`);
+      }
+      const src = requireString(item.src, `${label}.src`);
+      if (seen.has(src)) {
+        manifestError(`Provenance manifest contains duplicate asset src "${src}".`);
+      }
+      seen.add(src);
+      const sha256 = requireString(item.sha256, `${label}.sha256`);
+      if (!SHA256.test(sha256)) {
+        manifestError(`${label}.sha256 must be a 64-character SHA-256 hex digest.`);
+      }
+      const fetchedAt = requireString(item.fetchedAt, `${label}.fetchedAt`);
+      if (Number.isNaN(Date.parse(fetchedAt))) {
+        manifestError(`${label}.fetchedAt must be an ISO timestamp.`);
+      }
+      return {
+        src,
+        sha256,
+        bytes: requireInteger(item.bytes, `${label}.bytes`),
+        source: requireString(item.source, `${label}.source`),
+        fetchedAt,
+      };
+    });
+  }
+
+  return {
+    schemaVersion: MANIFEST_SCHEMA_VERSION,
+    artifacts,
+    ...(assets !== undefined ? { assets } : {}),
+  };
 }
 
 export function defaultManifestPath(projectRoot: string): string {
@@ -304,7 +354,22 @@ export function upsertArtifact(manifest: Manifest, artifact: ManifestArtifact): 
   const artifacts = manifest.artifacts.filter((entry) => entry.path !== artifact.path);
   artifacts.push(artifact);
   artifacts.sort((left, right) => (left.path < right.path ? -1 : left.path > right.path ? 1 : 0));
-  return { schemaVersion: MANIFEST_SCHEMA_VERSION, artifacts };
+  return {
+    schemaVersion: MANIFEST_SCHEMA_VERSION,
+    artifacts,
+    ...(manifest.assets !== undefined ? { assets: manifest.assets } : {}),
+  };
+}
+
+export function upsertAsset(manifest: Manifest, asset: ManifestAsset): Manifest {
+  const assets = (manifest.assets ?? []).filter((entry) => entry.src !== asset.src);
+  assets.push(asset);
+  assets.sort((left, right) => (left.src < right.src ? -1 : left.src > right.src ? 1 : 0));
+  return {
+    schemaVersion: MANIFEST_SCHEMA_VERSION,
+    artifacts: manifest.artifacts,
+    assets,
+  };
 }
 
 export async function stageManifest(manifest: Manifest, manifestPath: string): Promise<string> {

@@ -161,6 +161,30 @@ export function diagnosticFix(code: FrameyardErrorCode, details?: unknown, messa
         docs: DOCS.commonMistakes,
       };
     }
+    case "ASSET_URL_INVALID":
+      return {
+        kind: "value",
+        message: "Use an HTTPS URL; loopback HTTP is allowed only for tests.",
+        docs: DOCS.audio,
+      };
+    case "ASSET_PATH_INVALID":
+      return {
+        kind: "path",
+        message: "Use a project-relative media path with a supported image, video, or audio extension.",
+        docs: DOCS.commonMistakes,
+      };
+    case "ASSET_HASH_MISMATCH":
+      return {
+        kind: "value",
+        message: "Remove --sha256, download again, or verify the expected hash.",
+        docs: DOCS.audio,
+      };
+    case "ASSET_DOWNLOAD_FAILED":
+      return {
+        kind: "docs",
+        message: "Check the URL, network access, and HTTP status, then retry.",
+        docs: DOCS.failureRecovery,
+      };
     case "MEDIA_INVALID":
       return {
         kind: "docs",

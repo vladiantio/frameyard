@@ -102,6 +102,25 @@ const mediaHtml = `<fy-composition width="160" height="90" fps="10" duration-in-
     </fy-composition>
 `;
 
+const schemaHtml = `<script type="application/json" data-fy="props">
+    { "title": "Schema default" }
+    </script>
+    <script type="application/json" data-fy="props-schema">
+    {
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "accent": { "type": "string", "default": "lime" },
+        "count": { "type": "number", "default": 3 }
+      },
+      "required": ["title"]
+    }
+    </script>
+    <fy-composition width="200" height="100" fps="10" duration-in-frames="20">
+      <h1 id="title" data-fy-text="title"></h1>
+    </fy-composition>
+`;
+
 const staticHtml = `<style>
       @keyframes pulse { from { opacity: 1; } to { opacity: 0.5; } }
       #box { width: 20px; height: 20px; background: #b8f36b; animation: pulse 1s linear infinite; }
@@ -179,6 +198,7 @@ beforeAll(async () => {
       media: "./compositions/media.html",
       bound: "./compositions/bound.html",
       "import-map": "./compositions/import-map.html",
+      schema: "./compositions/schema.html",
       static: "./compositions/static.html",
       "static-media": "./compositions/static-media.html",
       "static-animation": "./compositions/static-animation.html",
@@ -192,6 +212,7 @@ beforeAll(async () => {
   await writeFile(path.join(root, "compositions", "media.html"), mediaHtml);
   await writeFile(path.join(root, "compositions", "bound.html"), boundHtml);
   await writeFile(path.join(root, "compositions", "import-map.html"), importMapHtml);
+  await writeFile(path.join(root, "compositions", "schema.html"), schemaHtml);
   await writeFile(path.join(root, "compositions", "static.html"), staticHtml);
   await writeFile(path.join(root, "compositions", "static-media.html"), staticMediaHtml);
   await writeFile(path.join(root, "compositions", "static-animation.html"), staticAnimationHtml);
@@ -452,6 +473,34 @@ describe("browser composition host", () => {
       label: (document.querySelector("#box") as HTMLElement).dataset.label,
     }));
     expect(reloaded).toEqual({ disposed: "yes", mounted: "yes", label: "Second" });
+    await page.close();
+  });
+
+  it("applies schema defaults and rejects invalid props before mounting", async () => {
+    const page = await openHost("schema.html");
+
+    await host(page, async (api) => {
+      const load = api.load as (options: { props: unknown }) => Promise<void>;
+      await load({ props: {} });
+    });
+    const loaded = await page.evaluate(() => ({
+      props: ((window as unknown as Record<string, unknown>).__fy as { props: unknown }).props,
+      title: document.querySelector("#title")?.textContent,
+    }));
+    expect(loaded.props).toMatchObject({ title: "Schema default", accent: "lime", count: 3 });
+    expect(loaded.title).toBe("Schema default");
+
+    const invalid = await page.evaluate(async () => {
+      try {
+        await (
+          (window as unknown as Record<string, unknown>).__fy as { load(options: { props: unknown }): Promise<void> }
+        ).load({ props: { title: 3 } });
+        return "no error";
+      } catch (error) {
+        return (error as Error).message;
+      }
+    });
+    expect(invalid).toContain("[PROPS_SCHEMA_INVALID]");
     await page.close();
   });
 

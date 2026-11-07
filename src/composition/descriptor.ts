@@ -7,8 +7,10 @@ import {
   type ControllerDeclaration,
   type DeclaredCompositionMetadata,
   type Props,
+  type PropsSchema,
 } from "../contracts.js";
 import { errorMessage } from "../errors.js";
+import { parsePropsSchema } from "../props-schema.js";
 import type { DocumentAdapter } from "./adapter.js";
 import { attributeDetails, createDiagnostic, elementDetails, lineColumn, locationDetails } from "./diagnostics.js";
 import { isLocalRelative } from "./paths.js";
@@ -24,6 +26,8 @@ export interface CompositionDescriptor {
    */
   metadata: DeclaredCompositionMetadata | null;
   defaultProps: Readonly<Props>;
+  /** Parsed optional props schema; null when absent or invalid. */
+  propsSchema: PropsSchema | null;
   controller: ControllerDeclaration | null;
 }
 
@@ -311,6 +315,72 @@ function readDefaultProps<Node>(
   }
 }
 
+function readPropsSchema<Node>(
+  adapter: DocumentAdapter<Node>,
+  path: string,
+  rootScope: CompositionRootScope,
+): { propsSchema: PropsSchema | null; diagnostics: CompositionDiagnostic[] } {
+  const diagnostics: CompositionDiagnostic[] = [];
+  const blocks = findElements(
+    adapter,
+    (node) =>
+      adapter.tagName(node) === "script" &&
+      getAttribute(adapter, node, "type")?.toLowerCase() === "application/json" &&
+      getAttribute(adapter, node, "data-fy") === "props-schema",
+  );
+
+  for (const extra of blocks.slice(1)) {
+    diagnostics.push(
+      createDiagnostic(
+        "error",
+        "PROPS_SCHEMA_INVALID_SCHEMA",
+        'A composition may contain at most one data-fy="props-schema" block.',
+        elementDetails(adapter, path, extra.node),
+      ),
+    );
+  }
+
+  const block = blocks[0];
+  if (!block) {
+    return { propsSchema: null, diagnostics };
+  }
+
+  if (block.inTemplate) {
+    diagnostics.push(
+      createDiagnostic(
+        "error",
+        "PROPS_SCHEMA_INVALID_SCHEMA",
+        'The data-fy="props-schema" block must not be inside a <template>.',
+        elementDetails(adapter, path, block.node),
+      ),
+    );
+  } else if (rootScope === "fragment" && block.ancestors.length > 0) {
+    diagnostics.push(
+      createDiagnostic(
+        "error",
+        "PROPS_SCHEMA_INVALID_SCHEMA",
+        'The data-fy="props-schema" block must be a top-level element in the composition fragment.',
+        elementDetails(adapter, path, block.node),
+      ),
+    );
+  }
+
+  try {
+    const parsed: unknown = JSON.parse(adapter.text(block.node));
+    return { propsSchema: parsePropsSchema(parsed), diagnostics };
+  } catch (error) {
+    diagnostics.push(
+      createDiagnostic(
+        "error",
+        "PROPS_SCHEMA_INVALID_SCHEMA",
+        `Invalid props schema: ${errorMessage(error)}`,
+        elementDetails(adapter, path, block.node),
+      ),
+    );
+    return { propsSchema: null, diagnostics };
+  }
+}
+
 function readController<Node>(
   adapter: DocumentAdapter<Node>,
   path: string,
@@ -463,6 +533,9 @@ export function readCompositionDescriptor<Node>(
   const propsRead = readDefaultProps(adapter, options.path, rootScope);
   diagnostics.push(...propsRead.diagnostics);
 
+  const schemaRead = readPropsSchema(adapter, options.path, rootScope);
+  diagnostics.push(...schemaRead.diagnostics);
+
   const controllerRead = readController(adapter, options.path, options.resolvePath, rootScope);
   diagnostics.push(...controllerRead.diagnostics);
 
@@ -471,6 +544,7 @@ export function readCompositionDescriptor<Node>(
     descriptor: {
       metadata,
       defaultProps: propsRead.defaultProps,
+      propsSchema: schemaRead.propsSchema,
       controller: controllerRead.controller,
     },
     valid: !diagnostics.some((diagnostic) => diagnostic.severity === "error"),

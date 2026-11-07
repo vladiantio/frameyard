@@ -16,6 +16,7 @@ import {
   type ControllerDeclaration,
   type FrameyardHost,
   type Props,
+  type PropsSchema,
   type ResolvedAudioClip,
   type ResolvedCompositionMetadata,
   type ResolvedTranscriptClip,
@@ -27,6 +28,7 @@ import {
   type FrameyardDiagnostic,
   type FrameyardErrorCode,
 } from "../errors.js";
+import { applyPropsSchemaDefaults, validatePropsAgainstSchema } from "../props-schema.js";
 import { applyBindings, applyPropVariables } from "./bindings.js";
 import { frameToMilliseconds } from "./clock.js";
 import { withDiagnosticsAsync, withDiagnosticsSync, type DiagnosticSink } from "./diagnostics.js";
@@ -56,6 +58,7 @@ interface HostRuntimeOptions {
   path: string;
   metadata: ResolvedCompositionMetadata;
   defaultProps: Readonly<Props>;
+  propsSchema: PropsSchema | null;
   declaration: ControllerDeclaration | null;
   controllerModule: ControllerModule | null;
   manual: boolean;
@@ -80,6 +83,7 @@ class HostRuntime implements FrameyardHost {
   private readonly root: HTMLElement;
   private readonly path: string;
   private readonly snapshot: HTMLElement;
+  private readonly propsSchema: PropsSchema | null;
   private readonly controllerModule: ControllerModule | null;
   private readonly manual: boolean;
   private readonly readyPromise: Promise<void>;
@@ -108,6 +112,7 @@ class HostRuntime implements FrameyardHost {
     this.path = options.path;
     this.metadata = options.metadata;
     this.defaultProps = options.defaultProps;
+    this.propsSchema = options.propsSchema;
     this.controllerModule = options.controllerModule;
     this.manual = options.manual;
     this.props = options.defaultProps;
@@ -251,7 +256,12 @@ class HostRuntime implements FrameyardHost {
     this.clearDiagnostics();
     let props: Readonly<Props>;
     try {
-      props = resolveHostProps(this.defaultProps, options.props, this.controllerModule?.validateProps);
+      props = resolveHostProps(
+        this.defaultProps,
+        options.props,
+        this.controllerModule?.validateProps,
+        this.propsSchema,
+      );
     } catch (error) {
       this.addError(error, null);
       throw error;
@@ -590,8 +600,33 @@ function resolveHostProps(
   defaults: Readonly<Props>,
   overrides: unknown,
   validateProps: ControllerModule["validateProps"],
+  propsSchema: PropsSchema | null,
 ): Readonly<Props> {
-  const merged = mergeProps(defaults, overrides);
+  let merged = mergeProps(defaults, overrides);
+
+  if (propsSchema !== null) {
+    merged = mergeProps(applyPropsSchemaDefaults(propsSchema, merged), undefined);
+    const issues = validatePropsAgainstSchema(propsSchema, merged);
+    if (issues.length > 0) {
+      const first = issues[0] as (typeof issues)[number];
+      throw new FrameyardError("PROPS_SCHEMA_INVALID", `Invalid props: ${first.message}`, {
+        details: {
+          path: first.path,
+          ...(first.suggestion !== undefined ? { suggestion: first.suggestion } : {}),
+        },
+        diagnostics: issues.map((issue) => ({
+          severity: "error",
+          code: "PROPS_SCHEMA_INVALID",
+          message: issue.message,
+          details: {
+            path: issue.path,
+            ...(issue.suggestion !== undefined ? { suggestion: issue.suggestion } : {}),
+          },
+        })),
+      });
+    }
+  }
+
   if (!validateProps) {
     return merged;
   }
@@ -860,7 +895,11 @@ export async function createFrameyardHost(): Promise<FrameyardHost> {
     });
   }
 
-  const defaultProps = read.descriptor.defaultProps;
+  const propsSchema = read.descriptor.propsSchema;
+  const defaultProps =
+    propsSchema === null
+      ? read.descriptor.defaultProps
+      : mergeProps(applyPropsSchemaDefaults(propsSchema, read.descriptor.defaultProps), undefined);
   const declaration = read.descriptor.controller;
   const controllerModule = await importController(declaration);
   const manual = new URLSearchParams(window.location.search).has("__fy-manual");
@@ -869,6 +908,7 @@ export async function createFrameyardHost(): Promise<FrameyardHost> {
     path,
     metadata,
     defaultProps,
+    propsSchema,
     declaration,
     controllerModule,
     manual,

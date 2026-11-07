@@ -18,6 +18,17 @@ const animatedComposition = `<script type="application/json" data-fy="props">{
   "title": "Hello",
   "subtitle": "World"
 }</script>
+<script type="application/json" data-fy="props-schema">
+{
+  "type": "object",
+  "properties": {
+    "title": { "type": "string" },
+    "subtitle": { "type": "string" },
+    "accent": { "type": "string", "default": "#b8f36b" }
+  },
+  "required": ["title"]
+}
+</script>
 <fy-composition width="160" height="90" fps="10" duration-in-frames="6">
   <div data-fy-text="title"></div>
 </fy-composition>
@@ -125,9 +136,15 @@ describe("project context", () => {
       kind: "animated",
       metadata: { width: 160, height: 90, fps: 10, durationInFrames: 6 },
       props: [
+        { path: "accent", type: "string" },
         { path: "subtitle", type: "string" },
         { path: "title", type: "string" },
       ],
+      propsSchema: {
+        type: "object",
+        required: ["title"],
+        properties: { accent: { type: "string", default: "#b8f36b" } },
+      },
     });
     const poster = context.compositions.find((composition) => composition.id === "poster");
     expect(poster).toMatchObject({ kind: "static", metadata: { width: 160, height: 90, static: true } });

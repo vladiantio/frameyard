@@ -257,7 +257,7 @@ export async function createCliProject(options: CliProjectOptions = {}): Promise
   await mkdir(path.join(root, "assets"), { recursive: true });
   await writeFile(
     path.join(root, "fy.config.js"),
-    `export default { compositions: { demo: "./compositions/demo.html", media: "./compositions/media.html", long: "./compositions/long.html", "missing-video": "./compositions/missing-video.html", broken: "./compositions/broken.html", throwing: "./compositions/throwing.html", html: "./compositions/html.html", "html-invalid": "./compositions/html-invalid.html", legacy: "./compositions/legacy.html", static: "./compositions/static.html" } };\n`,
+    `export default { compositions: { demo: "./compositions/demo.html", media: "./compositions/media.html", long: "./compositions/long.html", "missing-video": "./compositions/missing-video.html", broken: "./compositions/broken.html", throwing: "./compositions/throwing.html", html: "./compositions/html.html", "html-invalid": "./compositions/html-invalid.html", legacy: "./compositions/legacy.html", static: "./compositions/static.html", schema: "./compositions/schema.html", "schema-required": "./compositions/schema-required.html", "schema-malformed": "./compositions/schema-malformed.html" } };\n`,
   );
   await writeFile(path.join(root, "compositions", "demo.html"), composition);
   await writeFile(path.join(root, "compositions", "media.html"), mediaComposition);
@@ -267,6 +267,54 @@ export async function createCliProject(options: CliProjectOptions = {}): Promise
   await writeFile(path.join(root, "compositions", "html-invalid.html"), invalidHtmlComposition);
   await writeFile(path.join(root, "compositions", "legacy.html"), legacyComposition);
   await writeFile(path.join(root, "compositions", "static.html"), staticComposition);
+  await writeFile(
+    path.join(root, "compositions", "schema-malformed.html"),
+    `<script type="application/json" data-fy="props-schema">
+{ "type": "object", "properties": { "title": { "type": "wat" } } }
+</script>
+<fy-composition width="160" height="90" fps="10" duration-in-frames="6">
+  <div data-fy-text="title"></div>
+</fy-composition>
+`,
+  );
+  await writeFile(
+    path.join(root, "compositions", "schema-required.html"),
+    `<script type="application/json" data-fy="props-schema">
+{
+  "type": "object",
+  "properties": {
+    "title": { "type": "string" },
+    "accent": { "type": "string", "enum": ["lime", "orange"], "default": "lime" }
+  },
+  "required": ["title"]
+}
+</script>
+<fy-composition width="160" height="90" fps="10" duration-in-frames="6">
+  <div data-fy-text="title" style="color: white; font: 12px monospace"></div>
+</fy-composition>
+`,
+  );
+  await writeFile(
+    path.join(root, "compositions", "schema.html"),
+    `<script type="application/json" data-fy="props">
+{ "title": "Schema default", "accent": "lime" }
+</script>
+<script type="application/json" data-fy="props-schema">
+{
+  "type": "object",
+  "properties": {
+    "title": { "type": "string" },
+    "accent": { "type": "string", "enum": ["lime", "orange"], "default": "lime" },
+    "count": { "type": "number", "default": 3 }
+  },
+  "required": ["title"]
+}
+</script>
+<fy-composition width="160" height="90" fps="10" duration-in-frames="6">
+  <div data-fy-text="title" style="color: white; font: 12px monospace"></div>
+</fy-composition>
+`,
+  );
   await writeFile(
     path.join(root, "compositions", "broken.html"),
     `<fy-composition width="160" height="90" fps="10" duration-in-frames="2">
@@ -326,5 +374,9 @@ export default {
   await writeFile(path.join(root, "props.json"), JSON.stringify({ label: "CLI" }));
   await writeFile(path.join(root, "embedded-props.json"), JSON.stringify({ declaredTone: false }));
   await writeFile(path.join(root, "bad-props.json"), JSON.stringify({ label: 42 }));
+  await writeFile(path.join(root, "schema-valid.json"), JSON.stringify({ title: "Custom", accent: "orange" }));
+  await writeFile(path.join(root, "schema-missing.json"), JSON.stringify({ accent: "orange" }));
+  await writeFile(path.join(root, "schema-wrong-type.json"), JSON.stringify({ title: 42, accent: "orange" }));
+  await writeFile(path.join(root, "schema-bad-enum.json"), JSON.stringify({ title: "A", accent: "blue" }));
   return root;
 }

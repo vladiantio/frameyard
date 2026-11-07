@@ -24,6 +24,8 @@ export type {
   JsonPrimitive,
   JsonValue,
   Props,
+  PropsSchema,
+  PropsSchemaType,
   ResolvedAudioClip,
   ResolvedCompositionMetadata,
   ResolvedTranscriptClip,

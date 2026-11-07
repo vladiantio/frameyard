@@ -27,10 +27,12 @@ import {
   type ResolvedCompositionMetadata,
   type DiagnosticSeverity,
   type Props,
+  type PropsSchema,
   type ResolvedAudioClip,
   type ResolvedTranscriptClip,
 } from "../contracts.js";
 import { resolveBindingPath, suggestBindingPath, validateBindingPath } from "../bindings.js";
+import { applyPropsSchemaDefaults, validatePropsAgainstSchema } from "../props-schema.js";
 import { errorMessage, isFrameyardError, type FrameyardErrorCode } from "../errors.js";
 import { parseTranscript } from "../transcript.js";
 import { createParse5Adapter } from "./document-adapter.js";
@@ -115,6 +117,7 @@ class HtmlCompositionValidator {
   private readonly propsOverrides: unknown;
   private defaultPropsValue: Readonly<Props> = Object.freeze({});
   private props: Readonly<Props>;
+  private propsSchema: PropsSchema | null = null;
   private readonly format: CompositionFormat | undefined;
   private metadata: ResolvedCompositionMetadata | null = null;
   private declaredFormat: DeclaredFormat | null = null;
@@ -161,7 +164,11 @@ class HtmlCompositionValidator {
     this.declaredFormat = declared?.format ?? null;
     this.metadata = declared ? resolveCompositionMetadata(declared, this.format) : null;
     this.formatUnresolved = this.fixedFactsValid && declared !== null && this.metadata === null;
-    this.defaultPropsValue = read.descriptor.defaultProps;
+    this.propsSchema = read.descriptor.propsSchema;
+    this.defaultPropsValue =
+      this.propsSchema === null
+        ? read.descriptor.defaultProps
+        : mergeProps(applyPropsSchemaDefaults(this.propsSchema, read.descriptor.defaultProps), undefined);
     this.controller = read.descriptor.controller;
     this.mergeOverrides();
     await this.validateControllerFile();
@@ -252,6 +259,7 @@ class HtmlCompositionValidator {
             declaredFormat,
             defaultProps: this.defaultPropsValue,
             controller: this.controller,
+            ...(this.propsSchema !== null ? { propsSchema: this.propsSchema } : {}),
             audioClips: Object.freeze([...this.audioClips]),
             embeddedAudioClips: Object.freeze([...this.embeddedAudioClips]),
             transcriptClips: Object.freeze([...this.transcriptClips]),
@@ -358,8 +366,22 @@ class HtmlCompositionValidator {
 
   private mergeOverrides(): void {
     try {
-      this.props = mergeProps(this.defaultPropsValue, this.propsOverrides);
-      this.overridesValid = true;
+      const merged = mergeProps(this.defaultPropsValue, this.propsOverrides);
+      if (this.propsSchema === null) {
+        this.props = merged;
+        this.overridesValid = true;
+        return;
+      }
+
+      this.props = mergeProps(applyPropsSchemaDefaults(this.propsSchema, merged), undefined);
+      const issues = validatePropsAgainstSchema(this.propsSchema, this.props);
+      for (const issue of issues) {
+        this.error("PROPS_SCHEMA_INVALID", issue.message, {
+          path: issue.path,
+          ...(issue.suggestion !== undefined ? { suggestion: issue.suggestion } : {}),
+        });
+      }
+      this.overridesValid = issues.length === 0;
     } catch (error) {
       this.overridesValid = false;
       this.error("PROPS_INVALID", `Invalid props: ${errorMessage(error)}`);
@@ -642,6 +664,14 @@ class HtmlCompositionValidator {
               this.error(
                 "PROPS_INVALID",
                 'data-fy="props" must be on a <script type="application/json"> block.',
+                this.attributeDetails(node, attribute.name, { value: attribute.value }),
+              );
+            }
+          } else if (attribute.value === "props-schema") {
+            if (node.tagName !== "script" || getAttribute(node, "type")?.toLowerCase() !== "application/json") {
+              this.error(
+                "PROPS_SCHEMA_INVALID_SCHEMA",
+                'data-fy="props-schema" must be on a <script type="application/json"> block.',
                 this.attributeDetails(node, attribute.name, { value: attribute.value }),
               );
             }

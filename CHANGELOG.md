@@ -18,6 +18,13 @@ contract change may ship in a minor release and is called out explicitly below.
   the recipe manifest. The initial recipes are `lower-third`, `title-card`,
   `captions`, `audio-visualizer`, `countdown`, `stat-card`, `product-showcase`,
   `logo-sting`, `split-screen`, and `slideshow`.
+- Compositions can declare a `data-fy="props-schema"` block with a pragmatic
+  subset of JSON Schema: `type`, `properties`, `required`, `default`, `enum`,
+  `description`, and `items`. `check`, `still`, and `render` validate resolved
+  props before Chromium with `PROPS_SCHEMA_INVALID` or
+  `PROPS_SCHEMA_INVALID_SCHEMA`; schema defaults merge under document defaults
+  and user props. `context --json` includes the parsed `propsSchema`, and the
+  runtime host applies the same defaults and validation.
 
 ## [0.10.0] - 2026-11-07
 

@@ -4,6 +4,22 @@ export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
 export type Props = { [key: string]: JsonValue };
 
+export type PropsSchemaType = "object" | "string" | "number" | "boolean" | "array";
+
+/**
+ * The supported subset of a JSON-Schema-like props contract. The root schema
+ * must describe an object; nested properties and array items use the same shape.
+ */
+export interface PropsSchema {
+  type: PropsSchemaType;
+  description?: string;
+  default?: JsonValue;
+  enum?: JsonPrimitive[];
+  properties?: { [key: string]: PropsSchema };
+  required?: string[];
+  items?: PropsSchema;
+}
+
 /** Output width, height, and frame rate fixed for a project. */
 export interface CompositionFormat {
   /** Output width in CSS pixels. */
@@ -194,6 +210,8 @@ export interface CompositionSourceInfo {
   declaredFormat: DeclaredFormat;
   defaultProps: Readonly<Props>;
   controller: ControllerDeclaration | null;
+  /** Declared props schema, when the composition has a valid data-fy="props-schema" block. */
+  propsSchema?: PropsSchema;
   audioClips: readonly ResolvedAudioClip[];
   embeddedAudioClips: readonly ResolvedAudioClip[];
   transcriptClips: readonly ResolvedTranscriptClip[];

@@ -473,6 +473,143 @@ export default {
     );
   });
 
+  it("validates props against a declared schema and applies schema defaults", async () => {
+    const result = await validate(
+      "schema-valid",
+      fragmentHtml({
+        top: `<script type="application/json" data-fy="props-schema">
+{
+  "type": "object",
+  "properties": {
+    "title": { "type": "string" },
+    "accent": { "type": "string", "enum": ["lime", "orange"], "default": "lime" },
+    "palette": {
+      "type": "object",
+      "default": {},
+      "properties": {
+        "background": { "type": "string", "default": "#080b10" }
+      }
+    }
+  },
+  "required": ["title"]
+}
+</script>`,
+        props: `<script type="application/json" data-fy="props">{ "title": "Document" }</script>`,
+        root: `<fy-composition width="320" height="180" fps="10" duration-in-frames="5">
+  <h1 data-fy-text="title"></h1>
+</fy-composition>`,
+        body: "",
+      }),
+    );
+
+    expect(result.info).not.toBeNull();
+    expect(result.diagnostics.filter((diagnostic) => diagnostic.severity === "error")).toEqual([]);
+    expect(result.info?.propsSchema).toMatchObject({
+      type: "object",
+      required: ["title"],
+      properties: {
+        accent: { type: "string", enum: ["lime", "orange"], default: "lime" },
+      },
+    });
+    expect(result.info?.defaultProps).toMatchObject({
+      title: "Document",
+      accent: "lime",
+      palette: { background: "#080b10" },
+    });
+  });
+
+  it("reports missing, mistyped, enum, and nested schema failures", async () => {
+    const schema = `<script type="application/json" data-fy="props-schema">
+{
+  "type": "object",
+  "properties": {
+    "title": { "type": "string" },
+    "accent": { "type": "string", "enum": ["lime", "orange"] },
+    "palette": {
+      "type": "object",
+      "properties": { "foreground": { "type": "string" } },
+      "required": ["foreground"]
+    }
+  },
+  "required": ["title"]
+}
+</script>`;
+    const root = `<fy-composition width="320" height="180" fps="10" duration-in-frames="5">
+  <h1 data-fy-text="title"></h1>
+</fy-composition>`;
+
+    const missing = await validate("schema-missing", fragmentHtml({ top: schema, props: false, root, body: "" }), {
+      accent: "lime",
+    });
+    expect(missing.info).toBeNull();
+    expect(missing.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: "PROPS_SCHEMA_INVALID",
+        details: expect.objectContaining({ path: "title", suggestion: expect.stringContaining("title") }),
+      }),
+    );
+
+    const mistyped = await validate("schema-mistyped", fragmentHtml({ top: schema, props: false, root, body: "" }), {
+      title: 3,
+      accent: "lime",
+    });
+    expect(mistyped.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: "PROPS_SCHEMA_INVALID",
+        details: expect.objectContaining({ path: "title" }),
+      }),
+    );
+
+    const invalidEnum = await validate("schema-enum", fragmentHtml({ top: schema, props: false, root, body: "" }), {
+      title: "A",
+      accent: "blue",
+    });
+    expect(invalidEnum.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: "PROPS_SCHEMA_INVALID",
+        details: expect.objectContaining({ path: "accent" }),
+      }),
+    );
+
+    const nested = await validate("schema-nested", fragmentHtml({ top: schema, props: false, root, body: "" }), {
+      title: "A",
+      accent: "lime",
+      palette: {},
+    });
+    expect(nested.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: "PROPS_SCHEMA_INVALID",
+        details: expect.objectContaining({ path: "palette.foreground" }),
+      }),
+    );
+  });
+
+  it("reports malformed props schemas with a source location", async () => {
+    const result = await validate(
+      "schema-malformed",
+      fragmentHtml({
+        top: `<script type="application/json" data-fy="props-schema">
+{ "type": "object", "properties": { "title": { "type": "wat" } } }
+</script>`,
+        props: false,
+        root: `<fy-composition width="320" height="180" fps="10" duration-in-frames="5"></fy-composition>`,
+        body: "",
+      }),
+    );
+
+    expect(result.info).toBeNull();
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: "PROPS_SCHEMA_INVALID_SCHEMA",
+        details: expect.objectContaining({
+          path: "compositions/schema-malformed.html",
+          line: expect.any(Number),
+          column: expect.any(Number),
+        }),
+      }),
+    );
+  });
+
   it("requires the controller block to be top-level", async () => {
     const result = await validate(
       "nested-controller",

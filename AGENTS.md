@@ -85,7 +85,8 @@ A full 30-second demo timeline render is segmented and uses 8 workers by default
 
 | Path | Responsibility |
 | --- | --- |
-| `src/contracts.ts` | Shared composition, metadata, props, audio, transcript, diagnostic, controller, and host contracts |
+| `src/contracts.ts` | Shared composition, metadata, props, props-schema, audio, transcript, diagnostic, controller, and host contracts |
+| `src/props-schema.ts` | Browser-safe props schema parser, default application, and validation |
 | `src/bindings.ts` | Browser-safe binding path validation, resolution, and value coercion |
 | `src/composition/` | Browser-safe composition grammar reader (document and fragment scopes), descriptor, declared-format resolution against the project format, per-kind declarations, adapter contract, and path rules |
 | `src/html/parse.ts` | Node-only parse5 document and fragment helpers, and source locations |
@@ -165,6 +166,7 @@ Timeline path: `src/timeline/resolve.ts` resolves the JSON and references; `src/
 - A static composition declares neither `duration-in-frames` nor `fps`. It has no frame clock, is captured once, and renders to a PNG. `fps` without `duration-in-frames` is an error. A static composition is visual-only: `data-fy-anim-*`, `<video>`, `<audio>`, and `<fy-transcript>` are errors. Its controller may `mount()` and validate props, but `update()` is not called, frame-state variables are not set, CSS animations are paused at time 0, and `STATIC_UPDATE_IGNORED`/`STATIC_ANIMATION_PAUSED` are warnings.
 - The resolved format is part of the immutable frame environment. A composition that omits dimensions in a project without `format` fails with `COMPOSITION_FORMAT_UNRESOLVED`.
 - Default props are a `data-fy="props"` JSON block. Props are JSON, deep-frozen, and merged shallowly over defaults.
+- An optional top-level `data-fy="props-schema"` JSON block declares the supported schema subset (`type`, `properties`, `required`, `default`, `enum`, `description`, `items`). Schema defaults fill missing keys under document defaults and user props; `check`, `still`, and `render` validate before Chromium, and the host applies the same defaults and validation. Invalid props use `PROPS_SCHEMA_INVALID`; malformed schemas use `PROPS_SCHEMA_INVALID_SCHEMA`.
 - Bindings are explicit: `data-fy-text`, `data-fy-attr-*`, `data-fy-class-*`, `data-fy-if`, and `data-fy-repeat` on `<template>`. Bindings apply once per load, before controller `mount`.
 - The `fy` prefix is the authoring namespace: `fy-composition`, `fy-transcript`, `data-fy-*`, `--fy-*`, `text/fy-controller`. The package, CLI, config, manifest, server route, import specifier, and error codes remain `frameyard`.
 - A composition has exactly one optional controller, inline or external. It may export `mount`, `update`, `dispose`, and `validateProps`; at least one is required; `mount` and `update` are optional for validation-only controllers.
@@ -241,7 +243,7 @@ Timeline path: `src/timeline/resolve.ts` resolves the JSON and references; `src/
 
 ## Change map
 
-- **Contracts, props, audio, transcripts, diagnostics, host types** → `src/contracts.ts`, `src/transcript.ts`, `src/index.ts`; extend `test/contracts.test.ts`, `test/transcript.test.ts`.
+- **Contracts, props, props schemas, audio, transcripts, diagnostics, host types** → `src/contracts.ts`, `src/props-schema.ts`, `src/transcript.ts`, `src/index.ts`; extend `test/contracts.test.ts`, `test/static-validation.test.ts`, `test/host-runtime.test.ts`, and `test/transcript.test.ts`.
 - **Binding semantics** → `src/bindings.ts`, `src/runtime/bindings.ts`; extend `test/bindings.test.ts`, `test/host-runtime.test.ts`.
 - **Composition grammar reading** → `src/composition/`, `src/html/document-adapter.ts`; extend `test/composition-document.test.ts`, `test/static-validation.test.ts`.
 - **HTML parsing and static validation** → `src/html/parse.ts`, `src/html/validate.ts`; extend `test/static-validation.test.ts`, `test/server-html.test.ts`.
@@ -273,17 +275,17 @@ Timeline path: `src/timeline/resolve.ts` resolves the JSON and references; `src/
 
 Test at public seams, not private helpers:
 
-- `test/contracts.test.ts`: composition metadata, props, JSON serialization, audio clips, transcript requirements, diagnostics.
+- `test/contracts.test.ts`: composition metadata, props, props-schema parsing/defaults/validation, JSON serialization, audio clips, transcript requirements, diagnostics.
 - `test/bindings.test.ts`: binding path syntax, resolution, repeat scope, value coercion, suggestions.
-- `test/static-validation.test.ts`: fragment metadata, static metadata matrix, static media/animation rejection, defaults, bindings, scripts, controllers, import maps, document-shell rejection, media, transcripts, source locations, diagnostics.
+- `test/static-validation.test.ts`: fragment metadata, static metadata matrix, static media/animation rejection, defaults, props schemas, bindings, scripts, controllers, import maps, document-shell rejection, media, transcripts, source locations, diagnostics.
 - `test/server-html.test.ts`: `.html` entries, fragment wrapping and head ordering, virtual inline controller, static error pages, `project.json` diagnostics.
-- `test/host-runtime.test.ts`: host bindings, repeat/if/class, animation scheduling, frame variables, inline/external controllers, props validation, load atomicity, dispose, diagnostics, auto mode, media settle, and static load (mount-only, no frame state, paused CSS animations, `update()`/media warnings and errors).
+- `test/host-runtime.test.ts`: host bindings, repeat/if/class, animation scheduling, frame variables, inline/external controllers, props validation, props-schema defaults/rejection, load atomicity, dispose, diagnostics, auto mode, media settle, and static load (mount-only, no frame state, paused CSS animations, `update()`/media warnings and errors).
 - `test/random.test.ts`: frame/time conversion and stateless keyed deterministic randomness.
 - `test/timings.test.ts`: opt-in stage timing gating and JSONL event shape.
 - `test/concurrency.test.ts`: render semaphore limits, FIFO waiters, and slot transfer.
 - `test/session-pool.test.ts`: capture-session reuse, discard, idle budget, and close.
 - `test/policy.test.ts`: workspace policy discovery, env precedence, strict schema and tighten-only limits, tier gates, still limits, profile caps, and priority selection.
-- `test/context.test.ts`: project digest composition metadata, prop types, timeline clip summaries, fonts, policy, next commands, and the CLI context result.
+- `test/context.test.ts`: project digest composition metadata, prop types, props schemas, timeline clip summaries, fonts, policy, next commands, and the CLI context result.
 - `test/fonts.test.ts`: font manifest schema, CSS generation, option parsing, local installation, merge/force, license warnings, hash/license/orphan verification, and removal.
 - `test/fonts-e2e.test.ts`: local font CLI installation, list/verify/context results, generated font CSS route, composition injection, deterministic stills, hash preflight, invalid manifest, and policy gates.
 - `test/fontsource-e2e.test.ts`: fake Fontsource API/CDN, catalog search filters, variable/static installation, pinned license and version, loopback URL import, SHA-256 checks, and unlicensed URL policy.
@@ -299,7 +301,7 @@ Test at public seams, not private helpers:
 - `test/timeline-plan.test.ts`: segment splitting at visual clip boundaries, maximum segment length, gaps with no layers, and nested-timeline ranges.
 - `test/timeline-render.test.ts`: segmented rendering, transform boxes, alpha and blend-mode compositing, media/audio, nested timelines, static composition capture reuse, keyframed position/scale/rotation/opacity, clip dissolves and equal-power audio crossfades, expanded rotation bounds including a full 360-degree sweep, animated opacity with blend modes, segment independence, and per-frame barcode mapping for video, composition, and nested-timeline layers.
 - `test/encoders.test.ts`: codec and container matrix, encoder name mapping, encoder arguments, HEVC tags, and NVENC session limits.
-- `test/cli-stills.test.ts`: real CLI with Chromium and FFmpeg for `check`/`still`, JSON envelopes, missing assets, deterministic stills across concurrent sessions, embedded video/WebGL capture, frame ranges and caps, preflight/failure atomicity, HTML/static check/still/render, static diagnostics, and format inheritance.
+- `test/cli-stills.test.ts`: real CLI with Chromium and FFmpeg for `check`/`still`, JSON envelopes, missing assets, props-schema preflight, deterministic stills across concurrent sessions, embedded video/WebGL capture, frame ranges and caps, preflight/failure atomicity, HTML/static check/still/render, static diagnostics, and format inheritance.
 - `test/cli-render.test.ts`: real CLI renders and workflow: container/codec/audio output, media audio, overwrite behavior, `dev`, `init`, resource policy, lint, templates, doctor, and the local-model scaffold.
 - `test/recipes.test.ts`: installs every bundled recipe, verifies the add manifest, and captures non-blank stills from each composition and timeline.
 - `test/video-determinism.test.ts`: a full-scene opacity animation over embedded video captures the requested frame, and consecutive composition frames map to consecutive source frames.

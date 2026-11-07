@@ -319,7 +319,10 @@ async function prepareComposition(options: SessionOptions): Promise<PreparedComp
     throw new FrameyardError(
       first?.code ?? "COMPOSITION_INVALID",
       `Composition "${options.compositionId}": ${first?.message ?? "static validation failed."}`,
-      { diagnostics: validation.diagnostics },
+      {
+        ...(first?.details !== undefined ? { details: first.details } : {}),
+        diagnostics: validation.diagnostics,
+      },
     );
   }
   return { composition, staticInfo: validation.info, staticDiagnostics };

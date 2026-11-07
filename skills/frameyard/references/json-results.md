@@ -78,7 +78,7 @@ Static validation diagnostics include source locations. Runtime diagnostics may 
 
 ## context
 
-`context` returns a read-only project digest. It includes `root`, `format`, `policy`, `compositions`, `timelines`, `assets`, `fonts`, `next`, and `truncated`. Each composition carries its resolved `metadata`, prop `path`/`type` pairs, controller, and diagnostic counts; each timeline carries duration, tracks, clip summaries, transitions, audio/transcript counts, and diagnostic counts. Each font carries `id`, `family`, `provider`, optional `version`, `variable`, `subsets`, `styles`, `license`, `files`, `bytes`, and `status`. `truncated.fonts` reports a clipped font list.
+`context` returns a read-only project digest. It includes `root`, `format`, `policy`, `compositions`, `timelines`, `assets`, `fonts`, `next`, and `truncated`. Each composition carries its resolved `metadata`, prop `path`/`type` pairs, optional parsed `propsSchema`, controller, and diagnostic counts; each timeline carries duration, tracks, clip summaries, transitions, audio/transcript counts, and diagnostic counts. Schema defaults are included in the resolved prop list. Each font carries `id`, `family`, `provider`, optional `version`, `variable`, `subsets`, `styles`, `license`, `files`, `bytes`, and `status`. `truncated.fonts` reports a clipped font list.
 
 ```json
 {
@@ -88,7 +88,7 @@ Static validation diagnostics include source locations. Runtime diagnostics may 
   "format": { "width": 1920, "height": 1080, "fps": 30 },
   "policy": { "policy": "authoring", "profile": "shared-cpu", "maxStillFrames": 4, "allowOverwrite": false, "source": "file" },
   "compositions": [
-    { "id": "main", "entry": "compositions/main.html", "kind": "animated", "metadata": { "width": 1920, "height": 1080, "fps": 30, "durationInFrames": 900 }, "controller": { "kind": "external", "src": "compositions/main.controller.js" }, "props": [{ "path": "title", "type": "string" }], "diagnostics": { "errors": 0, "warnings": 0, "codes": [] } }
+    { "id": "main", "entry": "compositions/main.html", "kind": "animated", "metadata": { "width": 1920, "height": 1080, "fps": 30, "durationInFrames": 900 }, "controller": { "kind": "external", "src": "compositions/main.controller.js" }, "props": [{ "path": "title", "type": "string" }], "propsSchema": { "type": "object", "properties": { "title": { "type": "string" } }, "required": ["title"] }, "diagnostics": { "errors": 0, "warnings": 0, "codes": [] } }
   ],
   "timelines": [],
   "assets": [],

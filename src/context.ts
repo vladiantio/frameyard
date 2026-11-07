@@ -2,6 +2,7 @@ import type {
   CompositionDiagnostic,
   ControllerDeclaration,
   Props,
+  PropsSchema,
   ResolvedAudioClip,
   ResolvedCompositionMetadata,
 } from "./contracts.js";
@@ -41,6 +42,7 @@ export interface ContextComposition {
   metadata?: ResolvedCompositionMetadata;
   controller: ContextController | null;
   props: ContextProp[];
+  propsSchema?: PropsSchema;
   diagnostics: ContextDiagnosticSummary;
 }
 
@@ -312,6 +314,7 @@ export async function buildProjectContext(options: {
       ...(info !== null ? { metadata: info.metadata } : {}),
       controller: publicController(info?.controller ?? null),
       props: info !== null ? describeProps(info.defaultProps) : [],
+      ...(info?.propsSchema !== undefined ? { propsSchema: info.propsSchema } : {}),
       diagnostics: diagnosticsWithFormat(validation.diagnostics, validation.formatUnresolved),
     });
   }

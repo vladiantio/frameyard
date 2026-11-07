@@ -206,6 +206,30 @@ A composition that declares **neither** `duration-in-frames` nor `fps` is static
 
 `data-fy-text`, `data-fy-attr-*`, `data-fy-class-*`, `data-fy-if`, and `<template data-fy-repeat>` apply props to the DOM once per load, before the controller mounts. Paths are dot-separated; missing paths warn. Primitive top-level props are also exposed as `--fy-prop-<name>` CSS custom properties. See the [bindings reference](./skills/frameyard/references/bindings.md) for repeat scope, coercion, and ordering.
 
+### Props schema
+
+Declare an optional schema next to the default props block to validate props before Chromium starts:
+
+```html
+<script type="application/json" data-fy="props-schema">
+{
+  "type": "object",
+  "properties": {
+    "title": { "type": "string", "description": "Card title" },
+    "accent": { "type": "string", "enum": ["lime", "orange"], "default": "lime" },
+    "tags": { "type": "array", "items": { "type": "string" } }
+  },
+  "required": ["title"]
+}
+</script>
+```
+
+The supported subset is `type` (`object`, `string`, `number`, `boolean`, `array`), `properties`, `required`, `default`, `enum`, `description`, and `items` for arrays. The root must be an object, array schemas require `items`, and enum values must be primitives that match the declared type. Unknown keywords are errors.
+
+Schema defaults fill missing values first. Explicit `data-fy="props"` defaults win over schema defaults, and user `--props` values win over both. Nested object defaults are filled recursively when the object is present or has its own default.
+
+`check`, `still`, and `render` validate the resolved props before launching Chromium. Invalid props fail with `PROPS_SCHEMA_INVALID`, `details.path` set to the failing prop path, and an actionable suggestion. A malformed schema fails with `PROPS_SCHEMA_INVALID_SCHEMA` and a source location. `context --json` includes the parsed `propsSchema` alongside the resolved prop types. See the [bindings reference](./skills/frameyard/references/bindings.md#props-schema) and [diagnostics](./skills/frameyard/references/diagnostics.md).
+
 ### Animation
 
 CSS `@keyframes` and the Web Animations API are the animation language. The runtime pauses and seeks every animation from the frame clock; `data-fy-anim-start`, `data-fy-anim-duration`, and `data-fy-anim-easing` schedule one animation per element in composition frames. Frame-state variables on `:root` are `--fy-frame`, `--fy-time`, `--fy-progress`, `--fy-fps`, `--fy-duration`, and `--fy-duration-frames`. CSS transitions are not deterministic and are diagnosed. See [deterministic authoring](./skills/frameyard/references/deterministic-authoring.md#animation) for the full rules.
@@ -417,7 +441,7 @@ npx frameyard doctor --sherpa-onnx-tts /path/to/sherpa-onnx-offline-tts --model-
 
 ### Context, inspect, and compare
 
-`frameyard context --json` is a compact, read-only digest for agents and editors. It reports the project root and format, each composition's resolved metadata, prop keys and types, controller, and diagnostics; each timeline's duration, tracks, clip summaries, transitions, audio/transcript counts, and diagnostics; unique assets; installed fonts; the active policy; and a short list of next commands. It never launches Chromium.
+`frameyard context --json` is a compact, read-only digest for agents and editors. It reports the project root and format, each composition's resolved metadata, prop keys and types, optional parsed props schema, controller, and diagnostics; each timeline's duration, tracks, clip summaries, transitions, audio/transcript counts, and diagnostics; unique assets; installed fonts; the active policy; and a short list of next commands. It never launches Chromium.
 
 `frameyard inspect <image> --json` decodes the first frame and reports dimensions, bytes, alpha range and coverage, blank detection, the dominant background and colors, the content bounding box, a coarse luminance grid, and edge density. `frameyard compare <first> <second> --json` reports differing pixels, percentage, maximum and mean channel delta, a bounding box, and a 3×3 region breakdown. `compare` exits 1 when the images differ; its JSON result still has `ok: true` and `identical: false`. Neither command replaces viewing a still when the host supports images.
 

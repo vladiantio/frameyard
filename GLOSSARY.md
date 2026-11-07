@@ -82,6 +82,10 @@ _Avoid_: Template expression, interpolation
 The immutable, JSON-serializable inputs supplied to a composition for one load; a timeline clip can fix the props for its instance of the composition.
 _Avoid_: Options, settings, mutable state
 
+**Props schema**:
+An optional declarative contract for a composition's props, limited to object properties, primitive types, arrays with item schemas, required keys, enums, and defaults. It is validated before Chromium and at host load.
+_Avoid_: Input schema, options, JSON Schema
+
 **Asset**:
 A local file required by a composition or timeline, whether static or generated.
 _Avoid_: Resource, media file

@@ -28,7 +28,7 @@ Use the public project format and CLI. Do not add an agent-only runtime, a hoste
 
 ## Authoring contract
 
-- A composition is a partial fragment with one top-level `<fy-composition>` and a top-level `data-fy="props"` block. Do not use `data-fy-host` or `data-fy="format"`. `width`, `height`, and `fps` inherit the project `format`; declare both dimensions together.
+- A composition is a partial fragment with one top-level `<fy-composition>` and a top-level `data-fy="props"` block. An optional top-level `data-fy="props-schema"` block declares prop types, required keys, enums, and defaults; schema defaults merge under document defaults and user props. Do not use `data-fy-host` or `data-fy="format"`. `width`, `height`, and `fps` inherit the project `format`; declare both dimensions together.
 - A static composition has neither `duration-in-frames` nor `fps`; it runs `mount()`/`validateProps()`, not `update()`, and has no frame-state variables. Declaring `fps` without `duration-in-frames` is an error. A static timeline clip needs an explicit `duration` and `sourceIn: 0`.
 - Bindings: `data-fy-text`, `data-fy-attr-*`, `data-fy-class-*`, `data-fy-if`, and `<template data-fy-repeat>`. Primitive top-level props are also `--fy-prop-<name>` CSS variables. Bindings apply once, before `mount`.
 - CSS/WAAPI animations are seeked from the frame clock. `data-fy-anim-start`, `data-fy-anim-duration`, and `data-fy-anim-easing` schedule one animation in frames. Frame state: `--fy-frame`, `--fy-time`, `--fy-progress`, `--fy-fps`, `--fy-duration`, `--fy-duration-frames`.

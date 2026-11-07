@@ -117,6 +117,7 @@ needs `sourceIn: 0` and contributes no audio. Source kinds are `composition`,
 - `data-fy-class-active="path"` toggles a class.
 - `data-fy-if="path"` removes the element when false.
 - `<template data-fy-repeat="items">` clones content; use `item` and `index`.
+- An optional `data-fy="props-schema"` block validates types, required keys, enums, and defaults before Chromium.
 - Paths are dot-separated; missing paths warn and resolve empty.
 
 Bindings apply once per load, before `mount()`. Controller-created DOM is not

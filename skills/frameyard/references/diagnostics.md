@@ -8,7 +8,7 @@ Frameyard reports composition problems as structured diagnostics before and duri
 
 Static validation covers:
 
-- fragment structure, root count and placement, metadata (including `width`/`height` pairing), default-props JSON, and import maps
+- fragment structure, root count and placement, metadata (including `width`/`height` pairing), default-props JSON, props schemas, and import maps
 - controller declaration and file existence
 - executable scripts, `on*` handlers, `javascript:` URLs, and unsupported visual elements
 - unknown `data-fy-*` attributes, binding paths, `if`/`repeat` placement, and animation attributes
@@ -35,7 +35,7 @@ Static validation covers:
 }
 ```
 
-`details` may include `path`, `line`, `column`, `endLine`, `endColumn`, `element`, `attribute`, `value`, `suggestion`, `frame`, and `controller`. Timeline diagnostics may also include `timeline`, `clip`, `track`, `channel`, `keyframe`, `jsonPath`, `timelineFrame`, `sourceFrame`, `from`, `to`, and `nesting`; keyframe errors use `channel`, the zero-based `keyframe` index, and the clip-local `frame`, and transition errors use `from`/`to`.
+`details` may include `path`, `line`, `column`, `endLine`, `endColumn`, `element`, `attribute`, `value`, `suggestion`, `frame`, and `controller`. For `PROPS_SCHEMA_INVALID`, `details.path` is the failing prop path (for example `title` or `palette.foreground`); `line` and `column` still point at the schema block. For `PROPS_SCHEMA_INVALID_SCHEMA`, `details.path` is the composition source path. Timeline diagnostics may also include `timeline`, `clip`, `track`, `channel`, `keyframe`, `jsonPath`, `timelineFrame`, `sourceFrame`, `from`, `to`, and `nesting`; keyframe errors use `channel`, the zero-based `keyframe` index, and the clip-local `frame`, and transition errors use `from`/`to`.
 
 ## Common codes
 
@@ -46,6 +46,8 @@ Static validation covers:
 | `IMPORT_MAP_INVALID` | error | Invalid import map placement, JSON, attributes, or reserved `frameyard` specifiers |
 | `COMPOSITION_FORMAT_UNRESOLVED` | error | The composition omits `width`/`height` and the project has no `format`; this is a command error, not a document diagnostic |
 | `PROPS_INVALID` | error | Invalid default props JSON, invalid overrides, or `validateProps` failure |
+| `PROPS_SCHEMA_INVALID` | error | Resolved props do not match the declared props schema; `details.path` is the failing prop path |
+| `PROPS_SCHEMA_INVALID_SCHEMA` | error | The declared props schema is malformed, misplaced, duplicated, or uses an unsupported keyword |
 | `CONTROLLER_INVALID` | error | Missing/duplicate/both-inline-and-external controller, missing file, or invalid exports |
 | `BINDING_INVALID` | error | Unknown `data-fy-*` attribute or malformed binding path |
 | `BINDING_PATH_MISSING` | warning | A binding path is absent from the resolved props |

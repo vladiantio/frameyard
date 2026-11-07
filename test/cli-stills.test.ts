@@ -241,6 +241,125 @@ describe.concurrent("CLI stills and composition checks", () => {
     expect(String((json.error as Record<string, unknown>).message)).toContain("label must be a string");
   });
 
+  it("validates composition props against a declared schema before Chromium", async () => {
+    const missing = await run(
+      ["check", "schema-required", "--props", "schema-missing.json", "--project", root, "--json"],
+      root,
+    );
+    expect(missing.code).not.toBe(0);
+    const missingJson = JSON.parse(missing.stdout) as Record<string, unknown>;
+    expect(missingJson).toMatchObject({
+      ok: false,
+      command: "check",
+      error: { code: "PROPS_SCHEMA_INVALID", details: { path: "title" } },
+    });
+    expect(missingJson.diagnostics).toContainEqual(
+      expect.objectContaining({
+        severity: "error",
+        code: "PROPS_SCHEMA_INVALID",
+        details: expect.objectContaining({ path: "title" }),
+      }),
+    );
+
+    const wrongType = await run(
+      ["check", "schema-required", "--props", "schema-wrong-type.json", "--project", root, "--json"],
+      root,
+    );
+    expect(wrongType.code).not.toBe(0);
+    expect(JSON.parse(wrongType.stdout)).toMatchObject({
+      error: { code: "PROPS_SCHEMA_INVALID", details: { path: "title" } },
+    });
+
+    const badEnum = await run(
+      ["check", "schema-required", "--props", "schema-bad-enum.json", "--project", root, "--json"],
+      root,
+    );
+    expect(badEnum.code).not.toBe(0);
+    expect(JSON.parse(badEnum.stdout)).toMatchObject({
+      error: { code: "PROPS_SCHEMA_INVALID", details: { path: "accent" } },
+    });
+
+    const still = await run(
+      [
+        "still",
+        "schema-required",
+        "--frame",
+        "0",
+        "--props",
+        "schema-missing.json",
+        "--out",
+        "schema-invalid.png",
+        "--project",
+        root,
+        "--json",
+      ],
+      root,
+    );
+    expect(still.code).not.toBe(0);
+    expect(JSON.parse(still.stdout)).toMatchObject({
+      ok: false,
+      command: "still",
+      error: { code: "PROPS_SCHEMA_INVALID" },
+    });
+    await expect(stat(path.join(root, "schema-invalid.png"))).rejects.toThrow();
+
+    const render = await run(
+      [
+        "render",
+        "schema-required",
+        "--props",
+        "schema-missing.json",
+        "--out",
+        "schema-invalid.mp4",
+        "--project",
+        root,
+        "--json",
+      ],
+      root,
+    );
+    expect(render.code).not.toBe(0);
+    expect(JSON.parse(render.stdout)).toMatchObject({
+      ok: false,
+      command: "render",
+      error: { code: "PROPS_SCHEMA_INVALID" },
+    });
+    await expect(stat(path.join(root, "schema-invalid.mp4"))).rejects.toThrow();
+
+    const valid = await run(["check", "schema", "--props", "schema-valid.json", "--project", root, "--json"], root);
+    expect(valid.code).toBe(0);
+    expect(JSON.parse(valid.stdout)).toMatchObject({
+      ok: true,
+      command: "check",
+      composition: "schema",
+      diagnostics: [],
+    });
+
+    const context = await run(["context", "--project", root, "--json"], root);
+    expect(context.code).toBe(0);
+    const contextJson = JSON.parse(context.stdout) as {
+      compositions: Array<{ id: string; propsSchema?: unknown; props: Array<{ path: string; type: string }> }>;
+    };
+    const schema = contextJson.compositions.find((composition) => composition.id === "schema");
+    expect(schema?.propsSchema).toMatchObject({ type: "object", required: ["title"] });
+    expect(schema?.props).toContainEqual(expect.objectContaining({ path: "count", type: "number" }));
+
+    const malformedLint = await run(["lint", "schema-malformed", "--project", root, "--json"], root);
+    expect(malformedLint.code).not.toBe(0);
+    expect(JSON.parse(malformedLint.stdout)).toMatchObject({
+      ok: false,
+      command: "lint",
+      error: { code: "PROPS_SCHEMA_INVALID_SCHEMA" },
+    });
+
+    const malformedCheck = await run(["check", "schema-malformed", "--project", root, "--json"], root);
+    expect(malformedCheck.code).not.toBe(0);
+    expect(JSON.parse(malformedCheck.stdout)).toMatchObject({
+      ok: false,
+      command: "check",
+      error: { code: "PROPS_SCHEMA_INVALID_SCHEMA" },
+    });
+  });
+
   it("fails check when a required asset is missing", async () => {
     const result = await run(["check", "broken", "--project", root, "--json"], root);
 

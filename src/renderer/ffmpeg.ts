@@ -12,6 +12,7 @@ import {
   transitionGainExpression,
   transitionProgressExpression,
 } from "./keyframe-expressions.js";
+import { renderScaleFilter } from "./scale.js";
 
 const STDERR_LIMIT = 16 * 1024;
 
@@ -742,6 +743,8 @@ export async function startVideoEncoder(options: {
   codec?: VideoCodec;
   /** Delivery container; defaults to `mp4`. */
   container?: VideoContainer;
+  /** Encode-time scale factor; defaults to 1. */
+  scale?: number;
   signal?: AbortSignal;
 }): Promise<VideoEncoder> {
   if (options.signal?.aborted) {
@@ -773,6 +776,11 @@ export async function startVideoEncoder(options: {
 
   const codec = options.codec ?? "h264";
   const container = options.container ?? "mp4";
+
+  const scaleFilter = renderScaleFilter(options.scale ?? 1);
+  if (scaleFilter !== undefined) {
+    args.push("-vf", scaleFilter);
+  }
 
   args.push(
     ...videoEncoderArgs(options.encoder ?? "libx264"),
@@ -1802,10 +1810,19 @@ export async function muxVideoWithAudio(options: {
   codec?: VideoCodec;
   /** Delivery container; defaults to `mp4`. */
   container?: VideoContainer;
+  /** Encode-time scale factor; re-encodes the video when not 1. */
+  scale?: number;
+  /** Encoder used when scaling re-encodes the video. */
+  encoder?: VideoEncoderName;
   signal?: AbortSignal;
 }): Promise<void> {
   const codec = options.codec ?? "h264";
   const container = options.container ?? "mp4";
+  const scaleFilter = renderScaleFilter(options.scale ?? 1);
+  const videoArgs =
+    scaleFilter === undefined
+      ? ["-c:v", "copy"]
+      : ["-vf", scaleFilter, ...videoEncoderArgs(options.encoder ?? "libx264")];
   await runCaptured(
     "ffmpeg",
     [
@@ -1820,11 +1837,51 @@ export async function muxVideoWithAudio(options: {
       "0:v:0",
       "-map",
       "1:a:0",
-      "-c:v",
-      "copy",
+      ...videoArgs,
       ...videoCodecTagArgs(codec, container),
       ...audioEncoderArgs(codec),
       "-shortest",
+      ...containerMuxFlags(container),
+      ...containerMuxerArgs(container),
+      options.outputPath,
+    ],
+    { signal: options.signal },
+  );
+}
+
+/** Re-encodes a video at a new scale without an audio track. */
+export async function scaleVideoFile(options: {
+  videoPath: string;
+  outputPath: string;
+  scale: number;
+  codec?: VideoCodec;
+  container?: VideoContainer;
+  encoder?: VideoEncoderName;
+  signal?: AbortSignal;
+}): Promise<void> {
+  const codec = options.codec ?? "h264";
+  const container = options.container ?? "mp4";
+  const scaleFilter = renderScaleFilter(options.scale);
+  if (scaleFilter === undefined) {
+    await runCaptured("ffmpeg", ["-y", "-v", "error", "-i", options.videoPath, "-c", "copy", options.outputPath], {
+      signal: options.signal,
+    });
+    return;
+  }
+  await runCaptured(
+    "ffmpeg",
+    [
+      "-y",
+      "-v",
+      "error",
+      "-i",
+      options.videoPath,
+      "-map",
+      "0:v:0",
+      "-vf",
+      scaleFilter,
+      ...videoEncoderArgs(options.encoder ?? "libx264"),
+      ...videoCodecTagArgs(codec, container),
       ...containerMuxFlags(container),
       ...containerMuxerArgs(container),
       options.outputPath,

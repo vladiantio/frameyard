@@ -10,6 +10,7 @@ import {
   videoEncoderArgs,
   type VideoEncoderName,
 } from "../src/renderer/ffmpeg.ts";
+import { renderScaleFilter, scaledVideoDimensions, validateRenderScale } from "../src/renderer/scale.ts";
 
 describe("encoder selection", () => {
   it("maps a codec and vendor choice to an encoder", () => {
@@ -71,5 +72,16 @@ describe("encoder selection", () => {
     expect(ENCODER_SESSION_LIMIT.hevc_nvenc).toBe(8);
     expect(ENCODER_SESSION_LIMIT.libx264).toBe(Number.POSITIVE_INFINITY);
     expect(ENCODER_SESSION_LIMIT.libx265).toBe(Number.POSITIVE_INFINITY);
+  });
+
+  it("validates and applies render scaling with even output dimensions", () => {
+    expect(validateRenderScale(undefined)).toBe(1);
+    expect(validateRenderScale(0.25)).toBe(0.25);
+    expect(() => validateRenderScale(0.1)).toThrow(/between 0.25 and 1/);
+    expect(() => validateRenderScale(1.5)).toThrow(/between 0.25 and 1/);
+    expect(scaledVideoDimensions(1920, 1080, 0.5)).toEqual({ width: 960, height: 540 });
+    expect(scaledVideoDimensions(160, 90, 0.5)).toEqual({ width: 80, height: 44 });
+    expect(renderScaleFilter(0.5)).toBe("scale=trunc(iw*0.5/2)*2:trunc(ih*0.5/2)*2");
+    expect(renderScaleFilter(1)).toBeUndefined();
   });
 });

@@ -37,6 +37,12 @@ contract change may ship in a minor release and is called out explicitly below.
   Presets compose with `data-fy-anim-start`, `data-fy-anim-duration`, and
   `data-fy-anim-easing`; unknown presets fail with `ANIMATION_INVALID`, and
   static compositions reject preset scheduling.
+- `render` accepts `--frames <spec>` for a contiguous frame range,
+  `--scale <factor>` from 0.25 to 1 for encode-time scaling, and
+  `--sequence <dir>` for PNG frame output. Frame ranges trim and shift audio and
+  set the output duration to the range length; sequence output requires
+  `--frames` and does not encode a video. Results report `frameRange` and
+  `scale`, plus `sequence` for PNG output.
 
 ## [0.10.0] - 2026-11-07
 

@@ -630,6 +630,11 @@ export default {
 </script>
 `;
 
+    const scaledComposition = `<fy-composition width="160" height="100" fps="10" duration-in-frames="6">
+  <div style="width: 100%; height: 100%; background: #654321"></div>
+</fy-composition>
+`;
+
     const policyTimeline = {
       version: 1,
       tracks: [{ id: "v1", kind: "video" }],
@@ -650,10 +655,11 @@ export default {
       await mkdir(path.join(root, "timelines"), { recursive: true });
       await writeFile(path.join(root, "compositions", "hello.html"), policyComposition);
       await writeFile(path.join(root, "compositions", "risky.html"), riskyComposition);
+      await writeFile(path.join(root, "compositions", "scaled.html"), scaledComposition);
       await writeFile(path.join(root, "timelines", "main.timeline.json"), JSON.stringify(policyTimeline, null, 2));
       await writeFile(
         path.join(root, "fy.config.js"),
-        `export default { format: { width: 160, height: 90, fps: 10 }, compositions: { hello: "./compositions/hello.html", risky: "./compositions/risky.html" }, timelines: { main: "./timelines/main.timeline.json" } };\n`,
+        `export default { format: { width: 160, height: 90, fps: 10 }, compositions: { hello: "./compositions/hello.html", risky: "./compositions/risky.html", scaled: "./compositions/scaled.html" }, timelines: { main: "./timelines/main.timeline.json" } };\n`,
       );
       return root;
     }
@@ -989,6 +995,179 @@ export default {
           },
         });
         await expect(stat(path.join(root, "compositions", "hero.html"))).rejects.toThrow();
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
+    });
+
+    it("renders composition frame ranges and scaled output", async () => {
+      const root = await createPolicyProject();
+      try {
+        const range = await run(["render", "hello", "--frames", "1-3", "--project", root, "--json"], root);
+        expect(range.code, range.stderr).toBe(0);
+        expect(JSON.parse(range.stdout)).toMatchObject({
+          ok: true,
+          command: "render",
+          kind: "video",
+          composition: "hello",
+          frameRange: { start: 1, end: 3 },
+          durationInFrames: 3,
+          framesRendered: 3,
+          scale: 1,
+          width: 160,
+          height: 90,
+        });
+        const rangeProbe = await ffprobe(path.join(root, "out", "hello.mp4"), ["-count_frames"]);
+        expect(rangeProbe.format).toMatchObject({ duration: "0.300000" });
+        expect((rangeProbe.streams as Array<Record<string, unknown>>)[0]).toMatchObject({ nb_read_frames: "3" });
+
+        const scaled = await run(["render", "scaled", "--scale", "0.5", "--project", root, "--json"], root);
+        expect(scaled.code, scaled.stderr).toBe(0);
+        expect(JSON.parse(scaled.stdout)).toMatchObject({
+          ok: true,
+          command: "render",
+          kind: "video",
+          composition: "scaled",
+          frameRange: { start: 0, end: 5 },
+          scale: 0.5,
+          width: 80,
+          height: 50,
+        });
+        const scaledProbe = await ffprobe(path.join(root, "out", "scaled.mp4"));
+        expect((scaledProbe.streams as Array<Record<string, unknown>>)[0]).toMatchObject({
+          width: 80,
+          height: 50,
+        });
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
+    });
+
+    it("renders a timeline frame range", async () => {
+      const root = await createPolicyProject();
+      try {
+        const result = await run(["render", "main", "--frames", "1-3", "--project", root, "--json"], root);
+        expect(result.code, result.stderr).toBe(0);
+        expect(JSON.parse(result.stdout)).toMatchObject({
+          ok: true,
+          command: "render",
+          timeline: "main",
+          frameRange: { start: 1, end: 3 },
+          durationInFrames: 3,
+          framesRendered: 3,
+          scale: 1,
+          width: 160,
+          height: 90,
+        });
+        const probe = await ffprobe(path.join(root, "out", "main.mp4"), ["-count_frames"]);
+        expect((probe.streams as Array<Record<string, unknown>>)[0]).toMatchObject({ nb_read_frames: "3" });
+
+        const scaled = await run(
+          ["render", "main", "--scale", "0.5", "--out", "out/main-scaled.mp4", "--project", root, "--json"],
+          root,
+        );
+        expect(scaled.code, scaled.stderr).toBe(0);
+        expect(JSON.parse(scaled.stdout)).toMatchObject({
+          timeline: "main",
+          scale: 0.5,
+          width: 80,
+          height: 44,
+        });
+        const scaledProbe = await ffprobe(path.join(root, "out", "main-scaled.mp4"));
+        expect((scaledProbe.streams as Array<Record<string, unknown>>)[0]).toMatchObject({
+          width: 80,
+          height: 44,
+        });
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
+    });
+
+    it("writes a PNG sequence without an encoded video", async () => {
+      const root = await createPolicyProject();
+      try {
+        const outDir = path.join(root, "sequence");
+        const result = await run(
+          ["render", "hello", "--sequence", outDir, "--frames", "0-2", "--project", root, "--json"],
+          root,
+        );
+        expect(result.code, result.stderr).toBe(0);
+        const json = JSON.parse(result.stdout) as {
+          kind?: string;
+          sequence?: string;
+          frames?: Array<{ frame: number; path: string }>;
+          scale?: number;
+        };
+        expect(json).toMatchObject({
+          ok: true,
+          command: "render",
+          kind: "sequence",
+          composition: "hello",
+          sequence: outDir,
+          scale: 1,
+        });
+        expect(json.frames?.map((frame) => frame.frame)).toEqual([0, 1, 2]);
+        for (const frame of [0, 1, 2]) {
+          expect((await stat(path.join(outDir, `sequence-hello-${frame}.png`))).isFile()).toBe(true);
+        }
+        await expect(stat(path.join(root, "out", "hello.mp4"))).rejects.toThrow();
+
+        const timelineDir = path.join(root, "timeline-sequence");
+        const timelineResult = await run(
+          ["render", "main", "--sequence", timelineDir, "--frames", "0-1", "--project", root, "--json"],
+          root,
+        );
+        expect(timelineResult.code, timelineResult.stderr).toBe(0);
+        expect(JSON.parse(timelineResult.stdout)).toMatchObject({
+          kind: "sequence",
+          timeline: "main",
+          sequence: timelineDir,
+        });
+        expect(JSON.parse(timelineResult.stdout).frames).toHaveLength(2);
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
+    });
+
+    it("gates sequence renders with the same resource policy", async () => {
+      const root = await createPolicyProject();
+      try {
+        const result = await run(
+          ["render", "hello", "--sequence", path.join(root, "sequence"), "--frames", "0", "--project", root, "--json"],
+          root,
+          { env: { FRAMEYARD_POLICY: "authoring" } },
+        );
+        expect(result.code).not.toBe(0);
+        expect(JSON.parse(result.stdout)).toMatchObject({
+          ok: false,
+          command: "render",
+          error: { code: "RESOURCE_POLICY_BLOCKED" },
+        });
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
+    });
+
+    it("rejects out-of-range frames and invalid scales before writing output", async () => {
+      const root = await createPolicyProject();
+      try {
+        const frames = await run(["render", "hello", "--frames", "5-7", "--project", root, "--json"], root);
+        expect(frames.code).not.toBe(0);
+        expect(JSON.parse(frames.stdout)).toMatchObject({
+          ok: false,
+          command: "render",
+          error: { code: "FRAME_OUT_OF_RANGE" },
+        });
+        await expect(stat(path.join(root, "out", "hello.mp4"))).rejects.toThrow();
+
+        const scale = await run(["render", "hello", "--scale", "0.1", "--project", root, "--json"], root);
+        expect(scale.code).toBe(2);
+        expect(JSON.parse(scale.stdout)).toMatchObject({
+          ok: false,
+          command: "render",
+          error: { code: "USAGE" },
+        });
+        await expect(stat(path.join(root, "out", "hello.mp4"))).rejects.toThrow();
       } finally {
         await rm(root, { recursive: true, force: true });
       }

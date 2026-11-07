@@ -14,7 +14,7 @@ import { FrameyardError, isFrameyardError } from "../errors.js";
 import { validateHtmlComposition } from "../html/validate.js";
 import type { Project, ProjectComposition } from "../project.js";
 import { startPreviewServer } from "../server/server.js";
-import { inspectTimelineAudio, type AudioInspection, type InspectAudioClip } from "./audio.js";
+import { audioClipsForFrameRange, inspectTimelineAudio, type AudioInspection, type InspectAudioClip } from "./audio.js";
 import { openCompositionSession, type CompositionSession } from "./browser.js";
 import {
   assertContainerCodec,
@@ -29,6 +29,7 @@ import {
   type VideoEncoderChoice,
   type VideoEncoderName,
 } from "./ffmpeg.js";
+import { scaledVideoDimensions, validateRenderScale } from "./scale.js";
 import { inspectTranscriptClips, type TranscriptInspection } from "./transcripts.js";
 
 export interface ProgressEvent {
@@ -105,11 +106,14 @@ export interface VideoRenderResult {
   path: string;
   width: number;
   height: number;
+  /** Inclusive rendered frame range. */
+  frameRange: { start: number; end: number };
   fps: number;
   durationInFrames: number;
   durationSeconds: number;
   framesRendered: number;
   concurrency: number;
+  scale: number;
   /** Resolved delivery codec. */
   codec: VideoCodec;
   /** Resolved delivery container. */
@@ -405,6 +409,8 @@ function reportProgress(options: SessionOptions, frame: number, total: number, s
 
 async function captureFramesInOrder(options: {
   sessions: CompositionSession[];
+  /** Absolute first composition frame; output frame zero maps to this frame. */
+  startFrame?: number;
   total: number;
   signal?: AbortSignal;
   startedAt: number;
@@ -458,7 +464,7 @@ async function captureFramesInOrder(options: {
       }
 
       nextFrame = frame + 1;
-      await session.seek(frame);
+      await session.seek((options.startFrame ?? 0) + frame);
       const png = await session.capture();
       buffered.set(frame, png);
       notify();
@@ -784,13 +790,46 @@ export async function renderComposition(
     codec?: VideoCodec;
     /** Delivery container; defaults to `mp4`. */
     container?: VideoContainer;
+    /** Inclusive first composition frame; defaults to 0. */
+    startFrame?: number;
+    /** Exclusive last composition frame; defaults to durationInFrames. */
+    endFrame?: number;
+    /** Encode-time scale factor; defaults to 1. */
+    scale?: number;
   },
 ): Promise<RenderResult> {
   const startedAt = performance.now();
   const prepared = await prepareComposition(options);
+  const scale = validateRenderScale(options.scale);
   if (prepared.staticInfo.metadata.static === true) {
+    if (options.startFrame !== undefined || options.endFrame !== undefined) {
+      throw new FrameyardError("USAGE", "--frames is only supported for animated video renders.");
+    }
+    if (scale !== 1) {
+      throw new FrameyardError("USAGE", "--scale is only supported for animated video renders.");
+    }
     return renderStaticComposition(options, prepared, startedAt);
   }
+
+  const metadata = prepared.staticInfo.metadata;
+  const startFrame = options.startFrame ?? 0;
+  const endFrame = options.endFrame ?? metadata.durationInFrames;
+  if (
+    !Number.isInteger(startFrame) ||
+    !Number.isInteger(endFrame) ||
+    startFrame < 0 ||
+    endFrame > metadata.durationInFrames ||
+    endFrame <= startFrame
+  ) {
+    throw new FrameyardError(
+      "FRAME_OUT_OF_RANGE",
+      `Frame range ${startFrame}..${endFrame - 1} is outside 0..${metadata.durationInFrames - 1}.`,
+      {
+        details: { validRange: { min: 0, max: metadata.durationInFrames - 1 }, startFrame, endFrame },
+      },
+    );
+  }
+  const totalFrames = endFrame - startFrame;
 
   const container = options.container ?? "mp4";
   const codec = options.codec ?? defaultCodecForContainer(container);
@@ -813,30 +852,32 @@ export async function renderComposition(
   return withPreparedSessions(
     options,
     prepared,
-    (first) => (first.metadata.static === true ? 1 : Math.min(requestedConcurrency, first.metadata.durationInFrames)),
+    (first) => (first.metadata.static === true ? 1 : Math.min(requestedConcurrency, totalFrames)),
     async (sessions) => {
       const session = sessions[0] as CompositionSession;
       if (session.metadata.static === true) {
         throw new FrameyardError("INTERNAL", "An animated render opened a static composition session.");
       }
-      const { width, height, fps, durationInFrames } = session.metadata;
+      const { width, height, fps } = session.metadata;
       const concurrency = sessions.length;
-      if (width % 2 !== 0 || height % 2 !== 0) {
+      const output = scaledVideoDimensions(width, height, scale);
+      if (output.width % 2 !== 0 || output.height % 2 !== 0) {
         throw new FrameyardError(
           "RENDER_FAILED",
-          `H.264 output requires even dimensions; the composition is ${width}×${height}.`,
+          `Video output requires even dimensions; the composition is ${output.width}×${output.height}.`,
         );
       }
 
-      const durationSeconds = durationInFrames / fps;
-      const total = durationInFrames;
+      const durationSeconds = totalFrames / fps;
+      const total = totalFrames;
       const audio = await inspectTimelineAudio({
         projectRoot: options.project.root,
         clips: timelineAudioClips(session),
         fps,
-        durationInFrames,
+        durationInFrames: session.metadata.durationInFrames,
         signal: options.signal,
       });
+      const audioClips = audioClipsForFrameRange(audio.assets, startFrame, endFrame, fps);
       const transcripts = await inspectTranscriptClips({
         projectRoot: options.project.root,
         clips: session.transcriptClips,
@@ -854,15 +895,16 @@ export async function renderComposition(
 
       try {
         let audioPath: string | undefined;
-        if (audio.assets.length > 0) {
+        if (audioClips.length > 0) {
           audioPath = path.join(scratchDir, "audio.wav");
           await mixAudioTimeline({
-            clips: audio.assets.map((asset) => ({
-              path: asset.path,
-              startFrame: asset.clip.startFrame,
-              trimStart: asset.clip.trimStart,
-              ...(asset.clip.trimDuration !== undefined ? { trimDuration: asset.clip.trimDuration } : {}),
-              volume: asset.clip.volume,
+            clips: audioClips.map((clip) => ({
+              path: path.resolve(options.project.root, clip.src),
+              startFrame: clip.startFrame,
+              trimStart: clip.trimStart,
+              ...(clip.trimDuration !== undefined ? { trimDuration: clip.trimDuration } : {}),
+              volume: clip.volume,
+              ...(clip.envelopes !== undefined ? { volumeEnvelopes: clip.envelopes } : {}),
             })),
             fps,
             durationSeconds,
@@ -879,6 +921,7 @@ export async function renderComposition(
           encoder: encoderName,
           codec,
           container,
+          scale,
           ...(audioPath !== undefined ? { audioPath } : {}),
           signal: options.signal,
         });
@@ -887,7 +930,7 @@ export async function renderComposition(
         if (concurrency === 1) {
           for (let frame = 0; frame < total; frame += 1) {
             throwIfAborted(options.signal);
-            await session.seek(frame);
+            await session.seek(startFrame + frame);
             const png = await session.capture();
             await activeEncoder.writeFrame(png);
             reportProgress(options, frame + 1, total, startedAt);
@@ -895,6 +938,7 @@ export async function renderComposition(
         } else {
           await captureFramesInOrder({
             sessions,
+            startFrame,
             total,
             signal: options.signal,
             startedAt,
@@ -927,18 +971,20 @@ export async function renderComposition(
           entry: session.entry,
           controller: session.controller,
           path: outPath,
-          width,
-          height,
+          width: output.width,
+          height: output.height,
+          frameRange: { start: startFrame, end: endFrame - 1 },
           fps,
-          durationInFrames,
+          durationInFrames: total,
           durationSeconds,
           framesRendered: total,
           concurrency,
+          scale,
           codec,
           container,
           encoder: encoderName,
           bytes: (await stat(outPath)).size,
-          audio: { clips: audio.clips.length },
+          audio: { clips: audioClips.length },
           transcripts: {
             clips: transcripts.clips.length,
           },

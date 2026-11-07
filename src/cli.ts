@@ -48,6 +48,7 @@ import {
   renderTimeline,
   type TimelineStillResult,
 } from "./renderer/timeline.js";
+import { validateRenderScale } from "./renderer/scale.js";
 import {
   assertContainerCodec,
   CONTAINER_EXTENSION,
@@ -110,6 +111,9 @@ const VALUE_FLAGS = new Set([
   "encoder",
   "codec",
   "container",
+  "frames",
+  "scale",
+  "sequence",
   "text-file",
   "speaker",
   "engine",
@@ -291,6 +295,9 @@ function allowedFlags(command: string): Set<string> {
         "encoder",
         "codec",
         "container",
+        "frames",
+        "scale",
+        "sequence",
         "dry-run",
         ...resource,
       ]);
@@ -710,7 +717,7 @@ Usage:
   frameyard still <composition-or-timeline-id> --frame <spec> [--out <file-or-dir>] [--props <file>] [--project <dir>] [--profile <name>] [--low-priority] [--json]
   frameyard inspect <image> [--json]
   frameyard compare <first-image> <second-image> [--json]
-  frameyard render <composition-or-timeline-id> [--out <file>] [--props <file>] [--project <dir>] [--concurrency <n>] [--workers <n>] [--encoder <name>] [--codec <name>] [--container <name>] [--scratch <dir>] [--overwrite] [--dry-run] [--profile <name>] [--low-priority] [--json]
+  frameyard render <composition-or-timeline-id> [--out <file>] [--frames <spec>] [--scale <factor>] [--sequence <dir>] [--props <file>] [--project <dir>] [--concurrency <n>] [--workers <n>] [--encoder <name>] [--codec <name>] [--container <name>] [--scratch <dir>] [--overwrite] [--dry-run] [--profile <name>] [--low-priority] [--json]
   frameyard tts [--engine qwen] --speaker <name> --talker-model <gguf> --codec-model <gguf> --out <file.wav> [--text-file <file>] [--style <text>] [--language <lang>] [--device <name>] [--executable <path>] [--manifest <file>] [--force] [--dry-run] [--profile <name>] [--low-priority] [--json]
   frameyard tts --engine supertonic --speaker <sid> --model-dir <dir> --language <code> --out <file.wav> [--text-file <file>] [--executable <path>] [--manifest <file>] [--force] [--dry-run] [--profile <name>] [--low-priority] [--json]
   frameyard transcribe <source> --model <gguf> --out <file.json> [--words] [--export srt,vtt] [--language <lang>] [--executable <path>] [--manifest <file>] [--force] [--dry-run] [--profile <name>] [--low-priority] [--json]
@@ -733,6 +740,9 @@ Options:
   --props <file>         Composition props, or a { "<clip-id>": {...} } override map for a timeline.
   --out <path>           Output path for still, render, tts, or transcribe. For still, one frame uses a .png file and multiple frames use a directory. Render defaults to out/<id>.mp4 for video and out/<id>.png for a static composition.
   --frame <spec>         Still frames: n, n-m, or a comma-separated list (maximum 32 unique frames).
+  --frames <spec>        Render frames: n, n-m, or a comma-separated list; video requires a contiguous range.
+  --scale <factor>       Encode-time video scale from 0.25 to 1. Scales during encode; output stays even-sized.
+  --sequence <dir>       Write PNG frames instead of video. Requires --frames; full-size only.
   --concurrency <n>      Parallel browser sessions for animated composition render, 1-${MAX_RENDER_CONCURRENCY} (default: 1).
   --workers <n>          Parallel segment workers for timeline render, 1-${MAX_TIMELINE_WORKERS} (default: 8).
   --encoder <name>       Encoder: auto, software, nvenc, or qsv (default: auto).
@@ -832,7 +842,7 @@ function printCommandHelp(command: string): void {
       return;
     case "render":
       process.stdout.write(
-        `Usage: frameyard render <composition-or-timeline-id> [--out <file>] [--props <file>] [--project <dir>] [--concurrency <n>] [--workers <n>] [--encoder <name>] [--codec <name>] [--container <name>] [--scratch <dir>] [--overwrite] [--dry-run] [--profile <name>] [--low-priority] [--json]\nRender an MP4, MOV, MKV, or WebM with H.264, HEVC, or VP9 video and AAC or Opus audio, or a PNG for a static composition. The default output is out/<id>.<extension> for video and out/<id>.png for a static composition. Animated composition concurrency is 1-${MAX_RENDER_CONCURRENCY}; timeline workers are 1-${MAX_TIMELINE_WORKERS}. The shared-cpu profile caps workers at 2 and concurrency at 1. Encoder choices are auto, software, nvenc, and qsv; the default auto probes NVENC, then Quick Sync, then the codec's software encoder. WebM and VP9 use Opus audio, and HEVC in MP4/MOV keeps the hvc1 sample entry. A static composition rejects --concurrency, --container, --codec, and --encoder. With --dry-run, validates and prints the plan and handoff command without writing outputs or launching Chromium.\n`,
+        `Usage: frameyard render <composition-or-timeline-id> [--out <file>] [--frames <spec>] [--scale <factor>] [--sequence <dir>] [--props <file>] [--project <dir>] [--concurrency <n>] [--workers <n>] [--encoder <name>] [--codec <name>] [--container <name>] [--scratch <dir>] [--overwrite] [--dry-run] [--profile <name>] [--low-priority] [--json]\nRender an MP4, MOV, MKV, or WebM with H.264, HEVC, or VP9 video and AAC or Opus audio, a PNG for a static composition, or a PNG sequence with --sequence. The default output is out/<id>.<extension> for video and out/<id>.png for a static composition. --frames accepts n, n-m, or a comma list; video requires a contiguous range, while --sequence accepts arbitrary lists and requires --frames. --scale is 0.25-1 and scales during encode; output dimensions stay even. Animated composition concurrency is 1-${MAX_RENDER_CONCURRENCY}; timeline workers are 1-${MAX_TIMELINE_WORKERS}. The shared-cpu profile caps workers at 2 and concurrency at 1. Encoder choices are auto, software, nvenc, and qsv; the default auto probes NVENC, then Quick Sync, then the codec's software encoder. WebM and VP9 use Opus audio, and HEVC in MP4/MOV keeps the hvc1 sample entry. A static composition rejects --concurrency, --container, --codec, --encoder, --frames, and --scale. With --dry-run, validates and prints the plan and handoff command without writing outputs or launching Chromium.\n`,
       );
       return;
     case "tts":
@@ -2196,19 +2206,22 @@ function frameSpecUsage(message: string, details: Record<string, unknown>): neve
   throw new FrameyardError("USAGE", message, { details });
 }
 
-/** Expands a still frame spec into unique frames, preserving input order. */
-function parseFrameSpec(value: string): number[] {
+/** Expands a frame spec into unique frames, preserving input order. */
+function parseFrameSpec(value: string, options: { flag?: string; label?: string; maximum?: number } = {}): number[] {
+  const flag = options.flag ?? "--frame";
+  const label = options.label ?? "still";
+  const maximum = options.maximum ?? MAX_STILL_FRAMES;
   const frames: number[] = [];
   const seen = new Set<number>();
 
   for (const rawSegment of value.split(",")) {
     const segment = rawSegment.trim();
     if (segment.length === 0) {
-      frameSpecUsage(`--frame contains an empty entry: "${value}".`, { requested: value });
+      frameSpecUsage(`${flag} contains an empty entry: "${value}".`, { requested: value });
     }
     if (/\s/.test(segment)) {
       frameSpecUsage(
-        `--frame entries must not contain spaces; write ranges like 2-12 and separate frames with commas.`,
+        `${flag} entries must not contain spaces; write ranges like 2-12 and separate frames with commas.`,
         {
           requested: value,
           segment,
@@ -2218,7 +2231,7 @@ function parseFrameSpec(value: string): number[] {
 
     const match = /^(\d+)(?:-(\d+))?$/.exec(segment);
     if (!match) {
-      frameSpecUsage(`--frame entries must be a frame number or an inclusive range like 2-12; received "${segment}".`, {
+      frameSpecUsage(`${flag} entries must be a frame number or an inclusive range like 2-12; received "${segment}".`, {
         requested: value,
         segment,
       });
@@ -2227,23 +2240,23 @@ function parseFrameSpec(value: string): number[] {
     const start = Number(match[1]);
     const end = match[2] === undefined ? start : Number(match[2]);
     if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || end < 0) {
-      frameSpecUsage(`--frame entries must use non-negative safe integers: "${segment}".`, {
+      frameSpecUsage(`${flag} entries must use non-negative safe integers: "${segment}".`, {
         requested: value,
         segment,
       });
     }
     if (end < start) {
-      frameSpecUsage(`--frame range "${segment}" is descending; ranges must be ascending.`, {
+      frameSpecUsage(`${flag} range "${segment}" is descending; ranges must be ascending.`, {
         requested: value,
         range: segment,
       });
     }
 
     const count = end - start + 1;
-    if (count > MAX_STILL_FRAMES) {
+    if (count > maximum) {
       frameSpecUsage(
-        `--frame range "${segment}" expands to ${count} frames; still captures at most ${MAX_STILL_FRAMES} frames per invocation.`,
-        { requested: value, range: segment, count, cap: MAX_STILL_FRAMES },
+        `${flag} range "${segment}" expands to ${count} frames; ${label} uses at most ${maximum} frames per invocation.`,
+        { requested: value, range: segment, count, cap: maximum },
       );
     }
 
@@ -2256,14 +2269,31 @@ function parseFrameSpec(value: string): number[] {
     }
   }
 
-  if (frames.length > MAX_STILL_FRAMES) {
+  if (frames.length > maximum) {
     frameSpecUsage(
-      `still captures at most ${MAX_STILL_FRAMES} unique frames per invocation; the requested spec expands to ${frames.length}.`,
-      { requested: value, count: frames.length, cap: MAX_STILL_FRAMES },
+      `${label} uses at most ${maximum} unique frames per invocation; the requested spec expands to ${frames.length}.`,
+      { requested: value, count: frames.length, cap: maximum },
     );
   }
 
   return frames;
+}
+
+function contiguousRenderRange(frames: readonly number[]): { startFrame: number; endFrame: number } {
+  const first = frames[0];
+  if (first === undefined) {
+    throw new FrameyardError("USAGE", "Video --frames requires at least one frame.");
+  }
+  for (let index = 1; index < frames.length; index += 1) {
+    if (frames[index] !== first + index) {
+      throw new FrameyardError(
+        "USAGE",
+        "Video --frames must be a contiguous range; use --sequence for arbitrary frame lists.",
+        { details: { frames: [...frames] } },
+      );
+    }
+  }
+  return { startFrame: first, endFrame: first + frames.length };
 }
 
 interface StillOutputPlan {
@@ -2427,6 +2457,103 @@ async function runStill(parsed: ParsedArgs, signal: AbortSignal, policy: LoadedR
   }
 }
 
+async function runRenderSequence(options: {
+  project: Project;
+  targetId: string;
+  frames: number[];
+  sequenceDir: string;
+  props: unknown;
+  overwrite: boolean;
+  signal: AbortSignal;
+  json: boolean;
+}): Promise<number> {
+  const outPaths = options.frames.map((frame) =>
+    path.join(options.sequenceDir, `sequence-${options.targetId}-${frame}.png`),
+  );
+
+  let result:
+    | {
+        timeline: string;
+        entry: string;
+        frames: Array<{ frame: number; path: string }>;
+        width: number;
+        height: number;
+        diagnostics: FrameyardDiagnostic[];
+        elapsedMs: number;
+      }
+    | {
+        composition: string;
+        entry: string;
+        frames: Array<{ frame: number; path: string }>;
+        width: number;
+        height: number;
+        diagnostics: FrameyardDiagnostic[];
+        elapsedMs: number;
+      };
+
+  if (options.project.timelines.has(options.targetId)) {
+    if (options.props !== undefined && !isPlainObject(options.props)) {
+      usage("Timeline --props must be a JSON object keyed by composition clip id.");
+    }
+    const stills = await captureTimelineStills({
+      project: options.project,
+      timelineId: options.targetId,
+      frames: options.frames,
+      outPaths,
+      overwrite: options.overwrite,
+      ...(options.props !== undefined ? { propsOverrides: options.props as Record<string, unknown> } : {}),
+      signal: options.signal,
+    });
+    result = {
+      timeline: stills.timeline,
+      entry: stills.entry,
+      frames: stills.frames,
+      width: stills.width,
+      height: stills.height,
+      diagnostics: stills.diagnostics,
+      elapsedMs: stills.elapsedMs,
+    };
+  } else {
+    const stills = await captureStills({
+      project: options.project,
+      compositionId: options.targetId,
+      frames: options.frames,
+      outPaths,
+      overwrite: options.overwrite,
+      props: options.props,
+      signal: options.signal,
+    });
+    result = {
+      composition: stills.composition,
+      entry: stills.entry,
+      frames: stills.frames,
+      width: stills.width,
+      height: stills.height,
+      diagnostics: stills.diagnostics,
+      elapsedMs: stills.elapsedMs,
+    };
+  }
+
+  const output = {
+    ok: true,
+    command: "render",
+    kind: "sequence",
+    ...result,
+    path: options.sequenceDir,
+    sequence: options.sequenceDir,
+    scale: 1,
+  };
+  printDiagnostics(result.diagnostics);
+  if (options.json) {
+    printJson(output);
+  } else {
+    process.stdout.write(
+      `Rendered ${result.frames.length} still${result.frames.length === 1 ? "" : "s"} for ${options.targetId} to ${options.sequenceDir}\n`,
+    );
+  }
+  return 0;
+}
+
 async function runRender(parsed: ParsedArgs, signal: AbortSignal, policy: LoadedResourcePolicy): Promise<number> {
   const dryRun = parsed.flags.has("dry-run") === true;
   const profile = resolveProfile(policy, flagString(parsed.flags, "profile"));
@@ -2457,6 +2584,51 @@ async function runRender(parsed: ParsedArgs, signal: AbortSignal, policy: Loaded
   const timelineOutPath =
     explicitOutPath ?? path.join(project.root, "out", `${targetId}.${CONTAINER_EXTENSION[container]}`);
   const json = parsed.flags.has("json") === true;
+  const framesValue = flagString(parsed.flags, "frames");
+  const frames =
+    framesValue === undefined
+      ? undefined
+      : parseFrameSpec(framesValue, {
+          flag: "--frames",
+          label: "render",
+          maximum: Number.MAX_SAFE_INTEGER,
+        });
+  const scaleValue = flagString(parsed.flags, "scale");
+  const scale = validateRenderScale(scaleValue === undefined ? undefined : Number(scaleValue));
+  const sequenceValue = flagString(parsed.flags, "sequence");
+  const sequenceDir = sequenceValue === undefined ? undefined : path.resolve(process.cwd(), sequenceValue);
+
+  if (sequenceDir !== undefined) {
+    if (explicitOutPath !== undefined) {
+      usage("--out is not valid with --sequence; use --sequence <dir>.");
+    }
+    if (frames === undefined) {
+      usage("--sequence requires --frames <spec>.");
+    }
+    if (dryRun) {
+      usage("--dry-run is not supported with --sequence.");
+    }
+    if (scale !== 1) {
+      usage("--scale is not supported with --sequence; sequence output is full-size.");
+    }
+    for (const flag of ["container", "codec", "encoder", "concurrency", "workers", "scratch"]) {
+      if (parsed.flags.has(flag)) {
+        usage(`--${flag} is not valid with --sequence.`);
+      }
+    }
+    return runRenderSequence({
+      project,
+      targetId,
+      frames,
+      sequenceDir,
+      props,
+      overwrite: parsed.flags.has("overwrite") === true,
+      signal,
+      json,
+    });
+  }
+
+  const videoRange = frames === undefined ? undefined : contiguousRenderRange(frames);
 
   if (project.timelines.has(targetId)) {
     if (parsed.flags.has("concurrency")) {
@@ -2514,12 +2686,29 @@ async function runRender(parsed: ParsedArgs, signal: AbortSignal, policy: Loaded
         throw new FrameyardError(lintError.code, lintError.message, { diagnostics: lintResult.diagnostics });
       }
 
-      const plan = planTimelineRender(resolved.timeline);
+      const planStart = videoRange?.startFrame ?? 0;
+      const planEnd = videoRange?.endFrame ?? resolved.timeline.durationInFrames;
+      if (planStart < 0 || planEnd > resolved.timeline.durationInFrames || planEnd <= planStart) {
+        throw new FrameyardError(
+          "FRAME_OUT_OF_RANGE",
+          `Frame range ${planStart}..${planEnd - 1} is outside 0..${resolved.timeline.durationInFrames - 1}.`,
+          {
+            details: {
+              validRange: { min: 0, max: resolved.timeline.durationInFrames - 1 },
+              startFrame: planStart,
+              endFrame: planEnd,
+            },
+          },
+        );
+      }
+      const plan = planTimelineRender(resolved.timeline, { startFrame: planStart, endFrame: planEnd });
       const planWorkers = effectiveWorkers ?? 8;
       const planDetails = {
         kind: "video" as const,
-        frames: resolved.timeline.durationInFrames,
-        durationSeconds: resolved.timeline.durationInFrames / resolved.timeline.format.fps,
+        frames: planEnd - planStart,
+        durationSeconds: (planEnd - planStart) / resolved.timeline.format.fps,
+        frameRange: { start: planStart, end: planEnd - 1 },
+        scale,
         segments: plan.segments.length,
         workers: planWorkers,
         encoder: encoder ?? "auto",
@@ -2546,6 +2735,8 @@ async function runRender(parsed: ParsedArgs, signal: AbortSignal, policy: Loaded
       const propsValue = flagString(parsed.flags, "props");
       if (propsValue !== undefined) args.push("--props", propsValue);
       args.push("--workers", String(planWorkers));
+      if (framesValue !== undefined) args.push("--frames", framesValue);
+      if (scaleValue !== undefined) args.push("--scale", scaleValue);
       if (encoder !== undefined) args.push("--encoder", encoder);
       args.push("--codec", codec, "--container", container);
       if (scratchValue !== undefined) args.push("--scratch", scratchValue);
@@ -2589,6 +2780,8 @@ async function runRender(parsed: ParsedArgs, signal: AbortSignal, policy: Loaded
       codec,
       container,
       ...(props !== undefined ? { propsOverrides: props as Record<string, unknown> } : {}),
+      ...(videoRange !== undefined ? { startFrame: videoRange.startFrame, endFrame: videoRange.endFrame } : {}),
+      scale,
       overwrite: parsed.flags.has("overwrite") === true,
       signal,
       onProgress: progressPrinter("Rendering"),
@@ -2631,9 +2824,13 @@ async function runRender(parsed: ParsedArgs, signal: AbortSignal, policy: Loaded
       (parsed.flags.has("concurrency") ||
         parsed.flags.has("container") ||
         parsed.flags.has("codec") ||
-        parsed.flags.has("encoder"))
+        parsed.flags.has("encoder") ||
+        frames !== undefined ||
+        scale !== 1)
     ) {
-      usage("A static composition render rejects --concurrency, --container, --codec, and --encoder.");
+      usage(
+        "A static composition render rejects --concurrency, --container, --codec, --encoder, --frames, and --scale.",
+      );
     }
     const compositionOutPath =
       explicitOutPath ??
@@ -2654,6 +2851,21 @@ async function runRender(parsed: ParsedArgs, signal: AbortSignal, policy: Loaded
           },
         ]
       : [];
+    const planStart = videoRange?.startFrame ?? 0;
+    const planEnd = metadata.static === true ? 1 : (videoRange?.endFrame ?? metadata.durationInFrames);
+    if (metadata.static !== true && (planStart < 0 || planEnd > metadata.durationInFrames || planEnd <= planStart)) {
+      throw new FrameyardError(
+        "FRAME_OUT_OF_RANGE",
+        `Frame range ${planStart}..${planEnd - 1} is outside 0..${metadata.durationInFrames - 1}.`,
+        {
+          details: {
+            validRange: { min: 0, max: metadata.durationInFrames - 1 },
+            startFrame: planStart,
+            endFrame: planEnd,
+          },
+        },
+      );
+    }
     const planDetails =
       metadata.static === true
         ? {
@@ -2661,11 +2873,15 @@ async function runRender(parsed: ParsedArgs, signal: AbortSignal, policy: Loaded
             width: metadata.width,
             height: metadata.height,
             frames: 1,
+            frameRange: { start: 0, end: 0 },
+            scale: 1,
           }
         : {
             kind: "video" as const,
-            frames: metadata.durationInFrames,
-            durationSeconds: metadata.durationInFrames / metadata.fps,
+            frames: planEnd - planStart,
+            durationSeconds: (planEnd - planStart) / metadata.fps,
+            frameRange: { start: planStart, end: planEnd - 1 },
+            scale,
             concurrency: effectiveConcurrency ?? 1,
             encoder: encoder ?? "auto",
             codec,
@@ -2677,6 +2893,8 @@ async function runRender(parsed: ParsedArgs, signal: AbortSignal, policy: Loaded
     const propsValue = flagString(parsed.flags, "props");
     if (propsValue !== undefined) args.push("--props", propsValue);
     if (!staticTarget) {
+      if (framesValue !== undefined) args.push("--frames", framesValue);
+      if (scaleValue !== undefined) args.push("--scale", scaleValue);
       args.push("--concurrency", String(effectiveConcurrency ?? 1));
       if (encoder !== undefined) args.push("--encoder", encoder);
       if (codecValue !== undefined) args.push("--codec", codecValue);
@@ -2721,6 +2939,8 @@ async function runRender(parsed: ParsedArgs, signal: AbortSignal, policy: Loaded
     ...(encoder !== undefined ? { encoder } : {}),
     ...(codecValue !== undefined ? { codec: codecValue } : {}),
     ...(containerValue !== undefined ? { container: containerValue } : {}),
+    ...(videoRange !== undefined ? { startFrame: videoRange.startFrame, endFrame: videoRange.endFrame } : {}),
+    scale,
     overwrite: parsed.flags.has("overwrite") === true,
     signal,
     onProgress: progressPrinter("Rendering"),

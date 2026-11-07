@@ -128,7 +128,7 @@
 ## Validation
 
 - Replacing `check` with a single `still`.
-- Using `still` as an image-sequence exporter, adding `--step`-style workflows, or requesting more than 32 unique frames in one call.
+- Using `still` as an image-sequence exporter, adding `--step`-style workflows, or requesting more than 32 unique frames in one call. Use `render --sequence` for production PNG sequences.
 - Ignoring warnings or `diagnostics` in `--json` output.
 - Claiming success after a nonzero exit, a missing still, or skipped visual inspection.
 - Using `--overwrite` or `--force` without permission.

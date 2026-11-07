@@ -163,7 +163,7 @@ export async function runCli(
   // The CLI default probes the host GPU. Pin software encoding so the suite
   // exercises the same path on every machine; opt out only to test the default.
   const pinned =
-    options.pinEncoder === false || args[0] !== "render" || args.includes("--encoder")
+    options.pinEncoder === false || args[0] !== "render" || args.includes("--encoder") || args.includes("--sequence")
       ? args
       : [...args, "--encoder", "software"];
   try {

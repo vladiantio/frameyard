@@ -14,7 +14,7 @@ import { FrameyardError, isFrameyardError } from "../errors.js";
 import { validateHtmlComposition, type StaticValidationResult } from "../html/validate.js";
 import type { Project } from "../project.js";
 import { startPreviewServer } from "../server/server.js";
-import { inspectTimelineAudio, type AudioInspection, type InspectAudioClip } from "./audio.js";
+import { audioClipsForFrameRange, inspectTimelineAudio, type AudioInspection, type InspectAudioClip } from "./audio.js";
 import { openCompositionSession, type CompositionSession } from "./browser.js";
 import {
   assertContainerCodec,
@@ -29,6 +29,7 @@ import {
   mixAudioTimeline,
   muxVideoWithAudio,
   resolveVideoEncoder,
+  scaleVideoFile,
   sceneLayerToCompositeLayer,
   startDirectSegmentEncoder,
   startDualPipeSegmentEncoder,
@@ -42,6 +43,7 @@ import {
   type VideoEncoderName,
 } from "./ffmpeg.js";
 import { createSemaphore, type Semaphore } from "./concurrency.js";
+import { scaledVideoDimensions, validateRenderScale } from "./scale.js";
 import { CompositionSessionPool, type SessionLease } from "./session-pool.js";
 import { inspectTranscriptClips, type TranscriptInspection } from "./transcripts.js";
 import { startTiming } from "./timings.js";
@@ -84,6 +86,12 @@ export interface TimelineRenderOptions {
   codec?: VideoCodec;
   /** Delivery container; defaults to `mp4`. */
   container?: VideoContainer;
+  /** Inclusive first timeline frame; defaults to 0. */
+  startFrame?: number;
+  /** Exclusive last timeline frame; defaults to durationInFrames. */
+  endFrame?: number;
+  /** Encode-time scale factor; defaults to 1. */
+  scale?: number;
   onProgress?: (event: TimelineProgressEvent) => void;
 }
 
@@ -149,10 +157,13 @@ export interface TimelineRenderResult {
   path: string;
   width: number;
   height: number;
+  /** Inclusive rendered frame range. */
+  frameRange: { start: number; end: number };
   fps: number;
   durationInFrames: number;
   durationSeconds: number;
   framesRendered: number;
+  scale: number;
   segments: number;
   workers: number;
   transitions: number;
@@ -1930,7 +1941,35 @@ export async function renderTimeline(options: TimelineRenderOptions): Promise<Ti
     });
   }
   const timeline = resolved.timeline;
-  const plan = planTimelineRender(timeline, { maxSegmentFrames: options.maxSegmentFrames });
+  const scale = validateRenderScale(options.scale);
+  const startFrame = options.startFrame ?? 0;
+  const endFrame = options.endFrame ?? timeline.durationInFrames;
+  if (
+    !Number.isInteger(startFrame) ||
+    !Number.isInteger(endFrame) ||
+    startFrame < 0 ||
+    endFrame > timeline.durationInFrames ||
+    endFrame <= startFrame
+  ) {
+    throw new FrameyardError(
+      "FRAME_OUT_OF_RANGE",
+      `Frame range ${startFrame}..${endFrame - 1} is outside 0..${timeline.durationInFrames - 1}.`,
+      {
+        details: {
+          validRange: { min: 0, max: timeline.durationInFrames - 1 },
+          startFrame,
+          endFrame,
+        },
+      },
+    );
+  }
+  const total = endFrame - startFrame;
+  const output = scaledVideoDimensions(timeline.format.width, timeline.format.height, scale);
+  const plan = planTimelineRender(timeline, {
+    maxSegmentFrames: options.maxSegmentFrames,
+    startFrame,
+    endFrame,
+  });
 
   const scratchBase = options.scratchDir ?? tmpdir();
   await mkdir(scratchBase, { recursive: true });
@@ -1948,7 +1987,6 @@ export async function renderTimeline(options: TimelineRenderOptions): Promise<Ti
       message: `Encoder ${encoder} allows ${workers} concurrent encode sessions; using ${workers} workers instead of ${requestedWorkers}.`,
     });
   }
-  const total = timeline.durationInFrames;
   const segmentResults: Array<{ path: string; diagnostics: CompositionDiagnostic[] } | undefined> = Array.from({
     length: plan.segments.length,
   });
@@ -1961,10 +1999,11 @@ export async function renderTimeline(options: TimelineRenderOptions): Promise<Ti
         projectRoot: options.project.root,
         clips: audio.clips,
         fps: timeline.format.fps,
-        durationInFrames: total,
+        durationInFrames: timeline.durationInFrames,
         ...(options.signal ? { signal: options.signal } : {}),
       })
     : { clips: [], assets: [], warnings: [] };
+  const audioClips = audioClipsForFrameRange(audioInspection.assets, startFrame, endFrame, timeline.format.fps);
   audioTiming.finish({ assets: audioInspection.assets.length });
   diagnostics.push(
     ...audioInspection.warnings.map((message) => ({
@@ -2027,7 +2066,7 @@ export async function renderTimeline(options: TimelineRenderOptions): Promise<Ti
         });
         segmentResults[index] = result;
         options.onProgress?.({
-          frame: segment.end,
+          frame: Math.min(total, Math.max(0, segment.end - startFrame)),
           total,
           elapsedMs: performance.now() - startedAt,
           segment: index + 1,
@@ -2064,17 +2103,17 @@ export async function renderTimeline(options: TimelineRenderOptions): Promise<Ti
     concatTiming.finish();
 
     let finalPath = tempVideo;
-    if (audioInspection.assets.length > 0) {
+    if (audioClips.length > 0) {
       const audioPath = path.join(scratchRoot, "audio.wav");
-      const mixTiming = startTiming("timeline.audio_mix", { assets: audioInspection.assets.length });
+      const mixTiming = startTiming("timeline.audio_mix", { assets: audioClips.length });
       await mixAudioTimeline({
-        clips: audioInspection.assets.map((asset) => ({
-          path: asset.path,
-          startFrame: asset.clip.startFrame,
-          trimStart: asset.clip.trimStart,
-          ...(asset.clip.trimDuration !== undefined ? { trimDuration: asset.clip.trimDuration } : {}),
-          volume: asset.clip.volume,
-          ...(asset.clip.envelopes !== undefined ? { volumeEnvelopes: asset.clip.envelopes } : {}),
+        clips: audioClips.map((clip) => ({
+          path: path.resolve(options.project.root, clip.src),
+          startFrame: clip.startFrame,
+          trimStart: clip.trimStart,
+          ...(clip.trimDuration !== undefined ? { trimDuration: clip.trimDuration } : {}),
+          volume: clip.volume,
+          ...(clip.envelopes !== undefined ? { volumeEnvelopes: clip.envelopes } : {}),
         })),
         fps: timeline.format.fps,
         durationSeconds: total / timeline.format.fps,
@@ -2089,9 +2128,24 @@ export async function renderTimeline(options: TimelineRenderOptions): Promise<Ti
         outputPath: tempFinal,
         codec,
         container,
+        scale,
+        encoder,
         ...(options.signal ? { signal: options.signal } : {}),
       });
       muxTiming.finish();
+      finalPath = tempFinal;
+    } else if (scale !== 1) {
+      const scaleTiming = startTiming("timeline.scale", { scale });
+      await scaleVideoFile({
+        videoPath: tempVideo,
+        outputPath: tempFinal,
+        scale,
+        codec,
+        container,
+        encoder,
+        ...(options.signal ? { signal: options.signal } : {}),
+      });
+      scaleTiming.finish();
       finalPath = tempFinal;
     }
 
@@ -2118,12 +2172,14 @@ export async function renderTimeline(options: TimelineRenderOptions): Promise<Ti
       timeline: options.timelineId,
       entry: timeline.entry,
       path: options.outPath,
-      width: timeline.format.width,
-      height: timeline.format.height,
+      width: output.width,
+      height: output.height,
+      frameRange: { start: startFrame, end: endFrame - 1 },
       fps: timeline.format.fps,
       durationInFrames: total,
       durationSeconds: total / timeline.format.fps,
       framesRendered: total,
+      scale,
       segments: plan.segments.length,
       workers,
       transitions: timeline.transitions.length,
@@ -2131,7 +2187,7 @@ export async function renderTimeline(options: TimelineRenderOptions): Promise<Ti
       container,
       encoder,
       bytes: (await stat(options.outPath)).size,
-      audio: { clips: audioInspection.clips.length },
+      audio: { clips: audioClips.length },
       transcripts: { clips: transcripts.clips.length },
       diagnostics: uniqueDiagnostics,
       elapsedMs: performance.now() - startedAt,

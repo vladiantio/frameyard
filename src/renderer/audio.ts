@@ -162,3 +162,51 @@ export async function inspectTimelineAudio(options: {
     warnings,
   };
 }
+
+/**
+ * Slices inspected audio assets into an output frame range, shifting starts and
+ * envelope windows so the mixed track begins at output frame zero.
+ */
+export function audioClipsForFrameRange(
+  assets: readonly AudioAsset[],
+  startFrame: number,
+  endFrame: number,
+  fps: number,
+): ResolvedAudioClip[] {
+  const rangeStart = startFrame / fps;
+  const rangeEnd = endFrame / fps;
+  const rangeFrames = endFrame - startFrame;
+  const clips: ResolvedAudioClip[] = [];
+
+  for (const asset of assets) {
+    const start = Math.max(asset.timelineStartSeconds, rangeStart);
+    const end = Math.min(asset.timelineEndSeconds, rangeEnd);
+    if (end <= start) {
+      continue;
+    }
+
+    const envelopes = asset.clip.envelopes
+      ?.map((envelope) => ({
+        ...envelope,
+        startFrame: envelope.startFrame - startFrame,
+        endFrame: envelope.endFrame - startFrame,
+      }))
+      .filter((envelope) => envelope.endFrame > 0 && envelope.startFrame < rangeFrames)
+      .map((envelope) => ({
+        ...envelope,
+        startFrame: Math.max(0, envelope.startFrame),
+        endFrame: Math.min(rangeFrames, envelope.endFrame),
+      }));
+
+    clips.push({
+      src: asset.clip.src,
+      startFrame: Math.max(0, Math.round((start - rangeStart) * fps)),
+      trimStart: Math.max(0, asset.clip.trimStart + (start - asset.timelineStartSeconds)),
+      trimDuration: end - start,
+      volume: asset.clip.volume,
+      ...(envelopes !== undefined && envelopes.length > 0 ? { envelopes } : {}),
+    });
+  }
+
+  return clips;
+}

@@ -242,6 +242,10 @@ _Avoid_: Timestamp, animation tick
 A named, deterministic entrance animation selected with `data-fy-anim-preset` and scheduled by start frame, duration, and easing. It is implemented as a Web Animation, not a separate animation engine.
 _Avoid_: Transition, effect, keyframe library
 
+**Render frame range**:
+An inclusive start and end frame selected for a render. Video requires a contiguous range; PNG sequences may use an arbitrary ordered list.
+_Avoid_: Trim range, time range
+
 **Active clip**:
 A clip whose timeline range contains the current timeline frame.
 _Avoid_: Visible clip

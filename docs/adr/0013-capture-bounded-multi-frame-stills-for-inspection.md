@@ -3,6 +3,10 @@
 **Status:** Accepted
 **Date:** 2026-11-01
 
+> **Amendment (2026-11-07):** `render --sequence` is now the production
+> image-sequence path. This ADR's cap and non-goal apply to `still`; `still`
+> remains a bounded inspection tool.
+
 `still` will accept a bounded set of frames in one invocation. `--frame` becomes a spec: a frame number (`42`), an inclusive range (`2-12`), or a comma-separated list (`0,118-126,240`). Ranges are only shorthand for lists. Duplicates are removed preserving the first occurrence, order is preserved, and a single invocation captures at most 32 unique frames. There is no step, start/end flag, fps flag, output pattern, or general image-sequence mode. With one frame, `--out` remains a `.png` file. With multiple frames, `--out` is a directory and the files are named `still-<id>-<frame>.png`; when `--out` is omitted the current working directory is used.
 
 The batch uses one preview server and one composition session with sequential seeks. Timeline stills resolve the timeline once, start one server, reuse one scratch directory, and call the existing frame composite path for each requested frame. All frames are validated against the target duration and all output paths are checked for conflicts before Chromium starts. Capture is all-or-nothing at the capture boundary: every frame is captured to a temporary file first, and only after all captures succeed are the files published. Publication is atomic per file. A disk or I/O failure during publication can leave a prefix of already-published files; strict batch atomicity is not promised.

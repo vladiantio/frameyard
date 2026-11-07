@@ -91,7 +91,7 @@ The repository ships runnable example projects. Each example README has the comm
 | `frameyard still <id> --frame <spec>` | Capture one or more PNGs through the production path for a composition or timeline; a static composition exposes frame 0 |
 | `frameyard inspect <image>` | Report dimensions, alpha, blank detection, colors, content bbox, luminance grid, and edge density |
 | `frameyard compare <first> <second>` | Compare decoded pixels and 3×3 regions; exits 1 when the images differ |
-| `frameyard render <id> [--out <video.mp4>]` | Render an animated composition directly, a static composition to PNG, or a timeline through the segmented lossless pipeline; defaults to `out/<id>.<ext>` |
+| `frameyard render <id> [--out <video.mp4>] [--frames <spec>] [--scale <factor>] [--sequence <dir>]` | Render an animated composition, a static composition to PNG, a timeline, or a PNG sequence; defaults to `out/<id>.<ext>` |
 | `frameyard tts ...` | Produce one frozen 24 kHz mono WAV with local qwentts.cpp or sherpa-onnx Supertonic 3 |
 | `frameyard transcribe ...` | Produce canonical transcript JSON with optional word timings and SRT/VTT exports |
 | `frameyard add --list` | List the built-in project templates, recipes, and scaffolds |
@@ -115,6 +115,8 @@ Common options: `--project <dir>`, `--json`, `--help`, and `--version`. `still` 
 `still --frame <spec>` accepts a frame, an inclusive range (`2-12`), or a comma list. Duplicates are removed, order is preserved, and one invocation captures at most 32 unique frames (1 in `light`, 4 in `authoring`). With one frame `--out` is a `.png`; with multiple it is a directory of `still-<id>-<frame>.png` files. A static composition exposes frame 0.
 
 `render` accepts `--concurrency <n>` (1-16) for compositions, `--workers <n>` (1-16) and `--scratch <dir>` for timelines, and `--container`, `--codec`, and `--encoder` (see [Containers, codecs, and encoders](#containers-codecs-and-encoders)). `--out` must match the container; the default is `out/<id>.<ext>`. A static composition writes `out/<id>.png` and rejects the video flags.
+
+`render --frames <spec>` limits the output to an inclusive frame range. The spec uses the same `n`, `n-m`, and comma-list syntax as `still`; video renders require a contiguous range, while `--sequence <dir>` accepts arbitrary lists and writes `sequence-<id>-<frame>.png` files instead of an encoded video. `--scale <factor>` (0.25-1) captures at the composition format and scales during encode; output dimensions are rounded down to even values for delivery codecs. A frame range trims and shifts the audio mix to the rendered range. A static composition rejects `--frames` and `--scale`.
 
 For a timeline, `--props` is keyed by composition clip id; for a composition, it is the props object. `init` takes the directory positionally, or prompts for a project name when no directory is given; `add --template <name>` selects a template, `add recipe <recipe-id> --id <project-id>` installs a bundle, and `add --list` lists both. `--out` paths are relative to the working directory. `tts`, `transcribe`, and `render` accept `--dry-run`, which prints the plan, handoff command, prerequisites, and blockers without writing, loading a model, launching Chromium, or encoding. `--profile shared-cpu` and `--low-priority` adjust caps and priority; see [Resource policy](#resource-policy).
 
@@ -520,7 +522,7 @@ Deliberate non-goals:
 - Arbitrary executable scripts in composition HTML
 - Automatic upstream builds, model downloads, environment repair, and hosted rendering
 - A shared font cache or hosted font catalog; Google Fonts, Fontshare, and Bunny Fonts are not first-class providers. Fontsource is the catalog, and local/HTTPS imports cover the rest.
-- Unbounded batch still capture and general image-sequence output; `still` accepts at most 32 inspection frames per invocation, and the active resource policy may cap it lower
+- Unbounded batch still capture; `still` accepts at most 32 inspection frames per invocation, and the active resource policy may cap it lower. Use `render --sequence` for a production PNG sequence.
 - Audio, transcripts, or embedded video in a static composition; use a timeline. A `--video` escape hatch is not provided; use a timeline image clip.
 - React or other UI-framework adapters, plugin APIs, and agent-only runtimes; TypeScript transpilation for project compositions and npm dependency optimization
 

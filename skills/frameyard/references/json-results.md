@@ -277,11 +277,13 @@ Animated composition and timeline results report `kind: "video"`:
   "path": "/absolute/path/out/hello.mp4",
   "width": 1920,
   "height": 1080,
+  "frameRange": { "start": 0, "end": 899 },
   "fps": 30,
   "durationInFrames": 900,
   "durationSeconds": 30,
   "framesRendered": 900,
   "concurrency": 1,
+  "scale": 1,
   "codec": "h264",
   "container": "mp4",
   "encoder": "libx264",
@@ -292,6 +294,8 @@ Animated composition and timeline results report `kind: "video"`:
   "elapsedMs": 99000
 }
 ```
+
+`--frames` sets `frameRange` to the inclusive rendered range and makes `durationInFrames`, `framesRendered`, and `durationSeconds` describe only that range. `--scale` sets `scale` and the actual even-sized `width`/`height`. A video `--frames` list must be contiguous; use `--sequence` for arbitrary lists.
 
 A static composition result reports `kind: "image"` and has no fps, duration, frame count, codec, container, encoder, audio, or transcript fields:
 
@@ -311,6 +315,28 @@ A static composition result reports `kind: "image"` and has no fps, duration, fr
   "elapsedMs": 700
 }
 ```
+
+A sequence result reports `kind: "sequence"` and the output directory:
+
+```json
+{
+  "ok": true,
+  "command": "render",
+  "kind": "sequence",
+  "composition": "hello",
+  "entry": "compositions/hello.html",
+  "frames": [{ "frame": 0, "path": "/absolute/path/out/frames/sequence-hello-0.png" }],
+  "width": 1920,
+  "height": 1080,
+  "path": "/absolute/path/out/frames",
+  "sequence": "/absolute/path/out/frames",
+  "scale": 1,
+  "diagnostics": [],
+  "elapsedMs": 900
+}
+```
+
+`--sequence` requires `--frames` and writes `sequence-<id>-<frame>.png`; it does not encode a video. Sequence output is full-size; `--scale` and video flags are rejected.
 
 A successful render means the final path exists and was published atomically. A nonzero exit means no new partial output was published. Without `--out`, the final path is `out/<composition-id>.<ext>` for video and `out/<composition-id>.png` for a static composition inside the project root. `concurrency` is the number of browser sessions actually used; it is capped by `durationInFrames` and by the CLI maximum of 16, and a static composition rejects it. `container` is `mp4`, `mov`, `mkv`, or `webm`; `codec` is `h264`, `hevc`, or `vp9`; and `encoder` is the resolved encoder (`libx264`, `libx265`, `libvpx-vp9`, `h264_nvenc`, `hevc_nvenc`, `h264_qsv`, or `hevc_qsv`). Timeline results also report the effective `workers` count after the encoder session cap, with an `ENCODER_WARNING` diagnostic when it was reduced.
 

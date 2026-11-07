@@ -434,6 +434,10 @@ _Avoid_: Visual review, AI vision
 A pixel and region diff between two decoded images. It reports differing pixels, channel deltas, a bounding box, and a 3×3 region breakdown.
 _Avoid_: Pixel hash, visual diff
 
+**Preview inspector**:
+A read-only panel in the composition or timeline preview that explains the selected element or clip, its bindings and resolved values, frame state, timing, and matching diagnostics. It never edits the source.
+_Avoid_: Editor, properties panel
+
 **Project template**:
 A known-good composition or timeline entry that `add` writes while printing the explicit `fy.config.js` registration snippet.
 _Avoid_: Generator, project scaffold

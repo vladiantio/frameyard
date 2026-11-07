@@ -1,3 +1,4 @@
+import { createInspector, type InspectorRow } from "./inspector.js";
 import { createTimelineHost, type TimelineHost } from "./timeline-host.js";
 import { keyframeChannelsAt, keyframeMarkerFrames } from "../timeline/keyframes.js";
 import { transitionGain } from "../timeline/transitions.js";
@@ -124,6 +125,10 @@ function renderTracks(data: TimelinePreviewData): void {
     for (const clip of clips) {
       const element = document.createElement("div");
       element.className = clipClass(clip);
+      element.dataset.clipId = clip.id;
+      element.tabIndex = 0;
+      element.setAttribute("role", "button");
+      element.setAttribute("aria-label", `Select clip ${clip.id}`);
       element.style.left = `${(clip.start / data.durationInFrames) * 100}%`;
       element.style.width = `${(clip.duration / data.durationInFrames) * 100}%`;
       const blend = clip.blend ?? "normal";
@@ -221,6 +226,8 @@ async function main(): Promise<void> {
   const volumeSlider = byId<HTMLInputElement>("volume");
   const rulerScale = byId<HTMLDivElement>("ruler-scale");
   const timelineInner = byId<HTMLDivElement>("timeline-inner");
+  const inspector = createInspector();
+  let selectedClip: TimelinePreviewClip | null = null;
 
   const audioEntries = data.audioClips.map((clip: TimelinePreviewAudioClip) => {
     const audio = new Audio(clip.url);
@@ -230,6 +237,28 @@ async function main(): Promise<void> {
   });
   renderTracks(data);
   renderRuler(rulerScale, data.durationInFrames);
+
+  const trackLane = byId<HTMLDivElement>("tracks");
+  const selectClipFromElement = (element: Element | null): void => {
+    const clipElement = element?.closest<HTMLElement>(".clip");
+    if (!clipElement) {
+      return;
+    }
+    const clip = data.clips.find((candidate) => candidate.id === clipElement.dataset.clipId);
+    if (clip) {
+      selectClip(clip);
+    }
+  };
+  trackLane.addEventListener("click", (event) => {
+    selectClipFromElement(event.target as Element | null);
+  });
+  trackLane.addEventListener("keydown", (event) => {
+    if ((event.key === "Enter" || event.key === " ") && event.target instanceof HTMLElement) {
+      event.preventDefault();
+      selectClipFromElement(event.target);
+    }
+  });
+
   const fps = data.format.fps;
   const framesPerSecond = Math.max(1, Math.round(fps));
   const duration = data.durationInFrames;
@@ -317,6 +346,7 @@ async function main(): Promise<void> {
     const fraction = duration <= 1 ? 0 : currentFrame / (duration - 1);
     scrubber.style.setProperty("--progress", `${fraction * 100}%`);
     timelineInner.style.setProperty("--playhead-factor", String(fraction));
+    refreshSelectedClip();
   };
 
   const renderFrame = async (target: number): Promise<void> => {
@@ -361,6 +391,63 @@ async function main(): Promise<void> {
     playButton.innerHTML = "&#9654;";
     updateAudio(false);
   };
+
+  const jsonValue = (value: unknown): string => (value === undefined ? "—" : JSON.stringify(value));
+
+  function showClipInspector(clip: TimelinePreviewClip): void {
+    const source = clip.source;
+    const sourceLabel = source.kind === "composition" || source.kind === "timeline" ? source.id : source.src;
+    const rows: InspectorRow[] = [
+      { label: "id", value: clip.id },
+      { label: "track", value: clip.track },
+      { label: "source", value: `${source.kind} · ${sourceLabel}` },
+      { label: "start", value: String(clip.start) },
+      { label: "duration", value: String(clip.duration) },
+      { label: "end", value: String(clip.end) },
+      { label: "sourceIn", value: String(clip.sourceIn) },
+      { label: "props", value: jsonValue(clip.props) },
+      { label: "transform", value: jsonValue(clip.transform) },
+      { label: "keyframes", value: jsonValue(clip.keyframes) },
+      { label: "blend", value: clip.blend ?? "normal" },
+      { label: "audio", value: jsonValue(clip.audio) },
+    ];
+    const diagnostics = data.diagnostics.filter(
+      (diagnostic) => diagnostic.details?.clip === clip.id || diagnostic.details?.value === clip.id,
+    );
+    inspector.show({
+      kind: "clip",
+      title: clip.id,
+      subtitle: `${source.kind} · ${clip.track}`,
+      sections: [{ title: "clip", rows }],
+      diagnostics,
+      actions: {
+        jumpStart: () => {
+          stopPlayback();
+          void renderFrame(clip.start);
+        },
+        jumpEnd: () => {
+          stopPlayback();
+          void renderFrame(Math.max(clip.start, clip.end - 1));
+        },
+        copyText: `npx frameyard still ${data.timeline} --frame ${currentFrame}`,
+        sourceHref: source.url,
+      },
+    });
+  }
+
+  function refreshSelectedClip(): void {
+    if (selectedClip !== null && inspector.isOpen()) {
+      showClipInspector(selectedClip);
+    }
+  }
+
+  function selectClip(clip: TimelinePreviewClip): void {
+    selectedClip = clip;
+    for (const element of document.querySelectorAll<HTMLElement>("#tracks .clip")) {
+      element.classList.toggle("selected", element.dataset.clipId === clip.id);
+    }
+    showClipInspector(clip);
+  }
 
   const loop = (): void => {
     if (!playing) {

@@ -103,6 +103,11 @@ const PAGE_CSS = `
     background: linear-gradient(180deg, rgba(168, 130, 200, 0.22), rgba(168, 130, 200, 0.07));
     border-color: rgba(168, 130, 200, 0.45); color: #e8d9f5;
   }
+  .clip.selected {
+    outline: 2px solid var(--accent); outline-offset: -2px;
+    box-shadow: 0 0 14px rgba(184, 243, 107, 0.5);
+  }
+  .clip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .keyframe-marker {
     position: absolute; top: 50%; width: 7px; height: 7px;
     background: var(--accent); border: 1px solid var(--ink); border-radius: 1px;

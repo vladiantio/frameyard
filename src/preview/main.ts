@@ -15,6 +15,7 @@ import {
   type FrameyardDiagnostic,
   type FrameyardErrorCode,
 } from "../errors.js";
+import { createInspector, type InspectorRow, type InspectorSection } from "./inspector.js";
 
 interface CompositionEntry {
   id: string;
@@ -97,6 +98,10 @@ let masterVolume = Number(volumeSlider.value) || 0.8;
 let muted = false;
 let lastError: string | null = null;
 let selectedEntry: string | null = null;
+let selectedElement: Element | null = null;
+let currentDiagnostics: readonly CompositionDiagnostic[] = [];
+const inspector = createInspector();
+const inspectedDocuments = new WeakSet<Document>();
 let loadQueue: Promise<unknown> = Promise.resolve();
 let loadSequence = 0;
 const entries = new Map<string, CompositionEntry>();
@@ -428,6 +433,9 @@ async function teardown(): Promise<void> {
   audioClips = [];
   embeddedAudioClips = [];
   currentFrame = 0;
+  selectedElement = null;
+  currentDiagnostics = [];
+  inspector.hide();
   diagnosticsBox.hidden = true;
   diagnosticsBox.replaceChildren();
   updateMeta();
@@ -493,6 +501,7 @@ async function loadHtmlNow(composition: CompositionEntry, propOverrides?: unknow
   await host.load({ props: clonePropsForHost(propOverrides) });
   hostFrame = host;
   stageFrame.contentDocument?.addEventListener("fy-diagnostic", () => refreshDiagnostics());
+  attachStageInspector();
 
   const loaded = readHostState(host);
   applyLoadedHostState(composition, loaded);
@@ -607,8 +616,163 @@ function refreshDiagnostics(runtimeDiagnostics?: readonly CompositionDiagnostic[
     ? [...entries.values()].find((candidate) => candidate.entry === selectedEntry)
     : undefined;
   const all = mergeDiagnostics(composition?.diagnostics ?? [], runtimeDiagnostics ?? hostFrame?.diagnostics ?? []);
+  currentDiagnostics = all;
   diagnosticsBox.hidden = all.length === 0;
   diagnosticsBox.replaceChildren(...all.map(renderDiagnostic));
+  refreshSelectedInspector();
+}
+
+function resolvePropPath(props: Readonly<Props> | undefined, path: string): unknown {
+  let current: unknown = props;
+  for (const key of path.split(".")) {
+    if (current === null || typeof current !== "object" || !Object.hasOwn(current, key)) {
+      return undefined;
+    }
+    current = (current as Record<string, unknown>)[key];
+  }
+  return current;
+}
+
+function formatInspectorValue(value: unknown): string {
+  if (value === undefined) {
+    return "—";
+  }
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function diagnosticsForElement(target: Element): CompositionDiagnostic[] {
+  const tag = target.tagName.toLowerCase();
+  const attributes = new Set([...target.attributes].map((attribute) => attribute.name));
+  const values = new Set([...target.attributes].map((attribute) => attribute.value));
+  return currentDiagnostics.filter((diagnostic) => {
+    const details = diagnostic.details;
+    if (!details) {
+      return false;
+    }
+    if (details.element === tag && (details.attribute === undefined || attributes.has(details.attribute))) {
+      return true;
+    }
+    if (details.attribute !== undefined && attributes.has(details.attribute)) {
+      return true;
+    }
+    return details.value !== undefined && values.has(details.value);
+  });
+}
+
+function frameStateRows(): InspectorRow[] {
+  const documentRoot = stageFrame.contentDocument?.documentElement;
+  if (!documentRoot) {
+    return [];
+  }
+  const style = stageFrame.contentWindow?.getComputedStyle(documentRoot);
+  if (!style) {
+    return [];
+  }
+  return ["--fy-frame", "--fy-time", "--fy-progress", "--fy-fps", "--fy-duration", "--fy-duration-frames"].map(
+    (name) => ({ label: name, value: style.getPropertyValue(name).trim() || "—" }),
+  );
+}
+
+function showElementInspector(target: Element): void {
+  selectedElement = target;
+  const composition = selectedEntry
+    ? [...entries.values()].find((candidate) => candidate.entry === selectedEntry)
+    : undefined;
+  const tag = target.tagName.toLowerCase();
+  const id = target.id.length > 0 ? `#${target.id}` : "";
+  const classes = [...target.classList].map((name) => `.${name}`).join("");
+  const elementRows: InspectorRow[] = [
+    { label: "tag", value: tag },
+    { label: "id", value: target.id || "—" },
+    { label: "classes", value: classes || "—" },
+    { label: "frame", value: String(currentFrame) },
+    {
+      label: "time",
+      value: metadata && metadata.static !== true ? `${(currentFrame / metadata.fps).toFixed(3)}s` : "—",
+    },
+  ];
+  const bindingRows: InspectorRow[] = [...target.attributes]
+    .filter((attribute) => attribute.name.startsWith("data-fy-"))
+    .map((attribute) => ({
+      label: attribute.name,
+      value: `${attribute.value} → ${formatInspectorValue(resolvePropPath(hostFrame?.props, attribute.value))}`,
+    }));
+  const sections: InspectorSection[] = [
+    { title: "element", rows: elementRows },
+    ...(bindingRows.length > 0 ? [{ title: "bindings", rows: bindingRows }] : []),
+    { title: "frame state", rows: frameStateRows() },
+  ];
+  const frameCount = metadata && metadata.static !== true ? metadata.durationInFrames : 1;
+  const copyText =
+    composition === undefined ? undefined : `npx frameyard still ${composition.id} --frame ${currentFrame}`;
+
+  inspector.show({
+    kind: "element",
+    title: `<${tag}>`,
+    ...(id.length > 0 || classes.length > 0 ? { subtitle: `${id}${classes}` } : {}),
+    sections,
+    diagnostics: diagnosticsForElement(target),
+    actions: {
+      jumpStart: () => {
+        try {
+          renderFrame(0);
+        } catch (error) {
+          showError(error);
+        }
+      },
+      jumpEnd: () => {
+        try {
+          renderFrame(Math.max(0, frameCount - 1));
+        } catch (error) {
+          showError(error);
+        }
+      },
+      ...(copyText !== undefined ? { copyText } : {}),
+      ...(composition !== undefined ? { sourceHref: `/${composition.entry}` } : {}),
+    },
+  });
+}
+
+function refreshSelectedInspector(): void {
+  if (!inspector.isOpen() || selectedElement === null) {
+    return;
+  }
+  if (!selectedElement.isConnected) {
+    selectedElement = null;
+    inspector.hide();
+    return;
+  }
+  showElementInspector(selectedElement);
+}
+
+function attachStageInspector(): void {
+  const frameDocument = stageFrame.contentDocument;
+  if (!frameDocument || inspectedDocuments.has(frameDocument)) {
+    return;
+  }
+  inspectedDocuments.add(frameDocument);
+  frameDocument.addEventListener(
+    "click",
+    (event) => {
+      const target = event.target;
+      if (!target || typeof (target as Element).tagName !== "string") {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      showElementInspector(target as Element);
+    },
+    true,
+  );
+  frameDocument.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      inspector.hide();
+    }
+  });
 }
 
 function renderDiagnostic(diagnostic: CompositionDiagnostic): HTMLElement {
@@ -779,6 +943,7 @@ async function initPreview(): Promise<void> {
   // The stage is a separate document; keydown there does not reach this window.
   stageFrame.addEventListener("load", () => {
     stageFrame.contentDocument?.addEventListener("keydown", handleTransportKey);
+    attachStageInspector();
   });
   window.addEventListener("keydown", handleTransportKey);
   scrubber.addEventListener("input", () => {

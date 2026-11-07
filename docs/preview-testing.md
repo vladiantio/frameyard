@@ -48,6 +48,24 @@ expose the same seek/settle contract the renderer uses.
   `/__frameyard/framework/preview/fonts/` and does not link the project font
   sheet. The embedded host page has none of this chrome.
 
+## Inspector
+
+Both non-embedded preview pages create a read-only inspector as
+`<aside id="inspector">` when `src/preview/inspector.ts` runs.
+
+- Composition: clicking an element selects it. Rows show tag, id, classes,
+  current frame, frame-state variables, and every `data-fy-*` binding with its
+  resolved prop value. Diagnostics that reference the element are listed.
+- Timeline: each clip is a `.clip[data-clip-id]` with `tabindex="0"` and
+  `role="button"`. Selecting it shows source kind/id/path, track, start,
+  duration, end, `sourceIn`, props, transform, keyframes, blend, and audio.
+- Actions use `#inspector-jump-start`, `#inspector-jump-end`,
+  `#inspector-copy`, and `#inspector-open`. The copy button exposes the exact
+  command in `data-copy-text` for tests. Escape or `#inspector-close` closes
+  the panel.
+- The panel only reads preview state. It must not mutate the composition,
+  timeline, or host props.
+
 ## Waiting for a frame
 
 - `settle()` waits for video presentation through `requestVideoFrameCallback`

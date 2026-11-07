@@ -94,6 +94,7 @@ const htmlComposition = `<script type="application/json" data-fy="props">{ "titl
     <fy-composition width="200" height="100" fps="10" duration-in-frames="20">
       <div id="box" data-fy-anim-start="0" data-fy-anim-duration="20"></div>
       <div id="title" data-fy-text="title"></div>
+      <div id="missing" data-fy-text="missing" style="width: 1px; height: 1px"></div>
       <div id="warning" data-fy-anim-start="0"></div>
     </fy-composition>
     <script type="text/fy-controller">
@@ -611,6 +612,44 @@ describe("browser preview runtime", () => {
     expect(await frame.locator("#title").textContent()).toBe("Preview");
 
     expect(pageErrors).toEqual([]);
+    await context.close();
+  });
+
+  it("inspects bound elements, jumps, copies a still command, and closes with Escape", async () => {
+    const context = await browser.newContext({ viewport: { width: 1100, height: 760 } });
+    const page = await context.newPage();
+    await page.goto(new URL("/__frameyard/?composition=html", server.url).href);
+    await page.waitForFunction(() => {
+      const element = document.querySelector("#stage-frame") as HTMLIFrameElement | null;
+      return element?.contentDocument?.querySelector("#box")?.getAttribute("data-frame") === "0";
+    });
+
+    const frame = page.frameLocator("#stage-frame");
+    await frame.locator("#title").click();
+    await page.waitForFunction(() => !(document.querySelector("#inspector") as HTMLElement | null)?.hidden);
+    expect(await page.locator("#inspector-title").textContent()).toBe("<div>");
+    expect(await page.locator('#inspector-content [data-label="tag"] .inspector-value').textContent()).toBe("div");
+    expect(
+      await page.locator('#inspector-content [data-label="data-fy-text"] .inspector-value').textContent(),
+    ).toContain('"HTML"');
+    expect(await page.locator("#inspector-open").getAttribute("href")).toContain("/compositions/html.html");
+
+    await frame.locator("#missing").click();
+    await page.waitForFunction(() =>
+      document.querySelector("#inspector-diagnostics")?.textContent?.includes("BINDING_PATH_MISSING"),
+    );
+
+    await page.locator("#inspector-jump-end").click();
+    await page.waitForFunction(() => document.querySelector("#frame")?.textContent === "19");
+    await page.locator("#inspector-copy").click();
+    expect(await page.locator("#inspector-copy").getAttribute("data-copy-text")).toBe(
+      "npx frameyard still html --frame 19",
+    );
+
+    await page.locator("#inspector-jump-start").click();
+    await page.waitForFunction(() => document.querySelector("#frame")?.textContent === "0");
+    await page.keyboard.press("Escape");
+    expect(await page.locator("#inspector").getAttribute("hidden")).not.toBeNull();
     await context.close();
   });
 

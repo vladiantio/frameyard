@@ -797,6 +797,56 @@ describe("timeline preview runtime", () => {
     }
   }, 60_000);
 
+  it("inspects a clip, jumps to its bounds, copies a still command, and closes with Escape", async () => {
+    const page = await browser.newPage({ viewport: { width: 1100, height: 780 } });
+    try {
+      await page.goto(new URL("/__frameyard/timeline/main", server.url).href, {
+        waitUntil: "domcontentloaded",
+      });
+      await page.waitForFunction(() => document.querySelectorAll(".timeline-layer iframe").length === 1);
+      await waitForFrame(page, 0);
+
+      await page.locator("#scrub").evaluate((element) => {
+        const input = element as HTMLInputElement;
+        input.value = "5";
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+      await waitForFrame(page, 5);
+
+      await page.locator('.clip[data-clip-id="intro"]').click();
+      await page.waitForFunction(() => !(document.querySelector("#inspector") as HTMLElement | null)?.hidden);
+      expect(await page.locator("#inspector-title").textContent()).toBe("intro");
+      expect(await page.locator('#inspector-content [data-label="track"] .inspector-value').textContent()).toBe("v1");
+      expect(await page.locator('#inspector-content [data-label="source"] .inspector-value').textContent()).toBe(
+        "composition · intro",
+      );
+      expect(await page.locator('#inspector-content [data-label="start"] .inspector-value').textContent()).toBe("0");
+      expect(await page.locator('#inspector-content [data-label="duration"] .inspector-value').textContent()).toBe(
+        "10",
+      );
+      expect(await page.locator('#inspector-content [data-label="end"] .inspector-value').textContent()).toBe("10");
+      expect(await page.locator('#inspector-content [data-label="sourceIn"] .inspector-value').textContent()).toBe("0");
+      expect(await page.locator("#inspector-open").getAttribute("href")).toContain("compositions/intro.html");
+
+      await page.locator("#inspector-jump-start").click();
+      await waitForFrame(page, 0);
+      expect(await page.locator("#frame").textContent()).toBe("0");
+
+      await page.locator("#inspector-jump-end").click();
+      await waitForFrame(page, 9);
+      expect(await page.locator("#frame").textContent()).toBe("9");
+      await page.locator("#inspector-copy").click();
+      expect(await page.locator("#inspector-copy").getAttribute("data-copy-text")).toBe(
+        "npx frameyard still main --frame 9",
+      );
+
+      await page.keyboard.press("Escape");
+      expect(await page.locator("#inspector").getAttribute("hidden")).not.toBeNull();
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+
   it("draws a frame ruler and one continuous playhead across the tracks", async () => {
     const page = await browser.newPage({ viewport: { width: 1000, height: 700 } });
     try {

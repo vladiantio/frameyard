@@ -48,6 +48,10 @@ contract change may ship in a minor release and is called out explicitly below.
   atomically, and records `src`, `sha256`, `bytes`, `source`, and `fetchedAt` in
   the `assets` array of `fy.assets.json`. Loopback HTTP is allowed for tests;
   `doctor` verifies downloaded asset files and hashes.
+- Preview composition elements and timeline clips open a read-only inspector
+  with bindings and resolved values, frame state, clip timing and presentation
+  fields, matching diagnostics, jump-to-start/end, a copyable `still` command,
+  and a source link. Escape closes the panel.
 
 ## [0.10.0] - 2026-11-07
 

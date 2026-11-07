@@ -68,6 +68,10 @@ contract change may ship in a minor release and is called out explicitly below.
   the mapped clip window is longer than the source file. An embedded `<audio>`
   without `data-fy-duration` now stops at the end of the source instead of
   looping for the rest of the composition clip.
+- Timeline inspection no longer reports an overrun when a composition's
+  natural-duration audio ends before its mapped clip window. The clip is still
+  mixed and padded with silence, while explicit trim ranges beyond the source
+  keep warning.
 
 ## [0.9.0] - 2026-11-06
 

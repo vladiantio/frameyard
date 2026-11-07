@@ -362,7 +362,7 @@ function mapCompositionAudio(
   audio: ResolvedAudioClip,
   fps: number,
   window: AudioWindow,
-): ResolvedAudioClip | null {
+): InspectAudioClip | null {
   if (window.muted) {
     return null;
   }
@@ -400,6 +400,9 @@ function mapCompositionAudio(
     trimDuration: duration,
     volume: clampVolume(audio.volume * window.gain),
     ...(window.envelopes.length > 0 ? { envelopes: window.envelopes } : {}),
+    // Without an explicit duration the source ends naturally; any remaining
+    // mapped window is silence, not an overrun.
+    ...(audio.trimDuration === undefined ? { allowShortSource: true } : {}),
   };
 }
 
@@ -526,7 +529,7 @@ export function resolveTimelineAudio(timeline: ResolvedTimeline): {
   const { clips, transcripts } = buildAudioClips(timeline);
   return {
     clips: clips.map((clip) => {
-      const { allowSilent: _allowSilent, ...resolved } = clip;
+      const { allowSilent: _allowSilent, allowShortSource: _allowShortSource, ...resolved } = clip;
       return resolved;
     }),
     transcripts,

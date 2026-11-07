@@ -13,7 +13,15 @@ export interface AudioAsset {
 }
 
 /** A timeline clip that may legitimately have no audio stream, such as an embedded video. */
-export type InspectAudioClip = ResolvedAudioClip & { allowSilent?: boolean };
+export type InspectAudioClip = ResolvedAudioClip & {
+  allowSilent?: boolean;
+  /**
+   * The source may end before the mapped timeline window. Composition audio
+   * without an explicit duration plays to its natural end, so the remaining
+   * silence is expected rather than an overrun.
+   */
+  allowShortSource?: boolean;
+};
 
 export interface AudioInspection {
   assets: AudioAsset[];
@@ -100,7 +108,11 @@ export async function inspectTimelineAudio(options: {
         `Audio clip ${clipIndex + 1} (${clip.src}) trimStart ${clip.trimStart}s is at or beyond the source duration ${sourceDurationSeconds.toFixed(2)}s.`,
       );
     }
-    if (clip.trimDuration !== undefined && clip.trimStart + clip.trimDuration > sourceDurationSeconds + 0.001) {
+    if (
+      clip.allowShortSource !== true &&
+      clip.trimDuration !== undefined &&
+      clip.trimStart + clip.trimDuration > sourceDurationSeconds + 0.001
+    ) {
       warnings.push(
         `Audio clip ${clipIndex + 1} (${clip.src}) trim range ends at ${(clip.trimStart + clip.trimDuration).toFixed(2)}s, beyond the source duration ${sourceDurationSeconds.toFixed(2)}s.`,
       );

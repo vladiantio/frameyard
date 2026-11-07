@@ -1109,6 +1109,56 @@ describe.concurrent("timeline rendering media and alpha", () => {
     expect(streams.find((stream) => stream.codec_type === "audio")).toBeDefined();
   }, 120_000);
 
+  it("does not warn when natural composition audio ends before its clip window", async () => {
+    const root = await customRoot();
+    await copyFile(
+      path.join(repoRoot, "examples", "demo", "assets", "chime.wav"),
+      path.join(root, "assets", "chime.wav"),
+    );
+    await writeFile(
+      path.join(root, "compositions", "intro.html"),
+      `<style>html, body { margin: 0; width: 100%; height: 100%; background: #202830; }</style>
+    <fy-composition width="320" height="180" fps="10" duration-in-frames="30">
+      <audio src="assets/chime.wav" data-fy-start="0"></audio>
+    </fy-composition>
+`,
+    );
+    await writeFile(
+      path.join(root, "timelines", "main.json"),
+      `${JSON.stringify(
+        {
+          version: 1,
+          tracks: [{ id: "v1", kind: "video" }],
+          clips: [
+            {
+              id: "intro",
+              track: "v1",
+              source: { kind: "composition", id: "intro" },
+              start: 0,
+              duration: 30,
+            },
+          ],
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    await writeFile(
+      path.join(root, "fy.config.js"),
+      `export default {
+        format: { width: 320, height: 180, fps: 10 },
+        compositions: { intro: "./compositions/intro.html" },
+        timelines: { main: "./timelines/main.json" },
+      };\n`,
+    );
+    const project = await loadProject(root);
+
+    const result = await checkTimeline({ project, timelineId: "main" });
+
+    expect(result.audio.clips).toBe(1);
+    expect(result.diagnostics.filter((diagnostic) => diagnostic.code === "AUDIO_WARNING")).toEqual([]);
+  }, 120_000);
+
   it("preserves composition alpha when compositing overlay tracks", async () => {
     const root = await customRoot();
     await copyFile(

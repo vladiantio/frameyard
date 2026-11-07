@@ -10,6 +10,8 @@ contract change may ship in a minor release and is called out explicitly below.
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-11-07
+
 ### Added
 
 - `FRAMEYARD_TIMINGS=1` emits one JSON line per render stage to stderr without
@@ -72,6 +74,8 @@ contract change may ship in a minor release and is called out explicitly below.
   natural-duration audio ends before its mapped clip window. The clip is still
   mixed and padded with silence, while explicit trim ranges beyond the source
   keep warning.
+
+[0.10.0]: https://github.com/vladiantio/frameyard/compare/v0.9.0...v0.10.0
 
 ## [0.9.0] - 2026-11-06
 

@@ -61,6 +61,27 @@ describe("bundled recipes", () => {
     expect(listing.recipes?.map((recipe) => recipe.id)).toEqual(recipeIds);
   });
 
+  it.concurrent.each(RECIPES)("lints and checks the $id recipe", async (recipe) => {
+    const lint = await runCli(["lint", recipe.id, "--project", root, "--json"], root);
+    expect(lint.code, lint.stderr).toBe(0);
+    expect(JSON.parse(lint.stdout)).toMatchObject({ ok: true, command: "lint" });
+
+    const check = await runCli(["check", recipe.id, "--project", root, "--json"], root);
+    expect(check.code, check.stderr).toBe(0);
+    expect(JSON.parse(check.stdout)).toMatchObject({ ok: true, command: "check", composition: recipe.id });
+  });
+
+  it.concurrent.each(timelineRecipes)("lints and checks the $id timeline", async (recipe) => {
+    const timelineId = `${recipe.id}-timeline`;
+    const lint = await runCli(["lint", timelineId, "--project", root, "--json"], root);
+    expect(lint.code, lint.stderr).toBe(0);
+    expect(JSON.parse(lint.stdout)).toMatchObject({ ok: true, command: "lint", timeline: timelineId });
+
+    const check = await runCli(["check", timelineId, "--project", root, "--json"], root);
+    expect(check.code, check.stderr).toBe(0);
+    expect(JSON.parse(check.stdout)).toMatchObject({ ok: true, command: "check", timeline: timelineId });
+  });
+
   it.concurrent.each(RECIPES)("captures a non-blank still from the $id recipe", async (recipe) => {
     const out = path.join(outDir, `${recipe.id}.png`);
     const result = await runCli(["still", recipe.id, "--frame", "30", "--project", root, "--out", out, "--json"], root);

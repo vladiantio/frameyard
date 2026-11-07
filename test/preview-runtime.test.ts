@@ -464,6 +464,11 @@ describe("browser preview runtime", () => {
       return stage?.contentDocument?.querySelector("#box")?.getAttribute("data-frame") === "10";
     });
     expect(await page.locator("#frame").textContent()).toBe("10");
+    expect(
+      await page
+        .locator("#scrub")
+        .evaluate((element) => Number.parseFloat((element as HTMLInputElement).style.getPropertyValue("--progress"))),
+    ).toBeCloseTo((10 / 19) * 100, 1);
 
     await page.keyboard.press("Shift+ArrowLeft");
     await page.waitForFunction(() => {

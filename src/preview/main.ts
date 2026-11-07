@@ -138,13 +138,16 @@ function updateTransport(): void {
     clockLabel.textContent = "0.00s";
     scrubber.max = "0";
     scrubber.value = "0";
+    scrubber.style.setProperty("--progress", "0%");
     return;
   }
+  const lastFrame = Math.max(0, metadata.durationInFrames - 1);
   frameLabel.textContent = String(currentFrame);
-  durationLabel.textContent = String(metadata.durationInFrames - 1);
+  durationLabel.textContent = String(lastFrame);
   clockLabel.textContent = `${(currentFrame / metadata.fps).toFixed(2)}s`;
-  scrubber.max = String(metadata.durationInFrames - 1);
+  scrubber.max = String(lastFrame);
   scrubber.value = String(currentFrame);
+  scrubber.style.setProperty("--progress", `${lastFrame > 0 ? (currentFrame / lastFrame) * 100 : 0}%`);
 }
 
 function setTransportEnabled(enabled: boolean): void {

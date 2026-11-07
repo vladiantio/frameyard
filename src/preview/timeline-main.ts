@@ -81,6 +81,17 @@ function renderDiagnostics(data: TimelinePreviewData): void {
   );
 }
 
+function renderRuler(scale: HTMLElement, duration: number): void {
+  scale.replaceChildren();
+  for (const fraction of [0, 0.25, 0.5, 0.75, 1]) {
+    const tick = document.createElement("span");
+    tick.className = "ruler-tick";
+    tick.style.left = `${fraction * 100}%`;
+    tick.textContent = String(Math.round((duration - 1) * fraction));
+    scale.append(tick);
+  }
+}
+
 function clipClass(clip: TimelinePreviewClip): string {
   if (clip.source.kind === "composition") {
     return "clip composition";
@@ -94,11 +105,9 @@ function clipClass(clip: TimelinePreviewClip): string {
   return "clip";
 }
 
-function renderTracks(data: TimelinePreviewData): { playheads: HTMLDivElement[]; labels: Map<string, string> } {
+function renderTracks(data: TimelinePreviewData): void {
   const container = byId<HTMLDivElement>("tracks");
   container.replaceChildren();
-  const playheads: HTMLDivElement[] = [];
-  const labels = new Map<string, string>();
 
   for (const track of data.tracks) {
     const row = document.createElement("div");
@@ -110,7 +119,6 @@ function renderTracks(data: TimelinePreviewData): { playheads: HTMLDivElement[];
     label.title = `${track.kind} ${track.id}`;
     const lane = document.createElement("div");
     lane.className = "lane";
-    labels.set(track.id, name);
 
     const clips = data.clips.filter((clip) => clip.track === track.id).sort((left, right) => left.start - right.start);
     for (const clip of clips) {
@@ -149,23 +157,9 @@ function renderTracks(data: TimelinePreviewData): { playheads: HTMLDivElement[];
       lane.append(band);
     }
 
-    const playhead = document.createElement("div");
-    playhead.style.position = "absolute";
-    playhead.style.top = "0";
-    playhead.style.bottom = "0";
-    playhead.style.width = "1px";
-    playhead.style.background = "#b8f36b";
-    playhead.style.boxShadow = "0 0 10px rgba(184,243,107,.7)";
-    playhead.style.pointerEvents = "none";
-    playhead.style.left = "0%";
-    lane.append(playhead);
-    playheads.push(playhead);
-
     row.append(label, lane);
     container.append(row);
   }
-
-  return { playheads, labels };
 }
 
 function fitStage(
@@ -225,6 +219,8 @@ async function main(): Promise<void> {
   const clockLabel = byId<HTMLElement>("clock");
   const muteCheckbox = byId<HTMLInputElement>("mute");
   const volumeSlider = byId<HTMLInputElement>("volume");
+  const rulerScale = byId<HTMLDivElement>("ruler-scale");
+  const timelineInner = byId<HTMLDivElement>("timeline-inner");
 
   const audioEntries = data.audioClips.map((clip: TimelinePreviewAudioClip) => {
     const audio = new Audio(clip.url);
@@ -232,7 +228,8 @@ async function main(): Promise<void> {
     audio.volume = clip.volume;
     return { clip, audio };
   });
-  const { playheads } = renderTracks(data);
+  renderTracks(data);
+  renderRuler(rulerScale, data.durationInFrames);
   const fps = data.format.fps;
   const framesPerSecond = Math.max(1, Math.round(fps));
   const duration = data.durationInFrames;
@@ -295,10 +292,9 @@ async function main(): Promise<void> {
     frameLabel.textContent = String(currentFrame);
     scrubber.value = String(currentFrame);
     clockLabel.textContent = `${(currentFrame / fps).toFixed(2)}s`;
-    const percent = duration <= 1 ? 0 : (currentFrame / (duration - 1)) * 100;
-    for (const playhead of playheads) {
-      playhead.style.left = `${percent}%`;
-    }
+    const fraction = duration <= 1 ? 0 : currentFrame / (duration - 1);
+    scrubber.style.setProperty("--progress", `${fraction * 100}%`);
+    timelineInner.style.setProperty("--playhead-factor", String(fraction));
   };
 
   const renderFrame = async (target: number): Promise<void> => {

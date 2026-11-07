@@ -53,7 +53,7 @@
     "node": ">=22.12"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && node scripts/copy-preview-fonts.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "typecheck:test": "tsc -p tsconfig.test.json",
     "typecheck:browser": "tsc -p tsconfig.browser.json",

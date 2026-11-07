@@ -39,6 +39,14 @@ expose the same seek/settle contract the renderer uses.
   `opacity` is `clipOpacity × eased progress` and it stacks above the outgoing
   layer on the same track. The strip draws a `.transition` band with a
   `from → to` tooltip; it is read-only.
+- The strip opens with a `.ruler-scale` carrying five `.ruler-tick` labels at
+  0/25/50/75/100% of the frame range. One `.playhead` line spans the ruler and
+  every track, driven by a `--playhead-factor` custom property on
+  `#timeline-inner`; `--progress` on `#scrub` fills the transport rail.
+- Both preview pages share the chrome in `src/server/preview-style.ts` and its
+  design tokens. The chrome serves its own Figtree and Space Mono from
+  `/__frameyard/framework/preview/fonts/` and does not link the project font
+  sheet. The embedded host page has none of this chrome.
 
 ## Waiting for a frame
 

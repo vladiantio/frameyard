@@ -1,3 +1,5 @@
+import { PREVIEW_CSS } from "./preview-style.js";
+
 const IMPORT_MAP = JSON.stringify(
   {
     imports: {
@@ -9,6 +11,63 @@ const IMPORT_MAP = JSON.stringify(
   2,
 );
 
+const PAGE_CSS = `
+  #app {
+    display: grid;
+    grid-template-columns: 320px minmax(0, 1fr);
+    grid-template-rows: 54px minmax(0, 1fr) 58px;
+    height: 100vh;
+  }
+  .topbar { grid-column: 1 / -1; }
+  .panel {
+    grid-row: 2 / 4;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 18px;
+    border-right: 1px solid var(--line);
+    background: var(--panel);
+    min-height: 0;
+  }
+  .panel-head { display: flex; align-items: center; justify-content: space-between; }
+  .panel-head .eyebrow { color: var(--muted-strong); }
+  .panel-index {
+    font-family: var(--mono); font-size: 9px; color: var(--muted);
+    letter-spacing: 0.14em; text-transform: uppercase;
+  }
+  .field { display: flex; flex-direction: column; gap: 8px; min-height: 0; flex: 1; }
+  .field-head { display: flex; align-items: center; justify-content: space-between; }
+  .field-head label { font-size: 10px; color: var(--muted); }
+  .stage-frame {
+    position: absolute; top: 0; left: 0; border: 0;
+    transform-origin: top left; background: #000; color-scheme: light;
+  }
+  .viewport { grid-row: 2; grid-column: 2; }
+  .transport { grid-row: 3; grid-column: 2; }
+
+  @media (max-width: 760px) {
+    #app {
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: auto minmax(0, 1fr) auto minmax(0, 38vh);
+    }
+    .topbar { flex-wrap: wrap; gap: 8px 14px; padding: 9px 14px; }
+    .transport { flex-wrap: wrap; padding: 9px 14px; }
+    .topbar-rule { display: none; }
+    select { min-width: 120px; max-width: 100%; }
+    .panel {
+      grid-row: 4; grid-column: 1;
+      border-right: 0; border-top: 1px solid var(--line);
+      overflow: auto;
+    }
+    .panel > * { flex-shrink: 0; }
+    .field { flex: 0 0 auto; }
+    textarea { flex: 0 0 auto; height: 120px; min-height: 0; }
+    .viewport { grid-row: 2; grid-column: 1; }
+    .transport { grid-row: 3; grid-column: 1; }
+    .meta { display: none; }
+  }
+`;
+
 export function renderPreviewHtml(): string {
   return `<!doctype html>
 <html lang="en">
@@ -18,211 +77,39 @@ export function renderPreviewHtml(): string {
 <title>Frameyard Preview</title>
 <script type="importmap">${IMPORT_MAP}</script>
 <style>
-  :root {
-    color-scheme: dark;
-    --bg: #0b0d10;
-    --panel: #11151a;
-    --panel-2: #171c23;
-    --line: #252c35;
-    --text: #e8edf3;
-    --muted: #8a97a6;
-    --accent: #b8f36b;
-    --accent-ink: #101408;
-    --danger: #ff8a8a;
-    --mono: "SFMono-Regular", ui-monospace, "Cascadia Code", "Liberation Mono", monospace;
-    --sans: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  }
-  * { box-sizing: border-box; }
-  html, body { height: 100%; }
-  body {
-    margin: 0;
-    background: var(--bg);
-    color: var(--text);
-    font-family: var(--sans);
-    font-size: 13px;
-    overflow: hidden;
-  }
-  #app {
-    display: grid;
-    grid-template-columns: 340px minmax(0, 1fr);
-    grid-template-rows: 54px minmax(0, 1fr) 58px;
-    height: 100vh;
-  }
-  .topbar {
-    grid-column: 1 / -1;
-    display: flex;
-    align-items: center;
-    gap: 22px;
-    padding: 0 18px;
-    border-bottom: 1px solid var(--line);
-    background: linear-gradient(180deg, #11151a, #0d1014);
-  }
-  .brand { display: flex; align-items: center; gap: 9px; font-weight: 650; letter-spacing: -0.01em; }
-  .mark {
-    width: 17px; height: 17px; border-radius: 4px;
-    background: linear-gradient(135deg, var(--accent), #5fd6ff);
-    box-shadow: 0 0 18px rgba(184, 243, 107, 0.3);
-  }
-  .tag { color: var(--muted); font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; }
-  .comp { display: flex; align-items: center; gap: 8px; color: var(--muted); }
-  select, textarea, input { font: inherit; }
-  select {
-    background: var(--panel-2);
-    color: var(--text);
-    border: 1px solid var(--line);
-    border-radius: 6px;
-    padding: 6px 9px;
-    min-width: 160px;
-  }
-  .meta { margin-left: auto; color: var(--muted); font-family: var(--mono); font-size: 11px; }
-  .panel {
-    grid-row: 2 / 4;
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    padding: 16px;
-    border-right: 1px solid var(--line);
-    background: var(--panel);
-    min-height: 0;
-  }
-  .field { display: flex; flex-direction: column; gap: 7px; min-height: 0; flex: 1; }
-  .field-head { display: flex; align-items: center; justify-content: space-between; color: var(--muted); }
-  .field-head label { font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; }
-  textarea {
-    flex: 1;
-    min-height: 160px;
-    resize: none;
-    background: var(--bg);
-    color: var(--text);
-    border: 1px solid var(--line);
-    border-radius: 7px;
-    padding: 11px;
-    font-family: var(--mono);
-    font-size: 12px;
-    line-height: 1.55;
-    tab-size: 2;
-  }
-  textarea:focus, select:focus, input:focus-visible, button:focus-visible {
-    outline: 2px solid color-mix(in srgb, var(--accent) 65%, transparent);
-    outline-offset: 1px;
-  }
-  button {
-    border: 1px solid var(--line);
-    background: var(--panel-2);
-    color: var(--text);
-    border-radius: 6px;
-    padding: 8px 12px;
-    cursor: pointer;
-  }
-  button:hover { border-color: #3a4654; }
-  button:disabled { opacity: 0.45; cursor: default; }
-  .primary {
-    background: var(--accent);
-    border-color: var(--accent);
-    color: var(--accent-ink);
-    font-weight: 700;
-  }
-  .ghost { background: transparent; border-color: transparent; color: var(--muted); }
-  .ghost:hover { color: var(--text); border-color: var(--line); }
-  .small { padding: 3px 7px; font-size: 11px; }
-  .error {
-    border: 1px solid color-mix(in srgb, var(--danger) 42%, var(--line));
-    background: color-mix(in srgb, var(--danger) 9%, var(--panel));
-    color: var(--danger);
-    border-radius: 7px;
-    padding: 10px 11px;
-    font-family: var(--mono);
-    font-size: 11px;
-    line-height: 1.5;
-    white-space: pre-wrap;
-    max-height: 30vh;
-    overflow: auto;
-  }
-  .hint { color: var(--muted); font-size: 11px; line-height: 1.5; }
-  .hint code { font-family: var(--mono); color: #b9c5d2; }
-  .viewport {
-    grid-row: 2;
-    grid-column: 2;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    overflow: hidden;
-    padding: 24px;
-    background:
-      radial-gradient(circle at 50% 40%, #161b22 0%, transparent 55%),
-      repeating-conic-gradient(#0d1014 0% 25%, #0b0d10 0% 50%) 50% / 24px 24px;
-  }
-  .stage-wrap { position: relative; flex: 0 0 auto; }
-  .stage-frame { position: absolute; top: 0; left: 0; border: 0; transform-origin: top left; background: #000; color-scheme: light; }
-  .diagnostics {
-    border: 1px solid var(--line);
-    background: var(--panel-2);
-    border-radius: 7px;
-    padding: 8px 10px;
-    max-height: 26vh;
-    overflow: auto;
-    font-family: var(--mono);
-    font-size: 11px;
-    line-height: 1.5;
-  }
-  .diagnostics .diagnostic { display: block; white-space: pre-wrap; }
-  .diagnostics .warning { color: #e8c76a; }
-  .diagnostics .error { color: var(--danger); }
-  .transport {
-    grid-row: 3;
-    grid-column: 2;
-    display: flex;
-    align-items: center;
-    gap: 14px;
-    padding: 0 18px;
-    border-top: 1px solid var(--line);
-    background: var(--panel);
-  }
-  .play {
-    width: 34px; height: 34px; padding: 0; border-radius: 50%;
-    background: var(--text); color: var(--bg); font-size: 12px; font-weight: 800;
-  }
-  .step {
-    width: 30px; height: 30px; padding: 0; border-radius: 6px;
-    color: var(--muted); font-size: 18px; line-height: 1;
-  }
-  .jump {
-    height: 30px; padding: 0 8px; border-radius: 6px;
-    color: var(--muted); font: 10px var(--mono);
-  }
-  .step:hover:not(:disabled), .jump:hover:not(:disabled) { color: var(--text); }
-  .scrub { flex: 1; accent-color: var(--accent); }
-  .readout { display: flex; align-items: baseline; gap: 5px; font-family: var(--mono); font-size: 11px; white-space: nowrap; }
-  .readout .dim { color: #5c6875; }
-  .clock { margin-left: 8px; color: var(--accent); }
-  .audio { display: flex; align-items: center; gap: 7px; color: var(--muted); font-family: var(--mono); font-size: 11px; }
-  .audio input[type="range"] { width: 72px; accent-color: var(--accent); }
-
+${PREVIEW_CSS}
+${PAGE_CSS}
 </style>
 </head>
 <body>
 <div id="app">
   <header class="topbar">
-    <div class="brand"><span class="mark"></span>frameyard <span class="tag">preview</span></div>
-    <label class="comp">Composition <select id="composition"></select></label>
-    <label class="comp">Timeline <select id="timeline"></select></label>
+    <div class="brand">
+      <span class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+      <span class="wordmark">frameyard</span>
+      <span class="slash">/</span>
+      <span class="tag">preview</span>
+    </div>
+    <span class="topbar-rule"></span>
+    <label class="comp">composition <select id="composition"></select></label>
+    <label class="comp">timeline <select id="timeline"></select></label>
     <div id="meta" class="meta"></div>
   </header>
   <aside id="panel" class="panel">
+    <div class="panel-head">
+      <span class="eyebrow">input</span>
+      <span class="panel-index">props / json</span>
+    </div>
     <div class="field">
       <div class="field-head">
-        <label for="props">Props (JSON)</label>
-        <button id="format" class="ghost small" type="button">Format</button>
+        <label for="props">props</label>
+        <button id="format" class="ghost small" type="button">format</button>
       </div>
       <textarea id="props" spellcheck="false" autocomplete="off"></textarea>
     </div>
-    <button id="apply" class="primary" type="button">Apply props</button>
-    <div id="error" class="error" role="alert" hidden></div>
-    <div id="diagnostics" class="diagnostics" hidden></div>
-    <div class="hint">
-      Frames are derived from <code>frame</code> and <code>props</code> only.
-      Wall-clock animation and unseeded randomness are not deterministic.
-    </div>
+    <button id="apply" class="primary" type="button">apply props</button>
+    <div id="error" role="alert" hidden></div>
+    <div id="diagnostics" hidden></div>
   </aside>
   <main id="viewport" class="viewport">
     <div id="stage-wrap" class="stage-wrap">
@@ -235,10 +122,11 @@ export function renderPreviewHtml(): string {
     <button id="play" class="play" type="button" aria-label="Play">&#9654;</button>
     <button id="step-forward" class="step" type="button" aria-label="Next frame" aria-keyshortcuts="ArrowRight" title="Next frame (→)">&#8250;</button>
     <button id="jump-forward" class="jump" type="button" aria-label="Forward one second" aria-keyshortcuts="Shift+ArrowRight" title="Forward one second (Shift+→)">+1s</button>
-    <input id="scrub" class="scrub" type="range" min="0" max="0" value="0" step="1" aria-label="Frame" />
+    <div class="scrub-wrap"><input id="scrub" class="scrub" type="range" min="0" max="0" value="0" step="1" aria-label="Frame" /></div>
     <div class="readout">
+      <span class="readout-label">frame</span>
       <span id="frame">0</span><span class="dim">/</span><span id="duration">0</span><span class="dim">f</span>
-      <span id="clock" class="clock">0.00s</span>
+      <span class="dim">·</span><span id="clock" class="clock">0.00s</span>
     </div>
     <label class="audio">
       <input id="mute" type="checkbox" /> mute

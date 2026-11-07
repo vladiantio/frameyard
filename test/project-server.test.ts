@@ -137,6 +137,20 @@ describe("preview server", () => {
     expect(html).toContain('"frameyard": "/__frameyard/framework/index.js"');
     expect(html).toContain('"frameyard/runtime": "/__frameyard/framework/runtime/index.js"');
     expect(html).toContain("/__frameyard/framework/preview/main.js");
+    expect(html).toContain("/__frameyard/framework/preview/fonts/figtree-latin-wght-normal.woff2");
+    expect(html).toContain("/__frameyard/framework/preview/fonts/space-mono-latin-400-normal.woff2");
+    expect(html).not.toContain('href="/__frameyard/fonts.css"');
+    expect(html).toContain("--accent: #b8f36b");
+  });
+
+  it("serves the bundled preview fonts", async () => {
+    const response = await fetch(
+      new URL("/__frameyard/framework/preview/fonts/figtree-latin-wght-normal.woff2", server.url),
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("font/woff2");
+    expect((await response.arrayBuffer()).byteLength).toBeGreaterThan(0);
   });
 
   it("publishes the explicit composition list", async () => {

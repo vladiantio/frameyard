@@ -194,6 +194,13 @@ describe("timeline preview server", () => {
     expect(html).toContain("/__frameyard/framework/preview/timeline-main.js");
     expect(html).toContain("timeline");
     expect(html).toContain(".keyframe-marker");
+    expect(html).toContain('id="ruler-scale"');
+    expect(html).toContain('id="timeline-inner"');
+    expect(html).toContain('id="playhead"');
+    expect(html).toContain(".playhead");
+    expect(html).toContain("/__frameyard/framework/preview/fonts/space-mono-latin-400-normal.woff2");
+    expect(html).not.toContain('href="/__frameyard/fonts.css"');
+    expect(html).toContain("--accent: #b8f36b");
 
     const embed = await fetch(new URL("/__frameyard/timeline/main?__fy-embed=1", server.url));
     expect(embed.status).toBe(200);
@@ -201,6 +208,7 @@ describe("timeline preview server", () => {
     expect(embedHtml).toContain('data-embed="1"');
     expect(embedHtml).toContain('id="stage"');
     expect(embedHtml).not.toContain('id="timeline"');
+    expect(embedHtml).not.toContain('id="ruler-scale"');
   });
 
   it("lists the project format and timelines in project.json", async () => {

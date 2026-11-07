@@ -1,3 +1,5 @@
+import { PREVIEW_CSS } from "./preview-style.js";
+
 function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, (character) => {
     switch (character) {
@@ -21,6 +23,122 @@ const IMPORT_MAP = JSON.stringify({
     "frameyard/runtime": "/__frameyard/framework/runtime/index.js",
   },
 });
+
+const PAGE_CSS = `
+  #app {
+    display: grid;
+    grid-template-rows: 54px minmax(0, 1fr) 216px 58px;
+    height: 100vh;
+  }
+  #viewport { min-height: 0; }
+  #stage-wrap { overflow: hidden; }
+  #stage {
+    position: relative;
+    width: 100%; height: 100%;
+    transform-origin: top left;
+    overflow: hidden;
+    background: #000;
+    isolation: isolate;
+  }
+  .timeline-layer { position: absolute; left: 50%; top: 50%; transform-origin: center; }
+  .timeline-layer iframe, .timeline-layer video, .timeline-layer img { display: block; border: 0; }
+
+  #timeline {
+    position: relative;
+    min-height: 0;
+    border-top: 1px solid var(--line);
+    background: var(--panel);
+    overflow: auto;
+    padding: 12px 18px 16px;
+  }
+  .ruler {
+    display: grid;
+    grid-template-columns: 96px minmax(0, 1fr);
+    gap: 10px;
+    height: 20px;
+  }
+  .ruler-scale { position: relative; border-bottom: 1px solid var(--line); }
+  .ruler-scale::before {
+    content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 7px;
+    background-image: linear-gradient(90deg, var(--line-strong) 0 1px, transparent 1px);
+    background-size: 10% 100%;
+    opacity: 0.55;
+    pointer-events: none;
+  }
+  .ruler-tick {
+    position: absolute; top: -1px; transform: translateX(-50%);
+    font-family: var(--mono); font-size: 9px; color: var(--muted);
+    letter-spacing: 0.06em; pointer-events: none;
+  }
+  .ruler-tick:first-child { transform: none; }
+  .ruler-tick:last-child { transform: translateX(-100%); }
+  #timeline-inner { position: relative; }
+  #tracks { position: relative; display: flex; flex-direction: column; }
+  .track { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 10px; min-height: 30px; }
+  .track-label {
+    display: flex; align-items: center; justify-content: flex-end;
+    font-size: 9px; white-space: nowrap;
+  }
+  .lane {
+    position: relative; border: 1px solid var(--line);
+    background: var(--ink); overflow: hidden;
+  }
+  .clip {
+    position: absolute; top: 3px; bottom: 3px; border-radius: 1px;
+    background: linear-gradient(180deg, rgba(74, 96, 118, 0.5), rgba(38, 52, 66, 0.55));
+    border: 1px solid rgba(140, 170, 195, 0.38); color: #dce8f5;
+    font: 10px/1 var(--mono); padding: 6px 8px; overflow: visible;
+    white-space: nowrap;
+  }
+  .clip-label { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .clip.composition {
+    background: linear-gradient(180deg, rgba(184, 243, 107, 0.20), rgba(184, 243, 107, 0.07));
+    border-color: rgba(184, 243, 107, 0.45); color: var(--paper);
+  }
+  .clip.audio {
+    background: linear-gradient(180deg, rgba(232, 199, 106, 0.20), rgba(232, 199, 106, 0.06));
+    border-color: rgba(232, 199, 106, 0.42); color: #f4e7c4;
+  }
+  .clip.nested {
+    background: linear-gradient(180deg, rgba(168, 130, 200, 0.22), rgba(168, 130, 200, 0.07));
+    border-color: rgba(168, 130, 200, 0.45); color: #e8d9f5;
+  }
+  .keyframe-marker {
+    position: absolute; top: 50%; width: 7px; height: 7px;
+    background: var(--accent); border: 1px solid var(--ink); border-radius: 1px;
+    transform: translate(-50%, -50%) rotate(45deg); cursor: pointer; z-index: 2;
+  }
+  .keyframe-marker:hover { background: #ffffff; }
+  .transition {
+    position: absolute; top: 6px; bottom: 6px; border-radius: 1px; z-index: 1;
+    background: repeating-linear-gradient(
+      45deg,
+      rgba(184, 243, 107, 0.22) 0 4px,
+      rgba(184, 243, 107, 0.06) 4px 8px
+    );
+    border: 1px solid rgba(184, 243, 107, 0.5); pointer-events: none;
+  }
+  .playhead {
+    position: absolute; top: 0; bottom: 0; width: 1px;
+    left: calc(106px + (100% - 106px) * var(--playhead-factor, 0));
+    background: var(--accent);
+    box-shadow: 0 0 10px rgba(184, 243, 107, 0.7);
+    pointer-events: none;
+    z-index: 3;
+  }
+  .playhead::before {
+    content: ""; position: absolute; top: 0; left: -3px;
+    width: 7px; height: 7px; background: var(--accent);
+    transform: rotate(45deg);
+  }
+  #timeline #error, #timeline #diagnostics { margin-top: 10px; }
+
+  @media (max-width: 760px) {
+    #app { grid-template-rows: 54px minmax(0, 1fr) 180px auto; }
+    footer { flex-wrap: wrap; padding: 9px 14px; }
+    .meta { display: none; }
+  }
+`;
 
 export function renderTimelinePreviewHtml(timelineId: string, options: { embed?: boolean } = {}): string {
   const id = escapeHtml(timelineId);
@@ -53,179 +171,39 @@ export function renderTimelinePreviewHtml(timelineId: string, options: { embed?:
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Frameyard timeline ${id}</title>
     <style>
-      :root {
-        color-scheme: dark;
-        --bg: #0b0d10;
-        --panel: #11151a;
-        --panel-2: #171c23;
-        --line: #252c35;
-        --text: #e8edf3;
-        --muted: #8a97a6;
-        --accent: #b8f36b;
-        --accent-ink: #101408;
-        --danger: #ff8a8a;
-        --mono: "SFMono-Regular", ui-monospace, "Cascadia Code", "Liberation Mono", monospace;
-        --sans: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-      }
-      * { box-sizing: border-box; }
-      html, body { height: 100%; }
-      body {
-        margin: 0;
-        background: var(--bg);
-        color: var(--text);
-        font-family: var(--sans);
-        font-size: 13px;
-        overflow: hidden;
-      }
-      #app {
-        display: grid;
-        grid-template-rows: 54px minmax(0, 1fr) 210px 58px;
-        height: 100vh;
-      }
-      header {
-        display: flex;
-        align-items: center;
-        gap: 18px;
-        padding: 0 18px;
-        border-bottom: 1px solid var(--line);
-        background: linear-gradient(180deg, #11151a, #0d1014);
-      }
-      .brand { display: flex; align-items: center; gap: 9px; font-weight: 650; }
-      .mark {
-        width: 17px; height: 17px; border-radius: 4px;
-        background: linear-gradient(135deg, var(--accent), #5fd6ff);
-        box-shadow: 0 0 18px rgba(184, 243, 107, 0.3);
-      }
-      .tag { color: var(--muted); font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; }
-      a { color: var(--accent); text-decoration: none; }
-      a:hover { text-decoration: underline; }
-      .meta { margin-left: auto; color: var(--muted); font-family: var(--mono); font-size: 11px; }
-      #viewport {
-        min-height: 0;
-        display: grid;
-        place-items: center;
-        padding: 20px;
-        overflow: hidden;
-        background:
-          radial-gradient(circle at 50% 20%, #141b24 0, transparent 55%),
-          #080a0d;
-      }
-      #stage-wrap {
-        position: relative;
-        overflow: hidden;
-        box-shadow: 0 30px 90px rgba(0, 0, 0, 0.55);
-        background: #000;
-      }
-      #stage {
-        position: relative;
-        transform-origin: top left;
-        overflow: hidden;
-        background: #000;
-        isolation: isolate;
-      }
-      .timeline-layer { position: absolute; left: 50%; top: 50%; transform-origin: center; }
-      .timeline-layer iframe, .timeline-layer video, .timeline-layer img { display: block; border: 0; }
-      #timeline {
-        position: relative;
-        min-height: 0;
-        border-top: 1px solid var(--line);
-        background: var(--panel);
-        overflow: auto;
-        padding: 10px 16px 16px;
-      }
-      #tracks { position: relative; display: flex; flex-direction: column; gap: 6px; }
-      .track { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 8px; min-height: 30px; }
-      .track-label {
-        display: flex; align-items: center; justify-content: flex-end;
-        color: var(--muted); font-family: var(--mono); font-size: 10px;
-        text-transform: uppercase; letter-spacing: 0.06em;
-      }
-      .lane {
-        position: relative; border: 1px solid var(--line); border-radius: 6px;
-        background: #0d1116; overflow: hidden;
-      }
-      .clip {
-        position: absolute; top: 3px; bottom: 3px; border-radius: 4px;
-        background: linear-gradient(180deg, #2a4058, #1d2c3d);
-        border: 1px solid #3b5672; color: #dce8f5;
-        font: 10px/1 var(--mono); padding: 6px 7px; overflow: visible;
-        white-space: nowrap;
-      }
-      .clip-label { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-      .keyframe-marker {
-        position: absolute; top: 50%; width: 6px; height: 6px;
-        background: var(--accent); border: 1px solid #0d1116; border-radius: 1px;
-        transform: translate(-50%, -50%) rotate(45deg); cursor: pointer; z-index: 2;
-      }
-      .keyframe-marker:hover { background: #ffffff; }
-      .clip.composition { background: linear-gradient(180deg, #314a33, #203120); border-color: #4d704d; }
-      .clip.audio { background: linear-gradient(180deg, #4a3b22, #302516); border-color: #6e5631; }
-      .clip.nested { background: linear-gradient(180deg, #443152, #2c2036); border-color: #63477a; }
-      .transition {
-        position: absolute; top: 8px; bottom: 8px; border-radius: 4px; z-index: 1;
-        background: repeating-linear-gradient(
-          45deg,
-          rgba(184, 243, 107, 0.24) 0 4px,
-          rgba(184, 243, 107, 0.08) 4px 8px
-        );
-        border: 1px solid rgba(184, 243, 107, 0.55); pointer-events: none;
-      }
-      #playhead {
-        position: absolute; top: 0; bottom: 0; width: 1px; background: var(--accent);
-        box-shadow: 0 0 12px rgba(184, 243, 107, 0.7); pointer-events: none;
-      }
-      #error, #diagnostics {
-        margin-top: 10px; border: 1px solid #4b3030; border-radius: 6px;
-        padding: 9px 11px; background: #1b1111; color: var(--danger);
-        font-family: var(--mono); font-size: 11px; white-space: pre-wrap;
-      }
-      #diagnostics { border-color: var(--line); background: var(--panel-2); color: var(--muted); }
-      footer {
-        display: flex; align-items: center; gap: 12px; padding: 0 18px;
-        border-top: 1px solid var(--line); background: var(--panel);
-      }
-      button {
-        border: 1px solid var(--line); background: var(--panel-2); color: var(--text);
-        border-radius: 6px; padding: 8px 12px; cursor: pointer;
-      }
-      button:hover { border-color: #3a4654; }
-      .step {
-        width: 32px; height: 32px; padding: 0; border-radius: 6px;
-        color: var(--muted); font-size: 18px; line-height: 1;
-      }
-      .jump {
-        height: 32px; padding: 0 8px; border-radius: 6px;
-        color: var(--muted); font: 10px var(--mono);
-      }
-      .step:hover:not(:disabled), .jump:hover:not(:disabled) { color: var(--text); }
-      .play {
-        width: 38px; height: 38px; border-radius: 50%; border: 0;
-        background: var(--accent); color: var(--accent-ink);
-        font-size: 15px; font-weight: 700;
-      }
-      .scrub { flex: 1; accent-color: var(--accent); }
-      .readout { min-width: 150px; text-align: right; color: var(--muted); font-family: var(--mono); font-size: 11px; }
-      .readout b { color: var(--text); font-weight: 600; }
-      .audio { display: flex; align-items: center; gap: 8px; color: var(--muted); font-family: var(--mono); font-size: 11px; }
-      .audio input[type="range"] { width: 80px; accent-color: var(--accent); }
-      .hint { color: var(--muted); font-family: var(--mono); font-size: 10px; }
+${PREVIEW_CSS}
+${PAGE_CSS}
     </style>
     <script type="importmap" data-fy-host>${IMPORT_MAP}</script>
   </head>
   <body data-timeline-id="${id}" data-embed="0">
     <div id="app">
       <header>
-        <div class="brand"><span class="mark"></span>frameyard <span class="tag">timeline</span></div>
-        <a href="/__frameyard/">← compositions</a>
-        <span id="title" class="hint"></span>
+        <div class="brand">
+          <span class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+          <span class="wordmark">frameyard</span>
+          <span class="slash">/</span>
+          <span class="tag">timeline</span>
+        </div>
+        <span class="topbar-rule"></span>
+        <a href="/__frameyard/">&larr; compositions</a>
+        <span id="title" class="title"></span>
         <div id="meta" class="meta"></div>
       </header>
       <main id="viewport">
-        <div id="stage-wrap"><div id="stage"></div></div>
+        <div id="stage-wrap">
+          <div id="stage"></div>
+        </div>
       </main>
       <section id="timeline">
-        <div id="tracks"></div>
-        <div id="playhead"></div>
+        <div id="timeline-inner">
+          <div class="ruler">
+            <span class="ruler-spacer" aria-hidden="true"></span>
+            <div id="ruler-scale" class="ruler-scale"></div>
+          </div>
+          <div id="tracks"></div>
+          <div id="playhead" class="playhead" aria-hidden="true"></div>
+        </div>
         <div id="error" role="alert" hidden></div>
         <div id="diagnostics" hidden></div>
       </section>
@@ -235,8 +213,8 @@ export function renderTimelinePreviewHtml(timelineId: string, options: { embed?:
         <button id="play-button" class="play" type="button" aria-label="Play">&#9654;</button>
         <button id="step-forward" class="step" type="button" aria-label="Next frame" aria-keyshortcuts="ArrowRight" title="Next frame (→)">&#8250;</button>
         <button id="jump-forward" class="jump" type="button" aria-label="Forward one second" aria-keyshortcuts="Shift+ArrowRight" title="Forward one second (Shift+→)">+1s</button>
-        <input id="scrub" class="scrub" type="range" min="0" max="0" value="0" step="1" aria-label="Timeline frame">
-        <div class="readout"><b id="frame">0</b> / <span id="duration">0</span> f <span id="clock">0.00s</span></div>
+        <div class="scrub-wrap"><input id="scrub" class="scrub" type="range" min="0" max="0" value="0" step="1" aria-label="Timeline frame"></div>
+        <div class="readout"><span class="readout-label">frame</span><span id="frame">0</span><span class="dim">/</span><span id="duration">0</span><span class="dim">f</span><span class="dim">·</span><span id="clock" class="clock">0.00s</span></div>
         <label class="audio"><input id="mute" type="checkbox"> mute <input id="volume" type="range" min="0" max="1" step="0.01" value="0.8" aria-label="Audio volume"></label>
       </footer>
     </div>

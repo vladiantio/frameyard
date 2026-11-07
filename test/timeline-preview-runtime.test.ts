@@ -731,6 +731,53 @@ describe("timeline preview runtime", () => {
     }
   }, 60_000);
 
+  it("draws a frame ruler and one continuous playhead across the tracks", async () => {
+    const page = await browser.newPage({ viewport: { width: 1000, height: 700 } });
+    try {
+      await page.goto(new URL("/__frameyard/timeline/main", server.url).href, {
+        waitUntil: "domcontentloaded",
+      });
+      await page.waitForFunction(() => document.querySelectorAll(".track").length === 1);
+      await page.waitForFunction(() => document.querySelectorAll(".ruler-tick").length === 5);
+
+      expect(await page.locator(".ruler-tick").allTextContents()).toEqual(["0", "2", "5", "7", "9"]);
+      expect(await page.locator(".playhead").count()).toBe(1);
+      expect(await page.evaluate(() => document.querySelector(".playhead")?.closest(".lane") === null)).toBe(true);
+
+      const initial = await page.evaluate(() => ({
+        factor: document.querySelector<HTMLElement>("#timeline-inner")?.style.getPropertyValue("--playhead-factor"),
+        progress: document.querySelector<HTMLElement>("#scrub")?.style.getPropertyValue("--progress"),
+      }));
+      expect(initial.factor).toBe("0");
+      expect(initial.progress).toBe("0%");
+
+      await page.locator("#scrub").evaluate((element) => {
+        const input = element as HTMLInputElement;
+        input.value = "5";
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+      await page.waitForFunction(() => document.querySelector("#frame")?.textContent === "5");
+
+      const moved = await page.evaluate(() => {
+        const head = document.querySelector(".playhead")?.getBoundingClientRect();
+        const lane = document.querySelector(".lane")?.getBoundingClientRect();
+        return {
+          factor:
+            document.querySelector<HTMLElement>("#timeline-inner")?.style.getPropertyValue("--playhead-factor") ?? null,
+          progress: document.querySelector<HTMLElement>("#scrub")?.style.getPropertyValue("--progress") ?? null,
+          headLeft: head?.left ?? null,
+          laneLeft: lane?.left ?? null,
+          laneWidth: lane?.width ?? null,
+        };
+      });
+      expect(Number.parseFloat(moved.factor ?? "")).toBeCloseTo(5 / 9, 3);
+      expect(Number.parseFloat(moved.progress ?? "")).toBeCloseTo((5 / 9) * 100, 1);
+      expect(moved.headLeft).toBeCloseTo((moved.laneLeft ?? 0) + (moved.laneWidth ?? 0) * (5 / 9), 0);
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+
   it("coalesces rapid timeline steps onto the latest frame", async () => {
     const page = await browser.newPage({ viewport: { width: 1000, height: 700 } });
     try {

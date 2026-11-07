@@ -52,6 +52,16 @@ contract change may ship in a minor release and is called out explicitly below.
   fell from 16.82 to 15.57 minutes with a byte-identical file. See
   `docs/adr/0028-encode-full-frame-video-segments-directly.md`.
 
+### Changed
+
+- The composition and timeline preview pages share one visual language:
+  ink-black surfaces, paper-white type, a single lime signal, monospace
+  instrument labels, and a tick-marked progress rail. The timeline strip adds a
+  frame ruler that tracks the playhead. The chrome bundles its own Figtree and
+  Space Mono faces and no longer links the project font sheet; project fonts
+  still apply inside compositions. See `src/server/preview-style.ts` and
+  `src/preview/fonts/`.
+
 ## [0.9.0] - 2026-11-06
 
 ### Added

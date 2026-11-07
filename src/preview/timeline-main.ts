@@ -249,11 +249,27 @@ async function main(): Promise<void> {
   scrubber.max = String(Math.max(0, duration - 1));
   durationLabel.textContent = String(duration);
 
+  let activeAudio = new Set<HTMLAudioElement>();
+
   const updateAudio = (forceSeek: boolean): void => {
+    const nextActive = new Set<HTMLAudioElement>();
     for (const { clip, audio } of audioEntries) {
-      const endFrame =
-        clip.trimDuration !== undefined ? clip.startFrame + clip.trimDuration * fps : Number.POSITIVE_INFINITY;
+      // A composition's embedded audio without data-fy-duration is mapped to
+      // the end of its timeline clip. Stop at the end of the source instead of
+      // restarting it for the rest of that window.
+      const remainingSourceDuration = Number.isFinite(audio.duration)
+        ? Math.max(0, audio.duration - clip.trimStart)
+        : Number.POSITIVE_INFINITY;
+      const clipDuration =
+        clip.trimDuration === undefined
+          ? remainingSourceDuration
+          : Math.min(clip.trimDuration, remainingSourceDuration);
+      const endFrame = Number.isFinite(clipDuration) ? clip.startFrame + clipDuration * fps : Number.POSITIVE_INFINITY;
       const active = currentFrame >= clip.startFrame && currentFrame < endFrame;
+      if (active) {
+        nextActive.add(audio);
+      }
+      const wasActive = activeAudio.has(audio);
       const desired = clip.trimStart + Math.max(0, (currentFrame - clip.startFrame) / fps);
       const envelopeGain = (clip.envelopes ?? []).reduce(
         (gain, envelope) =>
@@ -277,15 +293,21 @@ async function main(): Promise<void> {
       }
       if (playing && active) {
         if (audio.paused) {
-          if (Math.abs(audio.currentTime - desired) > 0.25) {
+          // Re-entering the window restarts an ended source; staying inside it
+          // leaves an ended source stopped.
+          const needsSeek = !wasActive || Math.abs(audio.currentTime - desired) > 0.25;
+          if (needsSeek) {
             audio.currentTime = desired;
           }
-          void audio.play().catch(() => undefined);
+          if (needsSeek || !audio.ended) {
+            void audio.play().catch(() => undefined);
+          }
         }
       } else {
         audio.pause();
       }
     }
+    activeAudio = nextActive;
   };
 
   const updateUi = (): void => {

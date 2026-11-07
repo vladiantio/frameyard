@@ -45,6 +45,13 @@ const transparentOverlay = `<style>
     </fy-composition>
 `;
 
+const audioComposition = `<style>html, body { margin: 0; width: 100%; height: 100%; background: #123; }</style>
+    <fy-composition width="320" height="180" fps="10" duration-in-frames="20">
+      <div id="tone"></div>
+    </fy-composition>
+    <audio src="assets/tone.wav" data-fy-start="2" data-fy-volume="0.5"></audio>
+`;
+
 beforeAll(async () => {
   root = await mkdtemp(path.join(tmpdir(), "frameyard-timeline-preview-runtime-"));
   await mkdir(path.join(root, "compositions"), { recursive: true });
@@ -83,9 +90,22 @@ beforeAll(async () => {
     "yuv420p",
     path.join(root, "assets", "flash.webm"),
   ]);
+  await exec("ffmpeg", [
+    "-y",
+    "-v",
+    "error",
+    "-f",
+    "lavfi",
+    "-i",
+    "sine=frequency=440:duration=0.5",
+    "-c:a",
+    "pcm_s16le",
+    path.join(root, "assets", "tone.wav"),
+  ]);
   await writeFile(path.join(root, "compositions", "intro.html"), composition);
   await writeFile(path.join(root, "compositions", "still.html"), staticComposition);
   await writeFile(path.join(root, "compositions", "overlay.html"), transparentOverlay);
+  await writeFile(path.join(root, "compositions", "audio.html"), audioComposition);
   await writeFile(
     path.join(root, "timelines", "static.json"),
     `${JSON.stringify(
@@ -191,6 +211,26 @@ beforeAll(async () => {
             start: 0,
             duration: 3,
             audio: { muted: true },
+          },
+        ],
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  await writeFile(
+    path.join(root, "timelines", "audio.json"),
+    `${JSON.stringify(
+      {
+        version: 1,
+        tracks: [{ id: "v1", kind: "video" }],
+        clips: [
+          {
+            id: "tone",
+            track: "v1",
+            source: { kind: "composition", id: "tone" },
+            start: 0,
+            duration: 20,
           },
         ],
       },
@@ -319,8 +359,8 @@ beforeAll(async () => {
     path.join(root, "fy.config.js"),
     `export default {
       format: { width: 320, height: 180, fps: 10 },
-      compositions: { intro: "./compositions/intro.html", still: "./compositions/still.html", overlay: "./compositions/overlay.html" },
-      timelines: { main: "./timelines/main.json", static: "./timelines/static.json", sized: "./timelines/sized.json", video: "./timelines/video.json", blend: "./timelines/blend.json", motion: "./timelines/motion.json", dissolve: "./timelines/dissolve.json", scheme: "./timelines/scheme.json" },
+      compositions: { intro: "./compositions/intro.html", still: "./compositions/still.html", overlay: "./compositions/overlay.html", tone: "./compositions/audio.html" },
+      timelines: { main: "./timelines/main.json", static: "./timelines/static.json", sized: "./timelines/sized.json", video: "./timelines/video.json", audio: "./timelines/audio.json", blend: "./timelines/blend.json", motion: "./timelines/motion.json", dissolve: "./timelines/dissolve.json", scheme: "./timelines/scheme.json" },
     };\n`,
   );
   server = await startPreviewServer({ projectRoot: root, port: 0 });
@@ -675,6 +715,32 @@ describe("timeline preview runtime", () => {
       const [red, green, blue] = await mediaPixel(image, Math.floor(box.width / 2), Math.floor(box.height / 2));
       expect(green).toBeGreaterThan(red + 40);
       expect(green).toBeGreaterThan(blue + 40);
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+
+  it("plays composition embedded audio once without looping past its source duration", async () => {
+    const page = await browser.newPage({ viewport: { width: 640, height: 360 } });
+    try {
+      await page.addInitScript(() => {
+        const state = window as Window & { __audioPlayCount?: number };
+        state.__audioPlayCount = 0;
+        const original = HTMLAudioElement.prototype.play;
+        HTMLAudioElement.prototype.play = function (this: HTMLAudioElement): Promise<void> {
+          state.__audioPlayCount = (state.__audioPlayCount ?? 0) + 1;
+          return original.call(this);
+        };
+      });
+      await page.goto(new URL("/__frameyard/timeline/audio", server.url).href, { waitUntil: "domcontentloaded" });
+      await page.waitForFunction(() => document.querySelectorAll(".timeline-layer iframe").length === 1);
+      await page.click("#play-button");
+      await page.waitForFunction(() => Number(document.querySelector("#frame")?.textContent ?? 0) >= 12, null, {
+        timeout: 30_000,
+      });
+
+      const plays = await page.evaluate(() => (window as Window & { __audioPlayCount?: number }).__audioPlayCount ?? 0);
+      expect(plays, "a 0.5s source must not restart inside its 2s composition clip").toBe(1);
     } finally {
       await page.close();
     }

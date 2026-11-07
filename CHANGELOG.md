@@ -62,6 +62,13 @@ contract change may ship in a minor release and is called out explicitly below.
   still apply inside compositions. See `src/server/preview-style.ts` and
   `src/preview/fonts/`.
 
+### Fixed
+
+- Timeline preview plays composition audio once instead of restarting it when
+  the mapped clip window is longer than the source file. An embedded `<audio>`
+  without `data-fy-duration` now stops at the end of the source instead of
+  looping for the rest of the composition clip.
+
 ## [0.9.0] - 2026-11-06
 
 ### Added

@@ -32,6 +32,7 @@ import {
   type ResolvedTranscriptClip,
 } from "../contracts.js";
 import { resolveBindingPath, suggestBindingPath, validateBindingPath } from "../bindings.js";
+import { diagnosticFix } from "../diagnostic-fixes.js";
 import { applyPropsSchemaDefaults, validatePropsAgainstSchema } from "../props-schema.js";
 import { errorMessage, isFrameyardError, type FrameyardErrorCode } from "../errors.js";
 import { parseTranscript } from "../transcript.js";
@@ -275,12 +276,14 @@ class HtmlCompositionValidator {
     message: string,
     details?: CompositionDiagnosticDetails,
   ): void {
+    const merged = { path: this.entry, ...details };
+    const fix = diagnosticFix(code, merged, message);
     const diagnostic: CompositionDiagnostic = {
       severity,
       code,
       message,
+      ...(fix !== undefined ? { fix } : {}),
     };
-    const merged = { path: this.entry, ...details };
     if (Object.keys(merged).length > 0) {
       diagnostic.details = merged;
     }

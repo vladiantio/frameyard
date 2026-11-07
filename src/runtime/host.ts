@@ -21,6 +21,7 @@ import {
   type ResolvedCompositionMetadata,
   type ResolvedTranscriptClip,
 } from "../contracts.js";
+import { diagnosticFix } from "../diagnostic-fixes.js";
 import {
   errorMessage,
   FrameyardError,
@@ -557,11 +558,19 @@ class HostRuntime implements FrameyardHost {
 
   private addError(error: unknown, frame: number | null): void {
     const code: FrameyardErrorCode = isFrameyardError(error) ? error.code : "COMPOSITION_ERROR";
+    const message = errorMessage(error);
+    const rawDetails = isFrameyardError(error) ? error.details : undefined;
+    const details = isPlainObject(rawDetails) ? rawDetails : {};
+    const mergedDetails = { ...details, ...(frame !== null ? { frame } : {}) };
+    const fix =
+      (isFrameyardError(error) ? error.fix : undefined) ??
+      diagnosticFix(code, Object.keys(mergedDetails).length > 0 ? mergedDetails : undefined, message);
     this.addDiagnostic({
       severity: "error",
       code,
-      message: errorMessage(error),
-      ...(frame !== null ? { details: { frame } } : {}),
+      message,
+      ...(Object.keys(mergedDetails).length > 0 ? { details: mergedDetails } : {}),
+      ...(fix !== undefined ? { fix } : {}),
     });
   }
 

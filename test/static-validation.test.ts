@@ -104,6 +104,12 @@ describe("HTML composition static validation", () => {
         severity: "warning",
         code: "BINDING_PATH_MISSING",
         details: expect.objectContaining({ value: "subtitle" }),
+        fix: expect.objectContaining({
+          kind: "path",
+          from: "subtitle",
+          message: expect.stringContaining("subtitle"),
+          docs: expect.any(String),
+        }),
       }),
     );
     expect(result.info?.metadata).toEqual({ width: 320, height: 180, fps: 10, durationInFrames: 5 });

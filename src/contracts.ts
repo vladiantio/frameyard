@@ -1,4 +1,4 @@
-import { FrameyardError, type FrameyardErrorCode } from "./errors.js";
+import { FrameyardError, type DiagnosticFix, type FrameyardErrorCode } from "./errors.js";
 
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
@@ -184,6 +184,7 @@ export interface CompositionDiagnostic {
   code: FrameyardErrorCode;
   message: string;
   details?: CompositionDiagnosticDetails;
+  fix?: DiagnosticFix;
 }
 
 export interface ControllerDeclaration {

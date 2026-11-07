@@ -4,7 +4,9 @@ import { cpus, freemem, loadavg, totalmem } from "node:os";
 import path from "node:path";
 import { createInterface } from "node:readline/promises";
 import { isPlainObject } from "./contracts.js";
+import { diagnosticFix } from "./diagnostic-fixes.js";
 import { FrameyardError, errorMessage, isFrameyardError, type FrameyardDiagnostic } from "./errors.js";
+import { explainDiagnosticCode, listDiagnosticExplanations } from "./explain.js";
 import { loadProject, resolveProjectRoot, type Project } from "./project.js";
 import {
   assertOperationAllowed,
@@ -93,6 +95,7 @@ const COMMANDS = new Set([
   "add",
   "font",
   "doctor",
+  "explain",
   "help",
 ]);
 const VALUE_FLAGS = new Set([
@@ -336,6 +339,8 @@ function allowedFlags(command: string): Set<string> {
         "model-dir",
         "model",
       ]);
+    case "explain":
+      return new Set(["json", "help", "list"]);
     case "help":
       return new Set(["help"]);
     default:
@@ -438,6 +443,14 @@ function validateArgs(parsed: ParsedArgs): void {
       if (template.kind !== kind) {
         usage(`Template "${templateName}" is a ${template.kind} template, not ${kind}.`);
       }
+    }
+  } else if (parsed.command === "explain") {
+    if (parsed.flags.has("list")) {
+      if (parsed.positionals.length > 0) {
+        usage('"explain --list" does not take a code.');
+      }
+    } else if (parsed.positionals.length !== 1) {
+      usage('"explain" requires <code> or --list.');
     }
   } else if (parsed.command === "font") {
     const action = parsed.positionals[0];
@@ -705,6 +718,8 @@ Usage:
   frameyard add local-models [--project <dir>] [--json]
   frameyard add <composition|timeline> <id> --template <name> [--project <dir>] [--json]
   frameyard add recipe <recipe-id> --id <project-id> [--project <dir>] [--json]
+  frameyard explain <code> [--json]
+  frameyard explain --list [--json]
   frameyard font search [query] [--category <category>] [--subset <subset>] [--style <normal|italic>] [--variable] [--limit <n>] [--json]
   frameyard font add <fontsource-id> [--family <alias>] [--subset <subset>] [--style <normal|italic>] [--weight <n>] [--static] [--force] [--project <dir>] [--json]
   frameyard font add --file <path> --family <name> [--id <id>] [--weight <n|n-n>] [--style normal|italic] [--subset <name>] [--license <id>] [--license-file <path>] [--force] [--project <dir>] [--json]
@@ -731,7 +746,7 @@ Options:
   --low-priority         Lower the process priority without changing worker caps.
   --local-models         With init, also install the optional local-model host scaffold.
   --template <name>      Template for "add composition|timeline": static-poster, title-card, lower-third, or slideshow.
-  --list                 List add templates, recipes, and scaffolds without writing files.
+  --list                 List add templates, recipes, and scaffolds, or all explain codes.
   --file <path>          Local font file for "font add": .woff2, .woff, .ttf, or .otf.
   --url <https-url>      Download a font from HTTPS (loopback HTTP is allowed for tests).
   --family <name>        CSS font-family name or alias for "font add".
@@ -1012,6 +1027,15 @@ function printDiagnostics(diagnostics: readonly FrameyardDiagnostic[]): void {
     const location =
       details?.line !== undefined ? ` (${details.path ?? "composition"}:${details.line}:${details.column ?? 1})` : "";
     process.stderr.write(`${diagnostic.severity}: [${diagnostic.code}] ${diagnostic.message}${location}\n`);
+    if (diagnostic.fix !== undefined) {
+      process.stderr.write(`  fix: ${diagnostic.fix.message}\n`);
+      if (diagnostic.fix.command !== undefined) {
+        process.stderr.write(`  run: ${diagnostic.fix.command}\n`);
+      }
+      if (diagnostic.fix.docs !== undefined) {
+        process.stderr.write(`  docs: ${diagnostic.fix.docs}\n`);
+      }
+    }
   }
 }
 
@@ -1380,6 +1404,50 @@ async function runCompare(parsed: ParsedArgs): Promise<number> {
     );
   }
   return stats.identical ? 0 : 1;
+}
+
+function runExplain(parsed: ParsedArgs): number {
+  const json = parsed.flags.has("json") === true;
+  if (parsed.flags.has("list")) {
+    const codes = listDiagnosticExplanations();
+    if (json) {
+      printJson({ ok: true, command: "explain", codes });
+    } else {
+      for (const entry of codes) {
+        process.stdout.write(`${entry.code}\t${entry.summary}\n`);
+      }
+    }
+    return 0;
+  }
+
+  const code = parsed.positionals[0] as string;
+  const explanation = explainDiagnosticCode(code);
+  if (explanation === undefined) {
+    usage(`Unknown diagnostic code "${code}". Run "frameyard explain --list" to see available codes.`);
+  }
+
+  const result = {
+    ok: true,
+    command: "explain",
+    code: explanation.code,
+    message: explanation.message,
+    ...(explanation.docs !== undefined ? { docs: explanation.docs } : {}),
+    ...(explanation.examples !== undefined ? { examples: explanation.examples } : {}),
+  };
+  if (json) {
+    printJson(result);
+  } else {
+    process.stdout.write(`${explanation.code}\n`);
+    process.stdout.write(`Cause: ${explanation.message}\n`);
+    if (explanation.examples !== undefined) {
+      process.stdout.write(`Failing:\n  ${explanation.examples.failing}\n`);
+      process.stdout.write(`Corrected:\n  ${explanation.examples.corrected}\n`);
+    }
+    if (explanation.docs !== undefined) {
+      process.stdout.write(`Docs: ${explanation.docs}\n`);
+    }
+  }
+  return 0;
 }
 
 async function runAddRecipe(parsed: ParsedArgs, json: boolean): Promise<number> {
@@ -3105,6 +3173,11 @@ function reportFailure(error: unknown, command: string, jsonRequested: boolean, 
 
   const details = isFrameyardError(error) ? error.details : undefined;
   const diagnostics = isFrameyardError(error) ? error.diagnostics : undefined;
+  const fix = isFrameyardError(error)
+    ? (error.fix ??
+      diagnostics?.find((diagnostic) => diagnostic.fix !== undefined)?.fix ??
+      diagnosticFix(error.code, details, message))
+    : undefined;
   if (jsonRequested) {
     printJson({
       ok: false,
@@ -3113,6 +3186,7 @@ function reportFailure(error: unknown, command: string, jsonRequested: boolean, 
         code,
         message,
         ...(details !== undefined ? { details } : {}),
+        ...(fix !== undefined ? { fix } : {}),
       },
       ...(diagnostics !== undefined ? { diagnostics } : {}),
     });
@@ -3193,7 +3267,7 @@ async function main(argv: string[]): Promise<number> {
   process.on("SIGTERM", interrupt);
 
   try {
-    const needsPolicy = !["doctor", "inspect", "compare", "add"].includes(parsed.command);
+    const needsPolicy = !["doctor", "inspect", "compare", "add", "explain"].includes(parsed.command);
     const policy = needsPolicy ? await loadResourcePolicy({ cwd: process.cwd(), env: process.env }) : undefined;
 
     switch (parsed.command) {
@@ -3219,6 +3293,8 @@ async function main(argv: string[]): Promise<number> {
         return await runFont(parsed, controller.signal, policy as LoadedResourcePolicy);
       case "add":
         return await runAdd(parsed);
+      case "explain":
+        return runExplain(parsed);
       case "doctor":
         return await runDoctorCommand(parsed, controller.signal);
       default:

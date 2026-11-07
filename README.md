@@ -106,6 +106,7 @@ The repository ships runnable example projects. Each example README has the comm
 | `frameyard font verify` | Verify manifest paths, formats, hashes, licenses, and orphaned directories |
 | `frameyard font remove <id>` | Remove a font from the manifest and delete its directory unless `--keep-files` is supplied |
 | `frameyard doctor` | Inspect core requirements, optional integrations, policy, resources, and manifest integrity |
+| `frameyard explain <code>` | Explain a diagnostic code with a cause, failing and corrected examples, and docs; `--list` lists every code |
 
 ### Options
 
@@ -149,6 +150,8 @@ Diagnostics carry `severity`, `code`, `message`, and optional `details` with sou
   ]
 }
 ```
+
+Diagnostics may include an optional `fix` object with `kind`, a short `message`, and optional `from`, `to`, `patch`, `command`, and `docs` fields. Error envelopes may include the same object as `error.fix`. `frameyard explain <code>` prints the cause, a minimal failing example, the corrected example, and a docs link; `frameyard explain --list --json` lists every stable code.
 
 `doctor --json` reports findings rather than throwing: `ok: true` means inspection completed, while `healthy` reports whether required checks, manifests, models, and integrations passed. See the [JSON result reference](./skills/frameyard/references/json-results.md) for all shapes.
 

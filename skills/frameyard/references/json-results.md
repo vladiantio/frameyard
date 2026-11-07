@@ -28,7 +28,7 @@ Additional fields are command-specific and stable within the 0.8 contract. `chec
 }
 ```
 
-`error.details` and top-level `diagnostics` are optional. Use the error `code` for decisions, not message text. `command` is `null` only for usage failures that occur before a command is known. Exit code `2` means usage; `130` means cancellation; other failures exit `1`.
+`error.details`, `error.fix`, and top-level `diagnostics` are optional. Use the error `code` for decisions, not message text. `command` is `null` only for usage failures that occur before a command is known. Exit code `2` means usage; `130` means cancellation; other failures exit `1`.
 
 ## Diagnostics
 
@@ -47,6 +47,13 @@ Additional fields are command-specific and stable within the 0.8 contract. `chec
     "attribute": "data-fy-text",
     "value": "titel",
     "suggestion": "title"
+  },
+  "fix": {
+    "kind": "path",
+    "message": "Replace \"titel\" with \"title\", or add \"titel\" to the defaults.",
+    "from": "titel",
+    "to": "title",
+    "docs": "skills/frameyard/references/bindings.md"
   }
 }
 ```
@@ -104,6 +111,24 @@ Static validation diagnostics include source locations. Runtime diagnostics may 
 ## compare
 
 `compare` reports `identical`, `differingPixels`, `totalPixels`, `percent`, `maxChannelDelta`, `meanChannelDelta`, `bbox`, and 3×3 `regions`. It exits 1 when the images differ; the JSON body still has `ok: true` and `identical: false`. Different dimensions fail with `IMAGE_INVALID`.
+
+## explain
+
+`explain <code>` returns `code`, `message` (the cause), optional `docs`, and optional `examples` with `failing` and `corrected` snippets. `explain --list` returns `codes` with `code` and `summary`. Unknown codes exit with `USAGE` and point at `frameyard explain --list`.
+
+```json
+{
+  "ok": true,
+  "command": "explain",
+  "code": "BINDING_INVALID",
+  "message": "A data-fy-* attribute or binding path is invalid.",
+  "docs": "skills/frameyard/references/bindings.md",
+  "examples": {
+    "failing": "<h1 data-fy-txt=\"title\"></h1>",
+    "corrected": "<h1 data-fy-text=\"title\"></h1>"
+  }
+}
+```
 
 ## add
 

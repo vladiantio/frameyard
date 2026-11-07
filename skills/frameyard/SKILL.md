@@ -64,6 +64,7 @@ Use the public project format and CLI. Do not add an agent-only runtime, a hoste
 - Produce speech and transcripts only with `npx frameyard tts` and `npx frameyard transcribe`, never upstream executables; read [audio assets](references/audio-assets.md). Do not overwrite generated assets without approval.
 - Use `npx frameyard add --list --json` and `add composition|timeline <id> --template <name> --json` for templates, or `add recipe <recipe-id> --id <project-id> --json` for a complete composition/timeline/props/README bundle. Merge the returned registration object into `fy.config.js`. `add` never edits the config or overwrites an entry.
 - Use `npx frameyard font search <query> --json` to find a Fontsource family, then `npx frameyard font add <fontsource-id> --json` to pin and vendor it. Use `font add --file` for a local or brand font, or `font add --url` for an explicit HTTPS source. Reference the returned CSS family. `font list`, `font verify`, and `font remove` manage the manifest; never edit `fy.fonts.json` hashes by hand. Read [fonts](references/fonts.md).
+- When a diagnostic includes `fix`, prefer its `command`, `to`, `message`, and `docs`; `npx frameyard explain <code> --json` adds the cause, examples, and docs. `npx frameyard explain --list --json` lists every stable code. Fixes are advisory and never applied automatically.
 - Use `npx frameyard doctor --json` before reporting an environment problem. Read [JSON results](references/json-results.md) and [failure recovery](references/failure-recovery.md).
 
 ## Diagnostics and karaoke

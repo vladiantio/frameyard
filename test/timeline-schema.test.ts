@@ -616,5 +616,10 @@ describe("timeline schema", () => {
       clip: "broll",
       jsonPath: expect.stringContaining("$.clips"),
     });
+    expect(diagnostic?.fix).toMatchObject({
+      kind: "value",
+      message: expect.stringContaining("transition"),
+      docs: expect.stringContaining("timelines.md"),
+    });
   });
 });

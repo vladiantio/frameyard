@@ -5,6 +5,7 @@ import {
   type CompositionDiagnosticDetails,
   type Props,
 } from "../contracts.js";
+import { diagnosticFix } from "../diagnostic-fixes.js";
 import type { FrameyardErrorCode } from "../errors.js";
 import { EASING_GRAMMAR, parseEasing } from "./easing.js";
 
@@ -203,7 +204,8 @@ function makeDiagnostic(
     jsonPath: path,
     ...details,
   };
-  return { severity, code, message, details: merged };
+  const fix = diagnosticFix(code, merged, message);
+  return { severity, code, message, details: merged, ...(fix !== undefined ? { fix } : {}) };
 }
 
 function parseTransform(

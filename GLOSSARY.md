@@ -436,6 +436,14 @@ _Avoid_: Built-in generative AI
 An API-version-matched set of instructions and resources through which an AI agent uses Frameyard's public authoring and operation contracts.
 _Avoid_: Agent runtime, MCP server
 
+**Diagnostic fix**:
+An optional structured correction attached to a diagnostic or error, carrying a kind, a short instruction, and optional replacement, command, and documentation fields. Fixes are advisory and never applied automatically.
+_Avoid_: Autofix, patch
+
+**Explain**:
+The `frameyard explain` command that turns a stable diagnostic code into a cause, examples, and documentation.
+_Avoid_: Error lookup, autofix
+
 ### Local asset production
 
 **Generated asset**:

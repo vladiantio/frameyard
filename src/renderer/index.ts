@@ -321,6 +321,7 @@ async function prepareComposition(options: SessionOptions): Promise<PreparedComp
       `Composition "${options.compositionId}": ${first?.message ?? "static validation failed."}`,
       {
         ...(first?.details !== undefined ? { details: first.details } : {}),
+        ...(first?.fix !== undefined ? { fix: first.fix } : {}),
         diagnostics: validation.diagnostics,
       },
     );

@@ -1,4 +1,5 @@
 import type { CompositionDiagnostic, CompositionDiagnosticDetails, DiagnosticSeverity } from "../contracts.js";
+import { diagnosticFix } from "../diagnostic-fixes.js";
 import type { FrameyardErrorCode } from "../errors.js";
 import type { DocumentAdapter, SourceLocation } from "./adapter.js";
 
@@ -8,7 +9,8 @@ export function createDiagnostic(
   message: string,
   details: CompositionDiagnosticDetails,
 ): CompositionDiagnostic {
-  return { severity, code, message, details };
+  const fix = diagnosticFix(code, details, message);
+  return { severity, code, message, details, ...(fix !== undefined ? { fix } : {}) };
 }
 
 export function locationDetails(location: SourceLocation | undefined): CompositionDiagnosticDetails {

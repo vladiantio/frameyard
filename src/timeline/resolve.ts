@@ -9,6 +9,7 @@ import type {
   ResolvedTranscriptClip,
 } from "../contracts.js";
 import { mergeProps, type Props } from "../contracts.js";
+import { diagnosticFix } from "../diagnostic-fixes.js";
 import { FrameyardError } from "../errors.js";
 import { validateHtmlComposition, type StaticValidationResult } from "../html/validate.js";
 import type { Project, ProjectFormat, ProjectTimeline } from "../project.js";
@@ -166,7 +167,8 @@ function addError(
   message: string,
   details: CompositionDiagnosticDetails,
 ): void {
-  diagnostics.push({ severity: "error", code, message, details });
+  const fix = diagnosticFix(code, details, message);
+  diagnostics.push({ severity: "error", code, message, details, ...(fix !== undefined ? { fix } : {}) });
 }
 
 function addWarning(

@@ -200,9 +200,18 @@ describe.concurrent("CLI stills and composition checks", () => {
             column: expect.any(Number),
             attribute: "data-fy-txt",
           }),
+          fix: expect.objectContaining({
+            kind: "attribute",
+            from: "data-fy-txt",
+            to: "data-fy-text",
+            docs: expect.any(String),
+          }),
         }),
       ]),
     );
+    expect(json.error).toMatchObject({
+      fix: { kind: "attribute", to: "data-fy-text", docs: expect.any(String) },
+    });
   });
 
   it("fails a legacy full document with COMPOSITION_DOCUMENT_SHELL", async () => {
@@ -358,6 +367,45 @@ describe.concurrent("CLI stills and composition checks", () => {
       command: "check",
       error: { code: "PROPS_SCHEMA_INVALID_SCHEMA" },
     });
+  });
+
+  it("explains diagnostic codes with examples, docs, and a complete list", async () => {
+    const explained = await run(["explain", "BINDING_INVALID", "--json"], root);
+    expect(explained.code).toBe(0);
+    expect(JSON.parse(explained.stdout)).toMatchObject({
+      ok: true,
+      command: "explain",
+      code: "BINDING_INVALID",
+      message: expect.any(String),
+      docs: expect.any(String),
+      examples: {
+        failing: expect.stringContaining("data-fy-txt"),
+        corrected: expect.stringContaining("data-fy-text"),
+      },
+    });
+
+    const human = await run(["explain", "BINDING_INVALID"], root);
+    expect(human.code).toBe(0);
+    expect(human.stdout).toContain("Cause:");
+    expect(human.stdout).toContain("Failing:");
+    expect(human.stdout).toContain("Corrected:");
+    expect(human.stdout).toContain("Docs:");
+
+    const list = await run(["explain", "--list", "--json"], root);
+    expect(list.code).toBe(0);
+    const listing = JSON.parse(list.stdout) as {
+      codes?: Array<{ code: string; summary: string }>;
+    };
+    expect(listing.codes?.length).toBeGreaterThan(90);
+    expect(listing.codes).toContainEqual(
+      expect.objectContaining({ code: "BINDING_INVALID", summary: expect.any(String) }),
+    );
+
+    const unknown = await run(["explain", "NOT_A_CODE", "--json"], root);
+    expect(unknown.code).not.toBe(0);
+    const unknownJson = JSON.parse(unknown.stdout) as { error?: { code?: string; message?: string } };
+    expect(unknownJson.error).toMatchObject({ code: "USAGE" });
+    expect(unknownJson.error?.message).toContain("explain --list");
   });
 
   it("fails check when a required asset is missing", async () => {
@@ -644,6 +692,11 @@ describe.concurrent("CLI stills and composition checks", () => {
         code: "OUTPUT_EXISTS",
         details: {
           conflicts: [path.join(outDir, "still-demo-0.png"), path.join(outDir, "still-demo-3.png")],
+        },
+        fix: {
+          kind: "value",
+          patch: { overwrite: true },
+          docs: expect.any(String),
         },
       },
     });

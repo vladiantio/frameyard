@@ -154,6 +154,8 @@ code. Use `random("stable:key")` from `frameyard/runtime`, never `Math.random()`
 | `npx frameyard add --list --json` | List project templates, recipes, and scaffolds |
 | `npx frameyard add composition <id> --template <name> --json` | Write a valid fragment and print the config snippet |
 | `npx frameyard add recipe <recipe-id> --id <project-id> --json` | Install a complete recipe bundle and print the config snippet |
+| `npx frameyard explain <code> --json` | Diagnostic cause, examples, docs, and an actionable fix |
+| `npx frameyard explain --list --json` | List every diagnostic code with a short summary |
 | `npx frameyard font search <query> --json` | Search Fontsource by name, category, subset, style, or variable |
 | `npx frameyard font add <fontsource-id> --json` | Pin and vendor a Fontsource family; variable `wght` by default |
 | `npx frameyard font add <fontsource-id> --static --weight 400,700 --json` | Install explicit static weights |

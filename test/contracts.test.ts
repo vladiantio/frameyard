@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { assertJsonSerializable, mergeProps, normalizeAudioClip, normalizeTranscriptClip } from "../src/index.ts";
+import { diagnosticFix } from "../src/diagnostic-fixes.ts";
 import { applyPropsSchemaDefaults, parsePropsSchema, validatePropsAgainstSchema } from "../src/props-schema.ts";
 
 describe("props", () => {
@@ -160,6 +161,56 @@ describe("props schema", () => {
         palette: { background: "#000", foreground: "#fff" },
       }),
     ).toEqual([]);
+  });
+});
+
+describe("diagnostic fixes", () => {
+  it("maps an unknown data-fy attribute to a concrete replacement", () => {
+    expect(
+      diagnosticFix(
+        "BINDING_INVALID",
+        { attribute: "data-fy-txt", value: "title" },
+        'Unknown Frameyard attribute "data-fy-txt".',
+      ),
+    ).toMatchObject({
+      kind: "attribute",
+      from: "data-fy-txt",
+      to: "data-fy-text",
+      docs: expect.stringContaining("bindings.md"),
+    });
+  });
+
+  it("maps a missing binding path to a path fix with the missing name", () => {
+    expect(
+      diagnosticFix(
+        "BINDING_PATH_MISSING",
+        { value: "titel", suggestion: "title" },
+        'data-fy-text references prop "titel".',
+      ),
+    ).toMatchObject({
+      kind: "path",
+      from: "titel",
+      to: "title",
+      message: expect.stringContaining("titel"),
+      docs: expect.stringContaining("bindings.md"),
+    });
+  });
+
+  it.each([
+    "ANIMATION_INVALID",
+    "CONTROLLER_INVALID",
+    "STATIC_MEDIA_UNSUPPORTED",
+    "ASSET_NOT_FOUND",
+    "TIMELINE_CLIP_OVERLAP",
+    "TIMELINE_TRANSITION_GEOMETRY",
+    "FONT_LOAD_FAILED",
+    "OUTPUT_EXISTS",
+  ] as const)("provides a baseline fix for %s", (code) => {
+    expect(diagnosticFix(code, {}, "failure")).toMatchObject({
+      kind: expect.any(String),
+      message: expect.any(String),
+      docs: expect.any(String),
+    });
   });
 });
 

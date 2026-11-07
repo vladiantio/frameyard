@@ -35,7 +35,29 @@ Static validation covers:
 }
 ```
 
-`details` may include `path`, `line`, `column`, `endLine`, `endColumn`, `element`, `attribute`, `value`, `suggestion`, `frame`, and `controller`. For `PROPS_SCHEMA_INVALID`, `details.path` is the failing prop path (for example `title` or `palette.foreground`); `line` and `column` still point at the schema block. For `PROPS_SCHEMA_INVALID_SCHEMA`, `details.path` is the composition source path. Timeline diagnostics may also include `timeline`, `clip`, `track`, `channel`, `keyframe`, `jsonPath`, `timelineFrame`, `sourceFrame`, `from`, `to`, and `nesting`; keyframe errors use `channel`, the zero-based `keyframe` index, and the clip-local `frame`, and transition errors use `from`/`to`.
+`details` may include `path`, `line`, `column`, `endLine`, `endColumn`, `element`, `attribute`, `value`, `suggestion`, `frame`, and `controller`. For `PROPS_SCHEMA_INVALID`, `details.path` is the failing prop path (for example `title` or `palette.foreground`); `line` and `column` still point at the schema block. For `PROPS_SCHEMA_INVALID_SCHEMA`, `details.path` is the composition source path.
+
+## Fixes
+
+Diagnostics and error envelopes may include an optional `fix` object:
+
+```json
+{
+  "fix": {
+    "kind": "attribute",
+    "message": "Use \"data-fy-text\" instead of \"data-fy-txt\".",
+    "from": "data-fy-txt",
+    "to": "data-fy-text",
+    "docs": "skills/frameyard/references/bindings.md"
+  }
+}
+```
+
+`kind` is `attribute`, `value`, `path`, `command`, or `docs`. `patch`, `command`, and `docs` are optional. Fixes are advisory; Frameyard never applies them automatically.
+
+Baseline fixes are provided for `BINDING_INVALID`, `BINDING_PATH_MISSING`, `ANIMATION_INVALID`, `CONTROLLER_INVALID`, `STATIC_MEDIA_UNSUPPORTED`, `ASSET_NOT_FOUND`, `TIMELINE_CLIP_OVERLAP`, `TIMELINE_TRANSITION_GEOMETRY`, `FONT_LOAD_FAILED`, and `OUTPUT_EXISTS`, plus related binding, timeline, font, media, props-schema, and policy codes. Unknown codes have no fix.
+
+Use `npx frameyard explain <code>` for the cause and examples, or `npx frameyard explain --list --json` for every stable code and summary. Timeline diagnostics may also include `timeline`, `clip`, `track`, `channel`, `keyframe`, `jsonPath`, `timelineFrame`, `sourceFrame`, `from`, `to`, and `nesting`; keyframe errors use `channel`, the zero-based `keyframe` index, and the clip-local `frame`, and transition errors use `from`/`to`.
 
 ## Common codes
 
@@ -123,8 +145,9 @@ Policy failures use the normal error envelope. `RESOURCE_POLICY_BLOCKED` details
 
 1. Run `npx frameyard check <id> --json`.
 2. Read every error first; fix the first one and rerun.
-3. Treat warnings as actionable. `BINDING_PATH_MISSING` is usually a typo; use the `suggestion` field.
-4. Use `details.path`, `line`, and `column` to edit the exact source.
-5. Re-run `check`, inspect representative stills, then render.
+3. Prefer `fix.command`, `fix.to`, `fix.message`, and `fix.docs` when present; `npx frameyard explain <code>` adds examples.
+4. Treat warnings as actionable. `BINDING_PATH_MISSING` is usually a typo; use `fix.to` or `details.suggestion`.
+5. Use `details.path`, `line`, and `column` to edit the exact source.
+6. Re-run `check`, inspect representative stills, then render.
 
 Do not ignore a failing `check`, a missing still, or a nonzero render. Do not describe visual correctness you did not inspect.

@@ -25,6 +25,13 @@ contract change may ship in a minor release and is called out explicitly below.
   `PROPS_SCHEMA_INVALID_SCHEMA`; schema defaults merge under document defaults
   and user props. `context --json` includes the parsed `propsSchema`, and the
   runtime host applies the same defaults and validation.
+- Diagnostics and error envelopes can include an optional `fix` object with
+  `kind`, `message`, `from`, `to`, `patch`, `command`, and `docs`. Baseline fixes
+  cover binding, animation, controller, static-media, asset, timeline-overlap,
+  transition-geometry, font-load, and output-conflict failures. `frameyard
+  explain <code>` prints the cause, a failing example, the corrected example,
+  and a docs link; `explain --list --json` lists every stable code. Fixes are
+  advisory and are never applied automatically.
 
 ## [0.10.0] - 2026-11-07
 

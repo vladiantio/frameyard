@@ -95,22 +95,44 @@ export type FrameyardErrorCode =
   | "CANCELLED"
   | "INTERNAL";
 
+export type DiagnosticFixKind = "attribute" | "value" | "path" | "command" | "docs";
+
+/** A machine-readable and human-readable correction for a diagnostic. */
+export interface DiagnosticFix {
+  kind: DiagnosticFixKind;
+  /** Short human instruction. */
+  message: string;
+  /** Existing value or attribute, when the fix replaces one. */
+  from?: string;
+  /** Replacement value or attribute, when the fix is a direct substitution. */
+  to?: string;
+  /** Structured replacement data for editors or agents. */
+  patch?: Record<string, unknown>;
+  /** Exact command that helps resolve the issue. */
+  command?: string;
+  /** Relative documentation path or URL. */
+  docs?: string;
+}
+
 export interface FrameyardDiagnostic {
   severity: "error" | "warning";
   code: string;
   message: string;
   details?: unknown;
+  fix?: DiagnosticFix;
 }
 
 export interface FrameyardErrorOptions {
   cause?: unknown;
   details?: unknown;
+  fix?: DiagnosticFix;
   diagnostics?: FrameyardDiagnostic[];
 }
 
 export class FrameyardError extends Error {
   readonly code: FrameyardErrorCode;
   readonly details?: unknown;
+  readonly fix?: DiagnosticFix;
   readonly diagnostics?: FrameyardDiagnostic[];
 
   constructor(code: FrameyardErrorCode, message: string, options?: FrameyardErrorOptions) {
@@ -119,6 +141,9 @@ export class FrameyardError extends Error {
     this.code = code;
     if (options?.details !== undefined) {
       this.details = options.details;
+    }
+    if (options?.fix !== undefined) {
+      this.fix = options.fix;
     }
     if (options?.diagnostics !== undefined) {
       this.diagnostics = options.diagnostics;

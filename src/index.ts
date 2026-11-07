@@ -33,7 +33,7 @@ export type {
   TranscriptClip,
 } from "./contracts.js";
 export { FrameyardError, errorMessage, isFrameyardError } from "./errors.js";
-export type { FrameyardErrorCode } from "./errors.js";
+export type { DiagnosticFix, DiagnosticFixKind, FrameyardErrorCode } from "./errors.js";
 export { TRANSCRIPT_SCHEMA_VERSION, parseTranscript, transcriptToSrt, transcriptToVtt } from "./transcript.js";
 export type {
   ParseTranscriptOptions,

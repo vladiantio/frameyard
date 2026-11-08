@@ -289,7 +289,6 @@ export async function startPreviewServer(options: PreviewServerOptions): Promise
   const project = await loadProject(options.projectRoot);
   const frameworkDir = options.frameworkDir ?? path.join(fileURLToPath(new URL("../../", import.meta.url)), "dist");
   const host = options.host ?? "127.0.0.1";
-  const html = renderPreviewHtml();
 
   const server = createServer((request, response) => {
     void (async () => {
@@ -322,6 +321,14 @@ export async function startPreviewServer(options: PreviewServerOptions): Promise
       }
 
       if (pathname === "/__frameyard/") {
+        const html = renderPreviewHtml({
+          ...(url.searchParams.get("composition") !== null
+            ? { composition: url.searchParams.get("composition") as string }
+            : {}),
+          ...(url.searchParams.get("timeline") !== null
+            ? { timeline: url.searchParams.get("timeline") as string }
+            : {}),
+        });
         response.writeHead(200, {
           "Content-Type": "text/html; charset=utf-8",
           "Content-Length": Buffer.byteLength(html),

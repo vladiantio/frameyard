@@ -764,6 +764,16 @@ describe("timeline preview runtime", () => {
         }),
       ).toBe("light");
 
+      const stageBox = await page.locator("#stage").boundingBox();
+      const layerBox = await page.locator(".timeline-layer").first().boundingBox();
+      if (stageBox === null || layerBox === null) {
+        throw new Error("Missing timeline stage or layer.");
+      }
+      expect(layerBox.x).toBeCloseTo(stageBox.x, 0);
+      expect(layerBox.y).toBeCloseTo(stageBox.y, 0);
+      expect(layerBox.width).toBeCloseTo(stageBox.width, 0);
+      expect(layerBox.height).toBeCloseTo(stageBox.height, 0);
+
       await page.locator("#step-forward").click();
       await waitForFrame(page, 1);
       expect(await page.locator("#frame").textContent()).toBe("1");
@@ -797,6 +807,24 @@ describe("timeline preview runtime", () => {
     }
   }, 60_000);
 
+  it("loads the first timeline into the program monitor on the composition page", async () => {
+    const page = await browser.newPage({ viewport: { width: 1000, height: 700 } });
+    try {
+      await page.goto(new URL("/__frameyard/?composition=intro", server.url).href, {
+        waitUntil: "domcontentloaded",
+      });
+      await page.waitForFunction(
+        () => document.querySelectorAll("#program-viewport .timeline-layer iframe").length === 1,
+      );
+      await page.waitForFunction(() => document.querySelector("#title")?.textContent === "main");
+      expect(await page.locator('.asset[data-asset-kind="timeline"]').count()).toBe(9);
+      expect(await page.locator("#timeline-meta").textContent()).toContain("10 frames");
+      expect(await page.locator("#meta").textContent()).toContain("320×180");
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+
   it("inspects a clip, jumps to its bounds, copies a still command, and closes with Escape", async () => {
     const page = await browser.newPage({ viewport: { width: 1100, height: 780 } });
     try {
@@ -816,6 +844,15 @@ describe("timeline preview runtime", () => {
       await page.locator('.clip[data-clip-id="intro"]').click();
       await page.waitForFunction(() => !(document.querySelector("#inspector") as HTMLElement | null)?.hidden);
       expect(await page.locator("#inspector-title").textContent()).toBe("intro");
+      expect(await page.locator("#source-title").textContent()).toBe("clip · intro · composition");
+      await page.waitForFunction(() => {
+        const stage = document.querySelector("#stage-frame") as HTMLIFrameElement | null;
+        return stage?.contentDocument?.querySelector<HTMLElement>("#box")?.dataset.frame === "0";
+      });
+      expect(await page.locator("#inspector").evaluate((element) => element.closest(".props-panel") !== null)).toBe(
+        true,
+      );
+      expect(await page.locator("#props-view").isVisible()).toBe(false);
       expect(await page.locator('#inspector-content [data-label="track"] .inspector-value').textContent()).toBe("v1");
       expect(await page.locator('#inspector-content [data-label="source"] .inspector-value').textContent()).toBe(
         "composition · intro",
@@ -842,6 +879,7 @@ describe("timeline preview runtime", () => {
 
       await page.keyboard.press("Escape");
       expect(await page.locator("#inspector").getAttribute("hidden")).not.toBeNull();
+      expect(await page.locator("#props-view").isVisible()).toBe(true);
     } finally {
       await page.close();
     }

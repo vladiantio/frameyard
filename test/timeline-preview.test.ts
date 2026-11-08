@@ -193,6 +193,15 @@ describe("timeline preview server", () => {
     expect(html).toContain('data-embed="0"');
     expect(html).toContain("/__frameyard/framework/preview/timeline-main.js");
     expect(html).toContain("timeline");
+    expect(html).toContain("composition-assets");
+    expect(html).toContain("timeline-assets");
+    expect(html).toContain("media-assets");
+    expect(html).toContain('id="source-viewport"');
+    expect(html).toContain('id="source-title"');
+    expect(html).toContain('id="program-viewport"');
+    expect(html).toContain('id="props-view"');
+    expect(html).toContain('id="inspector-host"');
+    expect(html).toContain("timeline-panel");
     expect(html).toContain(".keyframe-marker");
     expect(html).toContain('id="ruler-scale"');
     expect(html).toContain('id="timeline-inner"');

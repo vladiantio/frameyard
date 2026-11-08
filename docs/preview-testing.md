@@ -4,27 +4,63 @@ The preview runs the production composition and timeline hosts in a browser. Use
 the embedded hosts for deterministic Playwright probes; they are same-origin and
 expose the same seek/settle contract the renderer uses.
 
+## Preview layout
+
+Both non-embedded routes render the same editor-style shell:
+
+- `.assets-panel`: `#composition` and `#timeline` pickers plus
+  `#composition-assets`, `#timeline-assets`, and `#media-assets`. Media assets
+  come from the selected timeline. Composition tiles use live scaled iframes;
+  media tiles use image/video previews or an audio label.
+- `.source-panel`: `#source-viewport` holds `#stage-frame` for a composition,
+  `#source-timeline-frame` for a nested timeline, `#source-media` for media, or
+  `#source-empty`. The source title is `#source-title`.
+- `.program-panel`: `#program-viewport` holds `#stage`, the timeline host. The
+  program title is `#title`.
+- `.props-panel`: `#props-view` holds the JSON editor and apply/format buttons;
+  `#inspector-host` holds the docked `#inspector`. The props view hides while
+  the inspector is open.
+- `.timeline-panel`: `#timeline-inner`, `#ruler-scale`, `#tracks`, and
+  `#playhead`.
+
+Composition focus uses the source transport for `#play`, `#frame`, `#duration`,
+`#scrub`, `#step-back`, `#step-forward`, `#jump-back`, `#jump-forward`, `#mute`,
+and `#volume`; the program transport uses `timeline-` prefixed ids. Timeline
+focus reverses that: the program transport owns the unprefixed ids and the
+source transport uses `source-` prefixed ids. `#play-button` always drives the
+program monitor, and `#play` always drives the source monitor.
+
 ## Composition preview
 
 - Page: `/__frameyard/?composition=<id>`.
-- Stage: the `#stage-frame` iframe.
+- Stage: the `#stage-frame` iframe in the source monitor.
 - API: `window.__frameyardPreview` exposes `load(entry, props?)`, `seek(frame)`,
   `settle()`, and `dispose()`.
 - `seek()` is synchronous. Call `await settle()` before reading pixels; `load()`
   resets the host, so apply props through it.
 - A static composition reports `metadata: { width, height, static: true }`.
-  `seek()` is a no-op, `settle()` resolves, and the page disables the transport.
-  Wait for the static composition's own marker instead of `waitForFrame()`,
-  which expects a controller-updated `#box`.
+  `seek()` is a no-op, `settle()` resolves, and the page disables the source
+  transport. Wait for the static composition's own marker instead of
+  `waitForFrame()`, which expects a controller-updated `#box`.
+- Selecting a composition tile or the composition picker loads the source
+  monitor. The same page also loads the first timeline into the program monitor
+  and timeline strip when the project has one.
 
 ## Timeline preview
 
 - Page: `/__frameyard/timeline/<id>`; add `?__fy-embed=1` for the embedded host.
-- API: `window.__fyTimeline` exposes `ready`, `format`, `durationInFrames`,
-  `load()`, `seek(frame)`, `settle()`, and `dispose()`.
+- API: the embedded host exposes `window.__fyTimeline` with `ready`, `format`,
+  `durationInFrames`, `load()`, `seek(frame)`, `settle()`, and `dispose()`. The
+  non-embedded page also publishes a `window.__fyTimeline` facade over the
+  program monitor.
 - Order: `await ready`, `await load()`, `await seek(frame)`, `await settle()`.
-- The non-embedded page owns transport and audio; only the embedded host exposes
-  `window.__fyTimeline`.
+- The non-embedded page owns transport, audio, clips, keyframe markers, the
+  timeline strip, and the docked inspector; the embedded host only exposes the
+  stage API.
+- Clicking a `.clip[data-clip-id]` selects it, loads its source into the source
+  monitor at `sourceIn`, and opens the clip inspector. It does not move the
+  program playhead. Use the inspector's jump actions or a keyframe marker to
+  seek.
 - A static composition source carries `metadata.static: true` and no
   `metadata.durationInFrames`. The host loads the layer once and skips per-frame
   seek; the layer remains visible while the timeline playhead moves.
@@ -51,7 +87,8 @@ expose the same seek/settle contract the renderer uses.
 ## Inspector
 
 Both non-embedded preview pages create a read-only inspector as
-`<aside id="inspector">` when `src/preview/inspector.ts` runs.
+`<aside id="inspector">` inside `#inspector-host`. It docks into the props
+panel and does not float over the stage.
 
 - Composition: clicking an element selects it. Rows show tag, id, classes,
   current frame, frame-state variables, and every `data-fy-*` binding with its

@@ -223,7 +223,7 @@ npx frameyard render main --props props/main.json --workers 8 --scratch /path/to
 - `--concurrency` is composition-only.
 - `render` defaults to `out/<timeline-id>.mp4`.
 - `check` evaluates every timeline frame and every animated composition frame; a static composition layer is inspected once and not seeked per frame. It also evaluates every keyframe channel at every timeline frame. `still` captures one or more requested frames through the same clip capture and composite path; a multi-frame still resolves the timeline, starts one server, and reuses one scratch directory. The `--frame` spec and 32-frame cap are the same as for compositions.
-- `npx frameyard dev` lists timelines in the preview; the timeline view has a program monitor, read-only tracks and clips, playhead, playback, audio controls, and diagnostics.
+- `npx frameyard dev` lists compositions, timelines, and timeline media in the preview's assets panel. The source monitor shows the selected composition, clip source, or asset; the timeline view has a program monitor, read-only tracks and clips, playhead, playback, audio controls, and diagnostics. Selecting a clip loads its source in the source monitor without moving the playhead.
 
 ## Determinism and performance
 

@@ -33,6 +33,12 @@ export interface Inspector {
   isOpen(): boolean;
 }
 
+export interface InspectorOptions {
+  /** When set, the inspector renders inline inside this element instead of floating over the page. */
+  container?: HTMLElement;
+  onVisibilityChange?: (open: boolean) => void;
+}
+
 function element<K extends keyof HTMLElementTagNameMap>(
   tag: K,
   className?: string,
@@ -72,13 +78,16 @@ function formatDiagnostic(diagnostic: CompositionDiagnostic): string {
  * Creates the read-only preview inspector. It only reads preview state and
  * never mutates the composition or timeline.
  */
-export function createInspector(): Inspector {
+export function createInspector(options: InspectorOptions = {}): Inspector {
   const root = element("aside", "inspector");
   root.id = "inspector";
   root.hidden = true;
   root.setAttribute("role", "dialog");
   root.setAttribute("aria-label", "Inspector");
   root.setAttribute("aria-live", "polite");
+  if (options.container !== undefined) {
+    root.classList.add("docked");
+  }
 
   const head = element("div", "inspector-head");
   const eyebrow = element("span", "eyebrow", "inspector");
@@ -103,13 +112,17 @@ export function createInspector(): Inspector {
   status.setAttribute("aria-live", "polite");
 
   root.append(head, title, subtitle, content, actions, diagnostics, status);
-  document.body.append(root);
+  (options.container ?? document.body).append(root);
 
   let copyButton: HTMLButtonElement | null = null;
 
   const hide = (): void => {
+    if (root.hidden) {
+      return;
+    }
     root.hidden = true;
     copyButton = null;
+    options.onVisibilityChange?.(false);
   };
 
   close.addEventListener("click", hide);
@@ -148,6 +161,9 @@ export function createInspector(): Inspector {
     show(model: InspectorModel): void {
       const wasHidden = root.hidden;
       root.hidden = false;
+      if (wasHidden) {
+        options.onVisibilityChange?.(true);
+      }
       root.dataset.kind = model.kind;
       title.textContent = model.title;
       subtitle.textContent = model.subtitle ?? "";

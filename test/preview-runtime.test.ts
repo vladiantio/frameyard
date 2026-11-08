@@ -249,6 +249,61 @@ describe("browser preview runtime", () => {
     await context.close();
   });
 
+  it("lays out the assets, source, program, props, and timeline panels", async () => {
+    const context = await browser.newContext({ viewport: { width: 1000, height: 720 } });
+    const page = await context.newPage();
+    await page.goto(new URL("/__frameyard/?composition=html", server.url).href);
+    await page.waitForFunction(() => {
+      const stage = document.querySelector("#stage-frame") as HTMLIFrameElement | null;
+      return stage?.contentDocument?.querySelector("#box")?.getAttribute("data-frame") === "0";
+    });
+
+    const regions = await page.evaluate(() => {
+      const box = (selector: string) => {
+        const rect = document.querySelector(selector)?.getBoundingClientRect();
+        return rect ? { left: rect.left, top: rect.top, width: rect.width, height: rect.height } : null;
+      };
+      return {
+        assets: box(".assets-panel"),
+        source: box(".source-panel"),
+        program: box(".program-panel"),
+        props: box(".props-panel"),
+        timeline: box(".timeline-panel"),
+      };
+    });
+    expect(regions.assets, "assets panel").not.toBeNull();
+    expect(regions.source, "source monitor").not.toBeNull();
+    expect(regions.program, "program monitor").not.toBeNull();
+    expect(regions.props, "props panel").not.toBeNull();
+    expect(regions.timeline, "timeline panel").not.toBeNull();
+    expect(regions.assets!.left).toBeLessThan(regions.source!.left);
+    expect(regions.source!.left).toBeLessThan(regions.program!.left);
+    expect(regions.assets!.top).toBeLessThan(regions.props!.top);
+    expect(regions.props!.left).toBe(regions.assets!.left);
+    expect(regions.source!.top).toBe(regions.program!.top);
+    expect(regions.timeline!.top).toBeGreaterThan(regions.source!.top);
+    expect(regions.timeline!.left).toBe(regions.source!.left);
+    expect(regions.timeline!.width).toBeCloseTo(
+      regions.program!.left + regions.program!.width - regions.source!.left,
+      0,
+    );
+
+    expect(await page.locator('.asset[data-asset-kind="composition"]').count()).toBe(5);
+    expect(await page.locator('.asset[data-asset-kind="timeline"]').count()).toBe(0);
+    expect(await page.locator("#program-empty").isVisible()).toBe(true);
+
+    await page.locator('.asset[data-asset-kind="composition"][data-asset-id="demo"]').click();
+    await page.waitForFunction(() => {
+      const stage = document.querySelector("#stage-frame") as HTMLIFrameElement | null;
+      return (
+        stage?.getAttribute("src")?.includes("demo.html") === true &&
+        Boolean(stage.contentDocument?.querySelector("#label"))
+      );
+    });
+    expect(await page.locator("#source-title").textContent()).toContain("demo");
+    await context.close();
+  });
+
   it("loads, seeks, and resolves props and audio deterministically", async () => {
     const context = await browser.newContext({ viewport: { width: 800, height: 600 } });
     const page = await context.newPage();
@@ -653,6 +708,8 @@ describe("browser preview runtime", () => {
     await frame.locator("#title").click();
     await page.waitForFunction(() => !(document.querySelector("#inspector") as HTMLElement | null)?.hidden);
     expect(await page.locator("#inspector-title").textContent()).toBe("<div>");
+    expect(await page.locator("#inspector").evaluate((element) => element.closest(".props-panel") !== null)).toBe(true);
+    expect(await page.locator("#props-view").isVisible()).toBe(false);
     expect(await page.locator('#inspector-content [data-label="tag"] .inspector-value').textContent()).toBe("div");
     expect(
       await page.locator('#inspector-content [data-label="data-fy-text"] .inspector-value').textContent(),
@@ -675,6 +732,7 @@ describe("browser preview runtime", () => {
     await page.waitForFunction(() => document.querySelector("#frame")?.textContent === "0");
     await page.keyboard.press("Escape");
     expect(await page.locator("#inspector").getAttribute("hidden")).not.toBeNull();
+    expect(await page.locator("#props-view").isVisible()).toBe(true);
     await context.close();
   });
 

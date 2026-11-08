@@ -12,6 +12,13 @@ contract change may ship in a minor release and is called out explicitly below.
 
 ### Changed
 
+- The preview now uses one editor-style layout on both composition and timeline
+  routes: a thumbnail assets panel for compositions, timelines, and timeline
+  media; a source monitor for the selected composition, clip source, or asset;
+  a program monitor for the selected timeline; a timeline strip spanning the
+  main area; and a docked props and inspector panel. Each monitor has its own
+  transport. Selecting a timeline clip loads its source into the source monitor
+  and opens the read-only inspector without moving the program playhead.
 - `render --scale <factor>` now captures animated compositions and timeline
   stages at the scaled format instead of rendering at full size and scaling
   during encode. Composition captures rasterize at the scaled pixel density and

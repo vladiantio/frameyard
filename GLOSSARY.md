@@ -343,12 +343,16 @@ The Node-side segmented renderer that captures composition clips, composites and
 _Avoid_: Timeline host, browser renderer
 
 **Preview**:
-An interactive, frame-accurate inspection of a timeline or composition using the same behavior as a render, including a program monitor and a read-only timeline view.
+An interactive, frame-accurate inspection of a timeline or composition using the same behavior as a render, with an assets panel, a source monitor, a program monitor, a docked props and inspector panel, and a read-only timeline view.
 _Avoid_: Visual editor
 
 **Playhead**:
 The current timeline frame in preview.
 _Avoid_: Cursor, scrubber
+
+**Source monitor**:
+The preview surface that shows the selected composition, timeline clip source, or media asset independently of the timeline playhead.
+_Avoid_: Program monitor, stage, canvas
 
 **Program monitor**:
 The preview surface that shows the timeline at the playhead.

@@ -10,6 +10,26 @@ contract change may ship in a minor release and is called out explicitly below.
 
 ## [Unreleased]
 
+### Changed
+
+- The CLI now uses `citty` for command and argument parsing and generated
+  usage, `@clack/prompts` for the interactive `init` project-name prompt and
+  the Fontsource search spinner, and `picocolors` for human-readable output.
+  Flags may appear before the command, `help <command>` and
+  `<command> --help` work without the command's positionals, and colored
+  output is limited to terminals (or `FORCE_COLOR`), honors `NO_COLOR`, and
+  never enters `--json` stdout.
+- `check` and `render` now paint a single live progress line on a terminal
+  with a bar, percentage, frame count, elapsed time, throughput, ETA, and
+  completed timeline segments. Compositions and timelines report every frame,
+  including inside timeline segments, and parallel timeline renders sum
+  completed segment work so the bar advances with real work instead of jumping
+  to the highest playhead frame. Phase changes use a spinner for `Capturing`,
+  `Encoding`, `Muxing`, and `Finalizing`; piped and CI runs log a line every ten
+  percent and one line per phase. `--no-progress` suppresses progress,
+  cancellation clears the live line, and progress stays on stderr so `--json`
+  stdout is unchanged.
+
 ### Added
 
 - `frameyard add recipe <recipe-id> --id <project-id>` installs a complete

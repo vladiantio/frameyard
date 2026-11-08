@@ -46,6 +46,7 @@ import { createSemaphore, type Semaphore } from "./concurrency.js";
 import { scaledVideoDimensions, validateRenderScale } from "./scale.js";
 import { CompositionSessionPool, type SessionLease } from "./session-pool.js";
 import { inspectTranscriptClips, type TranscriptInspection } from "./transcripts.js";
+import type { ProgressPhase, TimelineProgressEvent } from "./progress.js";
 import { startTiming } from "./timings.js";
 import { evaluatePresentation } from "../timeline/keyframes.js";
 import { transitionProgress } from "../timeline/transitions.js";
@@ -61,13 +62,7 @@ import {
 
 export const MAX_TIMELINE_WORKERS = 16;
 
-export interface TimelineProgressEvent {
-  frame: number;
-  total: number;
-  elapsedMs: number;
-  segment: number;
-  segments: number;
-}
+export type { TimelineProgressEvent } from "./progress.js";
 
 export interface TimelineRenderOptions {
   project: Project;
@@ -633,6 +628,8 @@ interface CompositionFrameCaptureOptions {
   infoCache: Map<string, StaticValidationResult>;
   sessionPool?: CompositionSessionPool;
   signal?: AbortSignal;
+  /** Called once per captured frame with the zero-based segment offset. */
+  onFrame?: (offset: number) => void;
 }
 
 /**
@@ -723,6 +720,7 @@ async function captureCompositionFrames(
       const writeStarted = performance.now();
       await writeFrame(png);
       writeMs += performance.now() - writeStarted;
+      options.onFrame?.(offset);
     }
     for (const diagnostic of await session.readDiagnostics()) {
       diagnostics.push(compositionDiagnostic(diagnostic, timeline.id, clip, source.id));
@@ -982,6 +980,7 @@ async function captureTwoLayerDirectComposition(
             infoCache: options.infoCache,
             ...(options.sessionPool !== undefined ? { sessionPool: options.sessionPool } : {}),
             ...(options.signal ? { signal: options.signal } : {}),
+            ...(options.onFrame !== undefined && layerIndex === 0 ? { onFrame: options.onFrame } : {}),
           },
           (png) => encoder.writeFrame(layerIndex as 0 | 1, png),
         );
@@ -1093,6 +1092,8 @@ async function processTimelineSegment(options: {
   depth?: number;
   encoder?: VideoEncoderName;
   signal?: AbortSignal;
+  /** Called once per rendered segment frame with the zero-based segment offset. */
+  onFrame?: (offset: number) => void;
 }): Promise<{ path: string; diagnostics: CompositionDiagnostic[] }> {
   const { project, timeline, segment, serverUrl, scratchRoot, infoCache } = options;
   const codec = options.codec ?? "h264";
@@ -1145,6 +1146,7 @@ async function processTimelineSegment(options: {
         ...(options.sessionPool !== undefined ? { sessionPool: options.sessionPool } : {}),
         ...(options.encoder !== undefined ? { encoderName: options.encoder } : {}),
         ...(options.signal ? { signal: options.signal } : {}),
+        ...(options.onFrame !== undefined ? { onFrame: options.onFrame } : {}),
       }),
     );
     directTiming.finish();
@@ -1174,6 +1176,7 @@ async function processTimelineSegment(options: {
       ...(options.sessionPool !== undefined ? { sessionPool: options.sessionPool } : {}),
       ...(options.encoder !== undefined ? { encoderName: options.encoder } : {}),
       ...(options.signal ? { signal: options.signal } : {}),
+      ...(options.onFrame !== undefined ? { onFrame: options.onFrame } : {}),
     });
     directTiming.finish();
     segmentTiming.finish();
@@ -1204,6 +1207,7 @@ async function processTimelineSegment(options: {
       container: options.container ?? "mp4",
       ...(options.encoder !== undefined ? { encoder: options.encoder } : {}),
       ...(options.signal ? { signal: options.signal } : {}),
+      ...(options.onFrame !== undefined ? { onFrame: (frame: number) => options.onFrame?.(frame - 1) } : {}),
     });
     directTiming.finish();
     segmentTiming.finish();
@@ -1213,6 +1217,9 @@ async function processTimelineSegment(options: {
   await mkdir(segmentDir, { recursive: true });
   const diagnostics: CompositionDiagnostic[] = [];
   const layers: TimelineCompositeLayer[] = [];
+  const progressLayerIndex = segment.layers.findIndex(
+    (layer) => layer.clip.source.kind === "composition" && layer.capture !== "still",
+  );
   const layerTasks = segment.layers.map(async (layer, layerIndex): Promise<CapturedLayer> => {
     throwIfAborted(options.signal);
     const clip = layer.clip;
@@ -1260,6 +1267,7 @@ async function processTimelineSegment(options: {
           infoCache,
           ...(options.sessionPool !== undefined ? { sessionPool: options.sessionPool } : {}),
           ...(options.signal ? { signal: options.signal } : {}),
+          ...(options.onFrame !== undefined && layerIndex === progressLayerIndex ? { onFrame: options.onFrame } : {}),
         }),
       );
       timing.finish();
@@ -1342,6 +1350,7 @@ async function processTimelineSegment(options: {
     ...(options.container !== undefined ? { container: options.container } : {}),
     ...(options.encoder !== undefined ? { encoder: options.encoder } : {}),
     ...(options.signal ? { signal: options.signal } : {}),
+    ...(options.onFrame !== undefined ? { onFrame: (frame: number) => options.onFrame?.(frame - 1) } : {}),
   });
   compositeTiming.finish();
   const cleanupTiming = startTiming("timeline.segment.cleanup", { segment: segment.index });
@@ -1495,12 +1504,21 @@ async function checkResolvedTimelineRange(options: {
           }
           await session.seek(layer.sourceStart + (frame - segment.start));
         }
+        if (context.depth === 0 && frame < segment.end - 1) {
+          context.onProgress?.({
+            frame: frame + 1,
+            total: context.totalFrames,
+            elapsedMs: performance.now() - context.startedAt,
+            phase: "checking",
+          });
+        }
       }
       if (context.depth === 0) {
         context.onProgress?.({
           frame: segment.end,
           total: context.totalFrames,
           elapsedMs: performance.now() - context.startedAt,
+          phase: "checking",
           segment: segment.index + 1,
           segments: plan.segments.length,
         });
@@ -1897,6 +1915,22 @@ export async function captureTimelineStill(options: TimelineStillOptions): Promi
   });
 }
 
+function reportTimelinePhase(
+  onProgress: ((event: TimelineProgressEvent) => void) | undefined,
+  startedAt: number,
+  phase: ProgressPhase,
+  detail: string,
+): void {
+  onProgress?.({
+    frame: 0,
+    total: 0,
+    elapsedMs: performance.now() - startedAt,
+    phase,
+    indeterminate: true,
+    detail,
+  });
+}
+
 /** Renders one timeline to MP4 through the segmented lossless clip pipeline. */
 export async function renderTimeline(options: TimelineRenderOptions): Promise<TimelineRenderResult> {
   const container = options.container ?? "mp4";
@@ -2039,7 +2073,24 @@ export async function renderTimeline(options: TimelineRenderOptions): Promise<Ti
     `.${path.basename(options.outPath)}.frameyard-${process.pid}-${randomUUID()}.mp4`,
   );
 
+  // Multiple workers render segments concurrently. Sum completed segment
+  // frames instead of using the highest absolute frame, so the bar reflects
+  // work done and does not jump to the end when late segments start first.
+  const segmentProgress = Array.from({ length: plan.segments.length }, () => 0);
+  const completedFrames = (): number =>
+    Math.min(
+      total,
+      segmentProgress.reduce((sum, value) => sum + value, 0),
+    );
+
   try {
+    options.onProgress?.({
+      frame: 0,
+      total,
+      elapsedMs: performance.now() - startedAt,
+      phase: "rendering",
+    });
+
     const worker = async (): Promise<void> => {
       while (true) {
         throwIfAborted(options.signal);
@@ -2063,12 +2114,34 @@ export async function renderTimeline(options: TimelineRenderOptions): Promise<Ti
           container,
           encoder,
           ...(options.signal ? { signal: options.signal } : {}),
+          ...(options.onProgress !== undefined
+            ? {
+                onFrame: (offset: number) => {
+                  if (offset >= segment.frames - 1) {
+                    return;
+                  }
+                  const next = Math.min(segment.frames, Math.max(0, offset + 1));
+                  if (next <= (segmentProgress[index] ?? 0)) {
+                    return;
+                  }
+                  segmentProgress[index] = next;
+                  options.onProgress?.({
+                    frame: completedFrames(),
+                    total,
+                    elapsedMs: performance.now() - startedAt,
+                    phase: "rendering",
+                  });
+                },
+              }
+            : {}),
         });
         segmentResults[index] = result;
+        segmentProgress[index] = segment.frames;
         options.onProgress?.({
-          frame: Math.min(total, Math.max(0, segment.end - startFrame)),
+          frame: completedFrames(),
           total,
           elapsedMs: performance.now() - startedAt,
+          phase: "rendering",
           segment: index + 1,
           segments: plan.segments.length,
         });
@@ -2092,6 +2165,7 @@ export async function renderTimeline(options: TimelineRenderOptions): Promise<Ti
     });
 
     const concatTiming = startTiming("timeline.concat", { segments: segmentPaths.length });
+    reportTimelinePhase(options.onProgress, startedAt, "muxing", "segments");
     await concatTimelineSegments({
       segmentPaths,
       listPath: path.join(scratchRoot, "segments.txt"),
@@ -2106,6 +2180,7 @@ export async function renderTimeline(options: TimelineRenderOptions): Promise<Ti
     if (audioClips.length > 0) {
       const audioPath = path.join(scratchRoot, "audio.wav");
       const mixTiming = startTiming("timeline.audio_mix", { assets: audioClips.length });
+      reportTimelinePhase(options.onProgress, startedAt, "muxing", "audio");
       await mixAudioTimeline({
         clips: audioClips.map((clip) => ({
           path: path.resolve(options.project.root, clip.src),
@@ -2122,6 +2197,7 @@ export async function renderTimeline(options: TimelineRenderOptions): Promise<Ti
       });
       mixTiming.finish();
       const muxTiming = startTiming("timeline.mux", { codec, container });
+      reportTimelinePhase(options.onProgress, startedAt, "muxing", "video");
       await muxVideoWithAudio({
         videoPath: tempVideo,
         audioPath,
@@ -2136,6 +2212,7 @@ export async function renderTimeline(options: TimelineRenderOptions): Promise<Ti
       finalPath = tempFinal;
     } else if (scale !== 1) {
       const scaleTiming = startTiming("timeline.scale", { scale });
+      reportTimelinePhase(options.onProgress, startedAt, "muxing", "video");
       await scaleVideoFile({
         videoPath: tempVideo,
         outputPath: tempFinal,
@@ -2156,6 +2233,7 @@ export async function renderTimeline(options: TimelineRenderOptions): Promise<Ti
       );
     }
     const publishTiming = startTiming("timeline.publish", { out: options.outPath });
+    reportTimelinePhase(options.onProgress, startedAt, "finalizing", "output");
     await publishFile(finalPath, options.outPath, overwrite);
     publishTiming.finish();
 

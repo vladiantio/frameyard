@@ -27,6 +27,90 @@ afterAll(async () => {
 });
 
 describe.concurrent("CLI renders and workflow", () => {
+  it("renders citty help, version, and colored human output", async () => {
+    const help = await run(["--help"], root);
+    expect(help.code).toBe(0);
+    expect(help.stdout).toContain("COMMANDS");
+    expect(help.stdout).toContain("render");
+    expect(help.stdout).not.toContain("\u001b[");
+
+    const commandHelp = await run(["render", "--help"], root);
+    expect(commandHelp.code, commandHelp.stderr).toBe(0);
+    expect(commandHelp.stdout).toContain("USAGE frameyard render");
+    expect(commandHelp.stdout).toContain("--workers");
+    expect(commandHelp.stdout).toContain("--no-progress");
+
+    const namedHelp = await run(["help", "render"], root);
+    expect(namedHelp.code, namedHelp.stderr).toBe(0);
+    expect(namedHelp.stdout).toContain("USAGE frameyard render");
+
+    const unknownHelp = await run(["help", "nope"], root);
+    expect(unknownHelp.code).toBe(2);
+    expect(unknownHelp.stderr).toContain('Unknown command "nope"');
+
+    expect((await run(["--version"], root)).stdout.trim()).toBe(VERSION);
+    expect((await run(["-v"], root)).stdout.trim()).toBe(VERSION);
+
+    const beforeCommand = await run(["--json", "context", "--project", root], root);
+    expect(beforeCommand.code, beforeCommand.stderr).toBe(0);
+    expect(JSON.parse(beforeCommand.stdout)).toMatchObject({ ok: true, command: "context" });
+
+    const plain = await run(["context", "--project", root], root);
+    expect(plain.code, plain.stderr).toBe(0);
+    expect(plain.stdout).not.toContain("\u001b[");
+
+    const colored = await run(["context", "--project", root], root, {
+      env: { FORCE_COLOR: "1", TERM: "xterm-256color" },
+    });
+    expect(colored.code, colored.stderr).toBe(0);
+    expect(colored.stdout).toContain("\u001b[");
+  });
+
+  it("reports render and check progress on stderr without touching JSON stdout", async () => {
+    const check = await run(["check", "demo", "--project", root, "--json"], root);
+    expect(check.code, check.stderr).toBe(0);
+    expect(check.stderr).toContain("Checking 6/6 (100%)");
+    expect(check.stdout).not.toContain("Checking");
+    expect(JSON.parse(check.stdout)).toMatchObject({ ok: true, command: "check", framesChecked: 6 });
+
+    const render = await run(
+      ["render", "demo", "--frames", "0-2", "--out", "progress.mp4", "--project", root, "--json"],
+      root,
+    );
+    expect(render.code, render.stderr).toBe(0);
+    expect(render.stderr).toContain("Capturing 3/3 (100%)");
+    expect(render.stderr).toContain("Encoding video...");
+    expect(render.stderr).toContain("Finalizing output...");
+    expect(render.stdout).not.toContain("Capturing");
+    expect(render.stdout).not.toContain("Rendering");
+    expect(JSON.parse(render.stdout)).toMatchObject({ ok: true, command: "render", framesRendered: 3 });
+
+    const quietCheck = await run(["check", "demo", "--project", root, "--json", "--no-progress"], root);
+    expect(quietCheck.code, quietCheck.stderr).toBe(0);
+    expect(quietCheck.stderr).not.toContain("Checking");
+    expect(JSON.parse(quietCheck.stdout)).toMatchObject({ ok: true, command: "check", framesChecked: 6 });
+
+    const quietRender = await run(
+      [
+        "render",
+        "demo",
+        "--frames",
+        "0-2",
+        "--out",
+        "quiet-progress.mp4",
+        "--project",
+        root,
+        "--json",
+        "--no-progress",
+      ],
+      root,
+    );
+    expect(quietRender.code, quietRender.stderr).toBe(0);
+    expect(quietRender.stderr).not.toContain("Capturing");
+    expect(quietRender.stderr).not.toContain("Encoding");
+    expect(JSON.parse(quietRender.stdout)).toMatchObject({ ok: true, command: "render", framesRendered: 3 });
+  });
+
   it("checks and renders embedded video audio with the declared timeline", async () => {
     const check = await run(["check", "media", "--project", root, "--json"], root);
     expect(check.code).toBe(0);
@@ -580,14 +664,22 @@ describe.concurrent("CLI renders and workflow", () => {
     let stderr = "";
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk: string) => {
-      stdout += chunk;
-    });
     child.stderr.on("data", (chunk: string) => {
       stderr += chunk;
     });
     child.stdin.on("error", () => {});
-    child.stdin.write("demo-film\n");
+    let prompted = false;
+    child.stdout.on("data", (chunk: string) => {
+      stdout += chunk;
+      if (prompted) return;
+      const plain = stdout
+        .replace(new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*[A-Za-z]`, "g"), "")
+        .replace(/\s+/g, "");
+      if (plain.includes("Projectname")) {
+        prompted = true;
+        child.stdin.write("demo-film\r");
+      }
+    });
 
     const code = await new Promise<number | null>((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -605,7 +697,7 @@ describe.concurrent("CLI renders and workflow", () => {
     });
 
     expect(code, stderr).toBe(0);
-    expect(stdout).toContain("Project name (my-video):");
+    expect(stdout.replace(/\s+/g, "")).toContain("Projectname");
     expect((await stat(path.join(target, "demo-film", "fy.config.js"))).isFile()).toBe(true);
     const manifest = JSON.parse(await readFile(path.join(target, "demo-film", "package.json"), "utf8"));
     expect(manifest.name).toBe("demo-film");
@@ -1048,6 +1140,11 @@ export default {
       try {
         const result = await run(["render", "main", "--frames", "1-3", "--project", root, "--json"], root);
         expect(result.code, result.stderr).toBe(0);
+        expect(result.stderr).toContain("Rendering 1/3 (33%)");
+        expect(result.stderr).toContain("Rendering 2/3 (66%)");
+        expect(result.stderr).toContain("Rendering 3/3 (100%)");
+        expect(result.stderr).toContain("Muxing segments...");
+        expect(result.stderr).toContain("Finalizing output...");
         expect(JSON.parse(result.stdout)).toMatchObject({
           ok: true,
           command: "render",
@@ -1061,6 +1158,17 @@ export default {
         });
         const probe = await ffprobe(path.join(root, "out", "main.mp4"), ["-count_frames"]);
         expect((probe.streams as Array<Record<string, unknown>>)[0]).toMatchObject({ nb_read_frames: "3" });
+
+        const checked = await run(["check", "main", "--project", root, "--json"], root);
+        expect(checked.code, checked.stderr).toBe(0);
+        expect(checked.stderr).toContain("Checking 1/6 (16%)");
+        expect(checked.stderr).toContain("Checking 6/6 (100%)");
+        expect(JSON.parse(checked.stdout)).toMatchObject({
+          ok: true,
+          command: "check",
+          timeline: "main",
+          framesChecked: 6,
+        });
 
         const scaled = await run(
           ["render", "main", "--scale", "0.5", "--out", "out/main-scaled.mp4", "--project", root, "--json"],

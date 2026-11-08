@@ -13,6 +13,7 @@ import {
   clampTimelineWorkers,
   renderTimeline,
 } from "../src/renderer/timeline.ts";
+import type { TimelineProgressEvent } from "../src/renderer/timeline.ts";
 import type { BlendMode } from "../src/timeline/schema.ts";
 import { BARCODE, barcodeCompositionHtml, barcodeCropFilter, decodeBarcodeFrames } from "./helpers/frame-probe.ts";
 import { mediaPixel, mediaPixelRgba } from "./helpers/media.ts";
@@ -250,6 +251,32 @@ describe.concurrent("timeline rendering", () => {
     expect(result.clips).toBe(2);
     expect(result.audio.clips).toBe(1);
     expect(result.diagnostics.filter((diagnostic) => diagnostic.severity === "error")).toEqual([]);
+  }, 120_000);
+
+  it("reports frame-level check and render progress inside timeline segments", async () => {
+    const { root, outPath } = await createProject();
+    const project = await loadProject(root);
+
+    const checked: TimelineProgressEvent[] = [];
+    await checkTimeline({ project, timelineId: "main", onProgress: (event) => checked.push(event) });
+    const checkedFrames = checked.filter((event) => event.phase === "checking" && event.segment === undefined);
+    expect(checkedFrames.map((event) => event.frame)).toEqual(expect.arrayContaining([1, 5, 9]));
+    expect(checked.at(-1)).toMatchObject({ frame: 10, total: 10, phase: "checking", segment: 1 });
+
+    const rendered: TimelineProgressEvent[] = [];
+    const result = await renderTimelineForTest({
+      project,
+      timelineId: "main",
+      outPath,
+      workers: 1,
+      onProgress: (event) => rendered.push(event),
+    });
+    expect(result.framesRendered).toBe(10);
+    const renderedFrames = rendered.filter((event) => event.phase === "rendering" && event.segment === undefined);
+    expect(renderedFrames.map((event) => event.frame)).toEqual(expect.arrayContaining([1, 5, 9]));
+    expect(rendered).toContainEqual(expect.objectContaining({ phase: "rendering", frame: 10, total: 10 }));
+    expect(rendered.some((event) => event.phase === "muxing")).toBe(true);
+    expect(rendered.some((event) => event.phase === "finalizing")).toBe(true);
   }, 120_000);
 
   it("captures a timeline still through the clip composite path", async () => {

@@ -31,12 +31,9 @@ import {
 } from "./ffmpeg.js";
 import { scaledVideoDimensions, validateRenderScale } from "./scale.js";
 import { inspectTranscriptClips, type TranscriptInspection } from "./transcripts.js";
+import type { ProgressEvent, ProgressPhase } from "./progress.js";
 
-export interface ProgressEvent {
-  frame: number;
-  total: number;
-  elapsedMs: number;
-}
+export type { ProgressEvent, ProgressPhase } from "./progress.js";
 
 interface SessionOptions {
   project: Project;
@@ -403,8 +400,25 @@ async function withPreparedSessions<T>(
   }
 }
 
-function reportProgress(options: SessionOptions, frame: number, total: number, startedAt: number): void {
-  options.onProgress?.({ frame, total, elapsedMs: performance.now() - startedAt });
+function reportProgress(
+  options: SessionOptions,
+  frame: number,
+  total: number,
+  startedAt: number,
+  phase: ProgressPhase,
+): void {
+  options.onProgress?.({ frame, total, elapsedMs: performance.now() - startedAt, phase });
+}
+
+function reportPhase(options: SessionOptions, startedAt: number, phase: ProgressPhase, detail: string): void {
+  options.onProgress?.({
+    frame: 0,
+    total: 0,
+    elapsedMs: performance.now() - startedAt,
+    phase,
+    indeterminate: true,
+    detail,
+  });
 }
 
 async function captureFramesInOrder(options: {
@@ -416,6 +430,7 @@ async function captureFramesInOrder(options: {
   startedAt: number;
   writeFrame: (png: Buffer) => Promise<void>;
   onProgress?: (event: ProgressEvent) => void;
+  phase: ProgressPhase;
 }): Promise<void> {
   const buffered = new Map<number, Buffer>();
   const waiters: Array<() => void> = [];
@@ -481,6 +496,7 @@ async function captureFramesInOrder(options: {
         frame: nextWrite,
         total: options.total,
         elapsedMs: performance.now() - options.startedAt,
+        phase: options.phase,
       });
       notify();
     }
@@ -519,7 +535,7 @@ export async function checkComposition(options: SessionOptions): Promise<CheckRe
       if (metadata.static === true) {
         throwIfAborted(options.signal);
         await session.seek(0);
-        reportProgress(options, 1, 1, startedAt);
+        reportProgress(options, 1, 1, startedAt, "checking");
         const diagnostics = mergeDiagnostics(prepared.staticDiagnostics, await session.readDiagnostics());
         return {
           kind: "static",
@@ -550,7 +566,7 @@ export async function checkComposition(options: SessionOptions): Promise<CheckRe
       for (let frame = 0; frame < total; frame += 1) {
         throwIfAborted(options.signal);
         await session.seek(frame);
-        reportProgress(options, frame + 1, total, startedAt);
+        reportProgress(options, frame + 1, total, startedAt, "checking");
       }
 
       const diagnostics = mergeDiagnostics(
@@ -755,9 +771,10 @@ async function renderStaticComposition(
         await session.seek(0);
         const png = await session.capture();
         await writeFile(tempPath, png);
+        reportProgress(options, 1, 1, startedAt, "capturing");
         await assertOutputsAvailable([outPath], overwrite);
+        reportPhase(options, startedAt, "finalizing", "output");
         await publishFile(tempPath, outPath, overwrite);
-        reportProgress(options, 1, 1, startedAt);
 
         const diagnostics = mergeDiagnostics(prepared.staticDiagnostics, await session.readDiagnostics());
         return {
@@ -897,6 +914,7 @@ export async function renderComposition(
         let audioPath: string | undefined;
         if (audioClips.length > 0) {
           audioPath = path.join(scratchDir, "audio.wav");
+          reportPhase(options, startedAt, "muxing", "audio");
           await mixAudioTimeline({
             clips: audioClips.map((clip) => ({
               path: path.resolve(options.project.root, clip.src),
@@ -933,7 +951,7 @@ export async function renderComposition(
             await session.seek(startFrame + frame);
             const png = await session.capture();
             await activeEncoder.writeFrame(png);
-            reportProgress(options, frame + 1, total, startedAt);
+            reportProgress(options, frame + 1, total, startedAt, "capturing");
           }
         } else {
           await captureFramesInOrder({
@@ -942,11 +960,13 @@ export async function renderComposition(
             total,
             signal: options.signal,
             startedAt,
+            phase: "capturing",
             writeFrame: (png) => activeEncoder.writeFrame(png),
             ...(options.onProgress !== undefined ? { onProgress: options.onProgress } : {}),
           });
         }
 
+        reportPhase(options, startedAt, "encoding", "video");
         await encoder.finish();
         encoder = undefined;
 
@@ -956,6 +976,7 @@ export async function renderComposition(
             `Output already exists: ${outPath}. Pass --overwrite to replace it.`,
           );
         }
+        reportPhase(options, startedAt, "finalizing", "output");
         await publishFile(tempOut, outPath, overwrite);
         completed = true;
 

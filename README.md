@@ -113,6 +113,10 @@ The repository ships runnable example projects. Each example README has the comm
 
 Common options: `--project <dir>`, `--json`, `--help`, and `--version`. `still` and `render` accept `--overwrite`; `tts` and `transcribe` accept `--force`; both flags are denied outside `full`.
 
+Help is generated from the same command and argument definitions the parser uses, so `--help` on a command works without its positionals and `help <command>` prints the same page. Human output is colored on a terminal, honors `NO_COLOR`, and never colors `--json` stdout.
+
+`check` and `render` report per-frame progress on stderr for compositions and timelines, plus completed timeline segments. Parallel timeline renders sum completed segment work, so the bar advances with real work instead of jumping to the timeline end. On a terminal the command paints one live line with a bar, percentage, frames, elapsed time, throughput, and ETA; piped and CI runs log a line every ten percent. Phase changes (`Capturing`, `Encoding`, `Muxing`, `Finalizing`) use a spinner on a terminal and one log line otherwise. Pass `--no-progress` to suppress progress while keeping diagnostics and JSON output.
+
 `still --frame <spec>` accepts a frame, an inclusive range (`2-12`), or a comma list. Duplicates are removed, order is preserved, and one invocation captures at most 32 unique frames (1 in `light`, 4 in `authoring`). With one frame `--out` is a `.png`; with multiple it is a directory of `still-<id>-<frame>.png` files. A static composition exposes frame 0.
 
 `render` accepts `--concurrency <n>` (1-16) for compositions, `--workers <n>` (1-16) and `--scratch <dir>` for timelines, and `--container`, `--codec`, and `--encoder` (see [Containers, codecs, and encoders](#containers-codecs-and-encoders)). `--out` must match the container; the default is `out/<id>.<ext>`. A static composition writes `out/<id>.png` and rejects the video flags.

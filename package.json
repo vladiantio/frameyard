@@ -83,7 +83,10 @@
     "prepublishOnly": "node scripts/check-package-manager.mjs && pnpm build"
   },
   "dependencies": {
+    "@clack/prompts": "^1.8.1",
+    "citty": "^0.2.2",
     "parse5": "^8.0.1",
+    "picocolors": "^1.1.1",
     "playwright": "1.64.1"
   },
   "devDependencies": {

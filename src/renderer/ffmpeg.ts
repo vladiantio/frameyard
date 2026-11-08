@@ -349,6 +349,20 @@ export async function resolveVideoEncoder(
 
 interface ProcessOptions {
   signal?: AbortSignal;
+  /** Receives complete stdout lines, for FFmpeg `-progress` output. */
+  onStdoutLine?: (line: string) => void;
+}
+
+function ffmpegProgressLine(onFrame: (frame: number) => void): (line: string) => void {
+  return (line) => {
+    const match = /^frame=(\d+)$/.exec(line.trim());
+    if (match) {
+      const frame = Number(match[1]);
+      if (frame > 0) {
+        onFrame(frame);
+      }
+    }
+  };
 }
 
 function runCaptured(
@@ -364,10 +378,20 @@ function runCaptured(
 
     const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"] });
     let stdout = "";
+    let stdoutRemainder = "";
     let stderr = "";
 
     child.stdout.on("data", (chunk: Buffer) => {
-      stdout += chunk.toString();
+      const text = chunk.toString();
+      stdout += text;
+      if (options.onStdoutLine !== undefined) {
+        stdoutRemainder += text;
+        const lines = stdoutRemainder.split(/\r?\n/);
+        stdoutRemainder = lines.pop() ?? "";
+        for (const line of lines) {
+          options.onStdoutLine(line);
+        }
+      }
     });
     child.stderr.on("data", (chunk: Buffer) => {
       stderr += chunk.toString();
@@ -406,6 +430,10 @@ function runCaptured(
       if (options.signal?.aborted) {
         reject(abortError());
         return;
+      }
+      if (options.onStdoutLine !== undefined && stdoutRemainder !== "") {
+        options.onStdoutLine(stdoutRemainder);
+        stdoutRemainder = "";
       }
       if (code !== 0) {
         reject(
@@ -1672,6 +1700,8 @@ export async function encodeVideoSegmentDirect(options: {
   container: VideoContainer;
   encoder?: VideoEncoderName;
   signal?: AbortSignal;
+  /** Receives the one-based encoded output frame. */
+  onFrame?: (frame: number) => void;
 }): Promise<void> {
   const encoder = options.encoder ?? encoderNameFor(options.codec, "software");
   const startSeconds = options.sourceStartFrame / options.fps;
@@ -1682,6 +1712,9 @@ export async function encodeVideoSegmentDirect(options: {
     "error",
     "-nostdin",
     "-y",
+    "-progress",
+    "pipe:1",
+    "-nostats",
     ...(startSeconds > 0 ? ["-ss", formatNumber(startSeconds)] : []),
     "-i",
     options.inputPath,
@@ -1702,7 +1735,10 @@ export async function encodeVideoSegmentDirect(options: {
     ...containerMuxerArgs(options.container),
     options.outputPath,
   ];
-  await runCaptured("ffmpeg", args, { signal: options.signal });
+  await runCaptured("ffmpeg", args, {
+    signal: options.signal,
+    ...(options.onFrame !== undefined ? { onStdoutLine: ffmpegProgressLine(options.onFrame) } : {}),
+  });
 }
 
 /** Composites one timeline segment into H.264 or an alpha-preserving FFV1 file. */
@@ -1724,6 +1760,8 @@ export async function compositeTimelineSegment(options: {
   /** Delivery container; defaults to `mp4` (FFV1 always uses Matroska). */
   container?: VideoContainer;
   signal?: AbortSignal;
+  /** Receives the one-based encoded output frame. */
+  onFrame?: (frame: number) => void;
 }): Promise<void> {
   const graph = buildCompositeGraph({
     width: options.width,
@@ -1738,6 +1776,9 @@ export async function compositeTimelineSegment(options: {
   const filters = [...graph.filters, `[${graph.output}]format=${options.codec === "ffv1" ? "bgra" : "yuv420p"}[out]`];
   const args = graph.args;
   args.push(
+    "-progress",
+    "pipe:1",
+    "-nostats",
     "-filter_complex",
     filters.join(";"),
     "-map",
@@ -1760,7 +1801,10 @@ export async function compositeTimelineSegment(options: {
   }
   args.push(options.outputPath);
 
-  await runCaptured("ffmpeg", args, { signal: options.signal });
+  await runCaptured("ffmpeg", args, {
+    signal: options.signal,
+    ...(options.onFrame !== undefined ? { onStdoutLine: ffmpegProgressLine(options.onFrame) } : {}),
+  });
 }
 
 /** Concatenates encoded timeline segments without re-encoding. */

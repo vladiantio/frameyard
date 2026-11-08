@@ -1,9 +1,30 @@
 #!/usr/bin/env node
+import { cancel, intro, isCancel, outro, spinner, text as promptText } from "@clack/prompts";
 import { access, mkdir, readFile, rm, rmdir, stat, writeFile } from "node:fs/promises";
 import { cpus, freemem, loadavg, totalmem } from "node:os";
 import path from "node:path";
-import { createInterface } from "node:readline/promises";
 import { isPlainObject } from "./contracts.js";
+import {
+  COMMAND_NAMES,
+  inferCommand,
+  parseCliArgs,
+  renderCommandHelp,
+  renderRootHelp,
+  type ParsedArgs,
+} from "./cli/schema.js";
+import { clearActiveProgress, withProgress } from "./cli/progress.js";
+import {
+  boldText,
+  colors,
+  dimText,
+  errorLabel,
+  failMark,
+  okMark,
+  pathText,
+  severityText,
+  skipMark,
+  warnMark,
+} from "./cli/ui.js";
 import { diagnosticFix } from "./diagnostic-fixes.js";
 import { FrameyardError, errorMessage, isFrameyardError, type FrameyardDiagnostic } from "./errors.js";
 import { explainDiagnosticCode, listDiagnosticExplanations } from "./explain.js";
@@ -35,10 +56,8 @@ import { resolveProjectTimeline, type ResolvedTimeline } from "./timeline/resolv
 import {
   checkComposition,
   captureStills,
-  MAX_RENDER_CONCURRENCY,
   renderComposition,
   validateRenderConcurrency,
-  type ProgressEvent,
   type StillResult,
 } from "./renderer/index.js";
 import {
@@ -82,281 +101,8 @@ import { emptyFontManifest } from "./fonts/types.js";
 import type { FontManifest } from "./fonts/types.js";
 import type { FontSummary } from "./fonts/summary.js";
 
-const COMMANDS = new Set([
-  "init",
-  "dev",
-  "context",
-  "lint",
-  "check",
-  "still",
-  "inspect",
-  "compare",
-  "render",
-  "tts",
-  "transcribe",
-  "add",
-  "asset",
-  "font",
-  "doctor",
-  "explain",
-  "help",
-]);
-const VALUE_FLAGS = new Set([
-  "project",
-  "props",
-  "out",
-  "frame",
-  "port",
-  "concurrency",
-  "workers",
-  "scratch",
-  "encoder",
-  "codec",
-  "container",
-  "frames",
-  "scale",
-  "sequence",
-  "text-file",
-  "speaker",
-  "engine",
-  "model-dir",
-  "talker-model",
-  "codec-model",
-  "style",
-  "language",
-  "device",
-  "executable",
-  "model",
-  "export",
-  "manifest",
-  "qwen-tts",
-  "sherpa-onnx-tts",
-  "whisper-cli",
-  "profile",
-  "template",
-  "file",
-  "family",
-  "id",
-  "weight",
-  "subset",
-  "unicode-range",
-  "license",
-  "license-file",
-  "category",
-  "limit",
-  "url",
-  "sha256",
-]);
-const BOOLEAN_FLAGS = new Set([
-  "json",
-  "overwrite",
-  "force",
-  "words",
-  "dry-run",
-  "low-priority",
-  "list",
-  "local-models",
-  "keep-files",
-  "static",
-  "variable",
-  "help",
-  "version",
-]);
-
-interface ParsedArgs {
-  command: string;
-  positionals: string[];
-  flags: Map<string, string | true>;
-}
-
 function usage(message = "Invalid command line."): never {
   throw new FrameyardError("USAGE", message);
-}
-
-function parseArgs(argv: string[]): ParsedArgs {
-  const positionals: string[] = [];
-  const flags = new Map<string, string | true>();
-  let command = "";
-  let raw = false;
-
-  for (let index = 0; index < argv.length; index += 1) {
-    const argument = argv[index] as string;
-
-    if (raw) {
-      positionals.push(argument);
-      continue;
-    }
-    if (argument === "--") {
-      raw = true;
-      continue;
-    }
-    if (argument === "-h") {
-      flags.set("help", true);
-      continue;
-    }
-    if (argument === "-v") {
-      flags.set("version", true);
-      continue;
-    }
-
-    if (argument.startsWith("--")) {
-      const equals = argument.indexOf("=");
-      const name = equals === -1 ? argument.slice(2) : argument.slice(2, equals);
-      const inlineValue = equals === -1 ? undefined : argument.slice(equals + 1);
-
-      if (VALUE_FLAGS.has(name)) {
-        let value = inlineValue;
-        if (value === undefined) {
-          index += 1;
-          value = argv[index];
-        }
-        if (value === undefined || value === "") {
-          usage(`Option --${name} requires a value.`);
-        }
-        flags.set(name, value);
-        continue;
-      }
-
-      if (BOOLEAN_FLAGS.has(name)) {
-        if (inlineValue !== undefined) {
-          usage(`Option --${name} does not take a value.`);
-        }
-        flags.set(name, true);
-        continue;
-      }
-
-      usage(`Unknown option --${name}.`);
-    }
-
-    if (argument.startsWith("-") && argument !== "-") {
-      usage(`Unknown option ${argument}.`);
-    }
-
-    if (!command) {
-      command = argument;
-    } else {
-      positionals.push(argument);
-    }
-  }
-
-  return { command, positionals, flags };
-}
-
-function allowedFlags(command: string): Set<string> {
-  const common = new Set(["project", "json", "help"]);
-  const resource = ["profile", "low-priority"];
-  switch (command) {
-    case "init":
-      return new Set(["json", "local-models", "help"]);
-    case "dev":
-      return new Set(["project", "port", "help"]);
-    case "context":
-      return new Set(common);
-    case "lint":
-      return new Set([...common, "props"]);
-    case "inspect":
-      return new Set(["json", "help"]);
-    case "compare":
-      return new Set(["json", "help"]);
-    case "add":
-      return new Set([...common, "template", "list", "id"]);
-    case "font":
-      return new Set([
-        ...common,
-        "file",
-        "family",
-        "id",
-        "weight",
-        "style",
-        "subset",
-        "unicode-range",
-        "license",
-        "license-file",
-        "category",
-        "limit",
-        "url",
-        "sha256",
-        "static",
-        "variable",
-        "force",
-        "keep-files",
-      ]);
-    case "check":
-      return new Set([...common, "props", ...resource]);
-    case "still":
-      return new Set([...common, "props", "out", "frame", "overwrite", ...resource]);
-    case "render":
-      return new Set([
-        ...common,
-        "props",
-        "out",
-        "overwrite",
-        "concurrency",
-        "workers",
-        "scratch",
-        "encoder",
-        "codec",
-        "container",
-        "frames",
-        "scale",
-        "sequence",
-        "dry-run",
-        ...resource,
-      ]);
-    case "tts":
-      return new Set([
-        ...common,
-        "text-file",
-        "speaker",
-        "engine",
-        "model-dir",
-        "talker-model",
-        "codec-model",
-        "out",
-        "style",
-        "language",
-        "device",
-        "executable",
-        "manifest",
-        "force",
-        "dry-run",
-        ...resource,
-      ]);
-    case "transcribe":
-      return new Set([
-        ...common,
-        "out",
-        "model",
-        "words",
-        "export",
-        "language",
-        "executable",
-        "manifest",
-        "force",
-        "dry-run",
-        ...resource,
-      ]);
-    case "doctor":
-      return new Set([
-        ...common,
-        "manifest",
-        "qwen-tts",
-        "sherpa-onnx-tts",
-        "whisper-cli",
-        "talker-model",
-        "codec-model",
-        "model-dir",
-        "model",
-      ]);
-    case "asset":
-      return new Set([...common, "out", "sha256", "manifest", "force"]);
-    case "explain":
-      return new Set(["json", "help", "list"]);
-    case "help":
-      return new Set(["help"]);
-    default:
-      return new Set();
-  }
 }
 
 function validateArgs(parsed: ParsedArgs): void {
@@ -366,14 +112,8 @@ function validateArgs(parsed: ParsedArgs): void {
   if (!parsed.command) {
     return;
   }
-  if (!COMMANDS.has(parsed.command)) {
+  if (!COMMAND_NAMES.has(parsed.command)) {
     usage(`Unknown command "${parsed.command}".`);
-  }
-
-  for (const flag of parsed.flags.keys()) {
-    if (!allowedFlags(parsed.command).has(flag)) {
-      usage(`Option --${flag} is not valid for "${parsed.command}".`);
-    }
   }
 
   if (["dev", "help", "doctor", "tts", "context"].includes(parsed.command)) {
@@ -696,203 +436,12 @@ function validateArgs(parsed: ParsedArgs): void {
   }
 }
 
-function inferCommand(argv: string[]): string {
-  for (let index = 0; index < argv.length; index += 1) {
-    const argument = argv[index] as string;
-    if (argument === "--") {
-      return "";
-    }
-    if (argument.startsWith("--")) {
-      const name = argument.slice(2).split("=")[0] as string;
-      if (VALUE_FLAGS.has(name) && !argument.includes("=")) {
-        index += 1;
-      }
-      continue;
-    }
-    if (argument.startsWith("-")) {
-      continue;
-    }
-    return argument;
-  }
-  return "";
+async function printHelp(): Promise<void> {
+  process.stdout.write(`${await renderRootHelp(colors.isColorSupported)}\n`);
 }
 
-function printHelp(): void {
-  process.stdout.write(`Frameyard ${VERSION}
-
-Local-first, deterministic video compositions authored with HTML, CSS, and JavaScript.
-
-Usage:
-  frameyard init [directory] [--local-models]
-  frameyard dev [--port <port>] [--project <dir>]
-  frameyard context [--project <dir>] [--json]
-  frameyard lint <composition-or-timeline-id> [--props <file>] [--project <dir>] [--json]
-  frameyard check <composition-id> [--props <file>] [--project <dir>] [--profile <name>] [--low-priority] [--json]
-  frameyard still <composition-or-timeline-id> --frame <spec> [--out <file-or-dir>] [--props <file>] [--project <dir>] [--profile <name>] [--low-priority] [--json]
-  frameyard inspect <image> [--json]
-  frameyard compare <first-image> <second-image> [--json]
-  frameyard render <composition-or-timeline-id> [--out <file>] [--frames <spec>] [--scale <factor>] [--sequence <dir>] [--props <file>] [--project <dir>] [--concurrency <n>] [--workers <n>] [--encoder <name>] [--codec <name>] [--container <name>] [--scratch <dir>] [--overwrite] [--dry-run] [--profile <name>] [--low-priority] [--json]
-  frameyard tts [--engine qwen] --speaker <name> --talker-model <gguf> --codec-model <gguf> --out <file.wav> [--text-file <file>] [--style <text>] [--language <lang>] [--device <name>] [--executable <path>] [--manifest <file>] [--force] [--dry-run] [--profile <name>] [--low-priority] [--json]
-  frameyard tts --engine supertonic --speaker <sid> --model-dir <dir> --language <code> --out <file.wav> [--text-file <file>] [--executable <path>] [--manifest <file>] [--force] [--dry-run] [--profile <name>] [--low-priority] [--json]
-  frameyard transcribe <source> --model <gguf> --out <file.json> [--words] [--export srt,vtt] [--language <lang>] [--executable <path>] [--manifest <file>] [--force] [--dry-run] [--profile <name>] [--low-priority] [--json]
-  frameyard add --list [--json]
-  frameyard add local-models [--project <dir>] [--json]
-  frameyard add <composition|timeline> <id> --template <name> [--project <dir>] [--json]
-  frameyard add recipe <recipe-id> --id <project-id> [--project <dir>] [--json]
-  frameyard asset add <url> --out <path> [--sha256 <hash>] [--manifest <file>] [--force] [--project <dir>] [--json]
-  frameyard explain <code> [--json]
-  frameyard explain --list [--json]
-  frameyard font search [query] [--category <category>] [--subset <subset>] [--style <normal|italic>] [--variable] [--limit <n>] [--json]
-  frameyard font add <fontsource-id> [--family <alias>] [--subset <subset>] [--style <normal|italic>] [--weight <n>] [--static] [--force] [--project <dir>] [--json]
-  frameyard font add --file <path> --family <name> [--id <id>] [--weight <n|n-n>] [--style normal|italic] [--subset <name>] [--license <id>] [--license-file <path>] [--force] [--project <dir>] [--json]
-  frameyard font add --url <https-url> --family <name> [--id <id>] [--weight <n|n-n>] [--style normal|italic] [--license <id>] [--license-file <path>] [--sha256 <hash>] [--force] [--project <dir>] [--json]
-  frameyard font list|verify [--project <dir>] [--json]
-  frameyard font remove <id> [--keep-files] [--project <dir>] [--json]
-  frameyard doctor [--qwen-tts <path>] [--sherpa-onnx-tts <path>] [--whisper-cli <path>] [--talker-model <gguf>] [--codec-model <gguf>] [--model-dir <dir>] [--model <gguf>] [--manifest <file>] [--project <dir>] [--json]
-
-Options:
-  --project <dir>        Use a project other than the current directory.
-  --props <file>         Composition props, or a { "<clip-id>": {...} } override map for a timeline.
-  --out <path>           Output path for still, render, tts, transcribe, or asset add. For still, one frame uses a .png file and multiple frames use a directory. Render defaults to out/<id>.mp4 for video and out/<id>.png for a static composition.
-  --frame <spec>         Still frames: n, n-m, or a comma-separated list (maximum 32 unique frames).
-  --frames <spec>        Render frames: n, n-m, or a comma-separated list; video requires a contiguous range.
-  --scale <factor>       Encode-time video scale from 0.25 to 1. Scales during encode; output stays even-sized.
-  --sequence <dir>       Write PNG frames instead of video. Requires --frames; full-size only.
-  --concurrency <n>      Parallel browser sessions for animated composition render, 1-${MAX_RENDER_CONCURRENCY} (default: 1).
-  --workers <n>          Parallel segment workers for timeline render, 1-${MAX_TIMELINE_WORKERS} (default: 8).
-  --encoder <name>       Encoder: auto, software, nvenc, or qsv (default: auto).
-  --codec <name>         Delivery codec for render: h264, hevc, or vp9 (default: h264; vp9 for webm).
-  --container <name>     Delivery container: mp4, mov, mkv, or webm (default: mp4).
-  --scratch <dir>        Scratch directory for timeline intermediates (default: system temp).
-  --overwrite            Replace an existing still or render output when the resource policy allows it.
-  --force                Replace existing generated assets and manifest entries when the resource policy allows it.
-  --dry-run              Validate and print the plan and handoff command without rendering, synthesizing, transcribing, or writing outputs.
-  --profile <name>       Resource profile for shared machines. shared-cpu caps workers at 2, concurrency at 1, and lowers process priority.
-  --low-priority         Lower the process priority without changing worker caps.
-  --local-models         With init, also install the optional local-model host scaffold.
-  --template <name>      Template for "add composition|timeline": static-poster, title-card, lower-third, or slideshow.
-  --list                 List add templates, recipes, and scaffolds, or all explain codes.
-  --file <path>          Local font file for "font add": .woff2, .woff, .ttf, or .otf.
-  --url <https-url>      Download a font from HTTPS (loopback HTTP is allowed for tests).
-  --family <name>        CSS font-family name or alias for "font add".
-  --id <id>              Project id for "add recipe"; font manifest id for "font add --file/--url".
-  --weight <value>       Font weight or variable range; comma-separated weights for Fontsource --static.
-  --style <value>        qwen style instruction, or normal|italic (comma list for Fontsource).
-  --subset <name>        Font subset label; comma-separated for Fontsource.
-  --unicode-range <r>    CSS unicode-range for a local or URL font face.
-  --license <id>         License identifier for --file/--url; warns when omitted.
-  --license-file <path>  Copy a license file into the font directory.
-  --sha256 <hash>        Expected SHA-256 for --url or asset add; the computed hash is always recorded.
-  --category <name>      Fontsource category filter for "font search".
-  --limit <n>            Fontsource result limit for "font search", 1-100 (default: 20).
-  --variable             Fontsource search filter: only variable fonts.
-  --static               Install static Fontsource weights instead of the variable face.
-  --keep-files           Keep font files when removing a font from the manifest.
-  --text-file <file>     Text to synthesize. Reads stdin when omitted.
-  --speaker <value>      Named speaker for qwen, or the numeric speaker id for Supertonic.
-  --engine <name>        Speech engine: qwen or supertonic (default: qwen).
-  --model-dir <dir>      Supertonic model directory from the sherpa-onnx archive.
-  --talker-model <gguf>  Talker GGUF model path for qwen.
-  --codec-model <gguf>   Codec GGUF model path for qwen.
-  --style <value>        Optional qwen style instruction, or normal|italic for "font add".
-  --language <lang>      Spoken language. Supertonic requires one of its 31 upstream language codes.
-  --device <name>        Compute device for qwen-tts, such as CPU or CUDA0.
-  --model <gguf>         Whisper GGML model path.
-  --words                Request measured word timings during transcription.
-  --export srt,vtt       Derived subtitle exports next to the transcript.
-  --executable <path>    Explicit qwen-tts, sherpa-onnx-offline-tts, or whisper-cli executable.
-  --manifest <file>      Provenance manifest path (default: fy.assets.json).
-  --qwen-tts <path>      qwen-tts executable to inspect with doctor.
-  --sherpa-onnx-tts <path>  sherpa-onnx-offline-tts executable to inspect with doctor.
-  --whisper-cli <path>   whisper-cli executable to inspect with doctor.
-  --json                 Print a structured result to stdout.
-  --help, -h             Show this help.
-  --version, -v          Print the version.
-
-Resource policy: the nearest fy.policy.json from the working directory upward sets light, authoring, or full; FRAMEYARD_POLICY overrides it. tts, transcribe, and render are blocked outside full. font add requires authoring or full; font remove and font add --force require full. Use --dry-run to validate and produce a handoff command without doing heavy work.
-`);
-}
-
-function printCommandHelp(command: string): void {
-  switch (command) {
-    case "init":
-      process.stdout.write(
-        "Usage: frameyard init [directory] [--local-models]\nScaffold a minimal Frameyard project. Without a directory, init asks for a project name (default: my-video) and creates that directory; non-interactive and --json runs use the default. --local-models also installs the optional policy, OpenCode, and Pi scaffold.\n",
-      );
-      return;
-    case "dev":
-      process.stdout.write(
-        "Usage: frameyard dev [--port <port>] [--project <dir>]\nStart the browser preview server.\n",
-      );
-      return;
-    case "context":
-      process.stdout.write(
-        "Usage: frameyard context [--project <dir>] [--json]\nPrint a compact digest of the project, resolved timelines, assets, diagnostics, active policy, and next commands. It never launches Chromium.\n",
-      );
-      return;
-    case "lint":
-      process.stdout.write(
-        "Usage: frameyard lint <composition-or-timeline-id> [--props <file>] [--project <dir>] [--json]\nRun static validation, timeline resolution, scene and keyframe projection for every timeline frame, and a controller determinism scan without launching Chromium. It does not run validateProps or capture frames; use check for the full gate.\n",
-      );
-      return;
-    case "check":
-      process.stdout.write(
-        "Usage: frameyard check <composition-id> [--props <file>] [--project <dir>] [--profile <name>] [--low-priority] [--json]\nValidate props, assets, audio, and every frame without encoding. The authoring policy lowers process priority for check.\n",
-      );
-      return;
-    case "still":
-      process.stdout.write(
-        "Usage: frameyard still <composition-or-timeline-id> --frame <spec> [--out <path>] [--props <file>] [--project <dir>] [--overwrite] [--profile <name>] [--low-priority] [--json]\nCapture one or more frames through the production rendering path. <spec> is a frame number, an inclusive range like 2-12, or a comma-separated list; the policy caps unique frames per invocation. With one frame, --out is a .png file; with multiple frames, --out is a directory. A static composition exposes only frame 0.\n",
-      );
-      return;
-    case "inspect":
-      process.stdout.write(
-        "Usage: frameyard inspect <image> [--json]\nDecode the first frame and report dimensions, alpha coverage, blank detection, background and dominant colors, content bbox, a coarse luminance grid, and edge density. It never launches Chromium.\n",
-      );
-      return;
-    case "compare":
-      process.stdout.write(
-        "Usage: frameyard compare <first-image> <second-image> [--json]\nCompare two decoded images pixel by pixel and by 3×3 region. Exits 1 when the images differ; the JSON result still has ok: true and identical: false.\n",
-      );
-      return;
-    case "render":
-      process.stdout.write(
-        `Usage: frameyard render <composition-or-timeline-id> [--out <file>] [--frames <spec>] [--scale <factor>] [--sequence <dir>] [--props <file>] [--project <dir>] [--concurrency <n>] [--workers <n>] [--encoder <name>] [--codec <name>] [--container <name>] [--scratch <dir>] [--overwrite] [--dry-run] [--profile <name>] [--low-priority] [--json]\nRender an MP4, MOV, MKV, or WebM with H.264, HEVC, or VP9 video and AAC or Opus audio, a PNG for a static composition, or a PNG sequence with --sequence. The default output is out/<id>.<extension> for video and out/<id>.png for a static composition. --frames accepts n, n-m, or a comma list; video requires a contiguous range, while --sequence accepts arbitrary lists and requires --frames. --scale is 0.25-1 and scales during encode; output dimensions stay even. Animated composition concurrency is 1-${MAX_RENDER_CONCURRENCY}; timeline workers are 1-${MAX_TIMELINE_WORKERS}. The shared-cpu profile caps workers at 2 and concurrency at 1. Encoder choices are auto, software, nvenc, and qsv; the default auto probes NVENC, then Quick Sync, then the codec's software encoder. WebM and VP9 use Opus audio, and HEVC in MP4/MOV keeps the hvc1 sample entry. A static composition rejects --concurrency, --container, --codec, --encoder, --frames, and --scale. With --dry-run, validates and prints the plan and handoff command without writing outputs or launching Chromium.\n`,
-      );
-      return;
-    case "tts":
-      process.stdout.write(
-        "Usage: frameyard tts [--engine qwen] --speaker <name> --talker-model <gguf> --codec-model <gguf> --out <file.wav> [--text-file <file>] [--style <text>] [--language <lang>] [--device <name>] [--executable <path>] [--manifest <file>] [--force] [--dry-run] [--profile <name>] [--low-priority] [--json]\n       frameyard tts --engine supertonic --speaker <sid> --model-dir <dir> --language <code> --out <file.wav> [--text-file <file>] [--executable <path>] [--manifest <file>] [--force] [--dry-run] [--profile <name>] [--low-priority] [--json]\nProduce one frozen 24 kHz mono WAV with local qwentts.cpp CustomVoice or sherpa-onnx Supertonic 3 synthesis. Supertonic language codes: ar, bg, cs, da, de, el, en, es, et, fi, fr, hi, hr, hu, id, it, ja, ko, lt, lv, nl, pl, pt, ro, ru, sk, sl, sv, tr, uk, vi. With --dry-run, validates inputs and prints the plan and command without loading a model.\n",
-      );
-      return;
-    case "transcribe":
-      process.stdout.write(
-        "Usage: frameyard transcribe <source> --model <gguf> --out <file.json> [--words] [--export srt,vtt] [--language <lang>] [--executable <path>] [--manifest <file>] [--force] [--dry-run] [--profile <name>] [--low-priority] [--json]\nProduce a canonical Frameyard transcript, optionally with word timings and subtitle exports. With --dry-run, validates inputs and prints the plan and command without loading a model.\n",
-      );
-      return;
-    case "asset":
-      process.stdout.write(
-        "Usage: frameyard asset add <url> --out <path> [--sha256 <hash>] [--manifest <file>] [--force] [--project <dir>] [--json]\nDownload an HTTPS image, video, or audio asset into the project, verify its SHA-256, and record it in fy.assets.json. Loopback HTTP is allowed for tests. --force replaces an existing destination and requires the full policy tier.\n",
-      );
-      return;
-    case "add":
-      process.stdout.write(
-        "Usage: frameyard add --list [--json]\n       frameyard add local-models [--project <dir>] [--json]\n       frameyard add <composition|timeline> <id> --template <name> [--project <dir>] [--json]\nWrite a valid template entry and print the exact fy.config.js registration snippet, or install the optional local-model host scaffold. Templates are static-poster, title-card, lower-third, and slideshow. The command refuses to overwrite an existing file or an already registered id.\n",
-      );
-      return;
-    case "font":
-      process.stdout.write(
-        "Usage: frameyard font search [query] [--category <name>] [--subset <name>] [--style normal|italic] [--variable] [--limit <n>] [--json]\n       frameyard font add <fontsource-id> [--family <alias>] [--subset <name>] [--style normal|italic] [--weight <n>] [--static] [--force] [--project <dir>] [--json]\n       frameyard font add --file <path> --family <name> [--id <id>] [--weight <n|n-n>] [--style normal|italic] [--subset <name>] [--unicode-range <range>] [--license <id>] [--license-file <path>] [--force] [--project <dir>] [--json]\n       frameyard font add --url <https-url> --family <name> [--id <id>] [--weight <n|n-n>] [--style normal|italic] [--subset <name>] [--unicode-range <range>] [--license <id>] [--license-file <path>] [--sha256 <hash>] [--force] [--project <dir>] [--json]\n       frameyard font list|verify [--project <dir>] [--json]\n       frameyard font remove <id> [--keep-files] [--project <dir>] [--json]\nSearch Fontsource, vendor a Fontsource/local/URL font into assets/fonts/<id>/, and manage fy.fonts.json. The server serves the generated @font-face sheet at /__frameyard/fonts.css. Project policy allows search/list/verify everywhere, add in authoring and full, and remove or --force only in full. A --url import without --license also requires full.\n",
-      );
-      return;
-    case "doctor":
-      process.stdout.write(
-        "Usage: frameyard doctor [--qwen-tts <path>] [--sherpa-onnx-tts <path>] [--whisper-cli <path>] [--talker-model <gguf>] [--codec-model <gguf>] [--model-dir <dir>] [--model <gguf>] [--manifest <file>] [--project <dir>] [--json]\nInspect core requirements, optional integrations, model readability, and provenance integrity without changing the environment.\n",
-      );
-      return;
-    default:
-      printHelp();
-  }
+async function printCommandHelp(command: string): Promise<void> {
+  process.stdout.write(`${await renderCommandHelp(command, colors.isColorSupported)}\n`);
 }
 
 async function projectFromFlag(flags: Map<string, string | true>, options: { fonts?: boolean } = {}): Promise<Project> {
@@ -1034,36 +583,34 @@ async function readPropsFile(flags: Map<string, string | true>): Promise<unknown
   }
 }
 
-function progressPrinter(label: string): (event: ProgressEvent) => void {
-  let nextPercent = 0;
-  return (event) => {
-    const percent = event.total === 0 ? 100 : Math.floor((event.frame / event.total) * 100);
-    if (event.frame === event.total || percent >= nextPercent) {
-      process.stderr.write(
-        `${label} ${event.frame}/${event.total} (${percent}%) ${(event.elapsedMs / 1000).toFixed(1)}s\n`,
-      );
-      nextPercent = percent + 10;
-    }
-  };
-}
-
 function formatDuration(seconds: number): string {
   return `${seconds.toFixed(2)}s`;
+}
+
+function field(name: string, value: string): string {
+  return `${dimText(`${name}:`)} ${value}`;
 }
 
 function printDiagnostics(diagnostics: readonly FrameyardDiagnostic[]): void {
   for (const diagnostic of diagnostics) {
     const details = diagnostic.details as { path?: string; line?: number; column?: number } | undefined;
     const location =
-      details?.line !== undefined ? ` (${details.path ?? "composition"}:${details.line}:${details.column ?? 1})` : "";
-    process.stderr.write(`${diagnostic.severity}: [${diagnostic.code}] ${diagnostic.message}${location}\n`);
+      details?.line !== undefined
+        ? dimText(` (${details.path ?? "composition"}:${details.line}:${details.column ?? 1})`)
+        : "";
+    process.stderr.write(
+      `${severityText(diagnostic.severity, diagnostic.severity)}: ${severityText(
+        diagnostic.severity,
+        `[${diagnostic.code}]`,
+      )} ${diagnostic.message}${location}\n`,
+    );
     if (diagnostic.fix !== undefined) {
-      process.stderr.write(`  fix: ${diagnostic.fix.message}\n`);
+      process.stderr.write(`  ${dimText("fix:")} ${diagnostic.fix.message}\n`);
       if (diagnostic.fix.command !== undefined) {
-        process.stderr.write(`  run: ${diagnostic.fix.command}\n`);
+        process.stderr.write(`  ${dimText("run:")} ${pathText(diagnostic.fix.command)}\n`);
       }
       if (diagnostic.fix.docs !== undefined) {
-        process.stderr.write(`  docs: ${diagnostic.fix.docs}\n`);
+        process.stderr.write(`  ${dimText("docs:")} ${diagnostic.fix.docs}\n`);
       }
     }
   }
@@ -1127,14 +674,14 @@ function printDryRun(
   prerequisites: readonly string[],
   blockers: readonly DryRunBlocker[],
 ): void {
-  process.stdout.write(`${label} dry run\n`);
-  process.stdout.write(`  plan: ${JSON.stringify(plan)}\n`);
-  process.stdout.write(`  command: ${commandLine}\n`);
+  process.stdout.write(`${boldText(`${label} dry run`)}\n`);
+  process.stdout.write(`  ${dimText("plan:")} ${JSON.stringify(plan)}\n`);
+  process.stdout.write(`  ${dimText("command:")} ${pathText(commandLine)}\n`);
   if (prerequisites.length > 0) {
-    process.stdout.write(`  prerequisites: ${prerequisites.join(", ")}\n`);
+    process.stdout.write(`  ${dimText("prerequisites:")} ${prerequisites.join(", ")}\n`);
   }
   for (const blocker of blockers) {
-    process.stdout.write(`  blocker [${blocker.code}]: ${blocker.message}\n`);
+    process.stdout.write(`  ${warnMark(`blocker [${blocker.code}]`)}: ${blocker.message}\n`);
   }
 }
 
@@ -1174,32 +721,34 @@ function assertProjectDirectoryName(name: string): void {
 }
 
 /**
- * Asks for the project name on an interactive terminal. EOF accepts the
- * default; Ctrl+C cancels the command.
+ * Asks for the project name on an interactive terminal with a Clack prompt.
+ * Ctrl+C cancels the command; an empty answer accepts the default.
  */
 async function promptProjectName(defaultName: string): Promise<string> {
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
-  let interrupted = false;
-  rl.on("SIGINT", () => {
-    interrupted = true;
-    rl.close();
+  intro(`Frameyard ${VERSION}`);
+
+  const answer = await promptText({
+    message: "Project name",
+    placeholder: defaultName,
+    defaultValue: defaultName,
+    validate(value) {
+      const name = (value ?? "").trim() === "" ? defaultName : (value ?? "").trim();
+      try {
+        assertProjectDirectoryName(name);
+      } catch (error) {
+        return error instanceof Error ? error.message : String(error);
+      }
+      return undefined;
+    },
   });
 
-  try {
-    const closed = new Promise<null>((resolve) => {
-      rl.once("close", () => resolve(null));
-    });
-    const answer = await Promise.race([rl.question(`Project name (${defaultName}): `), closed]);
-
-    if (interrupted) {
-      throw new FrameyardError("CANCELLED", "Project creation cancelled.");
-    }
-
-    const name = (answer ?? "").trim();
-    return name === "" ? defaultName : name;
-  } finally {
-    rl.close();
+  if (isCancel(answer)) {
+    cancel("Project creation cancelled.");
+    throw new FrameyardError("CANCELLED", "Project creation cancelled.");
   }
+
+  const name = answer.trim();
+  return name === "" ? defaultName : name;
 }
 
 /**
@@ -1207,20 +756,20 @@ async function promptProjectName(defaultName: string): Promise<string> {
  * project name on an interactive terminal and creates a directory with it;
  * non-interactive and `--json` runs use the default name without prompting.
  */
-async function resolveInitTarget(parsed: ParsedArgs): Promise<string> {
+async function resolveInitTarget(parsed: ParsedArgs): Promise<{ target: string; interactive: boolean }> {
   const positional = parsed.positionals[0];
   if (positional !== undefined) {
-    return path.resolve(process.cwd(), positional);
+    return { target: path.resolve(process.cwd(), positional), interactive: false };
   }
 
   const interactive = parsed.flags.has("json") !== true && process.stdin.isTTY === true;
   const name = interactive ? await promptProjectName(DEFAULT_INIT_PROJECT_NAME) : DEFAULT_INIT_PROJECT_NAME;
   assertProjectDirectoryName(name);
-  return path.resolve(process.cwd(), name);
+  return { target: path.resolve(process.cwd(), name), interactive };
 }
 
 async function runInit(parsed: ParsedArgs): Promise<number> {
-  const target = await resolveInitTarget(parsed);
+  const { target, interactive } = await resolveInitTarget(parsed);
   const json = parsed.flags.has("json") === true;
   const localModels = parsed.flags.has("local-models") === true;
 
@@ -1266,11 +815,16 @@ async function runInit(parsed: ParsedArgs): Promise<number> {
   if (json) {
     printJson(result);
   } else {
-    process.stdout.write(`Created Frameyard project at ${target}\n`);
+    process.stdout.write(`${okMark(`Created Frameyard project at ${pathText(target)}`)}\n`);
     for (const file of Object.keys(files)) {
-      process.stdout.write(`  ${file}\n`);
+      process.stdout.write(`  ${dimText(file)}\n`);
     }
-    process.stdout.write("Next: " + next.slice(0, 2).join(" && ") + "\n");
+    const hint = "Next: " + next.slice(0, 2).join(" && ");
+    if (interactive) {
+      outro(hint);
+    } else {
+      process.stdout.write(`${hint}\n`);
+    }
   }
   return 0;
 }
@@ -1285,10 +839,10 @@ async function runDev(parsed: ParsedArgs): Promise<number> {
   const project = await projectFromFlag(parsed.flags);
   const server = await startPreviewServer({ projectRoot: project.root, port });
 
-  process.stdout.write(`Frameyard preview: ${server.url}\n`);
-  process.stdout.write(`Project: ${project.root}\n`);
-  process.stdout.write(`Compositions: ${[...project.compositions.keys()].join(", ") || "(none)"}\n`);
-  process.stdout.write("Press Ctrl+C to stop.\n");
+  process.stdout.write(`${field("Frameyard preview", pathText(server.url))}\n`);
+  process.stdout.write(`${field("Project", project.root)}\n`);
+  process.stdout.write(`${field("Compositions", [...project.compositions.keys()].join(", ") || "(none)")}\n`);
+  process.stdout.write(`${dimText("Press Ctrl+C to stop.")}\n`);
 
   await new Promise<void>((resolve) => {
     const stop = () => {
@@ -1315,12 +869,14 @@ async function runContext(parsed: ParsedArgs, signal: AbortSignal, policy: Loade
     return 0;
   }
 
-  process.stdout.write(`Frameyard project: ${result.root}\n`);
+  process.stdout.write(`${boldText("Frameyard project")}: ${pathText(result.root)}\n`);
   if (result.format !== undefined) {
-    process.stdout.write(`format: ${result.format.width}×${result.format.height} @ ${result.format.fps} fps\n`);
+    process.stdout.write(
+      `${field("format", `${result.format.width}×${result.format.height} @ ${result.format.fps} fps`)}\n`,
+    );
   }
-  process.stdout.write(`policy: ${describePolicy(policy)}\n`);
-  process.stdout.write(`compositions: ${result.compositions.length}\n`);
+  process.stdout.write(`${field("policy", describePolicy(policy))}\n`);
+  process.stdout.write(`${field("compositions", String(result.compositions.length))}\n`);
   for (const composition of result.compositions) {
     const metadata = composition.metadata;
     const detail =
@@ -1330,30 +886,30 @@ async function runContext(parsed: ParsedArgs, signal: AbortSignal, policy: Loade
           ? `static ${metadata.width}×${metadata.height}`
           : `${metadata.width}×${metadata.height} @ ${metadata.fps} fps, ${metadata.durationInFrames} frames`;
     process.stdout.write(
-      `  ${composition.id}: ${detail}, ${composition.props.length} props, ${composition.diagnostics.errors} errors/${composition.diagnostics.warnings} warnings\n`,
+      `  ${pathText(composition.id)}: ${detail}, ${composition.props.length} props, ${composition.diagnostics.errors} errors/${composition.diagnostics.warnings} warnings\n`,
     );
   }
-  process.stdout.write(`timelines: ${result.timelines.length}\n`);
+  process.stdout.write(`${field("timelines", String(result.timelines.length))}\n`);
   for (const timeline of result.timelines) {
     const detail =
       timeline.durationInFrames === undefined
         ? "unresolved"
         : `${timeline.durationInFrames} frames (${timeline.durationSeconds?.toFixed(1)}s), ${timeline.tracks} tracks, ${timeline.clips?.length ?? 0} clips, ${timeline.transitions} transitions, ${timeline.audio} audio, ${timeline.transcripts} transcripts`;
     process.stdout.write(
-      `  ${timeline.id}: ${detail}, ${timeline.diagnostics.errors} errors/${timeline.diagnostics.warnings} warnings\n`,
+      `  ${pathText(timeline.id)}: ${detail}, ${timeline.diagnostics.errors} errors/${timeline.diagnostics.warnings} warnings\n`,
     );
   }
-  process.stdout.write(`assets: ${result.assets.length}\n`);
-  process.stdout.write(`fonts: ${result.fonts.length}\n`);
+  process.stdout.write(`${field("assets", String(result.assets.length))}\n`);
+  process.stdout.write(`${field("fonts", String(result.fonts.length))}\n`);
   for (const font of result.fonts) {
     const subsets = font.subsets.length === 0 ? "no subset" : font.subsets.join(",");
     process.stdout.write(
-      `  ${font.id}: ${font.family} (${font.provider}${font.version ? ` ${font.version}` : ""}), ${subsets}, ${font.styles.join("/")}, ${font.license}, ${font.files} files, ${font.status}\n`,
+      `  ${pathText(font.id)}: ${font.family} (${font.provider}${font.version ? ` ${font.version}` : ""}), ${subsets}, ${font.styles.join("/")}, ${font.license}, ${font.files} files, ${font.status}\n`,
     );
   }
-  process.stdout.write(`next:\n`);
+  process.stdout.write(`${boldText("next:")}\n`);
   for (const command of result.next) {
-    process.stdout.write(`  ${command}\n`);
+    process.stdout.write(`  ${pathText(command)}\n`);
   }
   return 0;
 }
@@ -1379,17 +935,19 @@ async function runInspect(parsed: ParsedArgs): Promise<number> {
     return 0;
   }
 
-  process.stdout.write(`Inspected ${filePath} (${stats.width}×${stats.height}, ${probed.bytes} bytes)\n`);
   process.stdout.write(
-    `  blank: ${stats.blank}; alpha ${stats.alpha.min}..${stats.alpha.max}, coverage ${(stats.alpha.coverage * 100).toFixed(1)}%\n`,
+    `${boldText("Inspected")} ${pathText(filePath)} (${stats.width}×${stats.height}, ${probed.bytes} bytes)\n`,
   );
   process.stdout.write(
-    `  background: ${stats.background.hex} (${(stats.background.share * 100).toFixed(1)}%); content: ${stats.content.pixels} px (${(stats.content.share * 100).toFixed(1)}%)${stats.content.bbox === null ? "" : ` at ${stats.content.bbox.x},${stats.content.bbox.y} ${stats.content.bbox.width}×${stats.content.bbox.height}`}\n`,
+    `  ${field("blank", `${stats.blank}`)}; alpha ${stats.alpha.min}..${stats.alpha.max}, coverage ${(stats.alpha.coverage * 100).toFixed(1)}%\n`,
   );
   process.stdout.write(
-    `  colors: ${stats.colors.map((color) => `${color.hex} ${(color.share * 100).toFixed(1)}%`).join(", ") || "(none)"}\n`,
+    `  ${field("background", `${stats.background.hex} (${(stats.background.share * 100).toFixed(1)}%)`)}; content: ${stats.content.pixels} px (${(stats.content.share * 100).toFixed(1)}%)${stats.content.bbox === null ? "" : ` at ${stats.content.bbox.x},${stats.content.bbox.y} ${stats.content.bbox.width}×${stats.content.bbox.height}`}\n`,
   );
-  process.stdout.write(`  edge density: ${stats.edgeDensity}\n`);
+  process.stdout.write(
+    `  ${field("colors", stats.colors.map((color) => `${color.hex} ${(color.share * 100).toFixed(1)}%`).join(", ") || "(none)")}\n`,
+  );
+  process.stdout.write(`  ${field("edge density", String(stats.edgeDensity))}\n`);
   return 0;
 }
 
@@ -1423,14 +981,25 @@ async function runCompare(parsed: ParsedArgs): Promise<number> {
   if (json) {
     printJson(result);
   } else if (stats.identical) {
-    process.stdout.write(`${firstPath} and ${secondPath} are pixel-identical (${stats.width}×${stats.height}).\n`);
-  } else {
-    process.stdout.write(`${firstPath} and ${secondPath} differ:\n`);
-    process.stdout.write(`  dimensions: ${stats.width}×${stats.height}\n`);
-    process.stdout.write(`  differing pixels: ${stats.differingPixels} / ${stats.totalPixels} (${stats.percent}%)\n`);
-    process.stdout.write(`  max channel delta: ${stats.maxChannelDelta}; mean ${stats.meanChannelDelta}\n`);
     process.stdout.write(
-      `  bounding box: ${stats.bbox === null ? "(none)" : `x=${stats.bbox.x}..${stats.bbox.x + stats.bbox.width - 1}, y=${stats.bbox.y}..${stats.bbox.y + stats.bbox.height - 1}`}\n`,
+      `${okMark(`${pathText(firstPath)} and ${pathText(secondPath)} are pixel-identical (${stats.width}×${stats.height}).`)}\n`,
+    );
+  } else {
+    process.stdout.write(`${failMark(`${pathText(firstPath)} and ${pathText(secondPath)} differ:`)}\n`);
+    process.stdout.write(`  ${field("dimensions", `${stats.width}×${stats.height}`)}\n`);
+    process.stdout.write(
+      `  ${field("differing pixels", `${stats.differingPixels} / ${stats.totalPixels} (${stats.percent}%)`)}\n`,
+    );
+    process.stdout.write(
+      `  ${field("max channel delta", `${stats.maxChannelDelta}; mean ${stats.meanChannelDelta}`)}\n`,
+    );
+    process.stdout.write(
+      `  ${field(
+        "bounding box",
+        stats.bbox === null
+          ? "(none)"
+          : `x=${stats.bbox.x}..${stats.bbox.x + stats.bbox.width - 1}, y=${stats.bbox.y}..${stats.bbox.y + stats.bbox.height - 1}`,
+      )}\n`,
     );
   }
   return stats.identical ? 0 : 1;
@@ -1467,14 +1036,14 @@ function runExplain(parsed: ParsedArgs): number {
   if (json) {
     printJson(result);
   } else {
-    process.stdout.write(`${explanation.code}\n`);
-    process.stdout.write(`Cause: ${explanation.message}\n`);
+    process.stdout.write(`${boldText(explanation.code)}\n`);
+    process.stdout.write(`${field("Cause", explanation.message)}\n`);
     if (explanation.examples !== undefined) {
-      process.stdout.write(`Failing:\n  ${explanation.examples.failing}\n`);
-      process.stdout.write(`Corrected:\n  ${explanation.examples.corrected}\n`);
+      process.stdout.write(`${boldText("Failing:")}\n  ${explanation.examples.failing}\n`);
+      process.stdout.write(`${boldText("Corrected:")}\n  ${explanation.examples.corrected}\n`);
     }
     if (explanation.docs !== undefined) {
-      process.stdout.write(`Docs: ${explanation.docs}\n`);
+      process.stdout.write(`${field("Docs", pathText(explanation.docs))}\n`);
     }
   }
   return 0;
@@ -1590,11 +1159,11 @@ async function runAddRecipe(parsed: ParsedArgs, json: boolean): Promise<number> 
   if (json) {
     printJson(result);
   } else {
-    process.stdout.write(`Installed recipe ${recipe.id} as ${id}\n`);
+    process.stdout.write(`${okMark(`Installed recipe ${boldText(recipe.id)} as ${pathText(id)}`)}\n`);
     for (const file of result.files) {
-      process.stdout.write(`  ${file}\n`);
+      process.stdout.write(`  ${dimText(file)}\n`);
     }
-    process.stdout.write("Add to fy.config.js:\n");
+    process.stdout.write(`${boldText("Add to fy.config.js:")}\n`);
     for (const [key, value] of Object.entries(register)) {
       const entries = Object.entries(value)
         .map(([entryId, entry]) => `"${entryId}": "${entry}"`)
@@ -1602,7 +1171,7 @@ async function runAddRecipe(parsed: ParsedArgs, json: boolean): Promise<number> 
       process.stdout.write(`  ${key}: { ${entries} }\n`);
     }
     if (result.prerequisites.length > 0) {
-      process.stdout.write(`Provide: ${result.prerequisites.join(", ")}\n`);
+      process.stdout.write(`${field("Provide", result.prerequisites.join(", "))}\n`);
     }
   }
   return 0;
@@ -1691,11 +1260,11 @@ async function runAdd(parsed: ParsedArgs): Promise<number> {
     if (json) {
       printJson(result);
     } else {
-      process.stdout.write(`Installed local-model scaffold in ${root}\n`);
+      process.stdout.write(`${okMark(`Installed local-model scaffold in ${pathText(root)}`)}\n`);
       for (const file of result.files) {
-        process.stdout.write(`  ${file}\n`);
+        process.stdout.write(`  ${dimText(file)}\n`);
       }
-      process.stdout.write(`Next: ${result.next[0]}\n`);
+      process.stdout.write(`${field("Next", result.next[0] as string)}\n`);
     }
     return 0;
   }
@@ -1758,11 +1327,11 @@ async function runAdd(parsed: ParsedArgs): Promise<number> {
   if (json) {
     printJson(result);
   } else {
-    process.stdout.write(`Created ${targetPath}\n`);
+    process.stdout.write(`${okMark(`Created ${pathText(targetPath)}`)}\n`);
     const key = kind === "composition" ? "compositions" : "timelines";
-    process.stdout.write(`Add to fy.config.js:\n  ${key}: { "${id}": "./${entry}" }\n`);
+    process.stdout.write(`${boldText("Add to fy.config.js:")}\n  ${key}: { "${id}": "./${entry}" }\n`);
     if ((template.prerequisites ?? []).length > 0) {
-      process.stdout.write(`Provide: ${(template.prerequisites ?? []).join(", ")}\n`);
+      process.stdout.write(`${field("Provide", (template.prerequisites ?? []).join(", "))}\n`);
     }
   }
   return 0;
@@ -1815,14 +1384,18 @@ function printFontAddResult(
     return;
   }
   for (const warning of result.warnings) {
-    process.stderr.write(`⚠ ${warning.code}: ${warning.message}\n`);
+    process.stderr.write(`${warnMark(`${warning.code}: ${warning.message}`)}\n`);
   }
   process.stdout.write(
-    `✓ font ${result.font.id}: ${result.font.family} (${result.font.provider}${result.font.version ? ` ${result.font.version}` : ""}), ${result.font.files} file${result.font.files === 1 ? "" : "s"}, ${result.font.bytes} bytes\n`,
+    `${okMark(
+      `font ${boldText(result.font.id)}: ${result.font.family} (${result.font.provider}${
+        result.font.version ? ` ${result.font.version}` : ""
+      }), ${result.font.files} file${result.font.files === 1 ? "" : "s"}, ${result.font.bytes} bytes`,
+    )}\n`,
   );
-  process.stdout.write(`  manifest: ${result.manifest}\n`);
-  process.stdout.write(`  css: /__frameyard/fonts.css\n`);
-  process.stdout.write(`  use: font-family: "${result.font.family}", system-ui, sans-serif\n`);
+  process.stdout.write(`  ${field("manifest", result.manifest)}\n`);
+  process.stdout.write(`  ${field("css", "/__frameyard/fonts.css")}\n`);
+  process.stdout.write(`  ${field("use", `font-family: "${result.font.family}", system-ui, sans-serif`)}\n`);
 }
 
 async function runFont(parsed: ParsedArgs, signal: AbortSignal, policy: LoadedResourcePolicy): Promise<number> {
@@ -1839,24 +1412,41 @@ async function runFont(parsed: ParsedArgs, signal: AbortSignal, policy: LoadedRe
     const variable = parsed.flags.has("variable") ? true : undefined;
     const limitValue = flagString(parsed.flags, "limit");
     const limit = limitValue === undefined ? undefined : Number(limitValue);
-    const result = await searchFontsource({
-      query,
-      ...(category !== undefined ? { category } : {}),
-      ...(subset !== undefined ? { subset } : {}),
-      ...(style !== undefined ? { style } : {}),
-      ...(variable !== undefined ? { variable } : {}),
-      ...(limit !== undefined ? { limit } : {}),
-      signal,
-    });
+    const search = () =>
+      searchFontsource({
+        query,
+        ...(category !== undefined ? { category } : {}),
+        ...(subset !== undefined ? { subset } : {}),
+        ...(style !== undefined ? { style } : {}),
+        ...(variable !== undefined ? { variable } : {}),
+        ...(limit !== undefined ? { limit } : {}),
+        signal,
+      });
+    const searchSpinner = !json && process.stdout.isTTY === true ? spinner() : undefined;
+    let result: Awaited<ReturnType<typeof searchFontsource>>;
+    if (searchSpinner === undefined) {
+      result = await search();
+    } else {
+      searchSpinner.start("Searching Fontsource");
+      try {
+        result = await search();
+        searchSpinner.stop(
+          `${result.results.length} result${result.results.length === 1 ? "" : "s"}${result.truncated ? " (truncated)" : ""}`,
+        );
+      } catch (error) {
+        searchSpinner.stop("Font search failed");
+        throw error;
+      }
+    }
     if (json) {
       printJson({ ok: true, command: "font", action: "search", ...result });
     } else {
       process.stdout.write(
-        `fontsource: ${result.results.length} result${result.results.length === 1 ? "" : "s"}${result.truncated ? " (truncated)" : ""}\n`,
+        `${field("fontsource", `${result.results.length} result${result.results.length === 1 ? "" : "s"}${result.truncated ? " (truncated)" : ""}`)}\n`,
       );
       for (const item of result.results) {
         process.stdout.write(
-          `  ${item.id}: ${item.family} [${item.category}]${item.variable ? " variable" : ""}, weights ${item.weights.join(",")}, ${item.styles.join("/")}, subsets ${item.subsets.join(",")}, ${item.license}\n`,
+          `  ${pathText(item.id)}: ${item.family} [${item.category}]${item.variable ? " variable" : ""}, weights ${item.weights.join(",")}, ${item.styles.join("/")}, subsets ${item.subsets.join(",")}, ${item.license}\n`,
         );
       }
     }
@@ -1903,7 +1493,7 @@ async function runFont(parsed: ParsedArgs, signal: AbortSignal, policy: LoadedRe
       if (json) {
         printJson({ ok: true, command: "font", action: "verify", ...verification });
       } else {
-        process.stderr.write(`✗ ${error.code}: ${error.message}\n`);
+        process.stderr.write(`${failMark(`${error.code}: ${error.message}`)}\n`);
       }
       return 1;
     }
@@ -2022,13 +1612,13 @@ async function runFont(parsed: ParsedArgs, signal: AbortSignal, policy: LoadedRe
       printJson(result);
     } else {
       if (fonts.length === 0) {
-        process.stdout.write("No project fonts are installed.\n");
+        process.stdout.write(`${dimText("No project fonts are installed.")}\n`);
       } else {
-        process.stdout.write(`fonts: ${fonts.length}\n`);
+        process.stdout.write(`${field("fonts", String(fonts.length))}\n`);
         for (const font of fonts) {
           const subsets = font.subsets.length === 0 ? "no subset" : font.subsets.join(", ");
           process.stdout.write(
-            `  ${font.id}: ${font.family} (${font.provider}${font.version ? ` ${font.version}` : ""}), ${subsets}, ${font.styles.join("/")}, ${font.license}, ${font.files} files, ${font.bytes} bytes, ${font.status}\n`,
+            `  ${pathText(font.id)}: ${font.family} (${font.provider}${font.version ? ` ${font.version}` : ""}), ${subsets}, ${font.styles.join("/")}, ${font.license}, ${font.files} files, ${font.bytes} bytes, ${font.status}\n`,
           );
         }
       }
@@ -2048,18 +1638,16 @@ async function runFont(parsed: ParsedArgs, signal: AbortSignal, policy: LoadedRe
       printJson({ ok: true, command: "font", action: "verify", ...verification });
     } else {
       if (verification.fonts === 0) {
-        process.stdout.write("No project fonts are installed.\n");
+        process.stdout.write(`${dimText("No project fonts are installed.")}\n`);
       } else {
         process.stdout.write(
-          `${verification.valid ? "✓" : "✗"} font manifest: ${verification.fonts} fonts, ${verification.files} files, ${verification.bytes} bytes\n`,
+          `${verification.valid ? okMark("font manifest") : failMark("font manifest")}: ${verification.fonts} fonts, ${verification.files} files, ${verification.bytes} bytes\n`,
         );
-        process.stdout.write(`  ${verification.manifest}\n`);
+        process.stdout.write(`  ${dimText(verification.manifest)}\n`);
       }
       for (const diagnostic of verification.diagnostics) {
-        const marker = diagnostic.severity === "error" ? "✗" : "⚠";
-        process.stderr.write(
-          `${marker} ${diagnostic.code}: ${diagnostic.message}${diagnostic.file !== undefined ? ` (${diagnostic.file})` : ""}\n`,
-        );
+        const message = `${diagnostic.code}: ${diagnostic.message}${diagnostic.file !== undefined ? ` (${diagnostic.file})` : ""}`;
+        process.stderr.write(`${diagnostic.severity === "error" ? failMark(message) : warnMark(message)}\n`);
       }
     }
     return verification.valid ? 0 : 1;
@@ -2108,10 +1696,15 @@ async function runLint(parsed: ParsedArgs, signal: AbortSignal, policy: LoadedRe
       printJson({ ok: true, command: "lint", policy: policyDetails(policy), ...result });
     } else {
       process.stdout.write(
-        `✓ lint timeline ${targetId}: ${result.framesProjected} frames projected, ${result.segments} segment${result.segments === 1 ? "" : "s"}, ${result.tracks} track${result.tracks === 1 ? "" : "s"}, ${result.clips} clip${result.clips === 1 ? "" : "s"}\n`,
+        `${okMark(
+          `lint timeline ${boldText(targetId)}: ${result.framesProjected} frames projected, ${result.segments} segment${result.segments === 1 ? "" : "s"}, ${result.tracks} track${result.tracks === 1 ? "" : "s"}, ${result.clips} clip${result.clips === 1 ? "" : "s"}`,
+        )}\n`,
       );
       process.stdout.write(
-        `  policy: ${describePolicy(policy)}; lint does not replace check (props hooks and frame runtime are not evaluated)\n`,
+        `  ${field(
+          "policy",
+          `${describePolicy(policy)}; lint does not replace check (props hooks and frame runtime are not evaluated)`,
+        )}\n`,
       );
     }
     return 0;
@@ -2129,14 +1722,18 @@ async function runLint(parsed: ParsedArgs, signal: AbortSignal, policy: LoadedRe
     printJson({ ok: true, command: "lint", policy: policyDetails(policy), ...result });
   } else if (result.metadata.static === true) {
     process.stdout.write(
-      `✓ lint ${compositionId}: static ${result.metadata.width}×${result.metadata.height}; controller and document validated\n`,
+      `${okMark(`lint ${boldText(compositionId)}: static ${result.metadata.width}×${result.metadata.height}; controller and document validated`)}\n`,
     );
-    process.stdout.write(`  policy: ${describePolicy(policy)}; lint does not replace check\n`);
+    process.stdout.write(`  ${field("policy", `${describePolicy(policy)}; lint does not replace check`)}\n`);
   } else {
     process.stdout.write(
-      `✓ lint ${compositionId}: document and controller validated for ${result.metadata.durationInFrames} frames; frame runtime is not evaluated\n`,
+      `${okMark(
+        `lint ${boldText(compositionId)}: document and controller validated for ${result.metadata.durationInFrames} frames; frame runtime is not evaluated`,
+      )}\n`,
     );
-    process.stdout.write(`  policy: ${describePolicy(policy)}; use check for props hooks and every frame\n`);
+    process.stdout.write(
+      `  ${field("policy", `${describePolicy(policy)}; use check for props hooks and every frame`)}\n`,
+    );
   }
   return 0;
 }
@@ -2153,30 +1750,35 @@ async function runCheck(parsed: ParsedArgs, signal: AbortSignal, policy: LoadedR
   const props = await readPropsFile(parsed.flags);
   const targetId = parsed.positionals[0] as string;
   const json = parsed.flags.has("json") === true;
+  const progress = parsed.flags.has("no-progress") !== true;
 
   if (project.timelines.has(targetId)) {
     if (props !== undefined && !isPlainObject(props)) {
       usage("Timeline --props must be a JSON object keyed by composition clip id.");
     }
-    const result = await checkTimeline({
-      project,
-      timelineId: targetId,
-      ...(props !== undefined ? { propsOverrides: props as Record<string, unknown> } : {}),
-      signal,
-      onProgress: progressPrinter("Checking"),
-    });
+    const result = await withProgress("Checking", progress, (onProgress) =>
+      checkTimeline({
+        project,
+        timelineId: targetId,
+        ...(props !== undefined ? { propsOverrides: props as Record<string, unknown> } : {}),
+        signal,
+        onProgress,
+      }),
+    );
 
     printDiagnostics(result.diagnostics);
     if (json) {
       printJson({ ok: true, command: "check", ...result });
     } else {
       process.stdout.write(
-        `✓ timeline ${targetId}: ${result.framesChecked} frames, ${result.format.width}×${result.format.height} @ ${result.format.fps} fps (${formatDuration(result.durationInFrames / result.format.fps)}), ${result.tracks} track${result.tracks === 1 ? "" : "s"}, ${result.clips} clip${result.clips === 1 ? "" : "s"}, ${result.transitions} transition${result.transitions === 1 ? "" : "s"}\n`,
+        `${okMark(
+          `timeline ${boldText(targetId)}: ${result.framesChecked} frames, ${result.format.width}×${result.format.height} @ ${result.format.fps} fps (${formatDuration(result.durationInFrames / result.format.fps)}), ${result.tracks} track${result.tracks === 1 ? "" : "s"}, ${result.clips} clip${result.clips === 1 ? "" : "s"}, ${result.transitions} transition${result.transitions === 1 ? "" : "s"}`,
+        )}\n`,
       );
-      process.stdout.write(`  audio: ${result.audio.clips} clip${result.audio.clips === 1 ? "" : "s"}\n`);
+      process.stdout.write(`  ${field("audio", `${result.audio.clips} clip${result.audio.clips === 1 ? "" : "s"}`)}\n`);
       if (result.transcripts.clips > 0) {
         process.stdout.write(
-          `  transcripts: ${result.transcripts.clips} asset${result.transcripts.clips === 1 ? "" : "s"}\n`,
+          `  ${field("transcripts", `${result.transcripts.clips} asset${result.transcripts.clips === 1 ? "" : "s"}`)}\n`,
         );
       }
     }
@@ -2184,36 +1786,42 @@ async function runCheck(parsed: ParsedArgs, signal: AbortSignal, policy: LoadedR
   }
 
   const compositionId = targetId;
-  const result = await checkComposition({
-    project,
-    compositionId,
-    props,
-    signal,
-    onProgress: progressPrinter("Checking"),
-  });
+  const result = await withProgress("Checking", progress, (onProgress) =>
+    checkComposition({
+      project,
+      compositionId,
+      props,
+      signal,
+      onProgress,
+    }),
+  );
 
   if (json) {
     printJson({ ok: true, command: "check", ...result });
   } else if (result.kind === "static") {
-    process.stdout.write(`✓ ${compositionId}: static ${result.metadata.width}×${result.metadata.height}\n`);
+    process.stdout.write(
+      `${okMark(`${boldText(compositionId)}: static ${result.metadata.width}×${result.metadata.height}`)}\n`,
+    );
   } else {
     const meta = result.metadata;
     process.stdout.write(
-      `✓ ${compositionId}: ${result.framesChecked} frames, ${meta.width}×${meta.height} @ ${meta.fps} fps (${formatDuration(meta.durationInFrames / meta.fps)})\n`,
+      `${okMark(
+        `${boldText(compositionId)}: ${result.framesChecked} frames, ${meta.width}×${meta.height} @ ${meta.fps} fps (${formatDuration(meta.durationInFrames / meta.fps)})`,
+      )}\n`,
     );
-    process.stdout.write(`  audio: ${result.audio.clips} clip${result.audio.clips === 1 ? "" : "s"}\n`);
+    process.stdout.write(`  ${field("audio", `${result.audio.clips} clip${result.audio.clips === 1 ? "" : "s"}`)}\n`);
     for (const clip of result.audio.details) {
       process.stdout.write(
-        `    ${clip.src}: ${clip.startSeconds.toFixed(2)}s–${clip.endSeconds.toFixed(2)}s (source ${clip.sourceDurationSeconds.toFixed(2)}s, volume ${clip.volume})\n`,
+        `    ${pathText(clip.src)}: ${clip.startSeconds.toFixed(2)}s–${clip.endSeconds.toFixed(2)}s (source ${clip.sourceDurationSeconds.toFixed(2)}s, volume ${clip.volume})\n`,
       );
     }
     if (result.transcripts.clips > 0) {
       process.stdout.write(
-        `  transcripts: ${result.transcripts.clips} asset${result.transcripts.clips === 1 ? "" : "s"}\n`,
+        `  ${field("transcripts", `${result.transcripts.clips} asset${result.transcripts.clips === 1 ? "" : "s"}`)}\n`,
       );
       for (const transcript of result.transcripts.details) {
         process.stdout.write(
-          `    ${transcript.src}: ${transcript.segments} segment${transcript.segments === 1 ? "" : "s"}${transcript.words === undefined ? "" : `, ${transcript.words} word${transcript.words === 1 ? "" : "s"}`}${transcript.language === undefined ? "" : `, ${transcript.language}`}, ${formatDuration(transcript.durationMs / 1000)}\n`,
+          `    ${pathText(transcript.src)}: ${transcript.segments} segment${transcript.segments === 1 ? "" : "s"}${transcript.words === undefined ? "" : `, ${transcript.words} word${transcript.words === 1 ? "" : "s"}`}${transcript.language === undefined ? "" : `, ${transcript.language}`}, ${formatDuration(transcript.durationMs / 1000)}\n`,
         );
       }
     }
@@ -2399,13 +2007,17 @@ function printStillResult(
   const target = timeline ? `timeline ${targetId}` : targetId;
   for (const frame of result.frames) {
     process.stdout.write(
-      `Wrote frame ${frame.frame} of ${target} to ${frame.path} (${result.width}×${result.height})\n`,
+      `${okMark(
+        `Wrote frame ${frame.frame} of ${boldText(target)} to ${pathText(frame.path)} (${result.width}×${result.height})`,
+      )}\n`,
     );
   }
   if (result.frames.length > 1) {
     const directory = path.dirname(result.frames[0]?.path ?? "");
     process.stdout.write(
-      `Wrote ${result.frames.length} frames of ${target} to ${directory} (${result.width}×${result.height})\n`,
+      `${okMark(
+        `Wrote ${result.frames.length} frames of ${boldText(target)} to ${pathText(directory)} (${result.width}×${result.height})`,
+      )}\n`,
     );
   }
 }
@@ -2502,7 +2114,11 @@ async function runAsset(parsed: ParsedArgs, signal: AbortSignal, policy: LoadedR
   if (json) {
     printJson({ ok: true, command: "asset", action: "add", ...result });
   } else {
-    process.stdout.write(`Added ${result.src} from ${result.source} (${result.bytes} bytes, ${result.sha256}).\n`);
+    process.stdout.write(
+      `${okMark(
+        `Added ${pathText(result.src)} from ${result.source} (${result.bytes} bytes, ${dimText(result.sha256)})`,
+      )}\n`,
+    );
   }
   return 0;
 }
@@ -2598,7 +2214,9 @@ async function runRenderSequence(options: {
     printJson(output);
   } else {
     process.stdout.write(
-      `Rendered ${result.frames.length} still${result.frames.length === 1 ? "" : "s"} for ${options.targetId} to ${options.sequenceDir}\n`,
+      `${okMark(
+        `Rendered ${result.frames.length} still${result.frames.length === 1 ? "" : "s"} for ${boldText(options.targetId)} to ${pathText(options.sequenceDir)}`,
+      )}\n`,
     );
   }
   return 0;
@@ -2634,6 +2252,7 @@ async function runRender(parsed: ParsedArgs, signal: AbortSignal, policy: Loaded
   const timelineOutPath =
     explicitOutPath ?? path.join(project.root, "out", `${targetId}.${CONTAINER_EXTENSION[container]}`);
   const json = parsed.flags.has("json") === true;
+  const progress = parsed.flags.has("no-progress") !== true;
   const framesValue = flagString(parsed.flags, "frames");
   const frames =
     framesValue === undefined
@@ -2820,29 +2439,33 @@ async function runRender(parsed: ParsedArgs, signal: AbortSignal, policy: Loaded
       lowerProcessPriority();
     }
 
-    const result = await renderTimeline({
-      project,
-      timelineId: targetId,
-      outPath: timelineOutPath,
-      ...(effectiveWorkers !== undefined ? { workers: effectiveWorkers } : {}),
-      ...(scratchDir !== undefined ? { scratchDir } : {}),
-      ...(encoder !== undefined ? { encoder } : {}),
-      codec,
-      container,
-      ...(props !== undefined ? { propsOverrides: props as Record<string, unknown> } : {}),
-      ...(videoRange !== undefined ? { startFrame: videoRange.startFrame, endFrame: videoRange.endFrame } : {}),
-      scale,
-      overwrite: parsed.flags.has("overwrite") === true,
-      signal,
-      onProgress: progressPrinter("Rendering"),
-    });
+    const result = await withProgress("Rendering", progress, (onProgress) =>
+      renderTimeline({
+        project,
+        timelineId: targetId,
+        outPath: timelineOutPath,
+        ...(effectiveWorkers !== undefined ? { workers: effectiveWorkers } : {}),
+        ...(scratchDir !== undefined ? { scratchDir } : {}),
+        ...(encoder !== undefined ? { encoder } : {}),
+        codec,
+        container,
+        ...(props !== undefined ? { propsOverrides: props as Record<string, unknown> } : {}),
+        ...(videoRange !== undefined ? { startFrame: videoRange.startFrame, endFrame: videoRange.endFrame } : {}),
+        scale,
+        overwrite: parsed.flags.has("overwrite") === true,
+        signal,
+        onProgress,
+      }),
+    );
 
     printDiagnostics(result.diagnostics);
     if (json) {
       printJson({ ok: true, command: "render", ...result });
     } else {
       process.stdout.write(
-        `Rendered timeline ${targetId} to ${result.path} (${result.framesRendered} frames, ${formatDuration(result.durationSeconds)}, ${result.audio.clips} audio clip${result.audio.clips === 1 ? "" : "s"}, ${result.workers} workers, ${result.encoder} encoder)\n`,
+        `${okMark(
+          `Rendered timeline ${boldText(targetId)} to ${pathText(result.path)} (${result.framesRendered} frames, ${formatDuration(result.durationSeconds)}, ${result.audio.clips} audio clip${result.audio.clips === 1 ? "" : "s"}, ${result.workers} workers, ${result.encoder} encoder)`,
+        )}\n`,
       );
     }
     return 0;
@@ -2980,32 +2603,38 @@ async function runRender(parsed: ParsedArgs, signal: AbortSignal, policy: Loaded
     lowerProcessPriority();
   }
 
-  const result = await renderComposition({
-    project,
-    compositionId,
-    props,
-    ...(explicitOutPath !== undefined ? { outPath: explicitOutPath } : {}),
-    ...(concurrency !== undefined ? { concurrency } : {}),
-    ...(encoder !== undefined ? { encoder } : {}),
-    ...(codecValue !== undefined ? { codec: codecValue } : {}),
-    ...(containerValue !== undefined ? { container: containerValue } : {}),
-    ...(videoRange !== undefined ? { startFrame: videoRange.startFrame, endFrame: videoRange.endFrame } : {}),
-    scale,
-    overwrite: parsed.flags.has("overwrite") === true,
-    signal,
-    onProgress: progressPrinter("Rendering"),
-  });
+  const result = await withProgress("Rendering", progress, (onProgress) =>
+    renderComposition({
+      project,
+      compositionId,
+      props,
+      ...(explicitOutPath !== undefined ? { outPath: explicitOutPath } : {}),
+      ...(concurrency !== undefined ? { concurrency } : {}),
+      ...(encoder !== undefined ? { encoder } : {}),
+      ...(codecValue !== undefined ? { codec: codecValue } : {}),
+      ...(containerValue !== undefined ? { container: containerValue } : {}),
+      ...(videoRange !== undefined ? { startFrame: videoRange.startFrame, endFrame: videoRange.endFrame } : {}),
+      scale,
+      overwrite: parsed.flags.has("overwrite") === true,
+      signal,
+      onProgress,
+    }),
+  );
 
   printDiagnostics(result.diagnostics);
   if (json) {
     printJson({ ok: true, command: "render", ...result });
   } else if (result.kind === "image") {
     process.stdout.write(
-      `Rendered ${compositionId} to ${result.path} (${result.width}×${result.height}, ${result.bytes} bytes)\n`,
+      `${okMark(
+        `Rendered ${boldText(compositionId)} to ${pathText(result.path)} (${result.width}×${result.height}, ${result.bytes} bytes)`,
+      )}\n`,
     );
   } else {
     process.stdout.write(
-      `Rendered ${compositionId} to ${result.path} (${result.framesRendered} frames, ${formatDuration(result.durationSeconds)}, ${result.audio.clips} audio clip${result.audio.clips === 1 ? "" : "s"}, ${result.encoder} encoder)\n`,
+      `${okMark(
+        `Rendered ${boldText(compositionId)} to ${pathText(result.path)} (${result.framesRendered} frames, ${formatDuration(result.durationSeconds)}, ${result.audio.clips} audio clip${result.audio.clips === 1 ? "" : "s"}, ${result.encoder} encoder)`,
+      )}\n`,
     );
   }
   return 0;
@@ -3193,9 +2822,11 @@ async function runTts(parsed: ParsedArgs, signal: AbortSignal, policy: LoadedRes
     printJson({ ok: true, command: "tts", ...result });
   } else {
     process.stdout.write(
-      `Wrote 24 kHz mono WAV to ${result.path} (${(result.bytes / (1024 * 1024)).toFixed(2)} MB, ${result.engine})\n`,
+      `${okMark(
+        `Wrote 24 kHz mono WAV to ${pathText(result.path)} (${(result.bytes / (1024 * 1024)).toFixed(2)} MB, ${result.engine})`,
+      )}\n`,
     );
-    process.stdout.write(`Updated provenance manifest ${result.manifest}\n`);
+    process.stdout.write(`${field("manifest", result.manifest)}\n`);
   }
   return 0;
 }
@@ -3319,12 +2950,14 @@ async function runTranscribe(parsed: ParsedArgs, signal: AbortSignal, policy: Lo
     printJson({ ok: true, command: "transcribe", ...result });
   } else {
     process.stdout.write(
-      `Transcribed ${result.source.path} -> ${result.path} (${result.segments} segment${result.segments === 1 ? "" : "s"}, ${result.words} word${result.words === 1 ? "" : "s"}${result.language === undefined ? "" : `, ${result.language}`})\n`,
+      `${okMark(
+        `Transcribed ${pathText(result.source.path)} -> ${pathText(result.path)} (${result.segments} segment${result.segments === 1 ? "" : "s"}, ${result.words} word${result.words === 1 ? "" : "s"}${result.language === undefined ? "" : `, ${result.language}`})`,
+      )}\n`,
     );
     for (const exported of result.exports) {
-      process.stdout.write(`  ${exported.format}: ${exported.path}\n`);
+      process.stdout.write(`  ${field(exported.format, exported.path)}\n`);
     }
-    process.stdout.write(`Updated provenance manifest ${result.manifest}\n`);
+    process.stdout.write(`${field("manifest", result.manifest)}\n`);
   }
   return 0;
 }
@@ -3394,48 +3027,51 @@ async function runDoctorCommand(parsed: ParsedArgs, signal: AbortSignal): Promis
     printJson({ ok: true, command: "doctor", ...report });
   } else {
     for (const check of result.checks) {
-      const mark = check.status === "ok" ? "✓" : "✗";
       const suffix = check.required ? "" : " (optional)";
-      process.stdout.write(`${mark} ${check.name}${suffix}: ${check.detail}\n`);
+      const message = `${check.name}${suffix}: ${check.detail}`;
+      process.stdout.write(`${check.status === "ok" ? okMark(message) : failMark(message)}\n`);
     }
     for (const integration of [
       result.integrations.tts,
       result.integrations.transcribe,
       result.integrations.sherpaOnnxTts,
     ]) {
-      const mark =
-        integration.status === "ok" ? "✓" : integration.status === "missing" && !integration.requested ? "○" : "✗";
-      const detail = integration.detail ? ` — ${integration.detail}` : "";
-      const version = integration.version ? ` ${integration.version}` : "";
+      const message = `${integration.name}: ${integration.status}${integration.executable ? ` (${integration.executable})` : ""}${integration.version ? ` ${integration.version}` : ""}${integration.detail ? ` — ${integration.detail}` : ""}`;
       process.stdout.write(
-        `${mark} ${integration.name}: ${integration.status}${integration.executable ? ` (${integration.executable})` : ""}${version}${detail}\n`,
+        `${integration.status === "ok" ? okMark(message) : integration.status === "missing" && !integration.requested ? skipMark(message) : failMark(message)}\n`,
       );
     }
     for (const model of result.models) {
-      const mark = model.status === "ok" ? "✓" : "✗";
-      const detail = model.detail ? ` — ${model.detail}` : "";
-      process.stdout.write(`${mark} model ${model.role}: ${model.path}${detail}\n`);
+      const message = `model ${model.role}: ${pathText(model.path)}${model.detail ? ` — ${model.detail}` : ""}`;
+      process.stdout.write(`${model.status === "ok" ? okMark(message) : failMark(message)}\n`);
     }
     const fontDetail = result.fonts.detail ? ` — ${result.fonts.detail}` : "";
-    process.stdout.write(
-      `${result.fonts.valid ? "✓" : "✗"} fonts: ${result.fonts.exists ? `${result.fonts.fonts} installed, ${result.fonts.files} files, ${result.fonts.bytes} bytes` : "none"}${fontDetail}\n`,
-    );
+    const fontMessage = `fonts: ${result.fonts.exists ? `${result.fonts.fonts} installed, ${result.fonts.files} files, ${result.fonts.bytes} bytes` : "none"}${fontDetail}`;
+    process.stdout.write(`${result.fonts.valid ? okMark(fontMessage) : failMark(fontMessage)}\n`);
     if (policyReport.status === "ok") {
       process.stdout.write(
-        `✓ policy: ${policyReport.policy}${policyReport.profile ? `, ${policyReport.profile}` : ""}, still ≤${policyReport.maxStillFrames}, ${policyReport.allowOverwrite ? "overwrite allowed" : "overwrite blocked"} (${policyReport.source})\n`,
+        `${okMark(
+          `policy: ${policyReport.policy}${policyReport.profile ? `, ${policyReport.profile}` : ""}, still ≤${policyReport.maxStillFrames}, ${policyReport.allowOverwrite ? "overwrite allowed" : "overwrite blocked"} (${policyReport.source})`,
+        )}\n`,
       );
     } else {
-      process.stdout.write(`✗ policy: ${policyReport.detail}\n`);
+      process.stdout.write(`${failMark(`policy: ${policyReport.detail}`)}\n`);
     }
     process.stdout.write(
-      `resources: ${resources.cpus} cpus, load ${resources.loadAverage.map((value) => value.toFixed(2)).join(" ")}, ${(resources.totalMemoryBytes / 1024 ** 3).toFixed(1)} GB RAM\n`,
+      `${field(
+        "resources",
+        `${resources.cpus} cpus, load ${resources.loadAverage.map((value) => value.toFixed(2)).join(" ")}, ${(resources.totalMemoryBytes / 1024 ** 3).toFixed(1)} GB RAM`,
+      )}\n`,
     );
-    process.stdout.write(`\ndoctor: ${result.healthy ? "healthy" : "problems found"}\n`);
+    process.stdout.write(
+      `\n${result.healthy ? okMark(boldText("doctor: healthy")) : failMark(boldText("doctor: problems found"))}\n`,
+    );
   }
   return result.healthy ? 0 : 1;
 }
 
 function reportFailure(error: unknown, command: string, jsonRequested: boolean, signal?: AbortSignal): number {
+  clearActiveProgress();
   const aborted = signal?.aborted === true;
   const cancelled = aborted || (isFrameyardError(error) && error.code === "CANCELLED");
   const code = cancelled ? "CANCELLED" : isFrameyardError(error) ? error.code : "INTERNAL";
@@ -3461,7 +3097,7 @@ function reportFailure(error: unknown, command: string, jsonRequested: boolean, 
       ...(diagnostics !== undefined ? { diagnostics } : {}),
     });
   }
-  process.stderr.write(`${cancelled ? "Cancelled" : `error [${code}]`}${cancelled ? "" : `: ${message}`}\n`);
+  process.stderr.write(`${cancelled ? colors.yellow("Cancelled") : `${errorLabel(code)}: ${message}`}\n`);
   if (diagnostics !== undefined) {
     printDiagnostics(diagnostics);
   }
@@ -3480,14 +3116,9 @@ async function main(argv: string[]): Promise<number> {
   const jsonRequested = argv.includes("--json");
   let parsed: ParsedArgs;
   try {
-    parsed = parseArgs(argv);
+    parsed = parseCliArgs(argv);
   } catch (error) {
     return reportFailure(error, inferCommand(argv), jsonRequested);
-  }
-  try {
-    validateArgs(parsed);
-  } catch (error) {
-    return reportFailure(error, parsed.command, jsonRequested);
   }
 
   if (parsed.flags.has("version")) {
@@ -3495,15 +3126,29 @@ async function main(argv: string[]): Promise<number> {
     return 0;
   }
   if (parsed.command === "help") {
-    printHelp();
+    const target = parsed.positionals[0];
+    if (target === undefined) {
+      await printHelp();
+    } else if (COMMAND_NAMES.has(target)) {
+      await printCommandHelp(target);
+    } else {
+      return reportFailure(new FrameyardError("USAGE", `Unknown command "${target}".`), "help", jsonRequested);
+    }
     return 0;
   }
   if (parsed.flags.has("help")) {
-    printCommandHelp(parsed.command);
+    await printCommandHelp(parsed.command);
     return 0;
   }
+
+  try {
+    validateArgs(parsed);
+  } catch (error) {
+    return reportFailure(error, parsed.command, jsonRequested);
+  }
+
   if (!parsed.command) {
-    printHelp();
+    await printHelp();
     return 0;
   }
 
@@ -3530,7 +3175,8 @@ async function main(argv: string[]): Promise<number> {
       process.exit(130);
     }
     interrupted = true;
-    process.stderr.write("\nCancelling...\n");
+    const cleared = clearActiveProgress();
+    process.stderr.write(`${cleared ? "" : "\n"}Cancelling...\n`);
     controller.abort();
   };
   process.on("SIGINT", interrupt);

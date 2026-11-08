@@ -1,6 +1,6 @@
 # JSON command results
 
-Every non-interactive command supports `--json`. Stdout contains one JSON document; progress and human diagnostics go to stderr. Failures exit nonzero.
+Every non-interactive command supports `--json`. Stdout contains one JSON document; progress and human diagnostics go to stderr. `check` and `render` accept `--no-progress` to suppress progress updates. Failures exit nonzero.
 
 ## Success envelope
 

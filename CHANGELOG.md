@@ -12,6 +12,10 @@ contract change may ship in a minor release and is called out explicitly below.
 
 ### Changed
 
+- Switching between the Source and Program tabs now re-applies the visible
+  monitor's current frame. Paused CSS/WAAPI animations stay paused instead of
+  resuming when a hidden monitor iframe becomes visible again, and a static
+  composition is re-pinned to its time-zero state.
 - The pre-commit and pre-push hooks now clear Git repository environment
   variables before running checks. Release fixtures that create their own
   repositories can no longer commit into the real checkout when the hooks are

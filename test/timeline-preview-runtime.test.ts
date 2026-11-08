@@ -17,9 +17,14 @@ let root: string;
 let server: PreviewServer;
 let browser: Browser;
 
-const composition = `<style>html, body { margin: 0; width: 100%; height: 100%; background: #123; }</style>
+const composition = `<style>
+  html, body { margin: 0; width: 100%; height: 100%; background: #123; }
+  @keyframes pulse { from { opacity: 0.25; } to { opacity: 1; } }
+  #pulse { position: absolute; top: 0; left: 0; width: 4px; height: 4px; background: #fff; animation: pulse 4s linear infinite; }
+</style>
     <fy-composition width="320" height="180" fps="10" duration-in-frames="10">
       <div id="box" data-frame="-1" style="width: 40px; height: 40px; background: #b8f36b"></div>
+      <div id="pulse"></div>
     </fy-composition>
     <script type="text/fy-controller">
 let box;
@@ -848,6 +853,62 @@ describe("timeline preview runtime", () => {
       await page.locator("#close-source").click();
       await page.waitForFunction(() => (document.querySelector("#tab-source") as HTMLElement | null)?.hidden === true);
       expect(await page.locator("#tab-program").getAttribute("aria-selected")).toBe("true");
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+
+  it("keeps paused CSS animations paused when switching monitor tabs", async () => {
+    const page = await browser.newPage({ viewport: { width: 1100, height: 780 } });
+    try {
+      await page.goto(new URL("/__frameyard/timeline/main", server.url).href, { waitUntil: "domcontentloaded" });
+      await page.waitForFunction(() => document.querySelectorAll(".timeline-layer iframe").length === 1);
+      await waitForFrame(page, 0);
+
+      const snapshot = (selector: string) =>
+        page.evaluate((target) => {
+          const iframe = document.querySelector<HTMLIFrameElement>(target);
+          const animations = iframe?.contentDocument?.getAnimations?.() ?? [];
+          return {
+            states: animations.map((animation) => animation.playState),
+            times: animations.map((animation) => animation.currentTime),
+          };
+        }, selector);
+      const program = () => snapshot(".timeline-layer iframe");
+      const source = () => snapshot("#stage-frame");
+
+      expect((await program()).states.every((state) => state === "paused")).toBe(true);
+
+      await page.locator('.clip[data-clip-id="intro"]').click();
+      await page.waitForFunction(
+        () => (document.querySelector("#source-view") as HTMLElement | null)?.hidden === false,
+      );
+      await page.waitForFunction(
+        () =>
+          document.querySelector<HTMLIFrameElement>("#stage-frame")?.contentDocument?.querySelector("#pulse") !== null,
+      );
+      await page.waitForTimeout(250);
+      expect((await source()).states.every((state) => state === "paused")).toBe(true);
+
+      await page.locator("#tab-program").click();
+      await page.waitForTimeout(250);
+      const programFirst = await program();
+      expect(programFirst.states.length).toBeGreaterThan(0);
+      expect(programFirst.states.every((state) => state === "paused")).toBe(true);
+      await page.waitForTimeout(500);
+      const programSecond = await program();
+      expect(programSecond.states.every((state) => state === "paused")).toBe(true);
+      expect(programSecond.times).toEqual(programFirst.times);
+
+      await page.locator("#tab-source").click();
+      await page.waitForTimeout(250);
+      const sourceFirst = await source();
+      expect(sourceFirst.states.length).toBeGreaterThan(0);
+      expect(sourceFirst.states.every((state) => state === "paused")).toBe(true);
+      await page.waitForTimeout(500);
+      const sourceSecond = await source();
+      expect(sourceSecond.states.every((state) => state === "paused")).toBe(true);
+      expect(sourceSecond.times).toEqual(sourceFirst.times);
     } finally {
       await page.close();
     }

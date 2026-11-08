@@ -36,6 +36,11 @@ clip or media asset reveals the source tab without moving the program playhead.
 `#close-source` closes the source monitor on the timeline route; `#close-program`
 closes the program monitor and timeline strip on the composition route.
 
+Switching monitor tabs pauses the hidden monitor and re-applies the active
+monitor's current frame. Paused CSS/WAAPI animations stay paused instead of
+restarting when the iframe becomes visible again; a static composition is
+re-pinned to its single time-zero state.
+
 ## Theme and monitor controls
 
 - `#theme-system`, `#theme-light`, and `#theme-dark` store

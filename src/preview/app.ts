@@ -375,6 +375,7 @@ export async function bootPreview(): Promise<void> {
         return;
       }
     }
+    const wasVisible = monitor === "source" ? !sourceView.hidden : !programView.hidden;
     activeMonitor = monitor;
     const source = monitor === "source";
     sourceView.hidden = !source;
@@ -384,9 +385,15 @@ export async function bootPreview(): Promise<void> {
     if (source) {
       timelineMonitor.pause();
       sourceMonitor.layout();
+      if (!wasVisible) {
+        sourceMonitor.refresh();
+      }
     } else {
       sourceMonitor.pause();
       timelineMonitor.layout();
+      if (!wasVisible) {
+        timelineMonitor.refresh();
+      }
     }
     updateMonitorHeader();
     updateMeta();
@@ -1772,6 +1779,13 @@ export async function bootPreview(): Promise<void> {
     sourceMonitor.layout();
     timelineMonitor.layout();
     updateZoomUi();
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+      return;
+    }
+    sourceMonitor.refresh();
+    timelineMonitor.refresh();
   });
   window.addEventListener("popstate", () => {
     window.location.reload();

@@ -124,6 +124,8 @@ export interface SourceMonitor {
   setMuted(value: boolean): void;
   setVolume(value: number): void;
   refreshTransport(): void;
+  /** Re-apply the current frame after the monitor becomes visible again. */
+  refresh(): void;
   layout(): void;
   fit(): void;
   actualSize(): void;
@@ -1065,6 +1067,44 @@ export function createSourceMonitor(options: SourceMonitorOptions): SourceMonito
       updateVolumes();
     },
     refreshTransport,
+    refresh() {
+      if (host !== null) {
+        if (metadata?.static !== true) {
+          try {
+            host.seek(currentFrame);
+          } catch (error) {
+            callbacks.onError?.(error);
+          }
+        } else {
+          // A static composition has no clock. Chromium can resume paused CSS
+          // animations when the monitor's iframe is hidden and shown again, so
+          // re-pin the single visual state to time zero.
+          const document = options.frame.contentDocument;
+          if (document && typeof document.getAnimations === "function") {
+            for (const animation of document.getAnimations()) {
+              try {
+                animation.pause();
+                animation.currentTime = 0;
+              } catch {
+                // Best-effort: the static state is already captured.
+              }
+            }
+          }
+        }
+        return;
+      }
+      if (nestedHost) {
+        void nestedHost.seek(currentFrame).catch((error: unknown) => callbacks.onError?.(error));
+        return;
+      }
+      if (mediaElement instanceof HTMLVideoElement || mediaElement instanceof HTMLAudioElement) {
+        try {
+          mediaElement.currentTime = currentFrame / mediaFps() + 0.001;
+        } catch {
+          // The media element may not be seekable yet.
+        }
+      }
+    },
     layout,
     fit() {
       zoomMode = "fit";

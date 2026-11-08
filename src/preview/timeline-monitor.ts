@@ -63,6 +63,8 @@ export interface TimelineMonitor {
   dispose(): Promise<void>;
   setMuted(value: boolean): void;
   setVolume(value: number): void;
+  /** Re-apply the current frame after the monitor becomes visible again. */
+  refresh(): void;
   layout(): void;
   fit(): void;
   actualSize(): void;
@@ -665,6 +667,11 @@ export function createTimelineMonitor(options: TimelineMonitorOptions): Timeline
       masterVolume = value;
       transport.volume.value = String(value);
       updateAudio(true);
+    },
+    refresh() {
+      if (host !== null && data !== null) {
+        void host.seek(currentFrame).catch((error: unknown) => callbacks.onError?.(error));
+      }
     },
     layout,
     fit() {

@@ -75,6 +75,13 @@ contract change may ship in a minor release and is called out explicitly below.
   fields, matching diagnostics, jump-to-start/end, a copyable `still` command,
   and a source link. Escape closes the panel.
 
+### Fixed
+
+- The composition preview exposes `window.__frameyardPreview` only after
+  `project.json` has populated its composition entries, so a caller that waits
+  for the API can load a composition immediately instead of racing the project
+  fetch.
+
 [0.11.0]: https://github.com/vladiantio/frameyard/compare/v0.10.0...v0.11.0
 
 ## [0.10.0] - 2026-11-07

@@ -856,8 +856,6 @@ const api: PreviewApi = {
   },
 };
 
-window.__frameyardPreview = api;
-
 async function initPreview(): Promise<void> {
   setTransportEnabled(false);
   const response = await fetch("/__frameyard/project.json", { cache: "no-store" });
@@ -996,6 +994,10 @@ async function initPreview(): Promise<void> {
       showError(new FrameyardError("PROPS_INVALID", `Props are not valid JSON: ${errorMessage(error)}`));
     }
   });
+
+  // Publish the API only after project.json has populated the entry list, so a
+  // caller that waits for window.__frameyardPreview can load immediately.
+  window.__frameyardPreview = api;
 
   try {
     await api.load(firstEntry);

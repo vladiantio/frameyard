@@ -224,6 +224,31 @@ afterAll(async () => {
 });
 
 describe("browser preview runtime", () => {
+  it("publishes the preview API after project config loads", async () => {
+    const context = await browser.newContext({ viewport: { width: 800, height: 600 } });
+    const page = await context.newPage();
+    let release!: () => void;
+    const configGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route("**/__frameyard/project.json", async (route) => {
+      await configGate;
+      await route.continue();
+    });
+    const configRequest = page.waitForRequest("**/__frameyard/project.json");
+    await page.goto(new URL("/__frameyard/?render=1", server.url).href, { waitUntil: "domcontentloaded" });
+    await configRequest;
+
+    const exposedBeforeConfig = await page.evaluate(() =>
+      Boolean((window as unknown as Record<string, unknown>).__frameyardPreview),
+    );
+    expect(exposedBeforeConfig).toBe(false);
+
+    release();
+    await page.waitForFunction(() => Boolean((window as unknown as Record<string, unknown>).__frameyardPreview));
+    await context.close();
+  });
+
   it("loads, seeks, and resolves props and audio deterministically", async () => {
     const context = await browser.newContext({ viewport: { width: 800, height: 600 } });
     const page = await context.newPage();

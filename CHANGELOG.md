@@ -10,6 +10,8 @@ contract change may ship in a minor release and is called out explicitly below.
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-11-08
+
 ### Changed
 
 - The CLI now uses `citty` for command and argument parsing and generated
@@ -72,6 +74,8 @@ contract change may ship in a minor release and is called out explicitly below.
   with bindings and resolved values, frame state, clip timing and presentation
   fields, matching diagnostics, jump-to-start/end, a copyable `still` command,
   and a source link. Escape closes the panel.
+
+[0.11.0]: https://github.com/vladiantio/frameyard/compare/v0.10.0...v0.11.0
 
 ## [0.10.0] - 2026-11-07
 

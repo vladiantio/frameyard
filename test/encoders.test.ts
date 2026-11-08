@@ -10,7 +10,12 @@ import {
   videoEncoderArgs,
   type VideoEncoderName,
 } from "../src/renderer/ffmpeg.ts";
-import { renderScaleFilter, scaledVideoDimensions, validateRenderScale } from "../src/renderer/scale.ts";
+import {
+  renderScaleFilter,
+  scaledCaptureDimensions,
+  scaledVideoDimensions,
+  validateRenderScale,
+} from "../src/renderer/scale.ts";
 
 describe("encoder selection", () => {
   it("maps a codec and vendor choice to an encoder", () => {
@@ -81,6 +86,9 @@ describe("encoder selection", () => {
     expect(() => validateRenderScale(1.5)).toThrow(/between 0.25 and 1/);
     expect(scaledVideoDimensions(1920, 1080, 0.5)).toEqual({ width: 960, height: 540 });
     expect(scaledVideoDimensions(160, 90, 0.5)).toEqual({ width: 80, height: 44 });
+    expect(scaledCaptureDimensions(1920, 1080, 1)).toEqual({ width: 1920, height: 1080 });
+    expect(scaledCaptureDimensions(1920, 1080, 0.5)).toEqual({ width: 960, height: 540 });
+    expect(scaledCaptureDimensions(160, 90, 0.5)).toEqual({ width: 80, height: 44 });
     expect(renderScaleFilter(0.5)).toBe("scale=trunc(iw*0.5/2)*2:trunc(ih*0.5/2)*2");
     expect(renderScaleFilter(1)).toBeUndefined();
   });

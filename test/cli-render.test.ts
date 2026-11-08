@@ -12,6 +12,7 @@ import {
   runCli,
   type RunOptions,
 } from "./helpers/cli-project.ts";
+import { mediaPixel } from "./helpers/media.ts";
 
 let root: string;
 
@@ -722,8 +723,12 @@ export default {
 </script>
 `;
 
-    const scaledComposition = `<fy-composition width="160" height="100" fps="10" duration-in-frames="6">
-  <div style="width: 100%; height: 100%; background: #654321"></div>
+    const scaledComposition = `<style>
+  .fill { background: #654321; }
+  @media (max-resolution: 0.75dppx) { .fill { background: #00ff00; } }
+</style>
+<fy-composition width="160" height="100" fps="10" duration-in-frames="6">
+  <div class="fill" style="width: 100%; height: 100%"></div>
 </fy-composition>
 `;
 
@@ -1130,6 +1135,12 @@ export default {
           width: 80,
           height: 50,
         });
+        // The capture ran at 0.5 dppx. A full-size capture scaled during
+        // encode would still rasterize at 1 dppx and keep the brown fill.
+        const [red, green, blue] = await mediaPixel(path.join(root, "out", "scaled.mp4"), 40, 25);
+        expect(green).toBeGreaterThan(200);
+        expect(red).toBeLessThan(60);
+        expect(blue).toBeLessThan(60);
       } finally {
         await rm(root, { recursive: true, force: true });
       }

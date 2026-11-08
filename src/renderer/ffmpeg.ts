@@ -771,8 +771,6 @@ export async function startVideoEncoder(options: {
   codec?: VideoCodec;
   /** Delivery container; defaults to `mp4`. */
   container?: VideoContainer;
-  /** Encode-time scale factor; defaults to 1. */
-  scale?: number;
   signal?: AbortSignal;
 }): Promise<VideoEncoder> {
   if (options.signal?.aborted) {
@@ -804,11 +802,6 @@ export async function startVideoEncoder(options: {
 
   const codec = options.codec ?? "h264";
   const container = options.container ?? "mp4";
-
-  const scaleFilter = renderScaleFilter(options.scale ?? 1);
-  if (scaleFilter !== undefined) {
-    args.push("-vf", scaleFilter);
-  }
 
   args.push(
     ...videoEncoderArgs(options.encoder ?? "libx264"),
@@ -1193,34 +1186,63 @@ export interface TimelineCompositeArtifact {
   sourceStartFrame?: number;
 }
 
+export interface SceneLayerCompositeOptions {
+  /** Capture scale for spatial fields expressed in project pixels. */
+  scale?: number;
+  /** Actual artifact width when a capture was rasterized at a different size. */
+  sourceWidth?: number;
+  /** Actual artifact height when a capture was rasterized at a different size. */
+  sourceHeight?: number;
+}
+
+/** Scales project-pixel offsets inside a clip's keyframe tracks. */
+function scaleKeyframeOffsets(keyframes: TimelineKeyframes | undefined, scale: number): TimelineKeyframes | undefined {
+  if (!keyframes || scale === 1) {
+    return keyframes;
+  }
+  const scaled: TimelineKeyframes = { ...keyframes };
+  for (const channel of ["x", "y"] as const) {
+    const track = keyframes[channel];
+    if (track) {
+      scaled[channel] = track.map((key) => ({ ...key, value: key.value * scale }));
+    }
+  }
+  return scaled;
+}
+
 /**
  * Builds FFmpeg's narrow layer input from a projected scene layer. The mapper
  * owns the scene-to-filter boundary; capture chooses the artifact and its input
  * mode, while the scene owns presentation, keyframes, and transition roles.
+ * Capture scaling maps project-pixel offsets and boxes into the rendered stage;
+ * the `scale` multiplier itself is resolution-independent.
  */
 export function sceneLayerToCompositeLayer<S extends TimelineSceneSource>(
   layer: TimelineSceneLayer<S>,
   artifact: TimelineCompositeArtifact,
+  options: SceneLayerCompositeOptions = {},
 ): TimelineCompositeLayer {
   const transform = layer.transform;
   const transition = layer.transition;
+  const scale = options.scale ?? 1;
+  const keyframes = scaleKeyframeOffsets(layer.keyframes, scale);
   return {
     input: artifact.input,
     path: artifact.path,
-    sourceWidth: layer.sourceWidth,
-    sourceHeight: layer.sourceHeight,
+    sourceWidth: options.sourceWidth ?? layer.sourceWidth,
+    sourceHeight: options.sourceHeight ?? layer.sourceHeight,
     ...(transform.width !== undefined && transform.height !== undefined
-      ? { width: transform.width, height: transform.height }
+      ? { width: transform.width * scale, height: transform.height * scale }
       : {}),
     fit: transform.fit,
-    x: transform.x,
-    y: transform.y,
+    x: transform.x * scale,
+    y: transform.y * scale,
     scale: transform.scale,
     rotation: transform.rotation,
     opacity: transform.opacity,
     blend: layer.blend,
     ...(artifact.sourceStartFrame !== undefined ? { sourceStartFrame: artifact.sourceStartFrame } : {}),
-    ...(layer.keyframes !== undefined ? { keyframes: layer.keyframes } : {}),
+    ...(keyframes !== undefined ? { keyframes } : {}),
     clipStart: layer.clip.start,
     ...(transition !== undefined
       ? {
@@ -1699,6 +1721,8 @@ export async function encodeVideoSegmentDirect(options: {
   codec: VideoCodec;
   container: VideoContainer;
   encoder?: VideoEncoderName;
+  /** Media scale factor; defaults to 1. */
+  scale?: number;
   signal?: AbortSignal;
   /** Receives the one-based encoded output frame. */
   onFrame?: (frame: number) => void;
@@ -1706,6 +1730,13 @@ export async function encodeVideoSegmentDirect(options: {
   const encoder = options.encoder ?? encoderNameFor(options.codec, "software");
   const startSeconds = options.sourceStartFrame / options.fps;
   const durationSeconds = options.frames / options.fps;
+  const scaleFilter = renderScaleFilter(options.scale ?? 1);
+  const videoFilters = [
+    `fps=${formatNumber(options.fps)}`,
+    "format=rgba",
+    ...(scaleFilter !== undefined ? [scaleFilter] : []),
+    "format=yuv420p",
+  ];
   const args = [
     "-hide_banner",
     "-loglevel",
@@ -1722,7 +1753,7 @@ export async function encodeVideoSegmentDirect(options: {
     "0:v:0",
     "-an",
     "-vf",
-    `fps=${formatNumber(options.fps)},format=rgba,format=yuv420p`,
+    videoFilters.join(","),
     ...videoEncoderArgs(encoder),
     ...videoCodecTagArgs(options.codec, options.container),
     "-r",
@@ -1854,19 +1885,10 @@ export async function muxVideoWithAudio(options: {
   codec?: VideoCodec;
   /** Delivery container; defaults to `mp4`. */
   container?: VideoContainer;
-  /** Encode-time scale factor; re-encodes the video when not 1. */
-  scale?: number;
-  /** Encoder used when scaling re-encodes the video. */
-  encoder?: VideoEncoderName;
   signal?: AbortSignal;
 }): Promise<void> {
   const codec = options.codec ?? "h264";
   const container = options.container ?? "mp4";
-  const scaleFilter = renderScaleFilter(options.scale ?? 1);
-  const videoArgs =
-    scaleFilter === undefined
-      ? ["-c:v", "copy"]
-      : ["-vf", scaleFilter, ...videoEncoderArgs(options.encoder ?? "libx264")];
   await runCaptured(
     "ffmpeg",
     [
@@ -1881,51 +1903,11 @@ export async function muxVideoWithAudio(options: {
       "0:v:0",
       "-map",
       "1:a:0",
-      ...videoArgs,
+      "-c:v",
+      "copy",
       ...videoCodecTagArgs(codec, container),
       ...audioEncoderArgs(codec),
       "-shortest",
-      ...containerMuxFlags(container),
-      ...containerMuxerArgs(container),
-      options.outputPath,
-    ],
-    { signal: options.signal },
-  );
-}
-
-/** Re-encodes a video at a new scale without an audio track. */
-export async function scaleVideoFile(options: {
-  videoPath: string;
-  outputPath: string;
-  scale: number;
-  codec?: VideoCodec;
-  container?: VideoContainer;
-  encoder?: VideoEncoderName;
-  signal?: AbortSignal;
-}): Promise<void> {
-  const codec = options.codec ?? "h264";
-  const container = options.container ?? "mp4";
-  const scaleFilter = renderScaleFilter(options.scale);
-  if (scaleFilter === undefined) {
-    await runCaptured("ffmpeg", ["-y", "-v", "error", "-i", options.videoPath, "-c", "copy", options.outputPath], {
-      signal: options.signal,
-    });
-    return;
-  }
-  await runCaptured(
-    "ffmpeg",
-    [
-      "-y",
-      "-v",
-      "error",
-      "-i",
-      options.videoPath,
-      "-map",
-      "0:v:0",
-      "-vf",
-      scaleFilter,
-      ...videoEncoderArgs(options.encoder ?? "libx264"),
-      ...videoCodecTagArgs(codec, container),
       ...containerMuxFlags(container),
       ...containerMuxerArgs(container),
       options.outputPath,

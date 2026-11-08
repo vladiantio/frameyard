@@ -152,7 +152,7 @@ code. Use `random("stable:key")` from `frameyard/runtime`, never `Math.random()`
 | `npx frameyard render <id> --dry-run --json` | Handoff plan without Chromium, FFmpeg, or a model |
 | `npx frameyard render <id> --json` | Produce the video when the policy allows it |
 | `npx frameyard render <id> --frames 0-29 --json` | Render a contiguous frame range; audio is trimmed to the range |
-| `npx frameyard render <id> --scale 0.5 --json` | Encode a half-size video with even output dimensions |
+| `npx frameyard render <id> --scale 0.5 --json` | Capture a composition or timeline at half size with even output dimensions |
 | `npx frameyard render <id> --sequence out/frames --frames 0-9 --json` | Write PNG frames instead of a video |
 | `npx frameyard add --list --json` | List project templates, recipes, and scaffolds |
 | `npx frameyard add composition <id> --template <name> --json` | Write a valid fragment and print the config snippet |

@@ -29,7 +29,7 @@ import {
   type VideoEncoderChoice,
   type VideoEncoderName,
 } from "./ffmpeg.js";
-import { scaledVideoDimensions, validateRenderScale } from "./scale.js";
+import { scaledCaptureDimensions, validateRenderScale } from "./scale.js";
 import { inspectTranscriptClips, type TranscriptInspection } from "./transcripts.js";
 import type { ProgressEvent, ProgressPhase } from "./progress.js";
 
@@ -41,6 +41,8 @@ interface SessionOptions {
   props?: unknown;
   signal?: AbortSignal;
   onProgress?: (event: ProgressEvent) => void;
+  /** Capture scale for rendered video; defaults to 1. */
+  scale?: number;
 }
 
 export interface AnimatedCheckResult {
@@ -350,6 +352,7 @@ async function withPreparedSessions<T>(
           props: options.props,
           info: staticInfo,
           staticDiagnostics,
+          ...(options.scale !== undefined && options.scale !== 1 ? { scale: options.scale } : {}),
         });
       };
 
@@ -811,7 +814,7 @@ export async function renderComposition(
     startFrame?: number;
     /** Exclusive last composition frame; defaults to durationInFrames. */
     endFrame?: number;
-    /** Encode-time scale factor; defaults to 1. */
+    /** Capture-time scale factor; defaults to 1. */
     scale?: number;
   },
 ): Promise<RenderResult> {
@@ -877,7 +880,7 @@ export async function renderComposition(
       }
       const { width, height, fps } = session.metadata;
       const concurrency = sessions.length;
-      const output = scaledVideoDimensions(width, height, scale);
+      const output = scaledCaptureDimensions(width, height, scale);
       if (output.width % 2 !== 0 || output.height % 2 !== 0) {
         throw new FrameyardError(
           "RENDER_FAILED",
@@ -939,7 +942,6 @@ export async function renderComposition(
           encoder: encoderName,
           codec,
           container,
-          scale,
           ...(audioPath !== undefined ? { audioPath } : {}),
           signal: options.signal,
         });

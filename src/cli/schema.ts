@@ -214,7 +214,7 @@ export const COMMAND_SPECS = {
       scale: {
         type: "string",
         valueHint: "FACTOR",
-        description: "Encode-time scale from 0.25 to 1; output stays even-sized.",
+        description: "Capture scale from 0.25 to 1; captured output stays even-sized.",
       },
       sequence: {
         type: "string",
@@ -266,7 +266,7 @@ export const COMMAND_SPECS = {
       },
     }),
     details:
-      "The default output is out/<id>.<extension> for video and out/<id>.png for a static composition. --frames accepts n, n-m, or a comma list; video requires a contiguous range, while --sequence accepts arbitrary lists and requires --frames. --scale is 0.25-1 and scales during encode; output dimensions stay even. Encoder choices are auto, software, nvenc, and qsv; auto probes NVENC, then Quick Sync, then the codec's software encoder. WebM and VP9 use Opus audio, and HEVC in MP4/MOV keeps the hvc1 sample entry. A static composition rejects --concurrency, --container, --codec, --encoder, --frames, and --scale. With --dry-run, validates and prints the plan and handoff command without writing outputs or launching Chromium.",
+      "The default output is out/<id>.<extension> for video and out/<id>.png for a static composition. --frames accepts n, n-m, or a comma list; video requires a contiguous range, while --sequence accepts arbitrary lists and requires --frames. --scale is 0.25-1 and captures compositions and timeline stages at the scaled format; output dimensions stay even. Encoder choices are auto, software, nvenc, and qsv; auto probes NVENC, then Quick Sync, then the codec's software encoder. WebM and VP9 use Opus audio, and HEVC in MP4/MOV keeps the hvc1 sample entry. A static composition rejects --concurrency, --container, --codec, --encoder, --frames, and --scale. With --dry-run, validates and prints the plan and handoff command without writing outputs or launching Chromium.",
   },
   tts: {
     summary: "Synthesize speech with a local engine.",

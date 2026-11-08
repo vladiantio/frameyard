@@ -314,7 +314,7 @@ Animated composition and timeline results report `kind: "video"`:
 }
 ```
 
-`--frames` sets `frameRange` to the inclusive rendered range and makes `durationInFrames`, `framesRendered`, and `durationSeconds` describe only that range. `--scale` sets `scale` and the actual even-sized `width`/`height`. A video `--frames` list must be contiguous; use `--sequence` for arbitrary lists.
+`--frames` sets `frameRange` to the inclusive rendered range and makes `durationInFrames`, `framesRendered`, and `durationSeconds` describe only that range. `--scale` sets `scale` and the actual even-sized `width`/`height`; compositions and timeline stages are captured at that scaled format rather than scaled after encoding. A video `--frames` list must be contiguous; use `--sequence` for arbitrary lists.
 
 A static composition result reports `kind: "image"` and has no fps, duration, frame count, codec, container, encoder, audio, or transcript fields:
 

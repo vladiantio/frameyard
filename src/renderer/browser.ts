@@ -8,6 +8,7 @@ import type {
   ResolvedTranscriptClip,
 } from "../contracts.js";
 import { FrameyardError, isFrameyardError, type FrameyardDiagnostic, type FrameyardErrorCode } from "../errors.js";
+import { scaledCaptureDimensions } from "./scale.js";
 import { startTiming } from "./timings.js";
 
 export interface CompositionSession {
@@ -143,6 +144,13 @@ export async function openCompositionSession(options: {
   staticDiagnostics: readonly CompositionDiagnostic[];
   /** Captures the document over a transparent browser background. */
   transparentBackground?: boolean;
+  /**
+   * Capture scale for the rendered source. Lower scales rasterize the
+   * composition at the scaled density while keeping the authored viewport, so
+   * PNGs are produced at the delivery resolution instead of being downscaled
+   * during encode.
+   */
+  scale?: number;
 }): Promise<CompositionSession> {
   const sessionTiming = startTiming("browser.session", { entry: options.entry });
   let browser: Browser;
@@ -166,14 +174,32 @@ export async function openCompositionSession(options: {
   let cdp: CDPSession | undefined;
 
   try {
+    const scale = options.scale ?? 1;
+    const sourceWidth = options.info.metadata.width;
+    const sourceHeight = options.info.metadata.height;
+    const capture = scaledCaptureDimensions(sourceWidth, sourceHeight, scale);
     context = await browser.newContext({
       ...BROWSER_CONTEXT_OPTIONS,
-      viewport: { width: options.info.metadata.width, height: options.info.metadata.height },
+      viewport: { width: sourceWidth, height: sourceHeight },
     });
     page = await context.newPage();
     page.setDefaultTimeout(60_000);
 
     cdp = await context.newCDPSession(page);
+    if (scale !== 1) {
+      // Keep the authoring layout viewport at the composition format and
+      // rasterize it at the capture density. Captured PNGs are therefore
+      // produced at the delivery resolution instead of being downscaled
+      // during encode.
+      await cdp.send("Emulation.setDeviceMetricsOverride", {
+        width: sourceWidth,
+        height: sourceHeight,
+        deviceScaleFactor: scale,
+        mobile: false,
+        screenWidth: sourceWidth,
+        screenHeight: sourceHeight,
+      });
+    }
     if (options.transparentBackground) {
       await cdp.send("Emulation.setDefaultBackgroundColorOverride", {
         color: { r: 0, g: 0, b: 0, a: 0 },
@@ -296,6 +322,20 @@ export async function openCompositionSession(options: {
 
     assertHealthy();
 
+    // The device metrics override rasterizes at `scale`, so crop the CSS-pixel
+    // viewport to the even delivery dimensions when rounding would leave an
+    // odd edge. The minimum two-pixel output cannot exceed the source viewport.
+    const captureClip =
+      scale === 1
+        ? undefined
+        : {
+            x: 0,
+            y: 0,
+            width: Math.min(sourceWidth, capture.width / scale),
+            height: Math.min(sourceHeight, capture.height / scale),
+            scale: 1,
+          };
+
     let firstSeek = true;
     const session: CompositionSession = {
       entry: options.entry,
@@ -355,6 +395,7 @@ export async function openCompositionSession(options: {
             // Lossless PNG with fast compression. The default zlib level is the
             // dominant cost of a 1080p frame; decoded pixels are identical.
             optimizeForSpeed: true,
+            ...(captureClip !== undefined ? { clip: captureClip } : {}),
           })) as CaptureScreenshotResult;
         } catch (error) {
           if (isFrameyardError(error)) {

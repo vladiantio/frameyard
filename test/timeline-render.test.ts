@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { copyFile, mkdtemp, mkdir, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { copyFile, mkdtemp, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -322,6 +322,56 @@ describe.concurrent("timeline rendering", () => {
       width: 320,
       height: 180,
     });
+  }, 120_000);
+
+  it("captures composition layers and composites at the scaled timeline stage", async () => {
+    const scaledCompositionHtml = compositionHtml.replace(
+      "</style>",
+      "  @media (max-resolution: 0.75dppx) { html, body { background: #20d060; } }\n    </style>",
+    );
+    const { root, outPath } = await createProject(scaledCompositionHtml);
+    const timelinePath = path.join(root, "timelines", "main.json");
+    const timelineDocument = JSON.parse(await readFile(timelinePath, "utf8")) as {
+      clips: Array<Record<string, unknown>>;
+    };
+    // The non-zero offset forces the composite path instead of the direct
+    // full-frame encoder and exercises project-pixel mapping into the stage.
+    (timelineDocument.clips[0] as Record<string, unknown>).transform = {
+      fit: "contain",
+      x: 20,
+      y: 0,
+      scale: 1,
+      rotation: 0,
+      opacity: 1,
+    };
+    await writeFile(timelinePath, `${JSON.stringify(timelineDocument, null, 2)}\n`);
+    const project = await loadProject(root);
+
+    const result = await renderTimelineForTest({
+      project,
+      timelineId: "main",
+      outPath,
+      workers: 1,
+      scale: 0.5,
+    });
+
+    expect(result).toMatchObject({
+      width: 160,
+      height: 90,
+      scale: 0.5,
+      framesRendered: 10,
+    });
+    const stream = (await probe(outPath)).streams.find((entry) => entry.codec_type === "video");
+    expect(stream).toMatchObject({ width: 160, height: 90 });
+
+    // The capture ran at 0.5 dppx, and the 20 px clip offset became 10 stage
+    // pixels. The dot starts at x=10 and its 30 px box becomes 15 px.
+    const [dotRed, dotGreen] = await mediaPixel(outPath, 12, 55);
+    expect(dotRed).toBeGreaterThan(150);
+    expect(dotGreen).toBeGreaterThan(200);
+    const [backgroundRed, backgroundGreen] = await mediaPixel(outPath, 30, 55);
+    expect(backgroundRed).toBeLessThan(100);
+    expect(backgroundGreen).toBeGreaterThan(150);
   }, 120_000);
 
   it("captures a batch of timeline stills through the clip composite path", async () => {
@@ -884,6 +934,23 @@ describe.concurrent("timeline rendering media and alpha", () => {
     const stillPath = path.join(root, "out", "video-still.png");
     await captureTimelineStill({ project, timelineId: "main", frame: 5, outPath: stillPath });
     await compareRenderedFrame({ videoPath: outPath, frame: 5, stillPath });
+
+    // The direct media path has no browser capture, so it re-encodes the source
+    // range at the scaled delivery size before the segments are concatenated.
+    const scaledPath = path.join(root, "out", "video-direct-scaled.mp4");
+    const scaled = await renderTimelineForTest({
+      project,
+      timelineId: "main",
+      outPath: scaledPath,
+      workers: 1,
+      scale: 0.5,
+    });
+    expect(scaled).toMatchObject({ width: 160, height: 90, scale: 0.5 });
+    expect((await probe(scaledPath)).streams.find((stream) => stream.codec_type === "video")).toMatchObject({
+      width: 160,
+      height: 90,
+      nb_read_frames: "10",
+    });
   }, 120_000);
 
   it("fits a clip into an explicit transform box", async () => {

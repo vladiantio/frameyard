@@ -24,7 +24,24 @@ export function scaledVideoDimensions(width: number, height: number, scale: numb
   };
 }
 
-/** FFmpeg filter for an encode-time scale; undefined means keep the source size. */
+/**
+ * Capture dimensions for Chromium or a timeline stage. A scale of 1 keeps the
+ * source size exactly; lower scales use the even-sized output dimensions so
+ * captured PNGs and encoded segments never need a scale pass.
+ */
+export function scaledCaptureDimensions(
+  width: number,
+  height: number,
+  scale: number,
+): { width: number; height: number } {
+  return scale === 1 ? { width, height } : scaledVideoDimensions(width, height, scale);
+}
+
+/**
+ * FFmpeg filter for media that has no capture stage, such as a full-frame video
+ * re-encoded directly into a delivery segment. Composition and timeline
+ * captures use `scaledCaptureDimensions` instead.
+ */
 export function renderScaleFilter(scale: number): string | undefined {
   if (scale === 1) {
     return undefined;

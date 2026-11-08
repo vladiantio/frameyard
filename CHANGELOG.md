@@ -10,6 +10,15 @@ contract change may ship in a minor release and is called out explicitly below.
 
 ## [Unreleased]
 
+### Changed
+
+- `render --scale <factor>` now captures animated compositions and timeline
+  stages at the scaled format instead of rendering at full size and scaling
+  during encode. Composition captures rasterize at the scaled pixel density and
+  timeline layer geometry follows the scaled stage, so captured frames, FFV1
+  intermediates, and delivery segments are produced at the output resolution;
+  output dimensions remain even-sized.
+
 ## [0.11.0] - 2026-11-08
 
 ### Changed

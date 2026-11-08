@@ -29,7 +29,6 @@ import {
   mixAudioTimeline,
   muxVideoWithAudio,
   resolveVideoEncoder,
-  scaleVideoFile,
   sceneLayerToCompositeLayer,
   startDirectSegmentEncoder,
   startDualPipeSegmentEncoder,
@@ -43,7 +42,7 @@ import {
   type VideoEncoderName,
 } from "./ffmpeg.js";
 import { createSemaphore, type Semaphore } from "./concurrency.js";
-import { scaledVideoDimensions, validateRenderScale } from "./scale.js";
+import { scaledCaptureDimensions, validateRenderScale } from "./scale.js";
 import { CompositionSessionPool, type SessionLease } from "./session-pool.js";
 import { inspectTranscriptClips, type TranscriptInspection } from "./transcripts.js";
 import type { ProgressPhase, TimelineProgressEvent } from "./progress.js";
@@ -85,7 +84,7 @@ export interface TimelineRenderOptions {
   startFrame?: number;
   /** Exclusive last timeline frame; defaults to durationInFrames. */
   endFrame?: number;
-  /** Encode-time scale factor; defaults to 1. */
+  /** Capture-time scale factor; defaults to 1. */
   scale?: number;
   onProgress?: (event: TimelineProgressEvent) => void;
 }
@@ -556,18 +555,20 @@ async function captureStaticCompositionLayer(options: {
   scratchRoot: string;
   infoCache: Map<string, StaticValidationResult>;
   staticCache: Map<string, Promise<StaticCapture>>;
+  scale: number;
   signal?: AbortSignal;
 }): Promise<StaticCapture> {
-  const { project, timeline, clip, source, serverUrl, scratchRoot, infoCache, staticCache } = options;
+  const { project, timeline, clip, source, serverUrl, scratchRoot, infoCache, staticCache, scale } = options;
   const propsKey = JSON.stringify(clip.props ?? null);
-  const cacheKey = `${source.entry}\u0000${propsKey}`;
+  const infoKey = `${source.entry}\u0000${propsKey}`;
+  const cacheKey = `${infoKey}\u0000${scale}`;
   const cached = staticCache.get(cacheKey);
   if (cached) {
     return cached;
   }
 
   const pending = (async (): Promise<StaticCapture> => {
-    let validation = infoCache.get(cacheKey);
+    let validation = infoCache.get(infoKey);
     if (!validation) {
       validation = await validateHtmlComposition({
         projectRoot: project.root,
@@ -575,7 +576,7 @@ async function captureStaticCompositionLayer(options: {
         ...(clip.props !== undefined ? { props: clip.props } : {}),
         ...(project.format ? { format: project.format } : {}),
       });
-      infoCache.set(cacheKey, validation);
+      infoCache.set(infoKey, validation);
     }
     if (!validation.info) {
       throw new FrameyardError(
@@ -592,6 +593,7 @@ async function captureStaticCompositionLayer(options: {
       info: validation.info,
       staticDiagnostics: validation.diagnostics,
       transparentBackground: true,
+      scale,
     });
     try {
       throwIfAborted(options.signal);
@@ -627,6 +629,8 @@ interface CompositionFrameCaptureOptions {
   serverUrl: string;
   infoCache: Map<string, StaticValidationResult>;
   sessionPool?: CompositionSessionPool;
+  /** Capture-time scale applied to the composition format. */
+  scale: number;
   signal?: AbortSignal;
   /** Called once per captured frame with the zero-based segment offset. */
   onFrame?: (offset: number) => void;
@@ -641,7 +645,7 @@ async function captureCompositionFrames(
   options: CompositionFrameCaptureOptions,
   writeFrame: (png: Buffer) => Promise<void>,
 ): Promise<CompositionDiagnostic[]> {
-  const { project, timeline, clip, source, segment, layerIndex, serverUrl, infoCache } = options;
+  const { project, timeline, clip, source, segment, layerIndex, serverUrl, infoCache, scale } = options;
   const propsKey = JSON.stringify(clip.props ?? null);
   const cacheKey = `${source.entry}\u0000${propsKey}`;
   let validation = infoCache.get(cacheKey);
@@ -672,7 +676,7 @@ async function captureCompositionFrames(
     layer: layerIndex,
     segment: segment.index,
   });
-  const sessionKey = JSON.stringify([source.entry, clip.props ?? null, true]);
+  const sessionKey = JSON.stringify([source.entry, clip.props ?? null, true, scale]);
   const openOptions = {
     serverUrl,
     entry: source.entry,
@@ -680,6 +684,7 @@ async function captureCompositionFrames(
     info: validation.info as CompositionSourceInfo,
     staticDiagnostics: validation.diagnostics,
     transparentBackground: true,
+    scale,
   };
   const lease: SessionLease = options.sessionPool
     ? await options.sessionPool.acquire(sessionKey, () => openCompositionSession(openOptions))
@@ -783,6 +788,24 @@ async function captureCompositionLayer(
  * both be identity operations except for the background fill.
  */
 type SceneLayer = TimelineRenderSegment["layers"][number];
+
+/**
+ * Maps a rasterized composition or nested-timeline artifact into the scaled
+ * stage. The artifact is already rendered at the scaled format, so its actual
+ * dimensions replace the scene's source metadata.
+ */
+function capturedSceneLayer(
+  layer: SceneLayer,
+  artifact: { path: string; input: "sequence" | "image" },
+  scale: number,
+): TimelineCompositeLayer {
+  const captured = scaledCaptureDimensions(layer.sourceWidth, layer.sourceHeight, scale);
+  return sceneLayerToCompositeLayer(layer, artifact, {
+    scale,
+    sourceWidth: captured.width,
+    sourceHeight: captured.height,
+  });
+}
 
 function isFullFrameComposition(layer: SceneLayer, timeline: ResolvedTimeline): boolean {
   if (layer.clip.source.kind !== "composition" || layer.capture !== "frames") {
@@ -896,12 +919,13 @@ async function captureDirectCompositionLayer(
     layer: options.layerIndex,
     segment: options.segment.index,
   });
+  const stage = scaledCaptureDimensions(options.timeline.format.width, options.timeline.format.height, options.scale);
   let encoder: VideoEncoder;
   try {
     encoder = await startDirectSegmentEncoder({
       outputPath: options.outputPath,
-      width: options.timeline.format.width,
-      height: options.timeline.format.height,
+      width: stage.width,
+      height: stage.height,
       fps: options.timeline.format.fps,
       frames: options.segment.frames,
       background: options.background,
@@ -941,11 +965,21 @@ async function captureTwoLayerDirectComposition(
   if (!overlayLayer) {
     throw new FrameyardError("INTERNAL", "Dual-pipe capture requires an overlay layer.");
   }
-  const overlay = sceneLayerToCompositeLayer(overlayLayer, { path: "pipe:3", input: "sequence" });
+  const stage = scaledCaptureDimensions(options.timeline.format.width, options.timeline.format.height, options.scale);
+  const overlaySize = scaledCaptureDimensions(overlayLayer.sourceWidth, overlayLayer.sourceHeight, options.scale);
+  const overlay = sceneLayerToCompositeLayer(
+    overlayLayer,
+    { path: "pipe:3", input: "sequence" },
+    {
+      scale: options.scale,
+      sourceWidth: overlaySize.width,
+      sourceHeight: overlaySize.height,
+    },
+  );
   const encoder: DualPipeEncoder = await startDualPipeSegmentEncoder({
     outputPath: options.outputPath,
-    width: options.timeline.format.width,
-    height: options.timeline.format.height,
+    width: stage.width,
+    height: stage.height,
     fps: options.timeline.format.fps,
     frames: options.segment.frames,
     background: options.background,
@@ -978,6 +1012,7 @@ async function captureTwoLayerDirectComposition(
             layerIndex,
             serverUrl: options.serverUrl,
             infoCache: options.infoCache,
+            scale: options.scale,
             ...(options.sessionPool !== undefined ? { sessionPool: options.sessionPool } : {}),
             ...(options.signal ? { signal: options.signal } : {}),
             ...(options.onFrame !== undefined && layerIndex === 0 ? { onFrame: options.onFrame } : {}),
@@ -1021,6 +1056,7 @@ async function renderNestedTimelineRange(options: {
   captureLimiter?: Semaphore;
   sessionPool?: CompositionSessionPool;
   depth: number;
+  scale: number;
   signal?: AbortSignal;
 }): Promise<{ path: string; diagnostics: CompositionDiagnostic[] }> {
   if (options.depth > 32) {
@@ -1049,6 +1085,7 @@ async function renderNestedTimelineRange(options: {
         background: options.timeline.background ?? "transparent",
         prefix,
         depth: options.depth,
+        scale: options.scale,
         ...(options.signal ? { signal: options.signal } : {}),
       }),
     );
@@ -1091,6 +1128,8 @@ async function processTimelineSegment(options: {
   prefix?: string;
   depth?: number;
   encoder?: VideoEncoderName;
+  /** Capture-time scale factor; defaults to 1. */
+  scale?: number;
   signal?: AbortSignal;
   /** Called once per rendered segment frame with the zero-based segment offset. */
   onFrame?: (offset: number) => void;
@@ -1100,6 +1139,8 @@ async function processTimelineSegment(options: {
   const background = options.background ?? (codec === "ffv1" ? "transparent" : (timeline.background ?? "black"));
   const prefix = options.prefix ?? "timeline";
   const depth = options.depth ?? 0;
+  const scale = options.scale ?? 1;
+  const stage = scaledCaptureDimensions(timeline.format.width, timeline.format.height, scale);
   const segmentDir = path.join(scratchRoot, `${prefix}-seg-${String(segment.index).padStart(4, "0")}`);
   const segmentTiming = startTiming("timeline.segment", {
     segment: segment.index,
@@ -1143,6 +1184,7 @@ async function processTimelineSegment(options: {
         background,
         codec,
         container: options.container ?? "mp4",
+        scale,
         ...(options.sessionPool !== undefined ? { sessionPool: options.sessionPool } : {}),
         ...(options.encoder !== undefined ? { encoderName: options.encoder } : {}),
         ...(options.signal ? { signal: options.signal } : {}),
@@ -1172,6 +1214,7 @@ async function processTimelineSegment(options: {
       background,
       codec,
       container: options.container ?? "mp4",
+      scale,
       ...(options.captureLimiter !== undefined ? { captureLimiter: options.captureLimiter } : {}),
       ...(options.sessionPool !== undefined ? { sessionPool: options.sessionPool } : {}),
       ...(options.encoder !== undefined ? { encoderName: options.encoder } : {}),
@@ -1205,6 +1248,7 @@ async function processTimelineSegment(options: {
       fps: timeline.format.fps,
       codec,
       container: options.container ?? "mp4",
+      scale,
       ...(options.encoder !== undefined ? { encoder: options.encoder } : {}),
       ...(options.signal ? { signal: options.signal } : {}),
       ...(options.onFrame !== undefined ? { onFrame: (frame: number) => options.onFrame?.(frame - 1) } : {}),
@@ -1238,13 +1282,14 @@ async function processTimelineSegment(options: {
             scratchRoot,
             infoCache,
             staticCache: options.staticCache,
+            scale,
             ...(options.signal ? { signal: options.signal } : {}),
           }),
         );
         timing.finish();
         return {
           layerIndex,
-          compositeLayer: sceneLayerToCompositeLayer(layer, { path: captured.path, input: "image" }),
+          compositeLayer: capturedSceneLayer(layer, { path: captured.path, input: "image" }, scale),
           diagnostics: captured.diagnostics,
         };
       }
@@ -1265,6 +1310,7 @@ async function processTimelineSegment(options: {
           serverUrl,
           segmentDir,
           infoCache,
+          scale,
           ...(options.sessionPool !== undefined ? { sessionPool: options.sessionPool } : {}),
           ...(options.signal ? { signal: options.signal } : {}),
           ...(options.onFrame !== undefined && layerIndex === progressLayerIndex ? { onFrame: options.onFrame } : {}),
@@ -1273,7 +1319,7 @@ async function processTimelineSegment(options: {
       timing.finish();
       return {
         layerIndex,
-        compositeLayer: sceneLayerToCompositeLayer(layer, { path: captured.path, input: "sequence" }),
+        compositeLayer: capturedSceneLayer(layer, { path: captured.path, input: "sequence" }, scale),
         diagnostics: captured.diagnostics,
       };
     }
@@ -1281,11 +1327,15 @@ async function processTimelineSegment(options: {
     if (source.kind === "video" || source.kind === "image") {
       return {
         layerIndex,
-        compositeLayer: sceneLayerToCompositeLayer(layer, {
-          path: source.absolutePath,
-          input: source.kind,
-          ...(source.kind === "video" ? { sourceStartFrame: layer.sourceStart } : {}),
-        }),
+        compositeLayer: sceneLayerToCompositeLayer(
+          layer,
+          {
+            path: source.absolutePath,
+            input: source.kind,
+            ...(source.kind === "video" ? { sourceStartFrame: layer.sourceStart } : {}),
+          },
+          { scale },
+        ),
         diagnostics: [],
       };
     }
@@ -1304,12 +1354,13 @@ async function processTimelineSegment(options: {
         ...(options.captureLimiter !== undefined ? { captureLimiter: options.captureLimiter } : {}),
         ...(options.sessionPool !== undefined ? { sessionPool: options.sessionPool } : {}),
         depth: depth + 1,
+        scale,
         ...(options.signal ? { signal: options.signal } : {}),
       });
       timing.finish();
       return {
         layerIndex,
-        compositeLayer: sceneLayerToCompositeLayer(layer, { path: nested.path, input: "sequence" }),
+        compositeLayer: capturedSceneLayer(layer, { path: nested.path, input: "sequence" }, scale),
         diagnostics: nested.diagnostics,
       };
     }
@@ -1339,8 +1390,8 @@ async function processTimelineSegment(options: {
   });
   await compositeTimelineSegment({
     outputPath: segmentPath,
-    width: timeline.format.width,
-    height: timeline.format.height,
+    width: stage.width,
+    height: stage.height,
     fps: timeline.format.fps,
     frames: segment.frames,
     background,
@@ -1998,7 +2049,7 @@ export async function renderTimeline(options: TimelineRenderOptions): Promise<Ti
     );
   }
   const total = endFrame - startFrame;
-  const output = scaledVideoDimensions(timeline.format.width, timeline.format.height, scale);
+  const output = scaledCaptureDimensions(timeline.format.width, timeline.format.height, scale);
   const plan = planTimelineRender(timeline, {
     maxSegmentFrames: options.maxSegmentFrames,
     startFrame,
@@ -2113,6 +2164,7 @@ export async function renderTimeline(options: TimelineRenderOptions): Promise<Ti
           codec,
           container,
           encoder,
+          scale,
           ...(options.signal ? { signal: options.signal } : {}),
           ...(options.onProgress !== undefined
             ? {
@@ -2204,25 +2256,9 @@ export async function renderTimeline(options: TimelineRenderOptions): Promise<Ti
         outputPath: tempFinal,
         codec,
         container,
-        scale,
-        encoder,
         ...(options.signal ? { signal: options.signal } : {}),
       });
       muxTiming.finish();
-      finalPath = tempFinal;
-    } else if (scale !== 1) {
-      const scaleTiming = startTiming("timeline.scale", { scale });
-      reportTimelinePhase(options.onProgress, startedAt, "muxing", "video");
-      await scaleVideoFile({
-        videoPath: tempVideo,
-        outputPath: tempFinal,
-        scale,
-        codec,
-        container,
-        encoder,
-        ...(options.signal ? { signal: options.signal } : {}),
-      });
-      scaleTiming.finish();
       finalPath = tempFinal;
     }
 

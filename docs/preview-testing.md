@@ -8,20 +8,20 @@ expose the same seek/settle contract the renderer uses.
 
 Both non-embedded routes render the same editor-style shell:
 
-- `.assets-panel`: `#composition` and `#timeline` pickers plus
-  `#composition-assets`, `#timeline-assets`, and `#media-assets`. Media assets
-  come from the selected timeline. Composition tiles use live scaled iframes;
-  media tiles use image/video previews or an audio label.
-- `.source-panel`: `#source-viewport` holds `#stage-frame` for a composition,
-  `#source-timeline-frame` for a nested timeline, `#source-media` for media, or
-  `#source-empty`. The source title is `#source-title`.
-- `.program-panel`: `#program-viewport` holds `#stage`, the timeline host. The
-  program title is `#title`.
-- `.props-panel`: `#props-view` holds the JSON editor and apply/format buttons;
-  `#inspector-host` holds the docked `#inspector`. The props view hides while
-  the inspector is open.
-- `.timeline-panel`: `#timeline-inner`, `#ruler-scale`, `#tracks`, and
-  `#playhead`.
+- `.assets-panel`: `#asset-filter`, `#composition-assets`, `#timeline-assets`,
+  and `#media-assets`. Composition and timeline tiles are metadata-only;
+  timeline media uses image/video previews or an audio label. Media assets come
+  from the selected timeline.
+- `.monitor-panel`: one tabbed monitor. `#tab-source` and `#tab-program` switch
+  between `#source-view` and `#program-view`. `#monitor-title` names the active
+  source or timeline. `#source-viewport` holds `#stage-frame`,
+  `#source-timeline-frame`, `#source-media`, or `#source-empty`;
+  `#program-viewport` holds `#stage`.
+- `.inspector-panel` (also `.props-panel`): `#tab-props` and `#tab-inspector`
+  switch between `#props-view` and `#inspector-view`. `#inspector-host` holds the
+  docked `#inspector`.
+- `.timeline-panel`: `#timeline-inner`, `#ruler-scale`, `#tracks`, `#playhead`,
+  and `#playhead-grab`. It hides when no timeline is open.
 
 Composition focus uses the source transport for `#play`, `#frame`, `#duration`,
 `#scrub`, `#step-back`, `#step-forward`, `#jump-back`, `#jump-forward`, `#mute`,
@@ -29,6 +29,32 @@ and `#volume`; the program transport uses `timeline-` prefixed ids. Timeline
 focus reverses that: the program transport owns the unprefixed ids and the
 source transport uses `source-` prefixed ids. `#play-button` always drives the
 program monitor, and `#play` always drives the source monitor.
+
+The composition route is source-first. It does not load a timeline until one is
+selected from the assets list. The timeline route is program-first; selecting a
+clip or media asset reveals the source tab without moving the program playhead.
+`#close-source` closes the source monitor on the timeline route; `#close-program`
+closes the program monitor and timeline strip on the composition route.
+
+## Theme and monitor controls
+
+- `#theme-system`, `#theme-light`, and `#theme-dark` store
+  `frameyard.preview.theme` in localStorage. System follows
+  `prefers-color-scheme` live; an explicit mode ignores later system changes.
+  The inline boot script sets `data-theme` and `data-theme-mode` before paint.
+- The theme affects preview chrome only. Composition and timeline canvases stay
+  black, and composition iframes stay pinned to the light color scheme.
+- `#zoom-out`, `#zoom-in`, `#zoom-fit`, `#zoom-actual`, and `#zoom-readout`
+  control the active monitor. `fit` never upscales past 100%; `100%` is one
+  composition pixel per CSS pixel. Zoom is per tab and resets when a new source
+  document loads.
+- `#pan-toggle` shows a hand overlay; hold Space for the temporary version. Drag
+  to scroll a zoomed monitor. `#monitor-fullscreen` fullscreens the whole
+  `.monitor-panel`, including tabs and transport.
+- `#timeline-zoom-out`, `#timeline-zoom-in`, `#timeline-zoom-fit`, and
+  `#timeline-zoom-readout` control the strip. Fit is 100%; the strip scrolls
+  horizontally above that. Click or drag `#ruler-scale` to seek; `#playhead-grab`
+  drags the playhead; the view follows the playhead during playback.
 
 ## Composition preview
 
@@ -42,13 +68,17 @@ program monitor, and `#play` always drives the source monitor.
   `seek()` is a no-op, `settle()` resolves, and the page disables the source
   transport. Wait for the static composition's own marker instead of
   `waitForFrame()`, which expects a controller-updated `#box`.
-- Selecting a composition tile or the composition picker loads the source
-  monitor. The same page also loads the first timeline into the program monitor
-  and timeline strip when the project has one.
+- Selecting a composition tile opens it in the source monitor. The composition
+  route does not auto-load a timeline; select one to reveal the program tab and
+  strip. `/__frameyard/` with no query opens the first composition.
 
 ## Timeline preview
 
 - Page: `/__frameyard/timeline/<id>`; add `?__fy-embed=1` for the embedded host.
+- URL: the route id is the timeline; `?frame=<n>` is the primary program frame.
+  On the composition route, `?composition=<id>` and `?timeline=<id>` are the
+  primary state. Major selections use `pushState`; frame updates use throttled
+  `replaceState`. Source-tab and clip selection are ephemeral.
 - API: the embedded host exposes `window.__fyTimeline` with `ready`, `format`,
   `durationInFrames`, `load()`, `seek(frame)`, `settle()`, and `dispose()`. The
   non-embedded page also publishes a `window.__fyTimeline` facade over the
@@ -59,8 +89,8 @@ program monitor, and `#play` always drives the source monitor.
   stage API.
 - Clicking a `.clip[data-clip-id]` selects it, loads its source into the source
   monitor at `sourceIn`, and opens the clip inspector. It does not move the
-  program playhead. Use the inspector's jump actions or a keyframe marker to
-  seek.
+  program playhead or change the URL. Use the inspector's jump actions or a
+  keyframe marker to seek.
 - A static composition source carries `metadata.static: true` and no
   `metadata.durationInFrames`. The host loads the layer once and skips per-frame
   seek; the layer remains visible while the timeline playhead moves.
@@ -76,9 +106,10 @@ program monitor, and `#play` always drives the source monitor.
   layer on the same track. The strip draws a `.transition` band with a
   `from → to` tooltip; it is read-only.
 - The strip opens with a `.ruler-scale` carrying five `.ruler-tick` labels at
-  0/25/50/75/100% of the frame range. One `.playhead` line spans the ruler and
-  every track, driven by a `--playhead-factor` custom property on
-  `#timeline-inner`; `--progress` on `#scrub` fills the transport rail.
+  0/25/50/75/100% of the frame range at fit zoom; zooming adds ticks. One
+  `.playhead` line spans the ruler and every track, driven by a
+  `--playhead-factor` custom property on `#timeline-inner`; `--progress` on
+  `#scrub` fills the transport rail.
 - Both preview pages share the chrome in `src/server/preview-style.ts` and its
   design tokens. The chrome serves its own Figtree and Space Mono from
   `/__frameyard/framework/preview/fonts/` and does not link the project font
@@ -87,12 +118,16 @@ program monitor, and `#play` always drives the source monitor.
 ## Inspector
 
 Both non-embedded preview pages create a read-only inspector as
-`<aside id="inspector">` inside `#inspector-host`. It docks into the props
-panel and does not float over the stage.
+`<aside id="inspector">` inside `#inspector-host`. It docks into the
+`.inspector-panel` and does not float over the stage. The panel uses
+`#tab-props` and `#tab-inspector`; selecting an element or clip switches to the
+inspector tab, and closing it returns to Props. Focus stays on the selection.
 
-- Composition: clicking an element selects it. Rows show tag, id, classes,
-  current frame, frame-state variables, and every `data-fy-*` binding with its
-  resolved prop value. Diagnostics that reference the element are listed.
+- Composition: clicking an authored element selects it; clicks on the document
+  root, body, or the top-level `<fy-composition>` are ignored. Rows show tag, id,
+  classes, current frame, frame-state variables, and every `data-fy-*` binding
+  with its resolved prop value. Diagnostics that reference the element are
+  listed.
 - Timeline: each clip is a `.clip[data-clip-id]` with `tabindex="0"` and
   `role="button"`. Selecting it shows source kind/id/path, track, start,
   duration, end, `sourceIn`, props, transform, keyframes, blend, and audio.

@@ -54,7 +54,7 @@ export interface TimelineHost {
   load(): Promise<void>;
   seek(frame: number): Promise<void>;
   settle(): Promise<void>;
-  /** Forward keydown events from composition and nested-timeline layers. */
+  /** Forward key events from composition and nested-timeline layers. */
   setKeyHandler(handler: ((event: KeyboardEvent) => void) | null): void;
   dispose(): Promise<void>;
 }
@@ -254,10 +254,11 @@ export function createTimelineHost(
 
     if (scene.capture === "frames" || scene.capture === "still" || scene.capture === "nested") {
       const frame = document.createElement("iframe");
-      // The layer is its own document; keydown there does not bubble to the preview.
+      // The layer is its own document; key events there do not bubble to the preview.
       frame.addEventListener("load", () => {
         pinLightColorScheme(frame);
         frame.contentDocument?.addEventListener("keydown", (event) => keyHandler?.(event));
+        frame.contentDocument?.addEventListener("keyup", (event) => keyHandler?.(event));
       });
       frame.src = source.url;
       frame.width = String(size.width);

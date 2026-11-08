@@ -807,19 +807,176 @@ describe("timeline preview runtime", () => {
     }
   }, 60_000);
 
-  it("loads the first timeline into the program monitor on the composition page", async () => {
+  it("keeps source and program tabs, exclusive playback, and ephemeral clip selection", async () => {
+    const page = await browser.newPage({ viewport: { width: 1100, height: 780 } });
+    try {
+      await page.goto(new URL("/__frameyard/timeline/main", server.url).href, { waitUntil: "domcontentloaded" });
+      await page.waitForFunction(() => document.querySelectorAll(".timeline-layer iframe").length === 1);
+      await waitForFrame(page, 0);
+      expect(await page.locator("#tab-program").getAttribute("aria-selected")).toBe("true");
+      expect(await page.locator("#tab-source").isVisible()).toBe(false);
+
+      await page.locator('.clip[data-clip-id="intro"]').click();
+      await page.waitForFunction(() => document.querySelector("#tab-source")?.getAttribute("aria-selected") === "true");
+      expect(await page.locator("#source-view").isVisible()).toBe(true);
+      expect(await page.locator("#program-view").isVisible()).toBe(false);
+      expect(await page.locator("#close-source").isVisible()).toBe(true);
+      expect(await page.locator("#frame").textContent()).toBe("0");
+      expect(new URL(page.url()).searchParams.has("composition")).toBe(false);
+
+      await page.keyboard.press("2");
+      await page.waitForFunction(
+        () => document.querySelector("#tab-program")?.getAttribute("aria-selected") === "true",
+      );
+      await page.keyboard.press("1");
+      await page.waitForFunction(() => document.querySelector("#tab-source")?.getAttribute("aria-selected") === "true");
+
+      await page.locator("#play").click();
+      await page.waitForFunction(() => document.querySelector("#play")?.getAttribute("aria-label") === "Pause");
+      await page.keyboard.press("2");
+      await page.waitForFunction(
+        () => document.querySelector("#tab-program")?.getAttribute("aria-selected") === "true",
+      );
+      expect(await page.locator("#play").getAttribute("aria-label")).toBe("Play");
+
+      await page.locator("#play-button").click();
+      await page.waitForFunction(() => document.querySelector("#play-button")?.getAttribute("aria-label") === "Pause");
+      await page.keyboard.press("1");
+      await page.waitForFunction(() => document.querySelector("#tab-source")?.getAttribute("aria-selected") === "true");
+      expect(await page.locator("#play-button").getAttribute("aria-label")).toBe("Play");
+
+      await page.locator("#close-source").click();
+      await page.waitForFunction(() => (document.querySelector("#tab-source") as HTMLElement | null)?.hidden === true);
+      expect(await page.locator("#tab-program").getAttribute("aria-selected")).toBe("true");
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+
+  it("updates the URL for the primary timeline frame and restores it on reload", async () => {
+    const page = await browser.newPage({ viewport: { width: 1100, height: 780 } });
+    try {
+      await page.goto(new URL("/__frameyard/timeline/main?frame=5", server.url).href, {
+        waitUntil: "domcontentloaded",
+      });
+      await page.waitForFunction(() => document.querySelectorAll(".timeline-layer iframe").length === 1);
+      await waitForFrame(page, 5);
+      expect(await page.locator("#frame").textContent()).toBe("5");
+
+      await page.locator('.asset[data-asset-kind="timeline"][data-asset-id="motion"]').click();
+      await page.waitForFunction(() => window.location.pathname === "/__frameyard/timeline/motion");
+      await page.waitForFunction(() => document.querySelectorAll(".timeline-layer iframe").length === 1);
+      expect(await page.locator("#monitor-title").textContent()).toBe("motion");
+
+      await page.locator("#scrub").evaluate((element) => {
+        const input = element as HTMLInputElement;
+        input.value = "5";
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+      await page.waitForFunction(() => window.location.search.includes("frame=5"));
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await page.waitForFunction(() => document.querySelectorAll(".timeline-layer iframe").length === 1);
+      await page.waitForFunction(() => document.querySelector("#frame")?.textContent === "5");
+      expect(await page.locator("#monitor-title").textContent()).toBe("motion");
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+
+  it("previews video and audio media assets with working source audio", async () => {
+    const page = await browser.newPage({ viewport: { width: 1100, height: 780 } });
+    try {
+      await page.goto(new URL("/__frameyard/timeline/video", server.url).href, { waitUntil: "domcontentloaded" });
+      await page.waitForFunction(() => document.querySelectorAll(".timeline-layer").length === 1);
+      await page.locator('.asset[data-asset-kind="media"][data-asset-src="assets/flash.webm"]').click();
+      await page.waitForFunction(() => document.querySelector("#source-media video") !== null);
+      await page.waitForFunction(() => !(document.querySelector("#play") as HTMLButtonElement).disabled);
+      expect(await page.locator("#source-media video").evaluate((element) => (element as HTMLVideoElement).muted)).toBe(
+        false,
+      );
+      expect(await page.locator("#play").isEnabled()).toBe(true);
+
+      await page.goto(new URL("/__frameyard/timeline/audio", server.url).href, { waitUntil: "domcontentloaded" });
+      await page.waitForFunction(() => document.querySelectorAll(".timeline-layer iframe").length === 1);
+      await page.locator('.asset[data-asset-kind="media"][data-asset-src="assets/tone.wav"]').click();
+      await page.waitForFunction(() => document.querySelector("#source-media .media-placeholder") !== null);
+      await page.waitForFunction(() => !(document.querySelector("#play") as HTMLButtonElement).disabled);
+      expect(await page.locator("#play").isEnabled()).toBe(true);
+      expect(Number(await page.locator("#duration").textContent())).toBeGreaterThan(0);
+      await page.locator("#play").click();
+      await page.waitForFunction(() => document.querySelector("#play")?.getAttribute("aria-label") === "Pause");
+      await page.locator("#play").click();
+      await page.waitForFunction(() => document.querySelector("#play")?.getAttribute("aria-label") === "Play");
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+
+  it("seeks from the ruler and zooms the timeline strip", async () => {
+    const page = await browser.newPage({ viewport: { width: 1000, height: 700 } });
+    try {
+      await page.goto(new URL("/__frameyard/timeline/main", server.url).href, { waitUntil: "domcontentloaded" });
+      await page.waitForFunction(() => document.querySelectorAll(".timeline-layer iframe").length === 1);
+      await waitForFrame(page, 0);
+
+      const ruler = await page.locator("#ruler-scale").boundingBox();
+      if (ruler === null) {
+        throw new Error("Missing ruler.");
+      }
+      await page.mouse.click(ruler.x + ruler.width * 0.5, ruler.y + 10);
+      await page.waitForFunction(() => document.querySelector("#frame")?.textContent === "5");
+
+      await page.locator("#timeline-zoom-in").click();
+      expect(await page.locator("#timeline-zoom-readout").textContent()).toBe("150%");
+      const zoomed = await page.evaluate(() => {
+        const inner = document.querySelector("#timeline-inner") as HTMLElement;
+        const scroll = document.querySelector("#timeline-scroll") as HTMLElement;
+        return { inner: inner.getBoundingClientRect().width, client: scroll.clientWidth, scroll: scroll.scrollWidth };
+      });
+      expect(zoomed.inner).toBeGreaterThan(zoomed.client);
+      expect(zoomed.scroll).toBeGreaterThan(zoomed.client);
+
+      await page.locator("#timeline-zoom-fit").click();
+      expect(await page.locator("#timeline-zoom-readout").textContent()).toBe("100%");
+      expect(
+        await page.locator("#timeline-inner").evaluate((element) => {
+          const inner = element as HTMLElement;
+          const scroll = document.querySelector("#timeline-scroll") as HTMLElement;
+          return Math.abs(inner.getBoundingClientRect().width - scroll.clientWidth);
+        }),
+      ).toBeLessThan(40);
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+
+  it("opens a timeline from the composition page into the program monitor", async () => {
     const page = await browser.newPage({ viewport: { width: 1000, height: 700 } });
     try {
       await page.goto(new URL("/__frameyard/?composition=intro", server.url).href, {
         waitUntil: "domcontentloaded",
       });
+      await page.waitForFunction(() => document.querySelector("#monitor-title")?.textContent === "composition · intro");
+      expect(await page.locator("#timeline").isVisible()).toBe(false);
+      expect(await page.locator("#tab-program").isVisible()).toBe(false);
+
+      await page.locator('.asset[data-asset-kind="timeline"][data-asset-id="main"]').click();
       await page.waitForFunction(
         () => document.querySelectorAll("#program-viewport .timeline-layer iframe").length === 1,
       );
-      await page.waitForFunction(() => document.querySelector("#title")?.textContent === "main");
+      await page.waitForFunction(() => document.querySelector("#monitor-title")?.textContent === "main");
+      expect(await page.locator("#timeline").isVisible()).toBe(true);
       expect(await page.locator('.asset[data-asset-kind="timeline"]').count()).toBe(9);
       expect(await page.locator("#timeline-meta").textContent()).toContain("10 frames");
       expect(await page.locator("#meta").textContent()).toContain("320×180");
+      expect(new URL(page.url()).searchParams.get("timeline")).toBe("main");
+      expect(await page.locator("#close-program").isVisible()).toBe(true);
+
+      await page.locator("#close-program").click();
+      await page.waitForFunction(() => (document.querySelector("#timeline") as HTMLElement | null)?.hidden === true);
+      expect(await page.locator("#tab-program").isVisible()).toBe(false);
+      expect(await page.locator("#tab-source").getAttribute("aria-selected")).toBe("true");
+      expect(new URL(page.url()).searchParams.has("timeline")).toBe(false);
     } finally {
       await page.close();
     }
@@ -844,7 +1001,7 @@ describe("timeline preview runtime", () => {
       await page.locator('.clip[data-clip-id="intro"]').click();
       await page.waitForFunction(() => !(document.querySelector("#inspector") as HTMLElement | null)?.hidden);
       expect(await page.locator("#inspector-title").textContent()).toBe("intro");
-      expect(await page.locator("#source-title").textContent()).toBe("clip · intro · composition");
+      expect(await page.locator("#monitor-title").textContent()).toBe("clip · intro · composition");
       await page.waitForFunction(() => {
         const stage = document.querySelector("#stage-frame") as HTMLIFrameElement | null;
         return stage?.contentDocument?.querySelector<HTMLElement>("#box")?.dataset.frame === "0";

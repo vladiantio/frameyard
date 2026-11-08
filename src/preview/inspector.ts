@@ -82,7 +82,7 @@ export function createInspector(options: InspectorOptions = {}): Inspector {
   const root = element("aside", "inspector");
   root.id = "inspector";
   root.hidden = true;
-  root.setAttribute("role", "dialog");
+  root.setAttribute("role", options.container === undefined ? "dialog" : "region");
   root.setAttribute("aria-label", "Inspector");
   root.setAttribute("aria-live", "polite");
   if (options.container !== undefined) {
@@ -250,9 +250,6 @@ export function createInspector(options: InspectorOptions = {}): Inspector {
       }
 
       status.textContent = "";
-      if (wasHidden) {
-        close.focus({ preventScroll: true });
-      }
     },
 
     hide,

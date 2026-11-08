@@ -12,13 +12,18 @@ contract change may ship in a minor release and is called out explicitly below.
 
 ### Changed
 
-- The preview now uses one editor-style layout on both composition and timeline
-  routes: a thumbnail assets panel for compositions, timelines, and timeline
-  media; a source monitor for the selected composition, clip source, or asset;
-  a program monitor for the selected timeline; a timeline strip spanning the
-  main area; and a docked props and inspector panel. Each monitor has its own
-  transport. Selecting a timeline clip loads its source into the source monitor
-  and opens the read-only inspector without moving the program playhead.
+- The preview now uses one editor-style shell on both composition and timeline
+  routes: a filterable assets list with metadata tiles, one tabbed Source/Program
+  monitor with independent playheads and exclusive playback, a read-only
+  timeline strip with ruler seeking and fit/zoom, and a props/inspector column
+  with Props and Inspector tabs. Composition focus is source-first and reveals
+  the program monitor only after a timeline is selected; timeline focus is
+  program-first and reveals the source monitor on clip or asset selection.
+  Selecting a timeline clip loads its source without moving the program
+  playhead. Monitor zoom (Fit, 100%, staged in/out), hand or Space-drag panning,
+  and fullscreen are available per monitor. The shell supports System, Light,
+  and Dark themes, persists an explicit override, and keeps composition and
+  timeline canvases unthemed. Primary selection and frame are URL state.
 - `render --scale <factor>` now captures animated compositions and timeline
   stages at the scaled format instead of rendering at full size and scaling
   during encode. Composition captures rasterize at the scaled pixel density and

@@ -249,8 +249,8 @@ describe("browser preview runtime", () => {
     await context.close();
   });
 
-  it("lays out the assets, source, program, props, and timeline panels", async () => {
-    const context = await browser.newContext({ viewport: { width: 1000, height: 720 } });
+  it("lays out assets, the monitor, the inspector, and the hidden timeline strip", async () => {
+    const context = await browser.newContext({ viewport: { width: 1024, height: 768 } });
     const page = await context.newPage();
     await page.goto(new URL("/__frameyard/?composition=html", server.url).href);
     await page.waitForFunction(() => {
@@ -260,37 +260,46 @@ describe("browser preview runtime", () => {
 
     const regions = await page.evaluate(() => {
       const box = (selector: string) => {
-        const rect = document.querySelector(selector)?.getBoundingClientRect();
-        return rect ? { left: rect.left, top: rect.top, width: rect.width, height: rect.height } : null;
+        const element = document.querySelector(selector) as HTMLElement | null;
+        const rect = element?.getBoundingClientRect();
+        return rect
+          ? {
+              left: rect.left,
+              top: rect.top,
+              width: rect.width,
+              height: rect.height,
+              scrollWidth: element!.scrollWidth,
+              clientWidth: element!.clientWidth,
+              scrollHeight: element!.scrollHeight,
+              clientHeight: element!.clientHeight,
+            }
+          : null;
       };
       return {
         assets: box(".assets-panel"),
-        source: box(".source-panel"),
-        program: box(".program-panel"),
-        props: box(".props-panel"),
+        monitor: box(".monitor-panel"),
+        inspector: box(".inspector-panel"),
         timeline: box(".timeline-panel"),
+        assetsBody: box(".assets-panel .panel-body"),
       };
     });
     expect(regions.assets, "assets panel").not.toBeNull();
-    expect(regions.source, "source monitor").not.toBeNull();
-    expect(regions.program, "program monitor").not.toBeNull();
-    expect(regions.props, "props panel").not.toBeNull();
-    expect(regions.timeline, "timeline panel").not.toBeNull();
-    expect(regions.assets!.left).toBeLessThan(regions.source!.left);
-    expect(regions.source!.left).toBeLessThan(regions.program!.left);
-    expect(regions.assets!.top).toBeLessThan(regions.props!.top);
-    expect(regions.props!.left).toBe(regions.assets!.left);
-    expect(regions.source!.top).toBe(regions.program!.top);
-    expect(regions.timeline!.top).toBeGreaterThan(regions.source!.top);
-    expect(regions.timeline!.left).toBe(regions.source!.left);
-    expect(regions.timeline!.width).toBeCloseTo(
-      regions.program!.left + regions.program!.width - regions.source!.left,
-      0,
-    );
+    expect(regions.monitor, "monitor").not.toBeNull();
+    expect(regions.inspector, "inspector").not.toBeNull();
+    expect(regions.assets!.left).toBeLessThan(regions.monitor!.left);
+    expect(regions.monitor!.left).toBeLessThan(regions.inspector!.left);
+    expect(regions.assets!.top).toBe(regions.monitor!.top);
+    expect(regions.monitor!.top).toBe(regions.inspector!.top);
+    expect(regions.inspector!.height).toBe(regions.assets!.height);
+    expect(regions.assetsBody!.scrollWidth).toBeLessThanOrEqual(regions.assetsBody!.clientWidth);
+    expect(regions.assetsBody!.scrollHeight).toBeLessThanOrEqual(regions.assetsBody!.clientHeight);
+    expect(await page.locator("#timeline").isVisible()).toBe(false);
+    expect(await page.locator("#tab-program").isVisible()).toBe(false);
+    expect(await page.locator("#program-view").isVisible()).toBe(false);
 
     expect(await page.locator('.asset[data-asset-kind="composition"]').count()).toBe(5);
     expect(await page.locator('.asset[data-asset-kind="timeline"]').count()).toBe(0);
-    expect(await page.locator("#program-empty").isVisible()).toBe(true);
+    expect(await page.locator(".asset-thumb iframe").count()).toBe(0);
 
     await page.locator('.asset[data-asset-kind="composition"][data-asset-id="demo"]').click();
     await page.waitForFunction(() => {
@@ -300,7 +309,135 @@ describe("browser preview runtime", () => {
         Boolean(stage.contentDocument?.querySelector("#label"))
       );
     });
-    expect(await page.locator("#source-title").textContent()).toContain("demo");
+    expect(await page.locator("#monitor-title").textContent()).toContain("demo");
+    expect(new URL(page.url()).searchParams.get("composition")).toBe("demo");
+    await context.close();
+  });
+
+  it("switches system, light, and dark themes and persists a manual override", async () => {
+    const context = await browser.newContext({ viewport: { width: 1024, height: 768 }, colorScheme: "light" });
+    const page = await context.newPage();
+    await page.goto(new URL("/__frameyard/?composition=html", server.url).href);
+    await page.waitForFunction(() => document.documentElement.dataset.theme === "light");
+    expect(await page.locator("#theme-system").getAttribute("aria-pressed")).toBe("true");
+    expect(await page.locator("#stage-frame").evaluate((element) => getComputedStyle(element).colorScheme)).toBe(
+      "light",
+    );
+
+    await page.locator("#theme-dark").click();
+    expect(await page.evaluate(() => document.documentElement.dataset.theme)).toBe("dark");
+    expect(await page.evaluate(() => localStorage.getItem("frameyard.preview.theme"))).toBe("dark");
+    expect(await page.locator("#stage-frame").evaluate((element) => getComputedStyle(element).colorScheme)).toBe(
+      "light",
+    );
+
+    await page.reload();
+    await page.waitForFunction(() => document.documentElement.dataset.theme === "dark");
+    expect(await page.locator("#theme-dark").getAttribute("aria-pressed")).toBe("true");
+
+    await page.locator("#theme-system").click();
+    expect(await page.evaluate(() => document.documentElement.dataset.theme)).toBe("light");
+    await page.emulateMedia({ colorScheme: "dark" });
+    await page.waitForFunction(() => document.documentElement.dataset.theme === "dark");
+    await page.emulateMedia({ colorScheme: "light" });
+    await page.waitForFunction(() => document.documentElement.dataset.theme === "light");
+    await context.close();
+  });
+
+  it("zooms, fits, pans, and fullscreens the monitor", async () => {
+    const context = await browser.newContext({ viewport: { width: 1024, height: 768 } });
+    const page = await context.newPage();
+    await page.goto(new URL("/__frameyard/?composition=html", server.url).href);
+    await page.waitForFunction(() => {
+      const stage = document.querySelector("#stage-wrap") as HTMLElement | null;
+      return stage !== null && !stage.hidden;
+    });
+
+    expect(await page.locator("#zoom-readout").textContent()).toBe("fit");
+    await page.locator("#zoom-in").click();
+    expect(await page.locator("#zoom-readout").textContent()).toBe("150%");
+    expect(
+      await page.locator("#stage-wrap").evaluate((element) => Math.round(element.getBoundingClientRect().width)),
+    ).toBe(300);
+    await page.locator("#zoom-actual").click();
+    expect(await page.locator("#zoom-readout").textContent()).toBe("100%");
+    await page.locator("#zoom-in").click();
+    await page.locator("#zoom-in").click();
+    await page.locator("#zoom-in").click();
+    expect(await page.locator("#zoom-readout").textContent()).toBe("400%");
+
+    await page.locator("#pan-toggle").click();
+    expect(await page.locator("#source-pan").isVisible()).toBe(true);
+    const viewport = await page.locator("#source-viewport").boundingBox();
+    if (viewport === null) {
+      throw new Error("Missing source viewport.");
+    }
+    const before = await page.locator('[data-monitor-scroll="source"]').evaluate((element) => element.scrollLeft);
+    await page.mouse.move(viewport.x + viewport.width / 2, viewport.y + viewport.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(viewport.x + viewport.width / 2 - 120, viewport.y + viewport.height / 2);
+    await page.mouse.up();
+    const after = await page.locator('[data-monitor-scroll="source"]').evaluate((element) => element.scrollLeft);
+    expect(after).toBeGreaterThan(before);
+    await page.locator("#pan-toggle").click();
+
+    await page.locator("#monitor-fullscreen").click();
+    await page.waitForFunction(() => document.fullscreenElement?.id === "monitor-panel");
+    expect(await page.locator("#monitor-fullscreen").getAttribute("aria-label")).toBe("Exit fullscreen");
+    await page.evaluate(async () => {
+      await document.exitFullscreen();
+    });
+    await page.waitForFunction(() => document.fullscreenElement === null);
+    await page.waitForFunction(
+      () => document.querySelector("#monitor-fullscreen")?.getAttribute("aria-label") === "Enter fullscreen",
+    );
+    await context.close();
+  });
+
+  it("keeps props explicit with dirty and reset state", async () => {
+    const context = await browser.newContext({ viewport: { width: 1024, height: 768 } });
+    const page = await context.newPage();
+    await page.goto(new URL("/__frameyard/?composition=html", server.url).href);
+    await page.waitForFunction(() => {
+      const stage = document.querySelector("#stage-frame") as HTMLIFrameElement | null;
+      return stage?.contentDocument?.querySelector("#title")?.textContent === "HTML";
+    });
+    const baseline = await page.locator("#props").inputValue();
+
+    await page.locator("#props").evaluate(
+      (element, value) => {
+        const editor = element as HTMLTextAreaElement;
+        editor.value = value as string;
+        editor.dispatchEvent(new Event("input", { bubbles: true }));
+      },
+      JSON.stringify({ title: "Dirty", accent: "#b8f36b" }),
+    );
+    expect(await page.locator("#props-dirty").isVisible()).toBe(true);
+    expect(
+      await page.locator("#stage-frame").evaluate((element) => {
+        const frame = element as HTMLIFrameElement;
+        return frame.contentDocument?.querySelector("#title")?.textContent;
+      }),
+    ).toBe("HTML");
+
+    await page.locator("#props-reset").click();
+    expect(await page.locator("#props").inputValue()).toBe(baseline);
+    expect(await page.locator("#props-dirty").isVisible()).toBe(false);
+
+    await page.locator("#props").evaluate(
+      (element, value) => {
+        const editor = element as HTMLTextAreaElement;
+        editor.value = value as string;
+        editor.dispatchEvent(new Event("input", { bubbles: true }));
+      },
+      JSON.stringify({ title: "Applied", accent: "#b8f36b" }),
+    );
+    await page.locator("#apply").click();
+    await page.waitForFunction(() => {
+      const stage = document.querySelector("#stage-frame") as HTMLIFrameElement | null;
+      return stage?.contentDocument?.querySelector("#title")?.textContent === "Applied";
+    });
+    expect(await page.locator("#props-dirty").isVisible()).toBe(false);
     await context.close();
   });
 
@@ -515,7 +652,9 @@ describe("browser preview runtime", () => {
     });
 
     const frame = page.frameLocator("#stage-frame");
-    expect(await page.locator("#composition").inputValue()).toBe("demo");
+    expect(
+      await page.locator('.asset[data-asset-kind="composition"][data-asset-id="demo"]').getAttribute("class"),
+    ).toContain("selected");
     expect(await page.locator("#meta").textContent()).toContain("200×100");
     expect(await page.locator("#duration").textContent()).toBe("19");
     expect(await page.locator("#props").inputValue()).toContain('"label": "Hello"');
@@ -585,7 +724,7 @@ describe("browser preview runtime", () => {
   });
 
   it("forwards transport keys from the stage iframe and ignores text entry", async () => {
-    const context = await browser.newContext({ viewport: { width: 900, height: 700 } });
+    const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
     const page = await context.newPage();
     const pageErrors: string[] = [];
     page.on("pageerror", (error) => pageErrors.push(error.message));
@@ -614,6 +753,7 @@ describe("browser preview runtime", () => {
       const stage = document.querySelector("#stage-frame") as HTMLIFrameElement | null;
       return stage?.contentDocument?.querySelector("#box")?.getAttribute("data-frame") === "2";
     });
+    await page.locator("#tab-props").click();
     await page.locator("#props").focus();
     await page.keyboard.press("ArrowLeft");
     expect(await page.locator("#frame").textContent()).toBe("2");
@@ -639,7 +779,9 @@ describe("browser preview runtime", () => {
     );
 
     const frame = page.frameLocator("#stage-frame");
-    expect(await page.locator("#composition").inputValue()).toBe("html");
+    expect(
+      await page.locator('.asset[data-asset-kind="composition"][data-asset-id="html"]').getAttribute("class"),
+    ).toContain("selected");
     expect(
       await page.evaluate(() => {
         const element = document.querySelector("#stage-frame") as HTMLIFrameElement | null;
@@ -736,7 +878,7 @@ describe("browser preview runtime", () => {
     await context.close();
   });
 
-  it("switches compositions from the selector", async () => {
+  it("switches compositions from the assets list", async () => {
     const context = await browser.newContext({ viewport: { width: 900, height: 700 } });
     const page = await context.newPage();
 
@@ -749,7 +891,7 @@ describe("browser preview runtime", () => {
       );
     });
 
-    await page.selectOption("#composition", "demo");
+    await page.locator('.asset[data-asset-kind="composition"][data-asset-id="demo"]').click();
     await page.waitForFunction(() => {
       const frame = document.querySelector("#stage-frame") as HTMLIFrameElement | null;
       return (
@@ -758,8 +900,9 @@ describe("browser preview runtime", () => {
       );
     });
     expect(await page.locator("#stage-frame").getAttribute("src")).toContain("demo.html");
+    expect(new URL(page.url()).searchParams.get("composition")).toBe("demo");
 
-    await page.selectOption("#composition", "html");
+    await page.locator('.asset[data-asset-kind="composition"][data-asset-id="html"]').click();
     await page.waitForFunction(() => {
       const frame = document.querySelector("#stage-frame") as HTMLIFrameElement | null;
       return (
@@ -768,6 +911,7 @@ describe("browser preview runtime", () => {
       );
     });
     expect(await page.locator("#stage-frame").getAttribute("src")).toContain("html.html");
+    expect(new URL(page.url()).searchParams.get("composition")).toBe("html");
 
     await context.close();
   }, 60_000);

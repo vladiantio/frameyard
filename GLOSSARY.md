@@ -343,7 +343,7 @@ The Node-side segmented renderer that captures composition clips, composites and
 _Avoid_: Timeline host, browser renderer
 
 **Preview**:
-An interactive, frame-accurate inspection of a timeline or composition using the same behavior as a render, with an assets panel, a source monitor, a program monitor, a docked props and inspector panel, and a read-only timeline view.
+An interactive, frame-accurate inspection of a timeline or composition using the same behavior as a render, with a filterable assets list, one tabbed source/program monitor, a docked props and inspector column, a read-only timeline strip, System/Light/Dark theming, monitor zoom and fullscreen, and URL-addressable primary selection and frame.
 _Avoid_: Visual editor
 
 **Playhead**:

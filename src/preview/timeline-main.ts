@@ -50,6 +50,10 @@ function showError(error: unknown): void {
     (window as Window & { __fyTimelineError?: { message: string } }).__fyTimelineError = { message };
   }
   const box = document.getElementById("error");
+  const status = document.getElementById("monitor-status");
+  if (status) {
+    status.hidden = false;
+  }
   if (!box) {
     console.error(error);
     return;

@@ -76,12 +76,15 @@ export interface SourceMonitorCallbacks {
   onDocument?(document: Document): void;
   onKey?(event: KeyboardEvent): void;
   onError?(error: unknown): void;
+  /** Called when this monitor starts playback, so the other monitor can pause. */
+  onPlay?(): void;
 }
 
 export interface SourceMonitorOptions {
   frame: HTMLIFrameElement;
   stageWrap: HTMLElement;
   viewport: HTMLElement;
+  scroll: HTMLElement;
   nestedFrame: HTMLIFrameElement;
   nestedWrap: HTMLElement;
   mediaHost: HTMLElement;
@@ -92,12 +95,22 @@ export interface SourceMonitorOptions {
   callbacks?: SourceMonitorCallbacks;
 }
 
+export type MonitorZoomMode = "fit" | "custom";
+
+export interface MonitorZoom {
+  readonly mode: MonitorZoomMode;
+  readonly scale: number;
+}
+
 export interface SourceMonitor {
   readonly metadata: SourceMetadata | null;
   readonly frame: number;
   readonly host: FrameyardHost | null;
   readonly composition: SourceCompositionEntry | null;
   readonly document: Document | null;
+  readonly naturalSize: { width: number; height: number } | null;
+  readonly zoom: MonitorZoom;
+  readonly canZoom: boolean;
   loadComposition(composition: SourceCompositionEntry, props?: unknown): Promise<LoadedCompositionState>;
   loadNestedTimeline(source: TimelinePreviewNestedSource, frame?: number): Promise<void>;
   loadMedia(source: TimelinePreviewMediaSource, frame?: number): Promise<void>;
@@ -107,10 +120,15 @@ export interface SourceMonitor {
   step(delta: number): void;
   jump(deltaFrames: number): void;
   togglePlay(): void;
+  pause(): void;
   setMuted(value: boolean): void;
   setVolume(value: number): void;
   refreshTransport(): void;
+  layout(): void;
   fit(): void;
+  actualSize(): void;
+  zoomIn(): void;
+  zoomOut(): void;
 }
 
 interface AudioEntry {
@@ -144,6 +162,7 @@ function assetUrl(src: string): string {
 export function createSourceMonitor(options: SourceMonitorOptions): SourceMonitor {
   const callbacks = options.callbacks ?? {};
   const transport = options.transport;
+  const ZOOM_STEPS = [0.05, 0.1, 0.25, 0.5, 0.75, 1, 1.5, 2, 4] as const;
 
   let host: FrameyardHost | null = null;
   let composition: SourceCompositionEntry | null = null;
@@ -164,6 +183,8 @@ export function createSourceMonitor(options: SourceMonitorOptions): SourceMonito
   let mediaElement: HTMLImageElement | HTMLVideoElement | HTMLAudioElement | null = null;
   let sourceDiagnostics: CompositionDiagnostic[] = [];
   let inspectedDocument: Document | null = null;
+  let zoomMode: MonitorZoomMode = "fit";
+  let customZoom = 1;
 
   const setTransportEnabled = (enabled: boolean): void => {
     transport.play.disabled = !enabled;
@@ -200,6 +221,11 @@ export function createSourceMonitor(options: SourceMonitorOptions): SourceMonito
     transport.scrub.style.setProperty("--progress", `${last > 0 ? (currentFrame / last) * 100 : 0}%`);
   };
 
+  const canUseAudio = (): boolean =>
+    metadata !== null &&
+    metadata.static !== true &&
+    (host !== null || mediaElement instanceof HTMLVideoElement || mediaElement instanceof HTMLAudioElement);
+
   const refreshTransport = (): void => {
     setTransportEnabled(
       metadata !== null &&
@@ -207,13 +233,80 @@ export function createSourceMonitor(options: SourceMonitorOptions): SourceMonito
         metadata.durationInFrames !== undefined &&
         metadata.durationInFrames > 1,
     );
+    transport.mute.disabled = !canUseAudio();
+    transport.volume.disabled = !canUseAudio();
     updateTransport();
+  };
+
+  const naturalSize = (): { width: number; height: number } | null =>
+    metadata === null ? null : { width: metadata.width, height: metadata.height };
+
+  const fitScale = (): number => {
+    const size = naturalSize();
+    if (size === null) {
+      return 1;
+    }
+    const availableWidth = Math.max(1, options.viewport.clientWidth - 32);
+    const availableHeight = Math.max(1, options.viewport.clientHeight - 32);
+    return Math.min(availableWidth / size.width, availableHeight / size.height, 1);
+  };
+
+  const effectiveScale = (): number => {
+    if (zoomMode === "fit") {
+      return fitScale();
+    }
+    return customZoom;
+  };
+
+  const setStageSize = (wrap: HTMLElement, frame: HTMLIFrameElement, size: { width: number; height: number }): void => {
+    const scale = effectiveScale();
+    frame.style.width = `${size.width}px`;
+    frame.style.height = `${size.height}px`;
+    frame.style.transform = `scale(${scale})`;
+    wrap.style.width = `${size.width * scale}px`;
+    wrap.style.height = `${size.height * scale}px`;
+  };
+
+  const layout = (): void => {
+    const size = naturalSize();
+    if (size === null) {
+      return;
+    }
+    if (!options.stageWrap.hidden) {
+      setStageSize(options.stageWrap, options.frame, size);
+    }
+    if (!options.nestedWrap.hidden) {
+      setStageSize(options.nestedWrap, options.nestedFrame, size);
+    }
+    if (!options.mediaHost.hidden) {
+      const scale = effectiveScale();
+      options.mediaHost.style.width = `${size.width * scale}px`;
+      options.mediaHost.style.height = `${size.height * scale}px`;
+    }
+  };
+
+  const resetZoom = (): void => {
+    zoomMode = "fit";
+    customZoom = 1;
+    options.scroll.scrollLeft = 0;
+    options.scroll.scrollTop = 0;
+    layout();
+  };
+
+  const zoomTo = (scale: number): void => {
+    zoomMode = "custom";
+    customZoom = Math.max(0.05, Math.min(4, scale));
+    layout();
   };
 
   const updateVolumes = (): void => {
     const level = muted ? 0 : masterVolume;
     for (const entry of audioEntries) {
       entry.element.volume = Math.max(0, Math.min(1, entry.clip.volume * level));
+    }
+    if (mediaElement instanceof HTMLVideoElement || mediaElement instanceof HTMLAudioElement) {
+      mediaElement.muted = muted;
+      mediaElement.volume = Math.max(0, Math.min(1, masterVolume));
     }
   };
 
@@ -299,7 +392,7 @@ export function createSourceMonitor(options: SourceMonitorOptions): SourceMonito
     transport.play.textContent = "\u25b6";
     transport.play.setAttribute("aria-label", "Play");
     stopAudio();
-    if (mediaElement instanceof HTMLVideoElement) {
+    if (mediaElement instanceof HTMLVideoElement || mediaElement instanceof HTMLAudioElement) {
       mediaElement.pause();
     }
   };
@@ -359,6 +452,7 @@ export function createSourceMonitor(options: SourceMonitorOptions): SourceMonito
     if (!host || !metadata || metadata.static === true || metadata.durationInFrames === undefined) {
       return;
     }
+    callbacks.onPlay?.();
     if (currentFrame >= metadata.durationInFrames - 1) {
       renderCompositionFrame(0, true);
     }
@@ -374,15 +468,17 @@ export function createSourceMonitor(options: SourceMonitorOptions): SourceMonito
   const mediaFps = (): number => metadata?.fps ?? options.defaultFps?.() ?? 30;
 
   const mediaPlaybackLoop = (): void => {
-    if (!playing || !(mediaElement instanceof HTMLVideoElement)) {
+    if (!playing) {
       return;
     }
-    if (mediaElement.paused || mediaElement.ended) {
+    const media =
+      mediaElement instanceof HTMLVideoElement || mediaElement instanceof HTMLAudioElement ? mediaElement : null;
+    if (media === null || media.paused || media.ended) {
       stopPlayback();
       reportFrame();
       return;
     }
-    currentFrame = Math.max(0, Math.floor(mediaElement.currentTime * mediaFps()));
+    currentFrame = Math.max(0, Math.floor(media.currentTime * mediaFps()));
     reportFrame();
     animationFrame = requestAnimationFrame(mediaPlaybackLoop);
   };
@@ -424,7 +520,11 @@ export function createSourceMonitor(options: SourceMonitorOptions): SourceMonito
     options.nestedWrap.hidden = true;
     options.mediaHost.replaceChildren();
     options.mediaHost.hidden = true;
+    options.mediaHost.style.width = "0px";
+    options.mediaHost.style.height = "0px";
     options.empty.hidden = false;
+    zoomMode = "fit";
+    customZoom = 1;
   };
 
   const disposeComposition = async (): Promise<void> => {
@@ -532,6 +632,7 @@ export function createSourceMonitor(options: SourceMonitorOptions): SourceMonito
     inspectedDocument = document;
     document.addEventListener("fy-diagnostic", () => reportDiagnostics());
     document.addEventListener("keydown", (event) => callbacks.onKey?.(event));
+    document.addEventListener("keyup", (event) => callbacks.onKey?.(event));
     callbacks.onDocument?.(document);
   };
 
@@ -552,29 +653,10 @@ export function createSourceMonitor(options: SourceMonitorOptions): SourceMonito
     currentFrame = 0;
     buildAudio();
     refreshTransport();
+    resetZoom();
     reportDiagnostics();
     callbacks.onMetadata?.(metadata);
     callbacks.onFrame?.(0);
-  };
-
-  const fit = (): void => {
-    if (!metadata) {
-      return;
-    }
-    const padding = 32;
-    const availableWidth = Math.max(1, options.viewport.clientWidth - padding);
-    const availableHeight = Math.max(1, options.viewport.clientHeight - padding);
-    const scale = Math.min(availableWidth / metadata.width, availableHeight / metadata.height, 1);
-    if (!options.stageWrap.hidden) {
-      options.frame.style.transform = `scale(${scale})`;
-      options.stageWrap.style.width = `${metadata.width * scale}px`;
-      options.stageWrap.style.height = `${metadata.height * scale}px`;
-    }
-    if (!options.nestedWrap.hidden) {
-      options.nestedFrame.style.transform = `scale(${scale})`;
-      options.nestedWrap.style.width = `${metadata.width * scale}px`;
-      options.nestedWrap.style.height = `${metadata.height * scale}px`;
-    }
   };
 
   const loadCompositionNow = async (next: SourceCompositionEntry, props?: unknown): Promise<LoadedCompositionState> => {
@@ -608,7 +690,7 @@ export function createSourceMonitor(options: SourceMonitorOptions): SourceMonito
     options.empty.hidden = true;
     options.frame.style.width = `${next.metadata.width}px`;
     options.frame.style.height = `${next.metadata.height}px`;
-    fit();
+    resetZoom();
 
     const url = new URL(next.entry, window.location.origin);
     url.searchParams.set("__fy-manual", "1");
@@ -682,7 +764,7 @@ export function createSourceMonitor(options: SourceMonitorOptions): SourceMonito
     const loadToken = String(++loadSequence);
     url.searchParams.set("__fy-load", loadToken);
     options.nestedFrame.src = url.href;
-    fit();
+    resetZoom();
     const active = await waitForNestedHost(loadToken);
     await active.load();
     nestedHost = active;
@@ -717,7 +799,7 @@ export function createSourceMonitor(options: SourceMonitorOptions): SourceMonito
     } else if (source.kind === "video") {
       const video = document.createElement("video");
       video.src = source.url;
-      video.muted = true;
+      video.muted = false;
       video.playsInline = true;
       video.preload = "auto";
       video.controls = false;
@@ -737,11 +819,7 @@ export function createSourceMonitor(options: SourceMonitorOptions): SourceMonito
         durationInFrames: source.durationInFrames ?? Math.max(1, Math.round(durationSeconds * fps)),
       };
       currentFrame = Math.max(0, Math.min((metadata.durationInFrames ?? 1) - 1, frame));
-      try {
-        video.currentTime = currentFrame / fps + 0.001;
-      } catch {
-        // Metadata may not be seekable yet.
-      }
+      video.currentTime = currentFrame / fps + 0.001;
     } else {
       const placeholder = document.createElement("div");
       placeholder.className = "media-placeholder";
@@ -752,18 +830,30 @@ export function createSourceMonitor(options: SourceMonitorOptions): SourceMonito
       placeholder.append(label, path);
       options.mediaHost.append(placeholder);
       const audio = new Audio(source.url);
-      audio.preload = "metadata";
+      audio.preload = "auto";
       mediaElement = audio;
+      await new Promise<void>((resolve) => {
+        audio.addEventListener("loadedmetadata", () => resolve(), { once: true });
+        audio.addEventListener("error", () => resolve(), { once: true });
+      });
+      const durationSeconds = Number.isFinite(audio.duration) ? audio.duration : 0;
+      const fps = options.defaultFps?.() ?? 30;
       metadata = {
         kind: "audio",
         width: source.width ?? 320,
         height: source.height ?? 180,
-        ...(source.durationInFrames !== undefined ? { durationInFrames: source.durationInFrames } : {}),
+        fps,
+        durationInFrames: source.durationInFrames ?? Math.max(1, Math.round(durationSeconds * fps)),
       };
-      currentFrame = 0;
+      currentFrame = Math.max(0, Math.min((metadata.durationInFrames ?? 1) - 1, frame));
+      if (durationSeconds > 0) {
+        audio.currentTime = currentFrame / fps + 0.001;
+      }
     }
 
+    updateVolumes();
     refreshTransport();
+    resetZoom();
     callbacks.onMetadata?.(metadata);
     callbacks.onFrame?.(currentFrame);
   };
@@ -796,13 +886,13 @@ export function createSourceMonitor(options: SourceMonitorOptions): SourceMonito
         },
       );
     }
-    if (mediaElement instanceof HTMLVideoElement) {
+    if (mediaElement instanceof HTMLVideoElement || mediaElement instanceof HTMLAudioElement) {
       currentFrame = target;
       updateTransport();
       try {
         mediaElement.currentTime = target / mediaFps() + 0.001;
       } catch {
-        // Ignore an unseekable video until metadata loads.
+        // Ignore an unseekable media element until metadata loads.
       }
       callbacks.onFrame?.(target);
       return;
@@ -863,6 +953,7 @@ export function createSourceMonitor(options: SourceMonitorOptions): SourceMonito
       return;
     }
     if (nestedHost && metadata.durationInFrames !== undefined) {
+      callbacks.onPlay?.();
       if (currentFrame >= metadata.durationInFrames - 1) {
         void seek(0);
       }
@@ -874,7 +965,15 @@ export function createSourceMonitor(options: SourceMonitorOptions): SourceMonito
       animationFrame = requestAnimationFrame(nestedPlaybackLoop);
       return;
     }
-    if (mediaElement instanceof HTMLVideoElement) {
+    if (mediaElement instanceof HTMLVideoElement || mediaElement instanceof HTMLAudioElement) {
+      callbacks.onPlay?.();
+      if (
+        metadata.durationInFrames !== undefined &&
+        currentFrame >= metadata.durationInFrames - 1 &&
+        mediaElement.duration > 0
+      ) {
+        mediaElement.currentTime = 0;
+      }
       playing = true;
       transport.play.textContent = "\u275a\u275a";
       transport.play.setAttribute("aria-label", "Pause");
@@ -911,7 +1010,7 @@ export function createSourceMonitor(options: SourceMonitorOptions): SourceMonito
     masterVolume = Number(transport.volume.value);
     updateVolumes();
   });
-  window.addEventListener("resize", fit);
+  window.addEventListener("resize", layout);
 
   refreshTransport();
 
@@ -931,6 +1030,15 @@ export function createSourceMonitor(options: SourceMonitorOptions): SourceMonito
     get document() {
       return options.frame.contentDocument;
     },
+    get naturalSize() {
+      return naturalSize();
+    },
+    get zoom(): MonitorZoom {
+      return { mode: zoomMode, scale: effectiveScale() };
+    },
+    get canZoom() {
+      return metadata !== null && metadata.kind !== "audio";
+    },
     loadComposition,
     loadNestedTimeline,
     loadMedia,
@@ -940,6 +1048,12 @@ export function createSourceMonitor(options: SourceMonitorOptions): SourceMonito
     step,
     jump,
     togglePlay,
+    pause() {
+      if (playing) {
+        stopPlayback();
+        syncAudio();
+      }
+    },
     setMuted(value: boolean) {
       muted = value;
       transport.mute.checked = value;
@@ -951,6 +1065,23 @@ export function createSourceMonitor(options: SourceMonitorOptions): SourceMonito
       updateVolumes();
     },
     refreshTransport,
-    fit,
+    layout,
+    fit() {
+      zoomMode = "fit";
+      layout();
+    },
+    actualSize() {
+      zoomTo(1);
+    },
+    zoomIn() {
+      const current = effectiveScale();
+      const next = ZOOM_STEPS.find((step) => step > current + 0.0001);
+      zoomTo(next ?? ZOOM_STEPS[ZOOM_STEPS.length - 1] ?? 4);
+    },
+    zoomOut() {
+      const current = effectiveScale();
+      const previous = [...ZOOM_STEPS].reverse().find((step) => step < current - 0.0001);
+      zoomTo(previous ?? ZOOM_STEPS[0] ?? 0.05);
+    },
   };
 }

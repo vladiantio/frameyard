@@ -197,10 +197,13 @@ describe("timeline preview server", () => {
     expect(html).toContain("timeline-assets");
     expect(html).toContain("media-assets");
     expect(html).toContain('id="source-viewport"');
-    expect(html).toContain('id="source-title"');
+    expect(html).toContain('id="monitor-title"');
     expect(html).toContain('id="program-viewport"');
     expect(html).toContain('id="props-view"');
     expect(html).toContain('id="inspector-host"');
+    expect(html).toContain('id="theme-system"');
+    expect(html).toContain('id="zoom-readout"');
+    expect(html).toContain('id="timeline-zoom-readout"');
     expect(html).toContain("timeline-panel");
     expect(html).toContain(".keyframe-marker");
     expect(html).toContain('id="ruler-scale"');

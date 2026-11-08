@@ -3,6 +3,7 @@ import { keyframeChannelsAt, keyframeMarkerFrames } from "../timeline/keyframes.
 import { transitionGain } from "../timeline/transitions.js";
 import { createTimelineHost, type TimelineHost } from "./timeline-host.js";
 import type { TimelinePreviewAudioClip, TimelinePreviewClip, TimelinePreviewData } from "./timeline-data.js";
+import type { MonitorZoom } from "./source-monitor.js";
 
 export interface TimelineTransportElements {
   play: HTMLButtonElement;
@@ -24,15 +25,23 @@ export interface TimelineMonitorCallbacks {
   onKey?(event: KeyboardEvent): void;
   onError?(error: unknown): void;
   onDiagnostics?(diagnostics: readonly CompositionDiagnostic[]): void;
+  /** Called when this monitor starts playback, so the other monitor can pause. */
+  onPlay?(): void;
+  /** Called when a user seek should bring the program monitor forward. */
+  onActivateProgram?(): void;
+  onTimelineZoom?(zoom: number): void;
 }
 
 export interface TimelineMonitorOptions {
   stage: HTMLElement;
   stageWrap: HTMLElement;
   viewport: HTMLElement;
+  scroll: HTMLElement;
   timelineInner: HTMLElement;
+  timelineScroll: HTMLElement;
   tracks: HTMLElement;
   rulerScale: HTMLElement;
+  playheadGrab: HTMLElement;
   empty: HTMLElement;
   transport: TimelineTransportElements;
   callbacks?: TimelineMonitorCallbacks;
@@ -42,24 +51,37 @@ export interface TimelineMonitor {
   readonly data: TimelinePreviewData | null;
   readonly frame: number;
   readonly selectedClip: TimelinePreviewClip | null;
+  readonly naturalSize: { width: number; height: number } | null;
+  readonly zoom: MonitorZoom;
+  readonly timelineZoom: number;
   load(data: TimelinePreviewData): Promise<void>;
   seek(frame: number): Promise<void>;
   step(delta: number): void;
   jump(deltaFrames: number): void;
   togglePlay(): void;
+  pause(): void;
   dispose(): Promise<void>;
   setMuted(value: boolean): void;
   setVolume(value: number): void;
+  layout(): void;
   fit(): void;
+  actualSize(): void;
+  zoomIn(): void;
+  zoomOut(): void;
+  timelineZoomIn(): void;
+  timelineZoomOut(): void;
+  timelineZoomFit(): void;
 }
 
 function clampFrame(frame: number, duration: number): number {
   return Math.max(0, Math.min(duration - 1, Math.floor(frame)));
 }
 
-function renderRuler(scale: HTMLElement, duration: number): void {
+function renderRuler(scale: HTMLElement, duration: number, zoom: number): void {
   scale.replaceChildren();
-  for (const fraction of [0, 0.25, 0.5, 0.75, 1]) {
+  const count = Math.min(10, Math.max(5, Math.round(5 * zoom)));
+  for (let index = 0; index < count; index += 1) {
+    const fraction = count === 1 ? 0 : index / (count - 1);
     const tick = document.createElement("span");
     tick.className = "ruler-tick";
     tick.style.left = `${fraction * 100}%`;
@@ -84,6 +106,7 @@ function clipClass(clip: TimelinePreviewClip): string {
 export function createTimelineMonitor(options: TimelineMonitorOptions): TimelineMonitor {
   const callbacks = options.callbacks ?? {};
   const transport = options.transport;
+  const ZOOM_STEPS = [0.05, 0.1, 0.25, 0.5, 0.75, 1, 1.5, 2, 4] as const;
   let data: TimelinePreviewData | null = null;
   let host: TimelineHost | null = null;
   let selectedClip: TimelinePreviewClip | null = null;
@@ -98,22 +121,79 @@ export function createTimelineMonitor(options: TimelineMonitorOptions): Timeline
   let muted = false;
   let activeAudio = new Set<HTMLAudioElement>();
   let audioEntries: Array<{ clip: TimelinePreviewAudioClip; audio: HTMLAudioElement }> = [];
+  let zoomMode: "fit" | "custom" = "fit";
+  let customZoom = 1;
+  let stripZoom = 1;
 
   const fps = (): number => data?.format.fps ?? 30;
   const framesPerSecond = (): number => Math.max(1, Math.round(fps()));
   const duration = (): number => data?.durationInFrames ?? 0;
 
-  const fit = (): void => {
-    if (!data) {
+  const naturalSize = (): { width: number; height: number } | null =>
+    data === null ? null : { width: data.format.width, height: data.format.height };
+
+  const fitScale = (): number => {
+    const size = naturalSize();
+    if (size === null) {
+      return 1;
+    }
+    const availableWidth = Math.max(1, options.viewport.clientWidth - 32);
+    const availableHeight = Math.max(1, options.viewport.clientHeight - 32);
+    return Math.min(availableWidth / size.width, availableHeight / size.height, 1);
+  };
+
+  const effectiveScale = (): number => (zoomMode === "fit" ? fitScale() : customZoom);
+
+  const layout = (): void => {
+    const size = naturalSize();
+    if (size === null) {
       return;
     }
-    const availableWidth = Math.max(80, options.viewport.clientWidth - 40);
-    const availableHeight = Math.max(60, options.viewport.clientHeight - 40);
-    const scale = Math.min(availableWidth / data.format.width, availableHeight / data.format.height);
+    const scale = effectiveScale();
+    options.stage.style.width = `${size.width}px`;
+    options.stage.style.height = `${size.height}px`;
     options.stage.style.transform = `scale(${scale})`;
     options.stage.style.transformOrigin = "top left";
-    options.stageWrap.style.width = `${data.format.width * scale}px`;
-    options.stageWrap.style.height = `${data.format.height * scale}px`;
+    options.stageWrap.style.width = `${size.width * scale}px`;
+    options.stageWrap.style.height = `${size.height * scale}px`;
+  };
+
+  const resetMonitorZoom = (): void => {
+    zoomMode = "fit";
+    customZoom = 1;
+    options.scroll.scrollLeft = 0;
+    options.scroll.scrollTop = 0;
+    layout();
+  };
+
+  const zoomTo = (scale: number): void => {
+    zoomMode = "custom";
+    customZoom = Math.max(0.05, Math.min(4, scale));
+    layout();
+  };
+
+  const scrollToPlayhead = (): void => {
+    if (!data || options.timelineScroll.clientWidth === 0) {
+      return;
+    }
+    const total = duration();
+    const fraction = total <= 1 ? 0 : currentFrame / (total - 1);
+    const inner = options.timelineInner.getBoundingClientRect();
+    const scroll = options.timelineScroll.getBoundingClientRect();
+    const head = inner.left + 106 + (inner.width - 106) * fraction;
+    if (head < scroll.left + 24) {
+      options.timelineScroll.scrollLeft -= scroll.left + 24 - head;
+    } else if (head > scroll.right - 24) {
+      options.timelineScroll.scrollLeft += head - (scroll.right - 24);
+    }
+  };
+
+  const applyStripZoom = (): void => {
+    options.timelineInner.style.setProperty("--timeline-zoom", String(stripZoom));
+    if (data !== null) {
+      renderRuler(options.rulerScale, data.durationInFrames, stripZoom);
+    }
+    callbacks.onTimelineZoom?.(stripZoom);
   };
 
   const updateAudio = (forceSeek: boolean): void => {
@@ -183,6 +263,11 @@ export function createTimelineMonitor(options: TimelineMonitorOptions): Timeline
     const fraction = total <= 1 ? 0 : currentFrame / (total - 1);
     transport.scrub.style.setProperty("--progress", `${fraction * 100}%`);
     options.timelineInner.style.setProperty("--playhead-factor", String(fraction));
+    options.playheadGrab.setAttribute("aria-valuemax", String(Math.max(0, total - 1)));
+    options.playheadGrab.setAttribute("aria-valuenow", String(currentFrame));
+    if (playing) {
+      scrollToPlayhead();
+    }
     callbacks.onFrame?.(currentFrame);
   };
 
@@ -190,6 +275,7 @@ export function createTimelineMonitor(options: TimelineMonitorOptions): Timeline
     if (!host || !data) {
       return;
     }
+    callbacks.onActivateProgram?.();
     if (seeking) {
       const next = clampFrame(target, duration());
       if (next !== currentFrame) {
@@ -263,6 +349,7 @@ export function createTimelineMonitor(options: TimelineMonitorOptions): Timeline
       if (playing) {
         return;
       }
+      callbacks.onPlay?.();
       if (currentFrame >= duration() - 1) {
         currentFrame = 0;
         void renderFrame(0);
@@ -380,6 +467,51 @@ export function createTimelineMonitor(options: TimelineMonitorOptions): Timeline
     }
   });
 
+  const seekFromClientX = (clientX: number): void => {
+    if (!data) {
+      return;
+    }
+    const rect = options.rulerScale.getBoundingClientRect();
+    if (rect.width <= 0) {
+      return;
+    }
+    const fraction = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    stopPlayback();
+    void renderFrame(Math.round(fraction * Math.max(0, duration() - 1)));
+  };
+
+  const beginDrag = (event: PointerEvent): void => {
+    if (event.button !== 0) {
+      return;
+    }
+    event.preventDefault();
+    seekFromClientX(event.clientX);
+    const move = (next: PointerEvent): void => seekFromClientX(next.clientX);
+    const end = (): void => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", end);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", end, { once: true });
+  };
+
+  options.rulerScale.addEventListener("pointerdown", beginDrag);
+  options.playheadGrab.addEventListener("pointerdown", beginDrag);
+  options.playheadGrab.addEventListener("keydown", (event) => {
+    if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+      event.preventDefault();
+      step(event.key === "ArrowLeft" ? -1 : 1);
+    } else if (event.key === "Home") {
+      event.preventDefault();
+      stopPlayback();
+      void renderFrame(0);
+    } else if (event.key === "End") {
+      event.preventDefault();
+      stopPlayback();
+      void renderFrame(Math.max(0, duration() - 1));
+    }
+  });
+
   transport.play.addEventListener("click", () => setPlaying(!playing));
   transport.stepBack.addEventListener("click", () => step(-1));
   transport.stepForward.addEventListener("click", () => step(1));
@@ -397,7 +529,10 @@ export function createTimelineMonitor(options: TimelineMonitorOptions): Timeline
     masterVolume = Number(transport.volume.value);
     updateAudio(true);
   });
-  window.addEventListener("resize", fit);
+  window.addEventListener("resize", layout);
+
+  transport.mute.disabled = true;
+  transport.volume.disabled = true;
 
   const dispose = async (): Promise<void> => {
     stopPlayback();
@@ -420,12 +555,19 @@ export function createTimelineMonitor(options: TimelineMonitorOptions): Timeline
     data = null;
     selectedClip = null;
     currentFrame = 0;
+    stripZoom = 1;
+    zoomMode = "fit";
+    customZoom = 1;
     options.tracks.replaceChildren();
     options.rulerScale.replaceChildren();
     options.stage.replaceChildren();
     options.stage.style.transform = "";
+    options.stage.style.width = "0px";
+    options.stage.style.height = "0px";
     options.stageWrap.style.width = "0px";
     options.stageWrap.style.height = "0px";
+    options.timelineInner.style.removeProperty("--timeline-zoom");
+    options.timelineInner.style.setProperty("--playhead-factor", "0");
     options.empty.hidden = false;
     options.stageWrap.hidden = true;
     transport.frame.textContent = "0";
@@ -434,6 +576,9 @@ export function createTimelineMonitor(options: TimelineMonitorOptions): Timeline
     transport.scrub.max = "0";
     transport.scrub.value = "0";
     transport.scrub.style.setProperty("--progress", "0%");
+    transport.mute.disabled = true;
+    transport.volume.disabled = true;
+    callbacks.onTimelineZoom?.(1);
   };
 
   const load = async (next: TimelinePreviewData): Promise<void> => {
@@ -447,7 +592,7 @@ export function createTimelineMonitor(options: TimelineMonitorOptions): Timeline
     options.stage.style.height = `${next.format.height}px`;
     host = createTimelineHost(options.stage, next);
     renderTracks(next);
-    renderRuler(options.rulerScale, total);
+    applyStripZoom();
     for (const marker of options.tracks.querySelectorAll<HTMLElement>(".keyframe-marker")) {
       marker.addEventListener("click", (event) => {
         event.stopPropagation();
@@ -465,13 +610,20 @@ export function createTimelineMonitor(options: TimelineMonitorOptions): Timeline
       audio.volume = clip.volume;
       return { clip, audio };
     });
+    transport.mute.disabled = audioEntries.length === 0;
+    transport.volume.disabled = audioEntries.length === 0;
     transport.scrub.max = String(Math.max(0, total - 1));
-    transport.duration.textContent = String(total);
-    fit();
+    transport.duration.textContent = String(Math.max(0, total - 1));
+    resetMonitorZoom();
     callbacks.onDiagnostics?.(next.diagnostics);
     host.setKeyHandler((event) => callbacks.onKey?.(event));
     await host.load();
     await renderFrame(0);
+  };
+
+  const setStripZoom = (value: number): void => {
+    stripZoom = Math.max(1, Math.min(8, value));
+    applyStripZoom();
   };
 
   return {
@@ -484,11 +636,25 @@ export function createTimelineMonitor(options: TimelineMonitorOptions): Timeline
     get selectedClip() {
       return selectedClip;
     },
+    get naturalSize() {
+      return naturalSize();
+    },
+    get zoom(): MonitorZoom {
+      return { mode: zoomMode, scale: effectiveScale() };
+    },
+    get timelineZoom() {
+      return stripZoom;
+    },
     load,
     seek: renderFrame,
     step,
     jump: step,
     togglePlay: () => setPlaying(!playing),
+    pause() {
+      if (playing) {
+        stopPlayback();
+      }
+    },
     dispose,
     setMuted(value: boolean) {
       muted = value;
@@ -500,6 +666,33 @@ export function createTimelineMonitor(options: TimelineMonitorOptions): Timeline
       transport.volume.value = String(value);
       updateAudio(true);
     },
-    fit,
+    layout,
+    fit() {
+      zoomMode = "fit";
+      layout();
+    },
+    actualSize() {
+      zoomTo(1);
+    },
+    zoomIn() {
+      const current = effectiveScale();
+      const next = ZOOM_STEPS.find((step) => step > current + 0.0001);
+      zoomTo(next ?? ZOOM_STEPS[ZOOM_STEPS.length - 1] ?? 4);
+    },
+    zoomOut() {
+      const current = effectiveScale();
+      const previous = [...ZOOM_STEPS].reverse().find((step) => step < current - 0.0001);
+      zoomTo(previous ?? ZOOM_STEPS[0] ?? 0.05);
+    },
+    timelineZoomIn() {
+      setStripZoom(stripZoom * 1.5);
+    },
+    timelineZoomOut() {
+      setStripZoom(stripZoom / 1.5);
+    },
+    timelineZoomFit() {
+      setStripZoom(1);
+      options.timelineScroll.scrollLeft = 0;
+    },
   };
 }

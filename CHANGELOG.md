@@ -12,6 +12,10 @@ contract change may ship in a minor release and is called out explicitly below.
 
 ### Changed
 
+- The pre-commit and pre-push hooks now clear Git repository environment
+  variables before running checks. Release fixtures that create their own
+  repositories can no longer commit into the real checkout when the hooks are
+  active.
 - The preview now uses one editor-style shell on both composition and timeline
   routes: a filterable assets list with metadata tiles, one tabbed Source/Program
   monitor with independent playheads and exclusive playback, a read-only

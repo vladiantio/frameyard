@@ -11,11 +11,34 @@ const repoRoot = path.resolve(".");
 
 type RunResult = { code: number; stdout: string; stderr: string };
 
+// Git exports repository plumbing to hooks. A fixture that creates its own
+// repository must not inherit it, or nested commits target the real checkout.
+const GIT_HOOK_ENV = [
+  "GIT_DIR",
+  "GIT_WORK_TREE",
+  "GIT_INDEX_FILE",
+  "GIT_PREFIX",
+  "GIT_COMMON_DIR",
+  "GIT_OBJECT_DIRECTORY",
+  "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+  "GIT_NAMESPACE",
+  "GIT_CONFIG",
+  "GIT_CONFIG_GLOBAL",
+  "GIT_CONFIG_SYSTEM",
+  "GIT_CONFIG_NOSYSTEM",
+  "GIT_CONFIG_PARAMETERS",
+  "GIT_CONFIG_COUNT",
+] as const;
+
 async function run(command: string, args: string[], cwd: string, env: NodeJS.ProcessEnv = {}): Promise<RunResult> {
+  const environment: NodeJS.ProcessEnv = { ...process.env, ...env };
+  for (const key of GIT_HOOK_ENV) {
+    delete environment[key];
+  }
   try {
     const { stdout, stderr } = await exec(command, args, {
       cwd,
-      env: { ...process.env, ...env },
+      env: environment,
       maxBuffer: 10 * 1024 * 1024,
     });
     return { code: 0, stdout, stderr };
@@ -110,6 +133,43 @@ afterEach(async () => {
 });
 
 describe("release guardrails", () => {
+  it("does not let hook git environment redirect fixture repositories", async () => {
+    const decoy = await mkdtemp(path.join(tmpdir(), "frameyard-release-decoy-"));
+    const previousGitDir = process.env.GIT_DIR;
+    const previousIndexFile = process.env.GIT_INDEX_FILE;
+    try {
+      await run("git", ["init", "-b", "main"], decoy);
+      await run("git", ["config", "user.email", "decoy@example.com"], decoy);
+      await run("git", ["config", "user.name", "Decoy"], decoy);
+      await writeFile(path.join(decoy, "README.md"), "decoy\n");
+      await run("git", ["add", "."], decoy);
+      await run("git", ["commit", "-m", "decoy"], decoy);
+      const head = (await run("git", ["rev-parse", "HEAD"], decoy)).stdout.trim();
+
+      process.env.GIT_DIR = path.join(decoy, ".git");
+      process.env.GIT_INDEX_FILE = path.join(decoy, ".git", "index");
+      const created = await createReleaseFixture("9.9.9");
+      try {
+        expect((await run("git", ["rev-parse", "HEAD"], decoy)).stdout.trim()).toBe(head);
+        expect((await run("git", ["tag", "-l"], decoy)).stdout.trim()).toBe("");
+      } finally {
+        await rm(created, { recursive: true, force: true });
+      }
+    } finally {
+      if (previousGitDir === undefined) {
+        delete process.env.GIT_DIR;
+      } else {
+        process.env.GIT_DIR = previousGitDir;
+      }
+      if (previousIndexFile === undefined) {
+        delete process.env.GIT_INDEX_FILE;
+      } else {
+        process.env.GIT_INDEX_FILE = previousIndexFile;
+      }
+      await rm(decoy, { recursive: true, force: true });
+    }
+  });
+
   it("runs the shared check command in CI and release", async () => {
     for (const workflow of WORKFLOWS) {
       expect(await readFile(workflow, "utf8")).toMatch(/^\s+run: pnpm check\s*$/m);
@@ -120,6 +180,8 @@ describe("release guardrails", () => {
     const hook = await readFile(".githooks/pre-commit", "utf8");
     expect(hook).toContain("pnpm check:static");
     expect(hook).toContain("pnpm test:unit");
+    expect(hook).toContain("unset GIT_DIR");
+    expect(hook).toContain("GIT_INDEX_FILE");
   });
 
   it("checks scripts through the shared script check", async () => {
@@ -184,6 +246,8 @@ describe("release guardrails", () => {
     const hook = await readFile(".githooks/pre-push", "utf8");
     expect(hook).toContain("node scripts/check-stamp.mjs verify");
     expect(hook).toContain("pnpm test");
+    expect(hook).toContain("unset GIT_DIR");
+    expect(hook).toContain("GIT_INDEX_FILE");
   });
 
   it("wires the package verifier into the release workflow", async () => {

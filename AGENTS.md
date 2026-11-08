@@ -331,7 +331,7 @@ Test at public seams, not private helpers:
 - `test/real-integrations.test.ts`: opt-in real-model checks enabled by `FRAMEYARD_REAL_INTEGRATIONS=1` and explicit model paths.
 - `test/skill.test.ts`: skill layout discovery, frontmatter name, single skill, contents, API version, package inclusion, thin wrapper.
 - `test/docs.test.ts`: user-facing command examples use `npx frameyard`; scaffold markdown commands and package scripts are real; the still frame cap matches `src/cli.ts`; the command list includes `explain`; every test file is listed in this section.
-- `test/release.test.ts`: CI, release workflow, and hooks share `pnpm check`; changelog coverage, empty `[Unreleased]`, package contents, runner pinning, release metadata verification, and the pre-push stamp.
+- `test/release.test.ts`: CI, release workflow, and hooks share `pnpm check`; changelog coverage, empty `[Unreleased]`, package contents, runner pinning, release metadata verification, hook git-environment isolation, and the pre-push stamp.
 - `test/scaffold.test.ts`: scaffold file generation, package manifest, project-name normalization.
 
 Prefer one failing public-behavior test, then the minimal implementation. Every behavior named in a commit message needs a test that fails without the change. Use real Chromium and FFmpeg for production-path behavior; mock only external model executables. Run the verification command scoped by `Before finishing`. Browser/CLI tests are intentionally sequential (`fileParallelism: false`).

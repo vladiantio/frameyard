@@ -1,5 +1,12 @@
 #!/bin/sh
 set -eu
 
+# Git exports repository plumbing to hooks. Tests and scripts that create their
+# own repositories must not inherit it, or nested commits target this checkout.
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_PREFIX GIT_COMMON_DIR \
+  GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_NAMESPACE \
+  GIT_CONFIG GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM GIT_CONFIG_NOSYSTEM \
+  GIT_CONFIG_PARAMETERS GIT_CONFIG_COUNT
+
 pnpm check:static
 pnpm test:unit

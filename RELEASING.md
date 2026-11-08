@@ -149,7 +149,9 @@ OIDC token with `id-token: write` and publishes with provenance.
    ```
 
    The pre-push hook reuses a passing `pnpm check` for the same tree; it runs
-   the full suite only when the tree changed after the check.
+   the full suite only when the tree changed after the check. Both hooks clear
+   Git repository environment variables before running checks so test fixtures
+   that create their own repositories stay isolated from this checkout.
 
    The workflow runs `node scripts/verify-release.mjs --ci`, which repeats the
    local metadata checks and also confirms the tag is reachable from

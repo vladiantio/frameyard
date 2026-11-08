@@ -78,6 +78,27 @@ Both non-embedded preview pages create a read-only inspector as
 - The same helper exports `openEmbeddedTimeline`, `loadTimeline`, and
   `seekTimeline`.
 
+## Capture probes
+
+Production capture uses `openCompositionSession`, not the preview hosts. Probe it
+through the same CDP session when testing capture density or scaled output; the
+Playwright convenience APIs hide the device metrics:
+
+- `newContext({ deviceScaleFactor })` changes `window.devicePixelRatio` but does
+  not change the raw `Page.captureScreenshot` size. `page.screenshot()` also
+  returns the CSS-pixel size.
+- Send `Emulation.setDeviceMetricsOverride` on the same CDP session used for the
+  screenshot. Keep the width and height at the composition format and set
+  `deviceScaleFactor` to the capture scale.
+- For even delivery dimensions, pass a `clip` in CSS pixels:
+  `width: captureWidth / scale`, `height: captureHeight / scale`, `scale: 1`.
+- `window.devicePixelRatio` equals the capture scale, so
+  `@media (max-resolution: 0.75dppx)` matches a 0.5 capture while
+  `@media (max-width: ...)` still sees the authored viewport. Use the resolution
+  query to assert capture density and the width query for layout changes.
+- See [ADR-0029](adr/0029-capture-renders-at-the-scaled-source-format.md) for
+  the capture-scale contract and its alternatives.
+
 ## Verification
 
 For preview-only UI changes, run `pnpm check:preview`. It runs the static checks

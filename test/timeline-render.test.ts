@@ -506,6 +506,27 @@ describe.concurrent("timeline rendering", () => {
     expect(pixels[0]).toEqual(pixels[1]);
     expect(pixels[0]?.[2]).toBeGreaterThan(pixels[0]?.[0] ?? 0);
     expect(pixels[0]?.[2]).toBeGreaterThan(20);
+
+    // The static composition is captured once at the scaled stage and reused
+    // as an image layer; the cached PNG must match the scaled stage.
+    const scaledPath = path.join(root, "out", "static-scaled.mp4");
+    const scaled = await renderTimelineForTest({
+      project,
+      timelineId: "main",
+      outPath: scaledPath,
+      workers: 2,
+      maxSegmentFrames: 3,
+      scale: 0.5,
+    });
+    expect(scaled).toMatchObject({ width: 160, height: 90, scale: 0.5, framesRendered: 10, segments: 4 });
+    expect((await probe(scaledPath)).streams.find((stream) => stream.codec_type === "video")).toMatchObject({
+      width: 160,
+      height: 90,
+      nb_read_frames: "10",
+    });
+    const [scaledRed, , scaledBlue] = await mediaPixel(scaledPath, 80, 45);
+    expect(scaledBlue).toBeGreaterThan(scaledRed);
+    expect(scaledBlue).toBeGreaterThan(20);
   }, 120_000);
 
   it("renders HEVC across concatenated segments with the hvc1 tag", async () => {
@@ -714,6 +735,22 @@ describe.concurrent("timeline rendering media and alpha", () => {
     expect(background[0]).toBeGreaterThan(background[1] + 40);
     const dot = await mediaPixel(outPath, 160, 90);
     expect(dot[1]).toBeGreaterThan(dot[0] + 40);
+
+    // The direct path has no composite stage; the scaled capture must still
+    // produce the scaled stage and map the composition pixels.
+    const scaledPath = path.join(root, "out", "direct-scaled.mp4");
+    const scaled = await renderTimelineForTest({
+      project,
+      timelineId: "main",
+      outPath: scaledPath,
+      workers: 1,
+      scale: 0.5,
+    });
+    expect(scaled).toMatchObject({ width: 160, height: 90, scale: 0.5 });
+    const scaledBackground = await mediaPixel(scaledPath, 10, 10);
+    expect(scaledBackground[0]).toBeGreaterThan(scaledBackground[1] + 40);
+    const scaledDot = await mediaPixel(scaledPath, 80, 45);
+    expect(scaledDot[1]).toBeGreaterThan(scaledDot[0] + 40);
   }, 120_000);
 
   it("composites two full-frame composition layers without an intermediate", async () => {
@@ -869,6 +906,22 @@ describe.concurrent("timeline rendering media and alpha", () => {
     const stillPath = path.join(root, "out", "pip-still.png");
     await captureTimelineStill({ project, timelineId: "main", frame: 5, outPath: stillPath });
     await compareRenderedFrame({ videoPath: outPath, frame: 5, stillPath });
+
+    // The dual-pipe encoder receives a scaled base and a scaled overlay; the
+    // overlay box and its centered placement map into the scaled stage.
+    const scaledPath = path.join(root, "out", "pip-dual-pipe-scaled.mp4");
+    const scaled = await renderTimelineForTest({
+      project,
+      timelineId: "main",
+      outPath: scaledPath,
+      workers: 1,
+      scale: 0.5,
+    });
+    expect(scaled).toMatchObject({ width: 160, height: 90, scale: 0.5 });
+    const scaledOverlay = await mediaPixel(scaledPath, 80, 45);
+    expect(scaledOverlay[1]).toBeGreaterThan(scaledOverlay[0] + 40);
+    const scaledBase = await mediaPixel(scaledPath, 20, 20);
+    expect(scaledBase[0]).toBeGreaterThan(scaledBase[1] + 40);
   }, 120_000);
 
   it("encodes a full-frame video clip directly into the delivery segment", async () => {
@@ -1442,6 +1495,22 @@ describe.concurrent("nested timeline rendering", () => {
     expect(still.height).toBe(180);
     const [stillRed, stillGreen] = await mediaPixel(stillPath, 160, 90);
     expect(stillGreen).toBeGreaterThan(stillRed + 40);
+
+    // Nested timelines render their own stage at the same scale and enter the
+    // outer composite as a scaled group.
+    const scaledPath = path.join(root, "out", "main-scaled.mp4");
+    const scaled = await renderTimelineForTest({
+      project,
+      timelineId: "main",
+      outPath: scaledPath,
+      workers: 2,
+      scale: 0.5,
+    });
+    expect(scaled).toMatchObject({ width: 160, height: 90, scale: 0.5, audio: { clips: 1 } });
+    const [scaledRed, scaledGreen] = await mediaPixel(scaledPath, 5, 5);
+    expect(scaledRed).toBeGreaterThan(scaledGreen + 40);
+    const [scaledCenterRed, scaledCenterGreen] = await mediaPixel(scaledPath, 80, 45);
+    expect(scaledCenterGreen).toBeGreaterThan(scaledCenterRed + 40);
   }, 120_000);
 
   it("keeps nested timeline frames aligned through overlay compositing", async () => {
@@ -2247,6 +2316,66 @@ describe.concurrent("timeline keyframe rendering", () => {
     await extractFrame(singleSegmentPath, 19, singleFrame);
     const single = await mediaPixel(singleFrame, 260, 140);
     expect(Math.abs((single[1] as number) - (moved[1] as number))).toBeLessThanOrEqual(10);
+  }, 120_000);
+
+  it("maps keyframed offsets and explicit boxes into the scaled timeline stage", async () => {
+    const root = await customRoot();
+    await mkdir(path.join(root, "out"), { recursive: true });
+    await keyframeImage(path.join(root, "assets", "green.png"), "0xb8f36b");
+    await writeMainTimeline(root, {
+      version: 1,
+      background: "#000000",
+      tracks: [{ id: "v1", kind: "video" }],
+      clips: [
+        {
+          id: "marker",
+          track: "v1",
+          source: { kind: "image", src: "assets/green.png" },
+          start: 0,
+          duration: 10,
+          transform: { fit: "contain", width: 40, height: 40 },
+          keyframes: {
+            x: [
+              { frame: 0, value: 0 },
+              { frame: 9, value: 100 },
+            ],
+            y: [
+              { frame: 0, value: 0 },
+              { frame: 9, value: 50 },
+            ],
+          },
+        },
+      ],
+    });
+    const project = await loadProject(root);
+    const outPath = path.join(root, "out", "main.mp4");
+
+    const result = await renderTimelineForTest({
+      project,
+      timelineId: "main",
+      outPath,
+      workers: 1,
+      scale: 0.5,
+    });
+    expect(result).toMatchObject({ width: 160, height: 90, scale: 0.5, framesRendered: 10 });
+
+    const frame0 = path.join(root, "out", "scaled-0.png");
+    const frame9 = path.join(root, "out", "scaled-9.png");
+    await extractFrame(outPath, 0, frame0);
+    await extractFrame(outPath, 9, frame9);
+
+    // The 40x40 box becomes 20x20, centered in the 160x90 stage. A full-size
+    // box would still cover x=95; the scaled box ends at x=90.
+    const start = await mediaPixel(frame0, 80, 45);
+    expect(start[1]).toBeGreaterThan(start[0] + 40);
+    const boxEdge = await mediaPixel(frame0, 95, 45);
+    expect(boxEdge[1]).toBeLessThan(30);
+
+    // The 100 px x and 50 px y keyframes become 50 and 25 stage pixels.
+    const moved = await mediaPixel(frame9, 130, 70);
+    expect(moved[1]).toBeGreaterThan(moved[0] + 20);
+    const movedAway = await mediaPixel(frame9, 80, 45);
+    expect(movedAway[1]).toBeLessThan(30);
   }, 120_000);
 
   it("applies keyframed opacity before a blend mode", async () => {

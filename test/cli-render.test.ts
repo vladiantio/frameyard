@@ -732,6 +732,11 @@ export default {
 </fy-composition>
 `;
 
+    const oddComposition = `<fy-composition width="161" height="91" fps="10" duration-in-frames="6">
+  <div style="width: 100%; height: 100%; background: #123456"></div>
+</fy-composition>
+`;
+
     const policyTimeline = {
       version: 1,
       tracks: [{ id: "v1", kind: "video" }],
@@ -753,10 +758,11 @@ export default {
       await writeFile(path.join(root, "compositions", "hello.html"), policyComposition);
       await writeFile(path.join(root, "compositions", "risky.html"), riskyComposition);
       await writeFile(path.join(root, "compositions", "scaled.html"), scaledComposition);
+      await writeFile(path.join(root, "compositions", "odd.html"), oddComposition);
       await writeFile(path.join(root, "timelines", "main.timeline.json"), JSON.stringify(policyTimeline, null, 2));
       await writeFile(
         path.join(root, "fy.config.js"),
-        `export default { format: { width: 160, height: 90, fps: 10 }, compositions: { hello: "./compositions/hello.html", risky: "./compositions/risky.html", scaled: "./compositions/scaled.html" }, timelines: { main: "./timelines/main.timeline.json" } };\n`,
+        `export default { format: { width: 160, height: 90, fps: 10 }, compositions: { hello: "./compositions/hello.html", risky: "./compositions/risky.html", scaled: "./compositions/scaled.html", odd: "./compositions/odd.html" }, timelines: { main: "./timelines/main.timeline.json" } };\n`,
       );
       return root;
     }
@@ -1287,6 +1293,25 @@ export default {
           error: { code: "USAGE" },
         });
         await expect(stat(path.join(root, "out", "hello.mp4"))).rejects.toThrow();
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
+    });
+
+    it("rejects odd composition dimensions for video output", async () => {
+      const root = await createPolicyProject();
+      try {
+        const result = await run(["render", "odd", "--project", root, "--json"], root);
+        expect(result.code).not.toBe(0);
+        expect(JSON.parse(result.stdout)).toMatchObject({
+          ok: false,
+          command: "render",
+          error: {
+            code: "RENDER_FAILED",
+            message: expect.stringContaining("even dimensions"),
+          },
+        });
+        await expect(stat(path.join(root, "out", "odd.mp4"))).rejects.toThrow();
       } finally {
         await rm(root, { recursive: true, force: true });
       }

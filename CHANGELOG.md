@@ -10,6 +10,8 @@ contract change may ship in a minor release and is called out explicitly below.
 
 ## [Unreleased]
 
+## [0.12.1] - 2026-11-09
+
 ### Fixed
 
 - Seeking the timeline program monitor during playback now stops the frame
@@ -27,6 +29,8 @@ contract change may ship in a minor release and is called out explicitly below.
 - The composition Source monitor now applies the same audio-clock mastering,
   start/seek hold, and output-latency compensation to composition audio, and
   exposes `window.__frameyardPreview.audioDebug()`.
+
+[0.12.1]: https://github.com/vladiantio/frameyard/compare/v0.12.0...v0.12.1
 
 ## [0.12.0] - 2026-11-09
 

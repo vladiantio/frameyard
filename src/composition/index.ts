@@ -5,6 +5,14 @@ export type {
   CompositionRootScope,
   ReadCompositionDescriptorOptions,
 } from "./descriptor.js";
+export { parseIncludeProps, readPartialDescriptor, resolvePartialProps } from "./partial.js";
+export type {
+  ParsedIncludeProps,
+  PartialDescriptor,
+  PartialDescriptorResult,
+  ReadPartialDescriptorOptions,
+  ResolvedPartialProps,
+} from "./partial.js";
 export { COMPOSITION_FORMAT_UNRESOLVED_MESSAGE, resolveCompositionMetadata } from "./format.js";
 export { readAnimationDeclarations } from "./animation.js";
 export type { AnimationDeclaration, AnimationDeclarations, ReadAnimationDeclarationsOptions } from "./animation.js";
@@ -16,6 +24,11 @@ export type {
   TranscriptDeclaration,
   TranscriptDeclarations,
 } from "./transcripts.js";
-export { KNOWN_DATA_FY_ATTRIBUTES, isAnimationAttribute, isMediaAttribute } from "./attributes.js";
+export {
+  KNOWN_DATA_FY_ATTRIBUTES,
+  RESERVED_DATA_FY_ATTRIBUTES,
+  isAnimationAttribute,
+  isMediaAttribute,
+} from "./attributes.js";
 export type { DocumentAdapter, DocumentAttribute, SourceLocation } from "./adapter.js";
 export { isLocalRelative, isRemote } from "./paths.js";

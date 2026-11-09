@@ -216,6 +216,30 @@ A composition that declares **neither** `duration-in-frames` nor `fps` is static
 
 `data-fy-text`, `data-fy-attr-*`, `data-fy-class-*`, `data-fy-if`, and `<template data-fy-repeat>` apply props to the DOM once per load, before the controller mounts. Paths are dot-separated; missing paths warn. Primitive top-level props are also exposed as `--fy-prop-<name>` CSS custom properties. See the [bindings reference](./skills/frameyard/references/bindings.md) for repeat scope, coercion, and ordering.
 
+### Includes
+
+Reuse markup, styles, props, and bindings with a partial. A partial is a project `.html` file with one `<fy-partial>` root; it is not a `fy.config.js` entry:
+
+```html
+<!-- compositions/partials/badge.html -->
+<fy-partial>
+  <script type="application/json" data-fy="props">{ "label": "Idle" }</script>
+  <style>.badge { padding: 6px 10px; background: #b8f36b; color: #0a1005; }</style>
+  <span class="badge" data-fy-text="label"></span>
+</fy-partial>
+```
+
+Include it from a composition root:
+
+```html
+<fy-composition width="640" height="360" fps="10" duration-in-frames="30">
+  <fy-include src="./partials/badge.html" props='{"label":"Live"}'></fy-include>
+  <fy-include src="./partials/badge.html" props='{"label":"Replay"}' class="replay"></fy-include>
+</fy-composition>
+```
+
+`src` resolves relative to the including file, or from the project root when it starts with `/`. Include props merge over the partial's schema and default props; included bindings see only those scoped props. Included styles are wrapped in `@scope (...) to (...)`, so they cannot restyle the parent or a nested include. Includes are static: no conditionals, loops, remote files, or partial controllers yet. Partials that reference assets should use project-root URLs such as `/assets/logo.png`. See the [includes reference](./skills/frameyard/references/includes.md) and [ADR 0030](./docs/adr/0030-reuse-composition-fragments-with-scoped-includes.md).
+
 ### Props schema
 
 Declare an optional schema next to the default props block to validate props before Chromium starts:

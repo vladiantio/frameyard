@@ -13,15 +13,30 @@ const compositionSource = `<script type="application/json" data-fy="props">{ "ti
     </fy-composition>
 `;
 
+const includeComposition = `<fy-composition width="320" height="180" fps="10" duration-in-frames="5">
+      <fy-include src="./partials/card.html" props='{"label":"Card"}'></fy-include>
+    </fy-composition>
+`;
+
+const cardPartial = `<fy-partial>
+  <script type="application/json" data-fy="props">{ "label": "Idle" }</script>
+  <style>.card { color: red; }</style>
+  <div class="card" data-fy-text="label"></div>
+</fy-partial>
+`;
+
 beforeAll(async () => {
   root = await mkdtemp(path.join(tmpdir(), "frameyard-project-"));
   await mkdir(path.join(root, "compositions"), { recursive: true });
   await mkdir(path.join(root, "assets"), { recursive: true });
   await writeFile(
     path.join(root, "fy.config.js"),
-    `export default { compositions: { alpha: "./compositions/alpha.html" } };\n`,
+    `export default { compositions: { alpha: "./compositions/alpha.html", include: "./compositions/include.html" } };\n`,
   );
   await writeFile(path.join(root, "compositions", "alpha.html"), compositionSource);
+  await writeFile(path.join(root, "compositions", "include.html"), includeComposition);
+  await mkdir(path.join(root, "compositions", "partials"), { recursive: true });
+  await writeFile(path.join(root, "compositions", "partials", "card.html"), cardPartial);
   await writeFile(path.join(root, "assets", "hello.txt"), "0123456789");
   await writeFile(path.join(root, "assets", "captions.srt"), "1\n00:00:00,000 --> 00:00:01,000\nHello\n");
   await writeFile(path.join(root, "assets", "captions.vtt"), "WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nHello\n");
@@ -168,6 +183,14 @@ describe("preview server", () => {
           controller: null,
           diagnostics: [],
         },
+        {
+          id: "include",
+          entry: "compositions/include.html",
+          kind: "html",
+          metadata: { width: 320, height: 180, fps: 10, durationInFrames: 5 },
+          controller: null,
+          diagnostics: [],
+        },
       ],
       timelines: [],
     });
@@ -185,6 +208,18 @@ describe("preview server", () => {
     expect(html).toContain('"frameyard":"/__frameyard/framework/index.js"');
     expect(assetResponse.status).toBe(200);
     expect(await assetResponse.text()).toBe("0123456789");
+  });
+
+  it("serves expanded includes with scoped styles", async () => {
+    const response = await fetch(new URL("/compositions/include.html", server.url));
+
+    expect(response.status).toBe(200);
+    const html = await response.text();
+    expect(html).toContain('data-fy-include="include-1"');
+    expect(html).toContain('data-fy-include-src="compositions/partials/card.html"');
+    expect(html).toContain('@scope ([data-fy-include="include-1"]) to ([data-fy-include])');
+    expect(html).toContain("fy-partial { display: contents; }");
+    expect(html).not.toContain("<fy-include");
   });
 
   it("serves derived subtitle exports with subtitle media types", async () => {

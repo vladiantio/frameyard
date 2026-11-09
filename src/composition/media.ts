@@ -18,10 +18,12 @@ export interface MediaDeclarations<Node> {
   diagnostics: CompositionDiagnostic[];
 }
 
-export interface ReadMediaDeclarationsOptions {
+export interface ReadMediaDeclarationsOptions<Node> {
   path: string;
   includeTemplateContent: boolean;
   props: Readonly<Props>;
+  /** Resolves props for an element in its include scope; defaults to `props`. */
+  propsForElement?: (element: Node) => Readonly<Props> | undefined;
   /** True after the host has applied bindings; the resolved src wins over the binding attribute. */
   bindingsApplied?: boolean;
 }
@@ -210,7 +212,7 @@ function resolveMediaSource<Node>(
 
 export function readMediaDeclarations<Node>(
   adapter: DocumentAdapter<Node>,
-  options: ReadMediaDeclarationsOptions,
+  options: ReadMediaDeclarationsOptions<Node>,
 ): MediaDeclarations<Node> {
   const diagnostics: CompositionDiagnostic[] = [];
   const audio: MediaDeclaration<Node>[] = [];
@@ -256,7 +258,7 @@ export function readMediaDeclarations<Node>(
       adapter,
       options.path,
       candidate.node,
-      options.props,
+      options.propsForElement?.(candidate.node) ?? options.props,
       options.bindingsApplied === true,
       diagnostics,
     );

@@ -172,6 +172,8 @@ export interface CompositionDiagnosticDetails {
   to?: string;
   /** Clip IDs from outermost to innermost for diagnostics inside nested timelines. */
   nesting?: string[];
+  /** Project-relative included paths from the entry to the failing partial. */
+  includeChain?: string[];
   controller?: {
     kind: "inline" | "external";
     line?: number;

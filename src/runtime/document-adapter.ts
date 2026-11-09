@@ -14,7 +14,10 @@ export function createDomAdapter(root: Node): DocumentAdapter<Node> {
           }))
         : [],
     children: (node) => ("childNodes" in node ? Array.from(node.childNodes) : []),
-    templateContent: (node) => (node instanceof HTMLTemplateElement ? Array.from(node.content.childNodes) : undefined),
+    templateContent: (node) =>
+      node.nodeType === Node.ELEMENT_NODE && (node as Element).tagName.toLowerCase() === "template"
+        ? Array.from((node as HTMLTemplateElement).content.childNodes)
+        : undefined,
     text: (node) => node.textContent ?? "",
     location: () => undefined,
   };

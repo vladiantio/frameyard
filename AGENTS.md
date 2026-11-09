@@ -93,9 +93,11 @@ A full 30-second demo timeline render is segmented and uses 8 workers by default
 | `src/explain.ts` | Exhaustive diagnostic-code explanations and examples for `frameyard explain` |
 | `src/bindings.ts` | Browser-safe binding path validation, resolution, and value coercion |
 | `src/composition/` | Browser-safe composition grammar reader (document and fragment scopes), descriptor, declared-format resolution against the project format, per-kind declarations, adapter contract, and path rules |
+| `src/composition/partial.ts` | Browser-safe partial grammar reader, include props parsing, and scoped prop resolution |
 | `src/html/parse.ts` | Node-only parse5 document and fragment helpers, and source locations |
+| `src/html/include.ts` | Node-only include resolver, cycle/depth checks, source paths, scoped CSS, and expanded fragment serialization |
 | `src/html/document-adapter.ts` | parse5 adapter for the composition grammar reader |
-| `src/html/validate.ts` | Static composition validation and diagnostic extraction |
+| `src/html/validate.ts` | Static composition validation, include expansion integration, and diagnostic extraction |
 | `src/html/index.ts` | Node-only HTML validation exports |
 | `src/transcript.ts` | Canonical transcript validation and SRT/VTT formatting (browser-safe) |
 | `src/fonts/` | Browser-safe font manifest schema, CSS generation, options, and Node-only Fontsource/local/URL installation, verification, and removal |
@@ -108,8 +110,8 @@ A full 30-second demo timeline render is segmented and uses 8 workers by default
 | `src/timeline/plan.ts` | Segment planning over the timeline scene projection, including ranges of nested timelines |
 | `src/animation-presets.ts` | Browser-safe named entrance presets and WAAPI keyframes |
 | `src/runtime/index.ts` | Frame/time conversion and stateless keyed deterministic randomness |
-| `src/runtime/host.ts` | Browser composition host exposed as `window.__fy` |
-| `src/runtime/bindings.ts` | Browser binding application and `--fy-prop-*` variables |
+| `src/runtime/host.ts` | Browser composition host exposed as `window.__fy`; scoped include props and bindings |
+| `src/runtime/bindings.ts` | Browser binding application, include scope boundaries, and `--fy-prop-*` variables |
 | `src/runtime/media.ts` | Embedded video/audio preparation, seeking, settling, and release |
 | `src/runtime/video.ts` | Shared video paint barrier: `requestVideoFrameCallback` with animation-frame and timeout fallbacks |
 | `src/runtime/diagnostics.ts` | Best-effort clock/randomness diagnostics around controller `mount`/`update` |
@@ -260,7 +262,7 @@ Timeline path: `src/timeline/resolve.ts` resolves the JSON and references; `src/
 - **Contracts, props, props schemas, audio, transcripts, diagnostics, host types** → `src/contracts.ts`, `src/props-schema.ts`, `src/transcript.ts`, `src/index.ts`; extend `test/contracts.test.ts`, `test/static-validation.test.ts`, `test/host-runtime.test.ts`, and `test/transcript.test.ts`.
 - **Binding semantics** → `src/bindings.ts`, `src/runtime/bindings.ts`; extend `test/bindings.test.ts`, `test/host-runtime.test.ts`.
 - **Composition grammar reading** → `src/composition/`, `src/html/document-adapter.ts`; extend `test/composition-document.test.ts`, `test/static-validation.test.ts`.
-- **Composition includes (accepted design, ADR 0030)** → `src/composition/`, `src/html/validate.ts`, `src/server/composition-html.ts`, `src/runtime/host.ts`, `src/runtime/bindings.ts`, `src/contracts.ts`, `src/explain.ts`, `src/diagnostic-fixes.ts`; update `docs/v0.x-design.md`, `GLOSSARY.md`, `skills/frameyard/references/includes.md`, and `CHANGELOG.md`; extend `test/composition-document.test.ts`, `test/static-validation.test.ts`, `test/server-html.test.ts`, `test/host-runtime.test.ts`, `test/cli-stills.test.ts`, and `test/timeline-render.test.ts`. See #17-#20.
+- **Composition includes** → `src/composition/partial.ts`, `src/html/include.ts`, `src/html/validate.ts`, `src/server/composition-html.ts`, `src/server/server.ts`, `src/runtime/host.ts`, `src/runtime/bindings.ts`, `src/contracts.ts`, `src/explain.ts`, `src/diagnostic-fixes.ts`; update `docs/v0.x-design.md`, `GLOSSARY.md`, `skills/frameyard/references/includes.md`, and `CHANGELOG.md`; extend `test/composition-document.test.ts`, `test/static-validation.test.ts`, `test/server-html.test.ts`, `test/host-runtime.test.ts`, `test/preview-runtime.test.ts`, `test/cli-stills.test.ts`, and `test/timeline-render.test.ts`. Static markup, scoped props, bindings, and CSS are implemented; included controllers and timeline capture follow in #18-#20. See ADR 0030.
 - **HTML parsing and static validation** → `src/html/parse.ts`, `src/html/validate.ts`; extend `test/static-validation.test.ts`, `test/server-html.test.ts`.
 - **Static composition model** → `src/contracts.ts`, `src/composition/descriptor.ts`, `src/composition/format.ts`, `src/html/validate.ts`, `src/runtime/host.ts`; keep `ADR 0017` and `docs/migration-0.8.md` in step. Extend `test/static-validation.test.ts` and `test/host-runtime.test.ts` with the metadata matrix, media/animation rejection, static load, and warning cases.
 - **Host runtime and animation presets** → `src/runtime/host.ts`, `src/runtime/media.ts`, `src/runtime/diagnostics.ts`, `src/animation-presets.ts`, `src/composition/animation.ts`; extend `test/host-runtime.test.ts`, `test/static-validation.test.ts`, and `test/cli-stills.test.ts`.
@@ -299,9 +301,9 @@ Test at public seams, not private helpers:
 
 - `test/contracts.test.ts`: composition metadata, props, props-schema parsing/defaults/validation, JSON serialization, audio clips, transcript requirements, diagnostics, diagnostic fixes, and manifest asset upserts.
 - `test/bindings.test.ts`: binding path syntax, resolution, repeat scope, value coercion, suggestions.
-- `test/static-validation.test.ts`: fragment metadata, static metadata matrix, static media/animation rejection, animation presets, defaults, props schemas, bindings, scripts, controllers, import maps, document-shell rejection, media, transcripts, source locations, diagnostics.
+- `test/static-validation.test.ts`: fragment metadata, static metadata matrix, static media/animation rejection, animation presets, defaults, props schemas, includes (scoped props, styles, nesting, missing/cycle/invalid diagnostics), bindings, scripts, controllers, import maps, document-shell rejection, media, transcripts, source locations, diagnostics.
 - `test/server-html.test.ts`: `.html` entries, fragment wrapping and head ordering, virtual inline controller, static error pages, `project.json` diagnostics.
-- `test/host-runtime.test.ts`: host bindings, repeat/if/class, animation scheduling and presets, frame variables, inline/external controllers, props validation, props-schema defaults/rejection, load atomicity, dispose, diagnostics, auto mode, media settle, and static load (mount-only, no frame state, paused CSS animations, `update()`/media warnings and errors).
+- `test/host-runtime.test.ts`: host bindings, repeat/if/class, include scopes and scoped CSS, animation scheduling and presets, frame variables, inline/external controllers, props validation, props-schema defaults/rejection, load atomicity, dispose, diagnostics, auto mode, media settle, and static load (mount-only, no frame state, paused CSS animations, `update()`/media warnings and errors).
 - `test/random.test.ts`: frame/time conversion and stateless keyed deterministic randomness.
 - `test/timings.test.ts`: opt-in stage timing gating and JSONL event shape.
 - `test/concurrency.test.ts`: render semaphore limits, FIFO waiters, and slot transfer.
@@ -316,14 +318,14 @@ Test at public seams, not private helpers:
 - `test/evals.test.ts`: local-model eval task names, targets, seed configs, composition validity, and timeline schema validity.
 - `test/project-server.test.ts`: config loading, static routes, import map, ranges, traversal rejection.
 - `test/timeline-config.test.ts`: `fy.config.js` timeline entries, format requirements, timeline-only projects, and duplicate or missing entries.
-- `test/preview-runtime.test.ts`: unified three-column preview layout and assets list, metadata tiles, tabbed monitor, theme modes and persistence, monitor zoom/pan/fullscreen, URL state, dirty props, HTML iframe preview, props, seeking, transport keys, CSS animation, Canvas, WebGL, embedded video, determinism, diagnostics, docked element inspector, and static composition preview without a transport.
+- `test/preview-runtime.test.ts`: unified three-column preview layout and assets list, metadata tiles, tabbed monitor, theme modes and persistence, monitor zoom/pan/fullscreen, URL state, dirty props, HTML iframe preview, included partials, props, seeking, transport keys, CSS animation, Canvas, WebGL, embedded video, determinism, diagnostics, docked element inspector, and static composition preview without a transport.
 - `test/timeline-preview-runtime.test.ts`: timeline preview UI and embedding, source/program tabs, exclusive playback, paused animations across tab switches, timeline URL state, ruler seek and strip zoom, scrubbing, frame/one-second stepping, seek coalescing, keyboard forwarding, layer sizing, keyframe presentation and markers, transition alpha and the read-only band, blend layering and preview/still parity, video frame presentation, clip selection loading the source monitor, clip inspector, and static layers that stay loaded without seeking.
 - `test/timeline-keyframes.test.ts`: CSS easing parsing and boundary semantics, keyframe evaluation, hold/extrapolation, clamping, marker frames, and the production easing approximation budget.
 - `test/timeline-scene.test.ts`: active-layer selection, transition roles, composite order, frame-to-source mapping, capture modes, natural source sizes, presentation defaults, and the shared visual/audio transition pairing.
 - `test/timeline-plan.test.ts`: segment splitting at visual clip boundaries, maximum segment length, gaps with no layers, and nested-timeline ranges.
 - `test/timeline-render.test.ts`: segmented rendering, transform boxes, alpha and blend-mode compositing, media/audio, nested timelines, static composition capture reuse, keyframed position/scale/rotation/opacity, clip dissolves and equal-power audio crossfades, expanded rotation bounds including a full 360-degree sweep, animated opacity with blend modes, segment independence, per-frame barcode mapping for video, composition, and nested-timeline layers, and scaled coverage for composition capture, keyframed offsets and boxes, dual-pipe, nested timelines, static image layers, and direct video.
 - `test/encoders.test.ts`: codec and container matrix, encoder name mapping, encoder arguments, HEVC tags, capture/output scale dimensions, the direct-media scale filter, and NVENC session limits.
-- `test/cli-stills.test.ts`: real CLI with Chromium and FFmpeg for `check`/`still`, JSON envelopes, diagnostic fix envelopes, `explain`, animation-preset stills, missing assets, props-schema preflight, deterministic stills across concurrent sessions, embedded video/WebGL capture, still frame ranges and caps, preflight/failure atomicity, HTML/static check/still/render, static diagnostics, and format inheritance.
+- `test/cli-stills.test.ts`: real CLI with Chromium and FFmpeg for `check`/`still`, JSON envelopes, diagnostic fix envelopes, `explain`, animation-preset stills, missing assets, props-schema preflight, deterministic stills across concurrent sessions, embedded video/WebGL capture, include parity with inline markup and static include renders, still frame ranges and caps, preflight/failure atomicity, HTML/static check/still/render, static diagnostics, and format inheritance.
 - `test/cli-render.test.ts`: real CLI renders and workflow: container/codec/audio output, frame ranges, scale, PNG sequences, media audio, overwrite behavior, `dev`, `init`, resource policy, lint, templates, doctor, and the local-model scaffold.
 - `test/recipes.test.ts`: installs every bundled recipe, verifies the add manifest, and captures non-blank stills from each composition and timeline.
 - `test/video-determinism.test.ts`: a full-scene opacity animation over embedded video captures the requested frame, and consecutive composition frames map to consecutive source frames.

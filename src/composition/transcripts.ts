@@ -21,17 +21,19 @@ export interface TranscriptDeclarations<Node> {
   diagnostics: CompositionDiagnostic[];
 }
 
-export interface ReadTranscriptDeclarationsOptions {
+export interface ReadTranscriptDeclarationsOptions<Node> {
   path: string;
   includeTemplateContent: boolean;
   props: Readonly<Props>;
+  /** Resolves props for an element in its include scope; defaults to `props`. */
+  propsForElement?: (element: Node) => Readonly<Props> | undefined;
   /** True after the host has applied bindings; the resolved src wins over the binding attribute. */
   bindingsApplied?: boolean;
 }
 
 export function readTranscriptDeclarations<Node>(
   adapter: DocumentAdapter<Node>,
-  options: ReadTranscriptDeclarationsOptions,
+  options: ReadTranscriptDeclarationsOptions<Node>,
 ): TranscriptDeclarations<Node> {
   const diagnostics: CompositionDiagnostic[] = [];
   const declarations: TranscriptDeclaration<Node>[] = [];
@@ -76,7 +78,8 @@ export function readTranscriptDeclarations<Node>(
       if (root === "item" || root === "index") {
         continue;
       }
-      const resolved = resolveBindingPath({ props: options.props }, bound);
+      const props = options.propsForElement?.(candidate.node) ?? options.props;
+      const resolved = resolveBindingPath({ props }, bound);
       if (!resolved.found) {
         continue;
       }

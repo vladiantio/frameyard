@@ -124,6 +124,36 @@ const invalidHtmlComposition = `<fy-composition width="160" height="90" fps="10"
     </fy-composition>
 `;
 
+const includeComposition = `<fy-composition width="160" height="90" fps="10" duration-in-frames="2">
+      <div style="position: absolute; inset: 0; background: #101820"></div>
+      <fy-include src="./partials/card.html" props='{"label":"Live","color":"#ff0000"}'></fy-include>
+    </fy-composition>
+`;
+
+const inlineIncludeComposition = `<fy-composition width="160" height="90" fps="10" duration-in-frames="2">
+      <div style="position: absolute; inset: 0; background: #101820"></div>
+      <div style="position: absolute; left: 10px; top: 10px; width: 40px; height: 20px; background: #ff0000"></div>
+      <div style="position: absolute; left: 10px; top: 40px; color: white; font: 10px monospace">Live</div>
+    </fy-composition>
+`;
+
+const staticIncludeComposition = `<fy-composition width="160" height="90">
+      <div style="position: absolute; inset: 0; background: #101820"></div>
+      <fy-include src="./partials/card.html" props='{"label":"Static","color":"#ff0000"}'></fy-include>
+    </fy-composition>
+`;
+
+const includePartial = `<fy-partial>
+  <script type="application/json" data-fy="props">{ "label": "Idle", "color": "#00ff00" }</script>
+  <style>
+    .card { position: absolute; left: 10px; top: 10px; width: 40px; height: 20px; background: var(--fy-prop-color); }
+    .label { position: absolute; left: 10px; top: 40px; color: white; font: 10px monospace; }
+  </style>
+  <div class="card"></div>
+  <div class="label" data-fy-text="label"></div>
+</fy-partial>
+`;
+
 function toneWav(seconds = 0.6): Buffer {
   const sampleRate = 8_000;
   const samples = Math.floor(sampleRate * seconds);
@@ -257,7 +287,7 @@ export async function createCliProject(options: CliProjectOptions = {}): Promise
   await mkdir(path.join(root, "assets"), { recursive: true });
   await writeFile(
     path.join(root, "fy.config.js"),
-    `export default { compositions: { demo: "./compositions/demo.html", media: "./compositions/media.html", long: "./compositions/long.html", "missing-video": "./compositions/missing-video.html", broken: "./compositions/broken.html", throwing: "./compositions/throwing.html", html: "./compositions/html.html", "html-invalid": "./compositions/html-invalid.html", legacy: "./compositions/legacy.html", static: "./compositions/static.html", preset: "./compositions/preset.html", schema: "./compositions/schema.html", "schema-required": "./compositions/schema-required.html", "schema-malformed": "./compositions/schema-malformed.html" } };\n`,
+    `export default { compositions: { demo: "./compositions/demo.html", media: "./compositions/media.html", long: "./compositions/long.html", "missing-video": "./compositions/missing-video.html", broken: "./compositions/broken.html", throwing: "./compositions/throwing.html", html: "./compositions/html.html", "html-invalid": "./compositions/html-invalid.html", legacy: "./compositions/legacy.html", static: "./compositions/static.html", preset: "./compositions/preset.html", schema: "./compositions/schema.html", "schema-required": "./compositions/schema-required.html", "schema-malformed": "./compositions/schema-malformed.html", include: "./compositions/include.html", "include-inline": "./compositions/include-inline.html", "include-static": "./compositions/include-static.html" } };\n`,
   );
   await writeFile(path.join(root, "compositions", "demo.html"), composition);
   await writeFile(path.join(root, "compositions", "media.html"), mediaComposition);
@@ -267,6 +297,11 @@ export async function createCliProject(options: CliProjectOptions = {}): Promise
   await writeFile(path.join(root, "compositions", "html-invalid.html"), invalidHtmlComposition);
   await writeFile(path.join(root, "compositions", "legacy.html"), legacyComposition);
   await writeFile(path.join(root, "compositions", "static.html"), staticComposition);
+  await mkdir(path.join(root, "compositions", "partials"), { recursive: true });
+  await writeFile(path.join(root, "compositions", "include.html"), includeComposition);
+  await writeFile(path.join(root, "compositions", "include-inline.html"), inlineIncludeComposition);
+  await writeFile(path.join(root, "compositions", "include-static.html"), staticIncludeComposition);
+  await writeFile(path.join(root, "compositions", "partials", "card.html"), includePartial);
   await writeFile(
     path.join(root, "compositions", "preset.html"),
     `<fy-composition width="160" height="90" fps="10" duration-in-frames="12">

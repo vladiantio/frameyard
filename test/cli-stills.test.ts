@@ -107,6 +107,54 @@ describe.concurrent("CLI stills and composition checks", () => {
     expect(streams.find((stream) => stream.codec_type === "audio")).toMatchObject({ codec_name: "aac" });
   });
 
+  it("renders an include pixel-identically to inline markup", async () => {
+    const check = await run(["check", "include", "--project", root, "--json"], root);
+    expect(check.code).toBe(0);
+    expect(JSON.parse(check.stdout)).toMatchObject({ ok: true, command: "check", diagnostics: [] });
+
+    const include = await run(
+      ["still", "include", "--frame", "0", "--out", "include.png", "--project", root, "--json"],
+      root,
+    );
+    expect(include.code).toBe(0);
+
+    const inline = await run(
+      ["still", "include-inline", "--frame", "0", "--out", "include-inline.png", "--project", root, "--json"],
+      root,
+    );
+    expect(inline.code).toBe(0);
+
+    const compare = await run(
+      ["compare", path.join(root, "include.png"), path.join(root, "include-inline.png"), "--json"],
+      root,
+    );
+    expect(compare.code).toBe(0);
+    expect(JSON.parse(compare.stdout)).toMatchObject({
+      ok: true,
+      identical: true,
+      differingPixels: 0,
+    });
+
+    const pixel = await pngPixel(path.join(root, "include.png"), 20, 15);
+    expect(pixel).toEqual([255, 0, 0]);
+
+    const staticCheck = await run(["check", "include-static", "--project", root, "--json"], root);
+    expect(staticCheck.code).toBe(0);
+    const staticRender = await run(
+      ["render", "include-static", "--out", "include-static.png", "--project", root, "--json"],
+      root,
+      { pinEncoder: false },
+    );
+    expect(staticRender.code).toBe(0);
+    expect(JSON.parse(staticRender.stdout)).toMatchObject({
+      ok: true,
+      command: "render",
+      composition: "include-static",
+      kind: "image",
+    });
+    expect(await pngPixel(path.join(root, "include-static.png"), 20, 15)).toEqual([255, 0, 0]);
+  });
+
   it("checks, stills, and renders a static composition as a PNG", async () => {
     const check = await run(["check", "static", "--project", root, "--json"], root);
     expect(check.code).toBe(0);

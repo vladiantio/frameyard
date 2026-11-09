@@ -10,6 +10,7 @@ const DOCS = {
   diagnostics: "skills/frameyard/references/diagnostics.md",
   failureRecovery: "skills/frameyard/references/failure-recovery.md",
   fonts: "skills/frameyard/references/fonts.md",
+  includes: "skills/frameyard/references/includes.md",
   timelines: "skills/frameyard/references/timelines.md",
   audio: "skills/frameyard/references/audio-assets.md",
   subtitles: "skills/frameyard/references/subtitles-karaoke.md",
@@ -136,6 +137,36 @@ export function diagnosticFix(code: FrameyardErrorCode, details?: unknown, messa
         kind: "docs",
         message: "Remove the animation or declare duration-in-frames; static compositions are timeless.",
         docs: DOCS.deterministic,
+      };
+    case "INCLUDE_NOT_FOUND": {
+      const value = detailString(details, "value");
+      return {
+        kind: "path",
+        message:
+          value === undefined
+            ? "Create the missing partial or correct the include src."
+            : `Create "${value}" or correct the include src.`,
+        ...(value !== undefined ? { from: value } : {}),
+        docs: DOCS.includes,
+      };
+    }
+    case "INCLUDE_CYCLE":
+      return {
+        kind: "docs",
+        message: "Break the include cycle; a partial cannot include itself directly or through another partial.",
+        docs: DOCS.includes,
+      };
+    case "INCLUDE_INVALID":
+      return {
+        kind: "docs",
+        message: "Use one top-level <fy-partial> root with direct props, schema, style, and content children.",
+        docs: DOCS.includes,
+      };
+    case "INCLUDE_DEPTH_EXCEEDED":
+      return {
+        kind: "docs",
+        message: "Flatten the include chain; the maximum depth is 32 files.",
+        docs: DOCS.includes,
       };
     case "CONTROLLER_INVALID":
       return {

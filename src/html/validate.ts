@@ -2,19 +2,24 @@ import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import {
   KNOWN_DATA_FY_ATTRIBUTES,
+  RESERVED_DATA_FY_ATTRIBUTES,
   isAnimationAttribute,
   isLocalRelative,
   isMediaAttribute,
   isRemote,
+  parseIncludeProps,
   readAnimationDeclarations,
   readCompositionDescriptor,
   readMediaDeclarations,
+  readPartialDescriptor,
   readTranscriptDeclarations,
   resolveCompositionMetadata,
+  resolvePartialProps,
   type AnimationDeclaration,
   type MediaDeclaration,
   type TranscriptDeclaration,
 } from "../composition/index.js";
+import { expandCompositionIncludes } from "./include.js";
 import {
   isPlainObject,
   mergeProps,
@@ -81,6 +86,8 @@ export interface StaticValidationResult {
    */
   formatUnresolved: boolean;
   diagnostics: CompositionDiagnostic[];
+  /** Expanded fragment with all includes resolved, ready for the document shell. */
+  expandedFragment?: string;
 }
 
 interface DocumentShellResult {
@@ -115,6 +122,9 @@ class HtmlCompositionValidator {
   private readonly fragment: HtmlRoot;
   private readonly shellPresent: boolean;
   private readonly shellDiagnostics: readonly CompositionDiagnostic[];
+  private readonly origins: WeakMap<HtmlNode, string> | undefined;
+  private readonly includeDiagnostics: readonly CompositionDiagnostic[];
+  private readonly scopeProps = new WeakMap<HtmlElement, Readonly<Props>>();
   private readonly propsOverrides: unknown;
   private defaultPropsValue: Readonly<Props> = Object.freeze({});
   private props: Readonly<Props>;
@@ -133,13 +143,21 @@ class HtmlCompositionValidator {
   private readonly embeddedAudioClips: ResolvedAudioClip[] = [];
   private readonly transcriptClips: ResolvedTranscriptClip[] = [];
 
-  constructor(options: ValidateHtmlCompositionOptions, fragment: HtmlRoot, shell: DocumentShellResult) {
+  constructor(
+    options: ValidateHtmlCompositionOptions,
+    fragment: HtmlRoot,
+    shell: DocumentShellResult,
+    origins?: WeakMap<HtmlNode, string>,
+    includeDiagnostics: readonly CompositionDiagnostic[] = [],
+  ) {
     this.projectRoot = path.resolve(options.projectRoot);
     this.entry = options.entry.replaceAll("\\", "/");
     this.compositionDir = path.dirname(path.resolve(this.projectRoot, this.entry));
     this.fragment = fragment;
     this.shellPresent = shell.present;
     this.shellDiagnostics = shell.diagnostics;
+    this.origins = origins;
+    this.includeDiagnostics = includeDiagnostics;
     this.propsOverrides = options.props;
     this.props = this.defaultPropsValue;
     this.format = options.format;
@@ -150,6 +168,7 @@ class HtmlCompositionValidator {
       this.documentValid = false;
       this.diagnostics.push(...this.shellDiagnostics);
     }
+    this.diagnostics.push(...this.includeDiagnostics);
 
     const adapter = createParse5Adapter(this.fragment);
     const read = readCompositionDescriptor(adapter, {
@@ -179,7 +198,7 @@ class HtmlCompositionValidator {
     this.validateDocumentAttributes();
     this.validateOutsideRoot();
     if (this.root) {
-      this.validateBindings(this.root, 0);
+      this.validateBindings(this.root, 0, this.props);
     }
 
     const animation = readAnimationDeclarations(adapter, {
@@ -205,6 +224,7 @@ class HtmlCompositionValidator {
       path: this.entry,
       includeTemplateContent: true,
       props: this.props,
+      propsForElement: (element) => (isElement(element) ? this.scopeProps.get(element) : undefined),
     });
     this.diagnostics.push(...media.diagnostics);
     if (this.metadata?.static === true) {
@@ -225,6 +245,7 @@ class HtmlCompositionValidator {
       path: this.entry,
       includeTemplateContent: true,
       props: this.props,
+      propsForElement: (element) => (isElement(element) ? this.scopeProps.get(element) : undefined),
     });
     this.diagnostics.push(...transcripts.diagnostics);
     if (this.metadata?.static === true) {
@@ -298,30 +319,41 @@ class HtmlCompositionValidator {
     this.report("warning", code, message, details);
   }
 
+  private originPath(node: HtmlNode): string {
+    return this.origins?.get(node) ?? this.entry;
+  }
+
   private attributeDetails(
     element: HtmlElement,
     attribute: string,
     extra: CompositionDiagnosticDetails = {},
   ): CompositionDiagnosticDetails {
     const location = getAttributeLocation(element, attribute) ?? getElementLocation(element);
+    const chain = this.includeChainFor(element);
     return {
+      path: this.originPath(element),
       element: element.tagName,
       attribute,
       ...this.locationDetails(location),
+      ...(chain !== undefined ? { includeChain: chain } : {}),
       ...extra,
     };
   }
 
   private elementDetails(element: HtmlElement, extra: CompositionDiagnosticDetails = {}): CompositionDiagnosticDetails {
+    const chain = this.includeChainFor(element);
     return {
+      path: this.originPath(element),
       element: element.tagName,
       ...this.locationDetails(getElementLocation(element)),
+      ...(chain !== undefined ? { includeChain: chain } : {}),
       ...extra,
     };
   }
 
   private nodeDetails(node: HtmlNode, extra: CompositionDiagnosticDetails = {}): CompositionDiagnosticDetails {
     return {
+      path: this.originPath(node),
       ...this.locationDetails(getNodeLocation(node)),
       ...extra,
     };
@@ -622,7 +654,7 @@ class HtmlCompositionValidator {
         );
         return;
       }
-      if (tag.startsWith("fy-") && tag !== "fy-composition" && tag !== "fy-transcript") {
+      if (tag.startsWith("fy-") && tag !== "fy-composition" && tag !== "fy-transcript" && tag !== "fy-partial") {
         this.warning("ELEMENT_UNKNOWN", `Unknown Frameyard element <${tag}>.`, this.elementDetails(node));
       }
     });
@@ -721,7 +753,13 @@ class HtmlCompositionValidator {
     }
   }
 
-  private validateBindings(element: HtmlElement, repeatDepth: number): void {
+  private validateBindings(element: HtmlElement, repeatDepth: number, props: Readonly<Props>): void {
+    this.scopeProps.set(element, props);
+    if (element.tagName === "fy-partial") {
+      this.validatePartialScope(element, repeatDepth);
+      return;
+    }
+
     const repeat = getAttribute(element, "data-fy-repeat");
     const condition = getAttribute(element, "data-fy-if");
     const text = getAttribute(element, "data-fy-text");
@@ -756,15 +794,21 @@ class HtmlCompositionValidator {
           this.attributeDetails(element, "data-fy-repeat"),
         );
       }
-      this.validateBindingPathValue(repeat, element, "data-fy-repeat", {
-        inRepeat,
-        requireArray: true,
-      });
+      this.validateBindingPathValue(
+        repeat,
+        element,
+        "data-fy-repeat",
+        {
+          inRepeat,
+          requireArray: true,
+        },
+        props,
+      );
 
       if (isTemplate(element)) {
         for (const child of element.content.childNodes) {
           if (isElement(child)) {
-            this.validateBindings(child, repeatDepth + 1);
+            this.validateBindings(child, repeatDepth + 1, props);
           }
         }
       }
@@ -779,7 +823,7 @@ class HtmlCompositionValidator {
           this.attributeDetails(element, "data-fy-if"),
         );
       } else {
-        this.validateBindingPathValue(condition, element, "data-fy-if", { inRepeat });
+        this.validateBindingPathValue(condition, element, "data-fy-if", { inRepeat }, props);
       }
     }
 
@@ -797,10 +841,16 @@ class HtmlCompositionValidator {
           this.attributeDetails(element, "data-fy-text"),
         );
       } else {
-        this.validateBindingPathValue(text, element, "data-fy-text", {
-          inRepeat,
-          checkValueType: "text",
-        });
+        this.validateBindingPathValue(
+          text,
+          element,
+          "data-fy-text",
+          {
+            inRepeat,
+            checkValueType: "text",
+          },
+          props,
+        );
       }
     }
 
@@ -810,11 +860,14 @@ class HtmlCompositionValidator {
         continue;
       }
       if (name.startsWith("data-fy-attr-")) {
-        this.validateAttributeBinding(element, name, attribute.value, inRepeat);
+        this.validateAttributeBinding(element, name, attribute.value, inRepeat, props);
         continue;
       }
       if (name.startsWith("data-fy-class-")) {
-        this.validateClassBinding(element, name, attribute.value, inRepeat);
+        this.validateClassBinding(element, name, attribute.value, inRepeat, props);
+        continue;
+      }
+      if ((RESERVED_DATA_FY_ATTRIBUTES as readonly string[]).includes(name)) {
         continue;
       }
       if (isAnimationAttribute(name) || isMediaAttribute(name)) {
@@ -832,9 +885,62 @@ class HtmlCompositionValidator {
     const children = isTemplate(element) ? element.content.childNodes : element.childNodes;
     for (const child of children) {
       if (isElement(child)) {
-        this.validateBindings(child, repeatDepth);
+        this.validateBindings(child, repeatDepth, props);
       }
     }
+  }
+
+  private validatePartialScope(element: HtmlElement, repeatDepth: number): void {
+    const partialPath = this.originPath(element);
+    const adapter = createParse5Adapter(element);
+    const partial = readPartialDescriptor(adapter, { path: partialPath, root: element });
+    const chain = [...(this.includeChainFor(element) ?? [this.entry]), partialPath];
+    for (const diagnostic of partial.diagnostics) {
+      diagnostic.details = { ...diagnostic.details, includeChain: chain };
+      this.diagnostics.push(diagnostic);
+    }
+
+    const rawProps = getAttribute(element, "data-fy-props");
+    const parsed = parseIncludeProps(rawProps);
+    if (!parsed.ok) {
+      this.error(
+        "PROPS_INVALID",
+        `Invalid include props: ${parsed.error ?? "props must be a JSON object."}`,
+        this.elementDetails(element, { value: rawProps, includeChain: chain }),
+      );
+    }
+
+    const resolved = resolvePartialProps(partial.descriptor, parsed.value);
+    for (const issue of resolved.issues) {
+      this.error("PROPS_SCHEMA_INVALID", issue.message, {
+        path: partialPath,
+        value: issue.path,
+        includeChain: chain,
+        ...(issue.suggestion !== undefined ? { suggestion: issue.suggestion } : {}),
+      });
+    }
+
+    this.scopeProps.set(element, resolved.props);
+    for (const child of element.childNodes) {
+      if (isElement(child)) {
+        this.validateBindings(child, repeatDepth, resolved.props);
+      }
+    }
+  }
+
+  private includeChainFor(element: HtmlElement): string[] | undefined {
+    const chain: string[] = [];
+    let current = element.parentNode as HtmlNode | null;
+    while (current !== null) {
+      if (isElement(current) && current.tagName === "fy-partial") {
+        const src = getAttribute(current, "data-fy-include-src");
+        if (src !== undefined) {
+          chain.unshift(src);
+        }
+      }
+      current = (current as { parentNode?: HtmlNode | null }).parentNode ?? null;
+    }
+    return chain.length > 0 ? [this.entry, ...chain] : undefined;
   }
 
   private validateBindingPathValue(
@@ -846,6 +952,7 @@ class HtmlCompositionValidator {
       requireArray?: boolean;
       checkValueType?: "text" | "attr" | "class";
     },
+    props: Readonly<Props>,
   ): void {
     const validation = validateBindingPath(path);
     if (!validation.ok) {
@@ -862,7 +969,7 @@ class HtmlCompositionValidator {
       return;
     }
 
-    const resolved = resolveBindingPath({ props: this.props }, path);
+    const resolved = resolveBindingPath({ props }, path);
     if (!resolved.found) {
       const severity: DiagnosticSeverity = options.requireArray ? "error" : "warning";
       const code: FrameyardErrorCode = options.requireArray ? "BINDING_REPEAT_INVALID" : "BINDING_PATH_MISSING";
@@ -872,7 +979,7 @@ class HtmlCompositionValidator {
         `${attribute} references prop "${path}", which is not in the resolved props.`,
         this.attributeDetails(element, attribute, {
           value: path,
-          suggestion: suggestBindingPath(path, this.props),
+          suggestion: suggestBindingPath(path, props),
         }),
       );
       return;
@@ -896,7 +1003,13 @@ class HtmlCompositionValidator {
     }
   }
 
-  private validateAttributeBinding(element: HtmlElement, name: string, value: string, inRepeat: boolean): void {
+  private validateAttributeBinding(
+    element: HtmlElement,
+    name: string,
+    value: string,
+    inRepeat: boolean,
+    props: Readonly<Props>,
+  ): void {
     const target = name.slice("data-fy-attr-".length);
     if (target.length === 0) {
       this.error("BINDING_INVALID", "data-fy-attr-* requires an attribute name.", this.attributeDetails(element, name));
@@ -910,13 +1023,25 @@ class HtmlCompositionValidator {
       );
       return;
     }
-    this.validateBindingPathValue(value, element, name, {
-      inRepeat,
-      checkValueType: "attr",
-    });
+    this.validateBindingPathValue(
+      value,
+      element,
+      name,
+      {
+        inRepeat,
+        checkValueType: "attr",
+      },
+      props,
+    );
   }
 
-  private validateClassBinding(element: HtmlElement, name: string, value: string, inRepeat: boolean): void {
+  private validateClassBinding(
+    element: HtmlElement,
+    name: string,
+    value: string,
+    inRepeat: boolean,
+    props: Readonly<Props>,
+  ): void {
     const className = name.slice("data-fy-class-".length);
     if (className.length === 0 || /\s/.test(className)) {
       this.error(
@@ -926,10 +1051,16 @@ class HtmlCompositionValidator {
       );
       return;
     }
-    this.validateBindingPathValue(value, element, name, {
-      inRepeat,
-      checkValueType: "class",
-    });
+    this.validateBindingPathValue(
+      value,
+      element,
+      name,
+      {
+        inRepeat,
+        checkValueType: "class",
+      },
+      props,
+    );
   }
 
   private validateAnimationTargets(entries: readonly AnimationDeclaration<HtmlNode>[]): void {
@@ -1206,8 +1337,36 @@ export async function validateHtmlComposition(
   }
 
   const shell = detectDocumentShell(document, options.entry);
-  const validator = new HtmlCompositionValidator({ ...options, projectRoot }, fragment, shell);
-  return validator.run();
+  let expanded;
+  try {
+    expanded = await expandCompositionIncludes({
+      projectRoot,
+      entry: options.entry,
+      fragment,
+    });
+  } catch (error) {
+    return {
+      info: null,
+      formatUnresolved: false,
+      diagnostics: [
+        {
+          severity: "error",
+          code: "INCLUDE_INVALID",
+          message: `Could not expand composition includes: ${errorMessage(error)}`,
+          details: { path: options.entry.replaceAll("\\", "/") },
+        },
+      ],
+    };
+  }
+  const validator = new HtmlCompositionValidator(
+    { ...options, projectRoot },
+    expanded.fragment,
+    shell,
+    expanded.origins,
+    expanded.diagnostics,
+  );
+  const result = await validator.run();
+  return { ...result, expandedFragment: expanded.expandedFragment };
 }
 
 function detectDocumentShell(document: HtmlDocument, entry: string): DocumentShellResult {

@@ -13,6 +13,8 @@ import { FrameyardError } from "../errors.js";
 export interface ApplyBindingsOptions {
   root: Element;
   props: Readonly<Props>;
+  /** Project-relative source path for binding diagnostics in an include scope. */
+  path?: string;
   onDiagnostic?: (diagnostic: CompositionDiagnostic) => void;
 }
 
@@ -55,6 +57,11 @@ export function applyPropVariables(root: HTMLElement, props: Readonly<Props>): v
 }
 
 function applyToElement(element: Element, scope: BindingScope, options: ApplyBindingsOptions, isRoot: boolean): void {
+  // A partial is its own binding scope. The host applies its props separately.
+  if (!isRoot && element.tagName.toLowerCase() === "fy-partial") {
+    return;
+  }
+
   const repeat = element.getAttribute("data-fy-repeat");
   if (repeat !== null) {
     applyRepeat(element, repeat, scope, options);
@@ -244,14 +251,18 @@ function warn(
   attribute: string,
   value?: string,
 ): void {
+  const sourceLine = element.getAttribute("data-fy-source-line");
+  const line = sourceLine !== null && /^\d+$/.test(sourceLine) ? Number(sourceLine) : undefined;
   options.onDiagnostic?.({
     severity: "warning",
     code,
     message,
     details: {
+      ...(options.path !== undefined ? { path: options.path } : {}),
       element: element.tagName.toLowerCase(),
       attribute,
       ...(value !== undefined ? { value } : {}),
+      ...(line !== undefined ? { line } : {}),
     },
   });
 }

@@ -13,11 +13,11 @@ Use the public project format and CLI. Do not add an agent-only runtime, a hoste
 1. Find `fy.config.js` from the working directory upward, or run `npx frameyard init <directory>`.
 2. Run `npx frameyard context --json`; read `format`, `compositions`, `timelines`, `fonts`, the target, its props, and its controller before editing.
 3. Confirm that speech or transcription is requested or explicitly approved before producing assets.
-4. If context is small, read [quick reference](references/quick-reference.md) first. Router: static/card → quick reference; timelines → [timelines](references/timelines.md); fonts → [fonts](references/fonts.md); captions → [subtitles and karaoke](references/subtitles-karaoke.md); failures → [diagnostics](references/diagnostics.md) and [failure recovery](references/failure-recovery.md); Canvas/WebGL → [controllers](references/controllers.md).
+4. If context is small, read [quick reference](references/quick-reference.md) first. Router: static/card → quick reference; shared markup → [includes](references/includes.md); timelines → [timelines](references/timelines.md); fonts → [fonts](references/fonts.md); captions → [subtitles and karaoke](references/subtitles-karaoke.md); failures → [diagnostics](references/diagnostics.md) and [failure recovery](references/failure-recovery.md); Canvas/WebGL → [controllers](references/controllers.md).
 
 ## Workflow
 
-1. **Author** one `<fy-composition>` fragment. Props, the controller, import maps, and styles are top-level siblings; never add a document shell. Omit `duration-in-frames` and `fps` only for a static composition, which renders to PNG and cannot use animation/media/transcripts. Use a controller only for Canvas, WebGL, karaoke, or per-frame math. Read [deterministic authoring](references/deterministic-authoring.md).
+1. **Author** one `<fy-composition>` fragment. Props, the controller, import maps, and styles are top-level siblings; never add a document shell. Split shared markup and styles into `<fy-partial>` files and include them with `<fy-include>`; included bindings see only the include's props and include CSS is scoped. Omit `duration-in-frames` and `fps` only for a static composition, which renders to PNG and cannot use animation/media/transcripts. Use a controller only for Canvas, WebGL, karaoke, or per-frame math. Read [includes](references/includes.md) and [deterministic authoring](references/deterministic-authoring.md).
 2. **Assemble** a version-1 timeline with explicit tracks and clips. Sources are composition IDs, nested timeline IDs, or local media. `start`, `sourceIn`, and `duration` are integer frames; no remote URLs. Read [timelines](references/timelines.md).
 3. **Provide props** as JSON. Composition props merge over defaults; timeline overrides are keyed by composition clip ID. Use `validateProps()` for domain rules.
 4. **Lint** with `npx frameyard lint <id> --json`. It validates the document/timeline, resolves references, projects every timeline scene/keyframe channel, scans controller determinism, and probes media metadata without Chromium. It is the edit loop, not the full gate.
@@ -86,6 +86,7 @@ node scripts/frameyard.mjs check <id> --json
 ## References
 
 - [Quick reference](references/quick-reference.md)
+- [Includes](references/includes.md)
 - [Fonts](references/fonts.md)
 - [Timelines](references/timelines.md)
 - [Deterministic HTML authoring](references/deterministic-authoring.md)

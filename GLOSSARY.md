@@ -59,7 +59,7 @@ The authoring source of an HTML composition: body content with one top-level `<f
 _Avoid_: HTML document, page
 
 **Composition partial**:
-A reusable HTML fragment with one `<fy-partial>` root, optional scoped props and schema, inline styles, and at most one controller. A partial is included by a composition with `<fy-include>` and is not a `fy.config.js` entry.
+A reusable HTML fragment with one `<fy-partial>` root, optional scoped props and schema, and inline styles. A partial is included by a composition with `<fy-include>` and is not a `fy.config.js` entry. Controller support is pending.
 _Avoid_: Component, template, snippet
 
 **Composition include**:
@@ -67,7 +67,7 @@ A static `<fy-include>` reference that expands a composition partial into the pa
 _Avoid_: Import, template call
 
 **Include scope**:
-The `<fy-partial>` element and its subtree: its own immutable props, binding boundary, scoped CSS, and optional controller.
+The `<fy-partial>` element and its subtree: its own immutable props, binding boundary, and scoped CSS.
 _Avoid_: Shadow root, component instance
 
 **Scoped props**:

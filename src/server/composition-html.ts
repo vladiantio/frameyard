@@ -10,7 +10,7 @@ export const FRAMEWORK_IMPORT_MAP = {
 export const COMPOSITION_HOST_SCRIPT_URL = "/__frameyard/framework/runtime/host.js";
 
 export const COMPOSITION_HOST_STYLE =
-  "html, body { margin: 0; width: 100%; height: 100%; } fy-composition { display: block; width: 100%; height: 100%; } fy-composition[data-fy-pending] { visibility: hidden !important; }";
+  "html, body { margin: 0; width: 100%; height: 100%; } fy-composition { display: block; width: 100%; height: 100%; } fy-partial { display: contents; } fy-composition[data-fy-pending] { visibility: hidden !important; }";
 
 export interface RenderCompositionDocumentOptions {
   /** Authoring fragment: body content with one top-level `<fy-composition>`. */

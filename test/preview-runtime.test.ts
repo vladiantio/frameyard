@@ -118,6 +118,24 @@ export default {
     </script>
 `;
 
+const includeHtml = `<script type="application/json" data-fy="props">{ "title": "Parent" }</script>
+<fy-composition width="200" height="100" fps="10" duration-in-frames="20">
+  <div id="parent" data-fy-text="title"></div>
+  <fy-include src="./partials/badge.html" props='{"label":"Live"}'></fy-include>
+  <fy-include src="./partials/badge.html" props='{"label":"Replay"}'></fy-include>
+</fy-composition>
+`;
+
+const badgePartial = `<fy-partial>
+  <script type="application/json" data-fy="props">{ "label": "Idle" }</script>
+  <style>
+    .badge { color: rgb(1, 2, 3); }
+    body { background: rgb(255, 0, 0); }
+  </style>
+  <span class="badge" data-fy-text="label"></span>
+</fy-partial>
+`;
+
 const staticHtml = `<style>
       html, body { margin: 0; width: 100%; height: 100%; background: #123456; }
       #still { color: #b8f36b; font: 16px monospace; }
@@ -162,12 +180,15 @@ beforeAll(async () => {
   await mkdir(path.join(root, "assets"), { recursive: true });
   await writeFile(
     path.join(root, "fy.config.js"),
-    `export default { compositions: { demo: "./compositions/demo.html", diagnostics: "./compositions/diagnostics.html", media: "./compositions/media.html", html: "./compositions/html.html", static: "./compositions/static.html" } };\n`,
+    `export default { compositions: { demo: "./compositions/demo.html", diagnostics: "./compositions/diagnostics.html", media: "./compositions/media.html", html: "./compositions/html.html", include: "./compositions/include.html", static: "./compositions/static.html" } };\n`,
   );
   await writeFile(path.join(root, "compositions", "demo.html"), demoHtml);
   await writeFile(path.join(root, "compositions", "media.html"), mediaHtml);
   await writeFile(path.join(root, "compositions", "html.html"), htmlComposition);
   await writeFile(path.join(root, "compositions", "diagnostics.html"), diagnosticsHtml);
+  await writeFile(path.join(root, "compositions", "include.html"), includeHtml);
+  await mkdir(path.join(root, "compositions", "partials"), { recursive: true });
+  await writeFile(path.join(root, "compositions", "partials", "badge.html"), badgePartial);
   await writeFile(path.join(root, "compositions", "static.html"), staticHtml);
   await writeFile(path.join(root, "assets", "tone.wav"), toneWav());
   await exec("ffmpeg", [
@@ -297,7 +318,7 @@ describe("browser preview runtime", () => {
     expect(await page.locator("#tab-program").isVisible()).toBe(false);
     expect(await page.locator("#program-view").isVisible()).toBe(false);
 
-    expect(await page.locator('.asset[data-asset-kind="composition"]').count()).toBe(5);
+    expect(await page.locator('.asset[data-asset-kind="composition"]').count()).toBe(6);
     expect(await page.locator('.asset[data-asset-kind="timeline"]').count()).toBe(0);
     expect(await page.locator(".asset-thumb iframe").count()).toBe(0);
 
@@ -931,6 +952,56 @@ describe("browser preview runtime", () => {
       return element?.contentDocument?.querySelector("#title")?.textContent === "Preview";
     });
     expect(await frame.locator("#title").textContent()).toBe("Preview");
+
+    expect(pageErrors).toEqual([]);
+    await context.close();
+  });
+
+  it("previews included partials with scoped props and styles", async () => {
+    const context = await browser.newContext({ viewport: { width: 900, height: 700 } });
+    const page = await context.newPage();
+    const pageErrors: string[] = [];
+    page.on("pageerror", (error) => pageErrors.push(error.message));
+
+    await page.goto(new URL("/__frameyard/?composition=include", server.url).href);
+    await page.waitForFunction(() => {
+      const frame = document.querySelector("#stage-frame") as HTMLIFrameElement | null;
+      const doc = frame?.contentDocument;
+      if (!doc) {
+        return false;
+      }
+      const badges = Array.from(doc.querySelectorAll(".badge"));
+      return (
+        badges.length === 2 &&
+        badges[0]?.textContent === "Live" &&
+        badges[1]?.textContent === "Replay" &&
+        doc.querySelector("#parent")?.textContent === "Parent"
+      );
+    });
+
+    const frame = page.frameLocator("#stage-frame");
+    expect(await frame.locator(".badge").allTextContents()).toEqual(["Live", "Replay"]);
+
+    const state = await page.evaluate(() => {
+      const frame = document.querySelector("#stage-frame") as HTMLIFrameElement;
+      const doc = frame.contentDocument as Document;
+      const badges = Array.from(doc.querySelectorAll(".badge"));
+      return {
+        colors: badges.map((badge) => getComputedStyle(badge).color),
+        body: getComputedStyle(doc.body).backgroundColor,
+        parent: doc.querySelector("#parent")?.textContent,
+      };
+    });
+    expect(state.colors).toEqual(["rgb(1, 2, 3)", "rgb(1, 2, 3)"]);
+    expect(state.body).not.toBe("rgb(255, 0, 0)");
+    expect(state.parent).toBe("Parent");
+
+    await frame.locator(".badge").first().click();
+    await page.waitForFunction(() => !(document.querySelector("#inspector") as HTMLElement | null)?.hidden);
+    expect(
+      await page.locator('#inspector-content [data-label="data-fy-text"] .inspector-value').textContent(),
+    ).toContain('"Live"');
+    expect(await page.locator("#inspector-open").getAttribute("href")).toContain("/compositions/partials/badge.html");
 
     expect(pageErrors).toEqual([]);
     await context.close();

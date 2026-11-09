@@ -22,6 +22,14 @@ export const KNOWN_DATA_FY_ATTRIBUTES = [
   ...MEDIA_ATTRIBUTES,
 ] as const;
 
+/** Framework-only attributes injected while expanding includes. */
+export const RESERVED_DATA_FY_ATTRIBUTES = [
+  "data-fy-include",
+  "data-fy-include-src",
+  "data-fy-props",
+  "data-fy-source-line",
+] as const;
+
 const ANIMATION_SET = new Set<string>(ANIMATION_ATTRIBUTES);
 const MEDIA_SET = new Set<string>(MEDIA_ATTRIBUTES);
 

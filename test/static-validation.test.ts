@@ -76,6 +76,12 @@ async function validate(
   return validateHtmlComposition({ projectRoot: root, entry, props, ...(format ? { format } : {}) });
 }
 
+async function writePartial(name: string, html: string): Promise<void> {
+  const directory = path.join(root, "compositions", "partials");
+  await mkdir(directory, { recursive: true });
+  await writeFile(path.join(directory, name), html);
+}
+
 describe("HTML composition static validation", () => {
   it("warns once per remote font or stylesheet URL", async () => {
     const result = await validate(
@@ -847,5 +853,286 @@ describe("static composition validation", () => {
 
     expect(result.info).toBeNull();
     expect(result.formatUnresolved).toBe(true);
+  });
+});
+
+describe("composition includes", () => {
+  it("expands repeated partials with scoped props, styles, and host attributes", async () => {
+    await writePartial(
+      "badge.html",
+      `<fy-partial>
+  <script type="application/json" data-fy="props">{ "label": "Idle" }</script>
+  <script type="application/json" data-fy="props-schema">
+  { "type": "object", "properties": { "label": { "type": "string" } }, "required": ["label"] }
+  </script>
+  <style>.badge { color: red; }</style>
+  <span class="badge" data-fy-text="label"></span>
+</fy-partial>`,
+    );
+
+    const result = await validate(
+      "includes",
+      `<fy-composition width="160" height="90" fps="10" duration-in-frames="2">
+  <fy-include src="./partials/badge.html" props='{"label":"Live"}'></fy-include>
+  <fy-include src="./partials/badge.html" props='{"label":"Replay"}' class="replay"></fy-include>
+</fy-composition>`,
+    );
+
+    expect(result.diagnostics.filter((diagnostic) => diagnostic.severity === "error")).toEqual([]);
+    expect(result.expandedFragment).toContain('data-fy-include="include-1"');
+    expect(result.expandedFragment).toContain('data-fy-include="include-2"');
+    expect(result.expandedFragment).toContain('data-fy-props="{&quot;label&quot;:&quot;Live&quot;}"');
+    expect(result.expandedFragment).toContain('data-fy-props="{&quot;label&quot;:&quot;Replay&quot;}"');
+    expect(result.expandedFragment).toContain('class="replay"');
+    expect(result.expandedFragment).toContain('@scope ([data-fy-include="include-1"]) to ([data-fy-include])');
+    expect(result.expandedFragment).toContain('@scope ([data-fy-include="include-2"]) to ([data-fy-include])');
+    expect(result.expandedFragment).toContain("data-fy-source-line");
+  });
+
+  it("scopes included bindings to the include props and reports the partial path and line", async () => {
+    await writePartial(
+      "scope.html",
+      `<fy-partial>
+  <script type="application/json" data-fy="props">{ "label": "Idle" }</script>
+  <span data-fy-text="label"></span>
+  <span data-fy-text="parentOnly"></span>
+</fy-partial>`,
+    );
+
+    const result = await validate(
+      "include-scope",
+      `<script type="application/json" data-fy="props">{ "parentOnly": "parent" }</script>
+<fy-composition width="160" height="90" fps="10" duration-in-frames="2">
+  <fy-include src="./partials/scope.html"></fy-include>
+</fy-composition>`,
+    );
+
+    const missing = result.diagnostics.find(
+      (diagnostic) => diagnostic.code === "BINDING_PATH_MISSING" && diagnostic.details?.value === "parentOnly",
+    );
+    expect(missing).toMatchObject({
+      severity: "warning",
+      code: "BINDING_PATH_MISSING",
+      details: {
+        path: "compositions/partials/scope.html",
+        element: "span",
+        value: "parentOnly",
+        includeChain: ["compositions/include-scope.html", "compositions/partials/scope.html"],
+      },
+    });
+    expect(missing?.details?.line).toBeGreaterThan(0);
+    expect(result.diagnostics.filter((diagnostic) => diagnostic.details?.value === "label")).toEqual([]);
+  });
+
+  it("validates include props against the partial schema", async () => {
+    await writePartial(
+      "required.html",
+      `<fy-partial>
+  <script type="application/json" data-fy="props-schema">
+  { "type": "object", "properties": { "title": { "type": "string" } }, "required": ["title"] }
+  </script>
+  <span data-fy-text="title"></span>
+</fy-partial>`,
+    );
+
+    const invalid = await validate(
+      "include-required",
+      `<fy-composition width="160" height="90" fps="10" duration-in-frames="2">
+  <fy-include src="./partials/required.html"></fy-include>
+</fy-composition>`,
+    );
+    expect(invalid.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: "PROPS_SCHEMA_INVALID",
+        details: expect.objectContaining({
+          path: "compositions/partials/required.html",
+          value: "title",
+        }),
+      }),
+    );
+
+    const valid = await validate(
+      "include-required-valid",
+      `<fy-composition width="160" height="90" fps="10" duration-in-frames="2">
+  <fy-include src="./partials/required.html" props='{"title":"Provided"}'></fy-include>
+</fy-composition>`,
+    );
+    expect(valid.diagnostics.filter((diagnostic) => diagnostic.severity === "error")).toEqual([]);
+  });
+
+  it("reports nested include chains on binding diagnostics", async () => {
+    await writePartial(
+      "nested-outer.html",
+      `<fy-partial>
+  <fy-include src="./nested-inner.html"></fy-include>
+</fy-partial>`,
+    );
+    await writePartial(
+      "nested-inner.html",
+      `<fy-partial>
+  <span data-fy-text="missing"></span>
+</fy-partial>`,
+    );
+
+    const result = await validate(
+      "include-nested-chain",
+      `<fy-composition width="160" height="90" fps="10" duration-in-frames="2">
+  <fy-include src="./partials/nested-outer.html"></fy-include>
+</fy-composition>`,
+    );
+
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: "BINDING_PATH_MISSING",
+        details: expect.objectContaining({
+          path: "compositions/partials/nested-inner.html",
+          value: "missing",
+          includeChain: [
+            "compositions/include-nested-chain.html",
+            "compositions/partials/nested-outer.html",
+            "compositions/partials/nested-inner.html",
+          ],
+        }),
+      }),
+    );
+  });
+
+  it("resolves nested includes and reports a missing target with the include chain", async () => {
+    await writePartial(
+      "outer.html",
+      `<fy-partial>
+  <fy-include src="./inner.html"></fy-include>
+</fy-partial>`,
+    );
+
+    const result = await validate(
+      "include-missing",
+      `<fy-composition width="160" height="90" fps="10" duration-in-frames="2">
+  <fy-include src="./partials/outer.html"></fy-include>
+</fy-composition>`,
+    );
+
+    const missing = result.diagnostics.find((diagnostic) => diagnostic.code === "INCLUDE_NOT_FOUND");
+    expect(missing).toMatchObject({
+      severity: "error",
+      code: "INCLUDE_NOT_FOUND",
+      details: {
+        path: "compositions/partials/outer.html",
+        line: expect.any(Number),
+        includeChain: [
+          "compositions/include-missing.html",
+          "compositions/partials/outer.html",
+          "compositions/partials/inner.html",
+        ],
+      },
+    });
+  });
+
+  it("rejects include cycles and invalid partial shapes", async () => {
+    await writePartial("a.html", `<fy-partial><fy-include src="./b.html"></fy-include></fy-partial>`);
+    await writePartial("b.html", `<fy-partial><fy-include src="./a.html"></fy-include></fy-partial>`);
+    await writePartial("flat.html", `<div>not a partial</div>`);
+
+    const cycle = await validate(
+      "include-cycle",
+      `<fy-composition width="160" height="90" fps="10" duration-in-frames="2">
+  <fy-include src="./partials/a.html"></fy-include>
+</fy-composition>`,
+    );
+    expect(cycle.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: "INCLUDE_CYCLE",
+        details: expect.objectContaining({
+          includeChain: [
+            "compositions/include-cycle.html",
+            "compositions/partials/a.html",
+            "compositions/partials/b.html",
+            "compositions/partials/a.html",
+          ],
+        }),
+      }),
+    );
+
+    const invalid = await validate(
+      "include-invalid",
+      `<fy-composition width="160" height="90" fps="10" duration-in-frames="2">
+  <fy-include src="./partials/flat.html"></fy-include>
+</fy-composition>`,
+    );
+    expect(invalid.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: "INCLUDE_INVALID",
+        details: expect.objectContaining({ path: "compositions/partials/flat.html" }),
+      }),
+    );
+  });
+
+  it("rejects document shells, multiple roots, and content outside the partial", async () => {
+    const fixtures = {
+      "shell.html": `<!doctype html><html><body><fy-partial><div></div></fy-partial></body></html>`,
+      "two-roots.html": `<fy-partial><div></div></fy-partial><fy-partial></fy-partial>`,
+      "outside.html": `<fy-partial></fy-partial><div>outside</div>`,
+      "nested-composition.html": `<fy-partial><fy-composition></fy-composition></fy-partial>`,
+    };
+    for (const [name, html] of Object.entries(fixtures)) {
+      await writePartial(name, html);
+      const result = await validate(
+        `include-shape-${name.replace(".html", "")}`,
+        `<fy-composition width="160" height="90" fps="10" duration-in-frames="2">
+  <fy-include src="./partials/${name}"></fy-include>
+</fy-composition>`,
+      );
+      expect(result.diagnostics).toContainEqual(
+        expect.objectContaining({
+          code: "INCLUDE_INVALID",
+          details: expect.objectContaining({ path: `compositions/partials/${name}` }),
+        }),
+      );
+    }
+  });
+
+  it("rejects global style at-rules and controllers in a partial", async () => {
+    await writePartial(
+      "global-style.html",
+      `<fy-partial>
+  <style>@font-face { font-family: Remote; src: url(./remote.woff2); }</style>
+  <div></div>
+</fy-partial>`,
+    );
+    await writePartial(
+      "controller.html",
+      `<fy-partial>
+  <script type="text/fy-controller">export default { mount() {} };</script>
+  <div></div>
+</fy-partial>`,
+    );
+
+    const style = await validate(
+      "include-style",
+      `<fy-composition width="160" height="90" fps="10" duration-in-frames="2">
+  <fy-include src="./partials/global-style.html"></fy-include>
+</fy-composition>`,
+    );
+    expect(style.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: "INCLUDE_INVALID",
+        message: expect.stringContaining("@font-face"),
+        details: expect.objectContaining({ path: "compositions/partials/global-style.html" }),
+      }),
+    );
+
+    const controller = await validate(
+      "include-controller",
+      `<fy-composition width="160" height="90" fps="10" duration-in-frames="2">
+  <fy-include src="./partials/controller.html"></fy-include>
+</fy-composition>`,
+    );
+    expect(controller.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: "CONTROLLER_INVALID",
+        message: expect.stringContaining("not supported yet"),
+        details: expect.objectContaining({ path: "compositions/partials/controller.html" }),
+      }),
+    );
   });
 });

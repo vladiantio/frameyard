@@ -56,13 +56,19 @@ export interface ReadCompositionDescriptorOptions {
   rootScope?: CompositionRootScope;
 }
 
+function insidePartial<Node>(adapter: DocumentAdapter<Node>, match: ElementMatch<Node>): boolean {
+  return match.ancestors.some((ancestor) => adapter.tagName(ancestor) === "fy-partial");
+}
+
 function readRoot<Node>(
   adapter: DocumentAdapter<Node>,
   path: string,
   rootScope: CompositionRootScope,
 ): { root: Node | null; diagnostics: CompositionDiagnostic[] } {
   const diagnostics: CompositionDiagnostic[] = [];
-  const roots = findElements(adapter, (node) => adapter.tagName(node) === "fy-composition");
+  const roots = findElements(adapter, (node) => adapter.tagName(node) === "fy-composition").filter(
+    (match) => !insidePartial(adapter, match),
+  );
 
   if (roots.length === 0) {
     diagnostics.push(
@@ -257,7 +263,7 @@ function readDefaultProps<Node>(
       adapter.tagName(node) === "script" &&
       getAttribute(adapter, node, "type")?.toLowerCase() === "application/json" &&
       getAttribute(adapter, node, "data-fy") === "props",
-  );
+  ).filter((match) => !insidePartial(adapter, match));
 
   for (const extra of blocks.slice(1)) {
     diagnostics.push(
@@ -327,7 +333,7 @@ function readPropsSchema<Node>(
       adapter.tagName(node) === "script" &&
       getAttribute(adapter, node, "type")?.toLowerCase() === "application/json" &&
       getAttribute(adapter, node, "data-fy") === "props-schema",
-  );
+  ).filter((match) => !insidePartial(adapter, match));
 
   for (const extra of blocks.slice(1)) {
     diagnostics.push(
@@ -392,7 +398,7 @@ function readController<Node>(
     adapter,
     (node) =>
       adapter.tagName(node) === "script" && getAttribute(adapter, node, "type")?.toLowerCase() === "text/fy-controller",
-  );
+  ).filter((match) => !insidePartial(adapter, match));
 
   for (const extra of blocks.slice(1)) {
     diagnostics.push(

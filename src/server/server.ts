@@ -442,7 +442,7 @@ export async function startPreviewServer(options: PreviewServerOptions): Promise
           return;
         }
 
-        const fragment = await readFile(composition.absoluteEntry, "utf8");
+        const fragment = result.expandedFragment ?? (await readFile(composition.absoluteEntry, "utf8"));
         sendHtml(
           response,
           200,

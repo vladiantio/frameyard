@@ -1,6 +1,8 @@
 # Reuse composition fragments with scoped includes
 
-**Status:** Accepted. Design only; implementation is tracked in #17-#20. Amends
+**Status:** Accepted. Static includes, scoped props, bindings, and CSS are
+implemented in #17; included controllers and timeline capture are tracked in
+#18-#20. Amends
 the one-controller rule in [ADR-0007](./0007-make-html-documents-the-composition-unit.md)
 and [ADR-0016](./0016-author-compositions-as-html-fragments.md) for included
 partials. Extends [ADR-0002](./0002-make-frame-and-props-the-only-animation-state.md)

@@ -10,8 +10,8 @@ import {
   type HtmlRoot,
 } from "./parse.js";
 
-/** Adapts a parse5 document or fragment to the shared composition reader. */
-export function createParse5Adapter(root: HtmlRoot): DocumentAdapter<HtmlNode> {
+/** Adapts a parse5 document, fragment, or element subtree to the shared composition reader. */
+export function createParse5Adapter(root: HtmlRoot | HtmlNode): DocumentAdapter<HtmlNode> {
   return {
     root,
     isElement,

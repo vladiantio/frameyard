@@ -1,10 +1,13 @@
 import {
   COMPOSITION_FORMAT_UNRESOLVED_MESSAGE,
+  parseIncludeProps,
   readAnimationDeclarations,
   readCompositionDescriptor,
   readMediaDeclarations,
+  readPartialDescriptor,
   readTranscriptDeclarations,
   resolveCompositionMetadata,
+  resolvePartialProps,
   type AnimationDeclaration,
 } from "../composition/index.js";
 import {
@@ -93,6 +96,7 @@ class HostRuntime implements FrameyardHost {
   private readyResolved = false;
   private readonly diagnosticsList: CompositionDiagnostic[] = [];
   private readonly diagnosticKeys = new Set<string>();
+  private readonly partialScopes = new Map<HTMLElement, Readonly<Props>>();
   props: Readonly<Props>;
   private currentFrame = 0;
   private loaded = false;
@@ -284,8 +288,10 @@ class HostRuntime implements FrameyardHost {
       applyBindings({
         root: this.root,
         props,
+        path: this.path,
         onDiagnostic: (diagnostic) => this.addDiagnostic(diagnostic),
       });
+      this.applyPartialScopes();
 
       const animation = readAnimationDeclarations(createDomAdapter(this.root), {
         path: this.path,
@@ -440,6 +446,74 @@ class HostRuntime implements FrameyardHost {
     }
   }
 
+  private applyPartialScopes(): void {
+    const partials = Array.from(this.root.querySelectorAll<HTMLElement>("fy-partial[data-fy-include]"));
+    for (const partial of partials) {
+      if (!partial.isConnected) {
+        continue;
+      }
+      const partialPath = partial.getAttribute("data-fy-include-src") ?? this.path;
+      const read = readPartialDescriptor(createDomAdapter(partial), {
+        path: partialPath,
+        root: partial,
+      });
+      if (!read.valid) {
+        const first = read.diagnostics.find((diagnostic) => diagnostic.severity === "error");
+        throw new FrameyardError(
+          first?.code ?? "INCLUDE_INVALID",
+          first?.message ?? `Invalid partial "${partialPath}".`,
+          {
+            ...(first?.details !== undefined ? { details: first.details } : {}),
+            diagnostics: read.diagnostics,
+          },
+        );
+      }
+
+      const rawProps = partial.getAttribute("data-fy-props") ?? undefined;
+      const parsed = parseIncludeProps(rawProps);
+      if (!parsed.ok) {
+        throw new FrameyardError(
+          "PROPS_INVALID",
+          `Invalid include props: ${parsed.error ?? "props must be a JSON object."}`,
+          {
+            details: { path: partialPath },
+          },
+        );
+      }
+
+      const resolved = resolvePartialProps(read.descriptor, parsed.value);
+      if (resolved.issues.length > 0) {
+        const first = resolved.issues[0] as (typeof resolved.issues)[number];
+        throw new FrameyardError("PROPS_SCHEMA_INVALID", `Invalid props: ${first.message}`, {
+          details: {
+            path: partialPath,
+            value: first.path,
+            ...(first.suggestion !== undefined ? { suggestion: first.suggestion } : {}),
+          },
+          diagnostics: resolved.issues.map((issue) => ({
+            severity: "error",
+            code: "PROPS_SCHEMA_INVALID",
+            message: issue.message,
+            details: {
+              path: partialPath,
+              value: issue.path,
+              ...(issue.suggestion !== undefined ? { suggestion: issue.suggestion } : {}),
+            },
+          })),
+        });
+      }
+
+      applyPropVariables(partial, resolved.props);
+      applyBindings({
+        root: partial,
+        props: resolved.props,
+        path: partialPath,
+        onDiagnostic: (diagnostic) => this.addDiagnostic(diagnostic),
+      });
+      this.partialScopes.set(partial, resolved.props);
+    }
+  }
+
   private async disposeCurrent(): Promise<void> {
     if (this.mounted && this.controllerModule?.dispose) {
       try {
@@ -451,6 +525,7 @@ class HostRuntime implements FrameyardHost {
       }
     }
     this.mounted = false;
+    this.partialScopes.clear();
     releaseMedia(this.root);
     this.loaded = false;
   }

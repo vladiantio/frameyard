@@ -45,6 +45,25 @@ const controllerHtml = `<fy-composition width="200" height="100" fps="10" durati
     <script type="text/fy-controller" src="./controller.js"></script>
 `;
 
+const partialHtml = `<script type="application/json" data-fy="props">{ "title": "Parent", "parentOnly": "leak" }</script>
+<fy-composition width="200" height="100" fps="10" duration-in-frames="4">
+  <div id="parent" data-fy-text="title"></div>
+  <fy-include src="./partials/badge.html" props='{"label":"Live"}'></fy-include>
+  <fy-include src="./partials/badge.html" props='{"label":"Replay"}'></fy-include>
+</fy-composition>
+`;
+
+const badgePartial = `<fy-partial>
+  <script type="application/json" data-fy="props">{ "label": "Idle" }</script>
+  <style>
+    .badge { color: rgb(1, 2, 3); }
+    body { background: rgb(255, 0, 0); }
+  </style>
+  <span class="badge" data-fy-text="label" data-fy-attr-data-label="label"></span>
+  <span id="missing" data-fy-text="parentOnly"></span>
+</fy-partial>
+`;
+
 const controllerJs = `import { random } from "frameyard/runtime";
 
 let box;
@@ -209,6 +228,7 @@ beforeAll(async () => {
       static: "./compositions/static.html",
       "static-media": "./compositions/static-media.html",
       "static-animation": "./compositions/static-animation.html",
+      partial: "./compositions/partial.html",
     } };\n`,
   );
   await writeFile(path.join(root, "compositions", "hello.html"), helloHtml);
@@ -224,6 +244,9 @@ beforeAll(async () => {
   await writeFile(path.join(root, "compositions", "static.html"), staticHtml);
   await writeFile(path.join(root, "compositions", "static-media.html"), staticMediaHtml);
   await writeFile(path.join(root, "compositions", "static-animation.html"), staticAnimationHtml);
+  await writeFile(path.join(root, "compositions", "partial.html"), partialHtml);
+  await mkdir(path.join(root, "compositions", "partials"), { recursive: true });
+  await writeFile(path.join(root, "compositions", "partials", "badge.html"), badgePartial);
   await writeFile(path.join(root, "compositions", "demo-lib.js"), demoLibJs);
   await writeFile(
     path.join(root, "broken.html"),
@@ -413,6 +436,65 @@ describe("browser composition host", () => {
       return { children: root.childElementCount };
     });
     expect(disposed.children).toBe(0);
+    expect(pageErrors).toEqual([]);
+    await page.close();
+  });
+
+  it("expands includes with scoped props, bindings, and CSS", async () => {
+    const page = await openHost("partial.html");
+    const pageErrors: string[] = [];
+    page.on("pageerror", (error) => pageErrors.push(error.message));
+
+    await host(page, async (api) => {
+      await (api.load as (options: { props: unknown }) => Promise<void>)({
+        props: { title: "Parent", parentOnly: "leak" },
+      });
+    });
+
+    const state = await page.evaluate(() => {
+      const badges = Array.from(document.querySelectorAll(".badge")) as HTMLElement[];
+      const partials = Array.from(document.querySelectorAll("fy-partial")) as HTMLElement[];
+      return {
+        badges: badges.map((badge) => ({
+          text: badge.textContent,
+          label: badge.dataset.label,
+          color: getComputedStyle(badge).color,
+          line: badge.getAttribute("data-fy-source-line"),
+        })),
+        partials: partials.map((partial) => ({
+          src: partial.getAttribute("data-fy-include-src"),
+          label: partial.style.getPropertyValue("--fy-prop-label"),
+          display: getComputedStyle(partial).display,
+        })),
+        parent: document.querySelector("#parent")?.textContent,
+        missing: Array.from(document.querySelectorAll("#missing")).map((element) => element.textContent),
+        body: getComputedStyle(document.body).backgroundColor,
+      };
+    });
+
+    expect(state.badges).toEqual([
+      { text: "Live", label: "Live", color: "rgb(1, 2, 3)", line: "7" },
+      { text: "Replay", label: "Replay", color: "rgb(1, 2, 3)", line: "7" },
+    ]);
+    expect(state.partials).toEqual([
+      { src: "compositions/partials/badge.html", label: "Live", display: "contents" },
+      { src: "compositions/partials/badge.html", label: "Replay", display: "contents" },
+    ]);
+    expect(state.parent).toBe("Parent");
+    expect(state.missing).toEqual(["", ""]);
+    expect(state.body).not.toBe("rgb(255, 0, 0)");
+
+    const diagnostics = await host(page, (api) => api.diagnostics);
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: "BINDING_PATH_MISSING",
+        details: expect.objectContaining({
+          path: "compositions/partials/badge.html",
+          line: 8,
+          value: "parentOnly",
+        }),
+      }),
+    );
     expect(pageErrors).toEqual([]);
     await page.close();
   });

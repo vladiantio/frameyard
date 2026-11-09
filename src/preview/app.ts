@@ -1,5 +1,8 @@
 import type { CompositionDiagnostic, Props, ResolvedCompositionMetadata } from "../index.js";
+import { RESERVED_DATA_FY_ATTRIBUTES } from "../composition/attributes.js";
+import { parseIncludeProps, readPartialDescriptor, resolvePartialProps } from "../composition/partial.js";
 import { errorMessage, FrameyardError, isFrameyardError } from "../errors.js";
+import { createDomAdapter } from "../runtime/document-adapter.js";
 import { createInspector, type InspectorRow, type InspectorSection } from "./inspector.js";
 import {
   createSourceMonitor,
@@ -519,6 +522,23 @@ export async function bootPreview(): Promise<void> {
     }
   }
 
+  function inspectorProps(target: Element): Readonly<Props> | undefined {
+    const partial = target.closest("fy-partial[data-fy-include]");
+    if (partial === null) {
+      return sourceMonitor.host?.props;
+    }
+    try {
+      const read = readPartialDescriptor(createDomAdapter(partial), {
+        path: partial.getAttribute("data-fy-include-src") ?? "partial",
+        root: partial,
+      });
+      const parsed = parseIncludeProps(partial.getAttribute("data-fy-props") ?? undefined);
+      return resolvePartialProps(read.descriptor, parsed.value).props;
+    } catch {
+      return sourceMonitor.host?.props;
+    }
+  }
+
   function diagnosticsForElement(target: Element): CompositionDiagnostic[] {
     const tag = target.tagName.toLowerCase();
     const attributes = new Set([...target.attributes].map((attribute) => attribute.name));
@@ -573,11 +593,16 @@ export async function bootPreview(): Promise<void> {
             : "—",
       },
     ];
+    const bindingProps = inspectorProps(target);
     const bindingRows: InspectorRow[] = [...target.attributes]
-      .filter((attribute) => attribute.name.startsWith("data-fy-"))
+      .filter(
+        (attribute) =>
+          attribute.name.startsWith("data-fy-") &&
+          !(RESERVED_DATA_FY_ATTRIBUTES as readonly string[]).includes(attribute.name),
+      )
       .map((attribute) => ({
         label: attribute.name,
-        value: `${attribute.value} → ${formatInspectorValue(resolvePropPath(sourceMonitor.host?.props, attribute.value))}`,
+        value: `${attribute.value} → ${formatInspectorValue(resolvePropPath(bindingProps, attribute.value))}`,
       }));
     const sections: InspectorSection[] = [
       { title: "element", rows: elementRows },
@@ -591,6 +616,8 @@ export async function bootPreview(): Promise<void> {
       composition === null || sourceKind !== "composition"
         ? undefined
         : `npx frameyard still ${composition.id} --frame ${sourceMonitor.frame}`;
+    const partialSource = target.closest("fy-partial[data-fy-include]")?.getAttribute("data-fy-include-src");
+    const sourceEntry = partialSource ?? composition?.entry;
 
     setActiveMonitor("source");
     setPanelTab("inspector");
@@ -616,7 +643,7 @@ export async function bootPreview(): Promise<void> {
           }
         },
         ...(copyText !== undefined ? { copyText } : {}),
-        ...(composition !== null ? { sourceHref: `/${composition.entry.replace(/^\.\//, "")}` } : {}),
+        ...(sourceEntry !== undefined ? { sourceHref: `/${sourceEntry.replace(/^\.\//, "")}` } : {}),
       },
     });
   }

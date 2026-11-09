@@ -10,16 +10,10 @@ contract change may ship in a minor release and is called out explicitly below.
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-11-09
+
 ### Changed
 
-- Switching between the Source and Program tabs now re-applies the visible
-  monitor's current frame. Paused CSS/WAAPI animations stay paused instead of
-  resuming when a hidden monitor iframe becomes visible again, and a static
-  composition is re-pinned to its time-zero state.
-- The pre-commit and pre-push hooks now clear Git repository environment
-  variables before running checks. Release fixtures that create their own
-  repositories can no longer commit into the real checkout when the hooks are
-  active.
 - The preview now uses one editor-style shell on both composition and timeline
   routes: a filterable assets list with metadata tiles, one tabbed Source/Program
   monitor with independent playheads and exclusive playback, a read-only
@@ -38,6 +32,19 @@ contract change may ship in a minor release and is called out explicitly below.
   timeline layer geometry follows the scaled stage, so captured frames, FFV1
   intermediates, and delivery segments are produced at the output resolution;
   output dimensions remain even-sized.
+
+### Fixed
+
+- Switching between the Source and Program tabs now re-applies the visible
+  monitor's current frame. Paused CSS/WAAPI animations stay paused instead of
+  resuming when a hidden monitor iframe becomes visible again, and a static
+  composition is re-pinned to its time-zero state.
+- The pre-commit and pre-push hooks now clear Git repository environment
+  variables before running checks. Release fixtures that create their own
+  repositories can no longer commit into the real checkout when the hooks are
+  active.
+
+[0.12.0]: https://github.com/vladiantio/frameyard/compare/v0.11.0...v0.12.0
 
 ## [0.11.0] - 2026-11-08
 

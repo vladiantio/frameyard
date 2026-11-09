@@ -58,6 +58,22 @@ _Avoid_: HTML document, page
 The authoring source of an HTML composition: body content with one top-level `<fy-composition>` root, plus optional top-level props, controller, import maps, and styles. Frameyard generates the document shell.
 _Avoid_: HTML document, page
 
+**Composition partial**:
+A reusable HTML fragment with one `<fy-partial>` root, optional scoped props and schema, inline styles, and at most one controller. A partial is included by a composition with `<fy-include>` and is not a `fy.config.js` entry.
+_Avoid_: Component, template, snippet
+
+**Composition include**:
+A static `<fy-include>` reference that expands a composition partial into the parent before bindings and frame production. The include gets its own props; it is not a runtime conditional or loop.
+_Avoid_: Import, template call
+
+**Include scope**:
+The `<fy-partial>` element and its subtree: its own immutable props, binding boundary, scoped CSS, and optional controller.
+_Avoid_: Shadow root, component instance
+
+**Scoped props**:
+The props of one include instance, resolved from the partial's schema defaults, partial defaults, and the include's `props` attribute. Parent props do not flow into included bindings; inherited CSS custom properties are separate.
+_Avoid_: Local props, component props
+
 **Transparent composition**:
 A composition that does not paint a background, so a timeline clip can reveal the layers below it.
 _Avoid_: Alpha composition, overlay

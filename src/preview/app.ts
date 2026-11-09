@@ -4,6 +4,7 @@ import { createInspector, type InspectorRow, type InspectorSection } from "./ins
 import {
   createSourceMonitor,
   type LoadedCompositionState,
+  type SourceAudioDebug,
   type SourceCompositionEntry,
   type SourceMonitor,
   type SourceTransportElements,
@@ -27,6 +28,7 @@ interface PreviewApi {
   seek(frame: number): void;
   settle(): Promise<void>;
   dispose(): Promise<void>;
+  audioDebug(): SourceAudioDebug;
 }
 
 declare global {
@@ -1581,6 +1583,9 @@ export async function bootPreview(): Promise<void> {
         throw browserCommandError(error);
       }
     },
+    audioDebug(): SourceAudioDebug {
+      return sourceMonitor.debugAudio();
+    },
   };
 
   setupTheme();
@@ -1644,7 +1649,7 @@ export async function bootPreview(): Promise<void> {
   refreshAvailability();
   updateAssetCount();
   window.__frameyardPreview = api;
-  window.__fyTimeline = {
+  const timelineFacade = {
     ready: Promise.resolve(),
     get format() {
       return timelineData?.format ?? projectFormat ?? { width: 0, height: 0, fps: 30 };
@@ -1661,7 +1666,9 @@ export async function bootPreview(): Promise<void> {
     seek: (frame: number) => timelineMonitor.seek(frame),
     settle: async () => undefined,
     dispose: () => timelineMonitor.dispose(),
+    audioDebug: () => timelineMonitor.debugAudio(),
   };
+  window.__fyTimeline = timelineFacade;
 
   sourceMonitor.refreshTransport();
   updateMonitorHeader();

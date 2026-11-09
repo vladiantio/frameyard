@@ -7,9 +7,17 @@ import type {
   ResolvedTranscriptClip,
 } from "../index.js";
 import { COMPOSITION_FORMAT_UNRESOLVED_MESSAGE } from "../composition/index.js";
-import { frameToMilliseconds } from "../runtime/index.js";
 import { FrameyardError, type FrameyardDiagnostic, type FrameyardErrorCode } from "../errors.js";
 import type { TimelinePreviewMediaSource, TimelinePreviewNestedSource } from "./timeline-data.js";
+
+/**
+ * Correct composition audio once it drifts more than this from the frame
+ * clock. The desired position includes the output latency, so this threshold
+ * is device-independent.
+ */
+const AUDIO_DRIFT_SECONDS = 0.12;
+const AUDIO_LATENCY_MAX_SECONDS = 0.5;
+const AUDIO_LATENCY_REFRESH_MS = 1_000;
 
 interface FrameyardFrame {
   __fy?: FrameyardHost;
@@ -102,6 +110,23 @@ export interface MonitorZoom {
   readonly scale: number;
 }
 
+export interface SourceAudioDebug {
+  playing: boolean;
+  frame: number;
+  outputLatency: number;
+  entries: Array<{
+    src: string;
+    currentTime: number;
+    paused: boolean;
+    seeking: boolean;
+    readyState: number;
+    startFrame: number;
+    trimStart: number;
+    trimDuration?: number;
+    mappedFrame: number | null;
+  }>;
+}
+
 export interface SourceMonitor {
   readonly metadata: SourceMetadata | null;
   readonly frame: number;
@@ -124,6 +149,8 @@ export interface SourceMonitor {
   setMuted(value: boolean): void;
   setVolume(value: number): void;
   refreshTransport(): void;
+  /** Composition audio clock state for diagnosing A/V sync. */
+  debugAudio(): SourceAudioDebug;
   /** Re-apply the current frame after the monitor becomes visible again. */
   refresh(): void;
   layout(): void;
@@ -172,6 +199,10 @@ export function createSourceMonitor(options: SourceMonitorOptions): SourceMonito
   let audioClips: readonly ResolvedAudioClip[] = [];
   let embeddedAudioClips: readonly ResolvedAudioClip[] = [];
   let audioEntries: AudioEntry[] = [];
+  const audioPlayFailed = new Set<HTMLAudioElement>();
+  let audioContext: AudioContext | null = null;
+  let audioOutputLatency = 0;
+  let audioLatencyCheckedAt = 0;
   let currentFrame = 0;
   let playing = false;
   let animationFrame = 0;
@@ -312,6 +343,73 @@ export function createSourceMonitor(options: SourceMonitorOptions): SourceMonito
     }
   };
 
+  const audioFps = (): number => metadata?.fps ?? 30;
+
+  const audioClipEndFrame = (clip: ResolvedAudioClip, element: HTMLAudioElement): number => {
+    const sourceDuration = Number.isFinite(element.duration)
+      ? Math.max(0, element.duration - clip.trimStart)
+      : Number.POSITIVE_INFINITY;
+    const duration = clip.trimDuration ?? sourceDuration;
+    return Number.isFinite(duration) ? clip.startFrame + duration * audioFps() : Number.POSITIVE_INFINITY;
+  };
+
+  const refreshAudioLatency = (): void => {
+    if (!audioContext) {
+      return;
+    }
+    const base = Number.isFinite(audioContext.baseLatency) ? audioContext.baseLatency : 0;
+    const output = Number.isFinite(audioContext.outputLatency) ? audioContext.outputLatency : 0;
+    audioOutputLatency = Math.max(0, Math.min(AUDIO_LATENCY_MAX_SECONDS, base + output));
+  };
+
+  const ensureAudioLatency = (): void => {
+    if (audioEntries.length === 0) {
+      return;
+    }
+    if (audioContext) {
+      if (audioContext.state === "suspended") {
+        void audioContext.resume().then(refreshAudioLatency, () => undefined);
+      } else {
+        refreshAudioLatency();
+      }
+      return;
+    }
+    try {
+      audioContext = new AudioContext();
+      void audioContext.resume().then(refreshAudioLatency, () => undefined);
+      refreshAudioLatency();
+    } catch {
+      audioContext = null;
+      audioOutputLatency = 0;
+    }
+  };
+
+  const closeAudioLatency = (): void => {
+    if (audioContext) {
+      const context = audioContext;
+      audioContext = null;
+      void context.close().catch(() => undefined);
+    }
+    audioOutputLatency = 0;
+    audioLatencyCheckedAt = 0;
+    audioPlayFailed.clear();
+  };
+
+  const seekAudio = (element: HTMLAudioElement, time: number, exact = true, force = false): void => {
+    if (!Number.isFinite(time)) {
+      return;
+    }
+    const tolerance = exact ? 0.001 : 1 / Math.max(1, audioFps()) + 0.01;
+    if (!force && Number.isFinite(element.currentTime) && Math.abs(element.currentTime - time) <= tolerance) {
+      return;
+    }
+    try {
+      element.currentTime = time;
+    } catch {
+      // Metadata may not be available yet; loadedmetadata and the next sync retry.
+    }
+  };
+
   const releaseAudio = (): void => {
     for (const entry of audioEntries) {
       entry.element.pause();
@@ -319,6 +417,105 @@ export function createSourceMonitor(options: SourceMonitorOptions): SourceMonito
       entry.element.load();
     }
     audioEntries = [];
+    closeAudioLatency();
+  };
+
+  /**
+   * The playing composition audio is the preview's master clock. Following it
+   * keeps the picture with the sound across pause/resume and the output
+   * pipeline's start latency instead of letting the wall clock run ahead.
+   */
+  const audioClockFrame = (): number | null => {
+    if (!metadata || metadata.static === true) {
+      return null;
+    }
+    let starting = false;
+    const fps = audioFps();
+    for (const { clip, element } of audioEntries) {
+      const active = currentFrame >= clip.startFrame && currentFrame < audioClipEndFrame(clip, element);
+      if (!active) {
+        continue;
+      }
+      if (element.paused) {
+        if (!element.ended && !audioPlayFailed.has(element)) {
+          starting = true;
+        }
+        continue;
+      }
+      if (element.seeking || !Number.isFinite(element.currentTime)) {
+        starting = true;
+        continue;
+      }
+      const frame = clip.startFrame + (element.currentTime - audioOutputLatency - clip.trimStart) * fps;
+      if (frame < clip.startFrame) {
+        starting = true;
+        continue;
+      }
+      if (frame < audioClipEndFrame(clip, element)) {
+        return Math.max(currentFrame, Math.floor(frame));
+      }
+    }
+    if (starting) {
+      return currentFrame;
+    }
+    // The playhead may be just outside a clip while its element is still
+    // playing; follow it only while the mapped frame is inside that clip.
+    for (const { clip, element } of audioEntries) {
+      if (element.paused || element.seeking || !Number.isFinite(element.currentTime)) {
+        continue;
+      }
+      const frame = clip.startFrame + (element.currentTime - audioOutputLatency - clip.trimStart) * fps;
+      if (frame >= clip.startFrame && frame < audioClipEndFrame(clip, element)) {
+        return Math.max(currentFrame, Math.floor(frame));
+      }
+    }
+    return null;
+  };
+
+  const syncAudio = (): void => {
+    if (!metadata || metadata.static === true || audioEntries.length === 0) {
+      return;
+    }
+    const fps = audioFps();
+    for (const { clip, element } of audioEntries) {
+      const endFrame = audioClipEndFrame(clip, element);
+      const active = currentFrame >= clip.startFrame && currentFrame < endFrame;
+      if (!active) {
+        element.pause();
+        const edge =
+          currentFrame < clip.startFrame
+            ? clip.trimStart
+            : clip.trimStart + Math.max(0, (endFrame - clip.startFrame) / fps);
+        seekAudio(element, edge, false);
+        continue;
+      }
+      // currentFrame is the audible position; the element's media clock is
+      // ahead by the output latency.
+      const desired = clip.trimStart + Math.max(0, (currentFrame - clip.startFrame) / fps) + audioOutputLatency;
+      if (!playing) {
+        seekAudio(element, desired, true, element.ended);
+        element.pause();
+        continue;
+      }
+      if (element.paused) {
+        seekAudio(element, desired, false, element.ended);
+      } else if (Math.abs(element.currentTime - desired) > AUDIO_DRIFT_SECONDS) {
+        seekAudio(element, desired, true);
+      }
+      if (element.paused) {
+        audioPlayFailed.delete(element);
+        void element.play().then(
+          () => {
+            audioPlayFailed.delete(element);
+          },
+          (error: unknown) => {
+            if (!(error instanceof DOMException) || error.name !== "AbortError") {
+              audioPlayFailed.add(element);
+            }
+          },
+        );
+      }
+    }
   };
 
   const buildAudio = (): void => {
@@ -331,6 +528,7 @@ export function createSourceMonitor(options: SourceMonitorOptions): SourceMonito
       element.preload = "auto";
       element.src = assetUrl(clip.src);
       element.load();
+      element.addEventListener("loadedmetadata", () => syncAudio(), { once: true });
       audioEntries.push({ clip, element });
     }
     updateVolumes();
@@ -339,51 +537,6 @@ export function createSourceMonitor(options: SourceMonitorOptions): SourceMonito
   const stopAudio = (): void => {
     for (const entry of audioEntries) {
       entry.element.pause();
-    }
-  };
-
-  const syncAudio = (): void => {
-    if (!metadata || metadata.static === true || audioEntries.length === 0) {
-      return;
-    }
-    const compositionTime = frameToMilliseconds(currentFrame, metadata.fps ?? 30);
-    for (const { clip, element } of audioEntries) {
-      const clipStart = frameToMilliseconds(clip.startFrame, metadata.fps ?? 30);
-      const localTime = compositionTime - clipStart;
-      const sourceDuration = Number.isFinite(element.duration)
-        ? Math.max(0, element.duration - clip.trimStart)
-        : Number.POSITIVE_INFINITY;
-      const clipDuration = clip.trimDuration ?? sourceDuration;
-
-      if (localTime < 0 || localTime >= clipDuration * 1000) {
-        element.pause();
-        const edge = localTime < 0 ? clip.trimStart : clip.trimStart + clipDuration;
-        try {
-          element.currentTime = edge;
-        } catch {
-          // Metadata may not be available yet; the next sync will retry.
-        }
-        continue;
-      }
-
-      const desiredTime = clip.trimStart + localTime / 1000;
-      if (Math.abs(element.currentTime - desiredTime) > 0.12) {
-        try {
-          element.currentTime = desiredTime;
-        } catch {
-          // Ignore an unseekable element until metadata loads.
-        }
-      }
-
-      if (playing) {
-        if (element.paused) {
-          void element.play().catch(() => {
-            // Preview audio is best-effort until the user interacts with the page.
-          });
-        }
-      } else if (!element.paused) {
-        element.pause();
-      }
     }
   };
 
@@ -429,8 +582,13 @@ export function createSourceMonitor(options: SourceMonitorOptions): SourceMonito
     if (!playing || !host || !metadata || metadata.static === true || metadata.durationInFrames === undefined) {
       return;
     }
-    const elapsed = (performance.now() - playStartClock) / 1000;
-    let target = Math.floor(playStartFrame + elapsed * (metadata.fps ?? 30));
+    const now = performance.now();
+    if (now - audioLatencyCheckedAt >= AUDIO_LATENCY_REFRESH_MS) {
+      audioLatencyCheckedAt = now;
+      refreshAudioLatency();
+    }
+    const elapsed = (now - playStartClock) / 1000;
+    let target = audioClockFrame() ?? Math.floor(playStartFrame + elapsed * (metadata.fps ?? 30));
     if (target >= metadata.durationInFrames) {
       target = metadata.durationInFrames - 1;
     }
@@ -455,6 +613,7 @@ export function createSourceMonitor(options: SourceMonitorOptions): SourceMonito
       return;
     }
     callbacks.onPlay?.();
+    ensureAudioLatency();
     if (currentFrame >= metadata.durationInFrames - 1) {
       renderCompositionFrame(0, true);
     }
@@ -874,6 +1033,10 @@ export function createSourceMonitor(options: SourceMonitorOptions): SourceMonito
       // Let the host validate the requested frame so out-of-range seeks keep
       // their stable error code.
       renderCompositionFrame(metadata.static === true ? 0 : frame, true);
+      if (playing && metadata.static !== true) {
+        playStartFrame = currentFrame;
+        playStartClock = performance.now();
+      }
       return;
     }
     const target = metadata.static === true ? 0 : Math.max(0, Math.min(lastFrame(), Math.floor(frame)));
@@ -947,7 +1110,6 @@ export function createSourceMonitor(options: SourceMonitorOptions): SourceMonito
     }
     if (playing) {
       stopPlayback();
-      syncAudio();
       return;
     }
     if (host) {
@@ -1053,7 +1215,6 @@ export function createSourceMonitor(options: SourceMonitorOptions): SourceMonito
     pause() {
       if (playing) {
         stopPlayback();
-        syncAudio();
       }
     },
     setMuted(value: boolean) {
@@ -1065,6 +1226,27 @@ export function createSourceMonitor(options: SourceMonitorOptions): SourceMonito
       masterVolume = value;
       transport.volume.value = String(value);
       updateVolumes();
+    },
+    debugAudio() {
+      return {
+        playing,
+        frame: currentFrame,
+        outputLatency: audioOutputLatency,
+        entries: audioEntries.map(({ clip, element }) => {
+          const frame = clip.startFrame + (element.currentTime - audioOutputLatency - clip.trimStart) * audioFps();
+          return {
+            src: clip.src,
+            currentTime: element.currentTime,
+            paused: element.paused,
+            seeking: element.seeking,
+            readyState: element.readyState,
+            startFrame: clip.startFrame,
+            trimStart: clip.trimStart,
+            ...(clip.trimDuration !== undefined ? { trimDuration: clip.trimDuration } : {}),
+            mappedFrame: Number.isFinite(frame) ? Math.floor(frame) : null,
+          };
+        }),
+      };
     },
     refreshTransport,
     refresh() {

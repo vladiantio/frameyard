@@ -47,6 +47,23 @@ export interface TimelineMonitorOptions {
   callbacks?: TimelineMonitorCallbacks;
 }
 
+export interface TimelineAudioDebug {
+  playing: boolean;
+  frame: number;
+  outputLatency: number;
+  entries: Array<{
+    src: string;
+    currentTime: number;
+    paused: boolean;
+    seeking: boolean;
+    readyState: number;
+    startFrame: number;
+    trimStart: number;
+    trimDuration?: number;
+    mappedFrame: number | null;
+  }>;
+}
+
 export interface TimelineMonitor {
   readonly data: TimelinePreviewData | null;
   readonly frame: number;
@@ -65,6 +82,8 @@ export interface TimelineMonitor {
   setVolume(value: number): void;
   /** Re-apply the current frame after the monitor becomes visible again. */
   refresh(): void;
+  /** Program audio clock state for diagnosing A/V sync. */
+  debugAudio(): TimelineAudioDebug;
   layout(): void;
   fit(): void;
   actualSize(): void;
@@ -105,6 +124,17 @@ function clipClass(clip: TimelinePreviewClip): string {
   return "clip";
 }
 
+/**
+ * Re-seek program audio once it drifts more than this from the frame clock.
+ * The desired position includes the output latency, so this threshold is
+ * device-independent.
+ */
+const AUDIO_DRIFT_SECONDS = 0.12;
+
+/** Estimate the audible output latency without routing the media elements. */
+const AUDIO_LATENCY_MAX_SECONDS = 0.5;
+const AUDIO_LATENCY_REFRESH_MS = 1_000;
+
 export function createTimelineMonitor(options: TimelineMonitorOptions): TimelineMonitor {
   const callbacks = options.callbacks ?? {};
   const transport = options.transport;
@@ -123,6 +153,13 @@ export function createTimelineMonitor(options: TimelineMonitorOptions): Timeline
   let muted = false;
   let activeAudio = new Set<HTMLAudioElement>();
   let audioEntries: Array<{ clip: TimelinePreviewAudioClip; audio: HTMLAudioElement }> = [];
+  let audioHeldForSeek = false;
+  let resumeAfterSeek = false;
+  const audioPlayFailed = new Set<HTMLAudioElement>();
+  let audioContext: AudioContext | null = null;
+  let audioOutputLatency = 0;
+  let audioLatencyCheckedAt = 0;
+  let resumePlayback: () => void = () => undefined;
   let zoomMode: "fit" | "custom" = "fit";
   let customZoom = 1;
   let stripZoom = 1;
@@ -198,28 +235,59 @@ export function createTimelineMonitor(options: TimelineMonitorOptions): Timeline
     callbacks.onTimelineZoom?.(stripZoom);
   };
 
-  const updateAudio = (forceSeek: boolean): void => {
+  const audioClipEndFrame = (clip: TimelinePreviewAudioClip, audio: HTMLAudioElement): number => {
+    const remainingSourceDuration = Number.isFinite(audio.duration)
+      ? Math.max(0, audio.duration - clip.trimStart)
+      : Number.POSITIVE_INFINITY;
+    const clipDuration =
+      clip.trimDuration === undefined ? remainingSourceDuration : Math.min(clip.trimDuration, remainingSourceDuration);
+    return Number.isFinite(clipDuration) ? clip.startFrame + clipDuration * fps() : Number.POSITIVE_INFINITY;
+  };
+
+  const seekAudio = (audio: HTMLAudioElement, time: number, exact = true): void => {
+    if (!Number.isFinite(time)) {
+      return;
+    }
+    // Re-setting currentTime is not free: some browsers (notably WebKit)
+    // land a few milliseconds off on every seek, which accumulates across
+    // pause/resume cycles. Skip identical seeks and preserve the exact paused
+    // position so a tolerant resume does not accumulate error.
+    const tolerance = exact ? 0.001 : 1 / Math.max(1, fps()) + 0.01;
+    if (Number.isFinite(audio.currentTime) && Math.abs(audio.currentTime - time) <= tolerance) {
+      return;
+    }
+    try {
+      audio.currentTime = time;
+    } catch {
+      // Metadata may not be available yet; loadedmetadata and the next sync retry.
+    }
+  };
+
+  const updateAudio = (forceSeek: boolean, alignAudio = true): void => {
     if (!data) {
+      return;
+    }
+    if (seeking && playing) {
+      // Do not start or continue audio while the visible layers are still
+      // seeking. Playing the new position first makes the sound lead the
+      // picture for the duration of the seek.
+      for (const { audio } of audioEntries) {
+        audio.pause();
+      }
+      audioHeldForSeek = true;
       return;
     }
     const nextActive = new Set<HTMLAudioElement>();
     for (const { clip, audio } of audioEntries) {
-      const remainingSourceDuration = Number.isFinite(audio.duration)
-        ? Math.max(0, audio.duration - clip.trimStart)
-        : Number.POSITIVE_INFINITY;
-      const clipDuration =
-        clip.trimDuration === undefined
-          ? remainingSourceDuration
-          : Math.min(clip.trimDuration, remainingSourceDuration);
-      const endFrame = Number.isFinite(clipDuration)
-        ? clip.startFrame + clipDuration * fps()
-        : Number.POSITIVE_INFINITY;
+      const endFrame = audioClipEndFrame(clip, audio);
       const active = currentFrame >= clip.startFrame && currentFrame < endFrame;
       if (active) {
         nextActive.add(audio);
       }
       const wasActive = activeAudio.has(audio);
-      const desired = clip.trimStart + Math.max(0, (currentFrame - clip.startFrame) / fps());
+      // The element's media clock is ahead of the audible frame by the output
+      // latency, so include it in the desired position.
+      const desired = clip.trimStart + Math.max(0, (currentFrame - clip.startFrame) / fps()) + audioOutputLatency;
       const envelopeGain = (clip.envelopes ?? []).reduce(
         (gain, envelope) =>
           gain *
@@ -237,24 +305,40 @@ export function createTimelineMonitor(options: TimelineMonitorOptions): Timeline
       audio.volume = Math.max(0, Math.min(1, clip.volume * envelopeGain * masterVolume * (muted ? 0 : 1)));
       if (forceSeek || !playing) {
         if (active && Number.isFinite(desired)) {
-          audio.currentTime = desired;
+          seekAudio(audio, desired, alignAudio);
         }
       }
       if (playing && active) {
-        if (audio.paused) {
-          const needsSeek = !wasActive || Math.abs(audio.currentTime - desired) > 0.25;
-          if (needsSeek) {
-            audio.currentTime = desired;
-          }
-          if (needsSeek || !audio.ended) {
-            void audio.play().catch(() => undefined);
-          }
+        // The loop follows the active audio clock; here audio follows the
+        // playhead. Correct drift even while the element is already playing so
+        // a seek during playback does not leave the old position audible. A
+        // seek that held audio paused also forces an exact re-seek when it
+        // completes.
+        const drifted = audioHeldForSeek || !wasActive || Math.abs(audio.currentTime - desired) > AUDIO_DRIFT_SECONDS;
+        if (drifted && Number.isFinite(desired)) {
+          seekAudio(audio, desired);
+        }
+        if (audio.paused && (drifted || !audio.ended)) {
+          audioPlayFailed.delete(audio);
+          void audio.play().then(
+            () => {
+              audioPlayFailed.delete(audio);
+            },
+            (error: unknown) => {
+              // Pause/seek aborts are expected; only a real block (autoplay,
+              // unsupported source) should fall back to the wall clock.
+              if (!(error instanceof DOMException) || error.name !== "AbortError") {
+                audioPlayFailed.add(audio);
+              }
+            },
+          );
         }
       } else {
         audio.pause();
       }
     }
     activeAudio = nextActive;
+    audioHeldForSeek = false;
   };
 
   const updateUi = (): void => {
@@ -273,7 +357,91 @@ export function createTimelineMonitor(options: TimelineMonitorOptions): Timeline
     callbacks.onFrame?.(currentFrame);
   };
 
-  const renderFrame = async (target: number): Promise<void> => {
+  const refreshAudioLatency = (): void => {
+    if (!audioContext) {
+      return;
+    }
+    const base = Number.isFinite(audioContext.baseLatency) ? audioContext.baseLatency : 0;
+    const output = Number.isFinite(audioContext.outputLatency) ? audioContext.outputLatency : 0;
+    audioOutputLatency = Math.max(0, Math.min(AUDIO_LATENCY_MAX_SECONDS, base + output));
+  };
+
+  const ensureAudioLatency = (): void => {
+    if (audioEntries.length === 0) {
+      return;
+    }
+    if (audioContext) {
+      if (audioContext.state === "suspended") {
+        void audioContext.resume().then(refreshAudioLatency, () => undefined);
+      } else {
+        refreshAudioLatency();
+      }
+      return;
+    }
+    try {
+      audioContext = new AudioContext();
+      void audioContext.resume().then(refreshAudioLatency, () => undefined);
+      refreshAudioLatency();
+    } catch {
+      audioContext = null;
+      audioOutputLatency = 0;
+    }
+  };
+
+  /**
+   * The playing audio element is the preview's master clock. Following it
+   * keeps the picture with the sound across pause/resume and the output
+   * pipeline's start latency instead of letting the wall clock run ahead.
+   * The frame is offset by the estimated output latency, because `currentTime`
+   * leads the sample the user actually hears.
+   */
+  const audioClockFrame = (): number | null => {
+    let starting = false;
+    for (const { clip, audio } of audioEntries) {
+      const active = currentFrame >= clip.startFrame && currentFrame < audioClipEndFrame(clip, audio);
+      if (!active) {
+        continue;
+      }
+      if (audio.paused) {
+        // A resume asks play() to start the element. Hold the picture until it
+        // does so; an ended source or a rejected play (autoplay blocked) falls
+        // back to the wall clock instead of freezing the preview.
+        if (!audio.ended && !audioPlayFailed.has(audio)) {
+          starting = true;
+        }
+        continue;
+      }
+      if (audio.seeking || !Number.isFinite(audio.currentTime)) {
+        starting = true;
+        continue;
+      }
+      const frame = clip.startFrame + (audio.currentTime - audioOutputLatency - clip.trimStart) * fps();
+      if (frame < clip.startFrame) {
+        starting = true;
+        continue;
+      }
+      if (frame < audioClipEndFrame(clip, audio)) {
+        return Math.max(currentFrame, Math.floor(frame));
+      }
+    }
+    if (starting) {
+      return currentFrame;
+    }
+    // The playhead may be just outside a clip while its element is still
+    // playing; follow it only while the mapped frame is inside that clip.
+    for (const { clip, audio } of audioEntries) {
+      if (audio.paused || audio.seeking || !Number.isFinite(audio.currentTime)) {
+        continue;
+      }
+      const frame = clip.startFrame + (audio.currentTime - audioOutputLatency - clip.trimStart) * fps();
+      if (frame >= clip.startFrame && frame < audioClipEndFrame(clip, audio)) {
+        return Math.max(currentFrame, Math.floor(frame));
+      }
+    }
+    return null;
+  };
+
+  const renderFrame = async (target: number, resyncAudio = false): Promise<void> => {
     if (!host || !data) {
       return;
     }
@@ -291,19 +459,25 @@ export function createTimelineMonitor(options: TimelineMonitorOptions): Timeline
     const requested = clampFrame(target, duration());
     currentFrame = requested;
     updateUi();
+    if (resyncAudio) {
+      // An explicit seek. While playing this holds audio paused until every
+      // layer has settled; while paused it moves the source immediately.
+      updateAudio(true);
+    }
     let failed = false;
     try {
       await host.seek(requested);
     } catch (error) {
       failed = true;
       playing = false;
+      resumeAfterSeek = false;
       pendingFrame = null;
       updateAudio(true);
       callbacks.onError?.(error);
     } finally {
       seeking = false;
     }
-    updateAudio(!playing);
+    updateAudio(resyncAudio || !playing);
     if (!failed && pendingFrame !== null) {
       const next = pendingFrame;
       pendingFrame = null;
@@ -311,25 +485,50 @@ export function createTimelineMonitor(options: TimelineMonitorOptions): Timeline
         await renderFrame(next);
       }
     }
+    if (resumeAfterSeek && playing && !seeking) {
+      resumeAfterSeek = false;
+      resumePlayback();
+    }
+  };
+
+  /**
+   * An explicit seek. Unlike the playback loop's frames, it stops the frame
+   * clock while every layer catches up, then restarts playback from the
+   * settled frame. Audio is held by updateAudio during the seek.
+   */
+  const seekTo = (target: number): Promise<void> => {
+    if (playing && data) {
+      resumeAfterSeek = true;
+      cancelAnimationFrame(animationFrame);
+    }
+    return renderFrame(target, true);
   };
 
   const stopPlayback = (): void => {
+    resumeAfterSeek = false;
     playing = false;
     cancelAnimationFrame(animationFrame);
     transport.play.innerHTML = "&#9654;";
     transport.play.setAttribute("aria-label", "Play");
-    updateAudio(false);
+    updateAudio(false, false);
   };
 
   const loop = (): void => {
     if (!playing || !data) {
       return;
     }
+    const now = performance.now();
+    if (now - audioLatencyCheckedAt >= AUDIO_LATENCY_REFRESH_MS) {
+      audioLatencyCheckedAt = now;
+      refreshAudioLatency();
+    }
     const total = duration();
-    const target = playStartFrame + Math.floor(((performance.now() - playStartClock) / 1000) * fps());
+    const fallback = playStartFrame + Math.floor(((now - playStartClock) / 1000) * fps());
+    const target = audioClockFrame() ?? fallback;
     if (target >= total - 1) {
       currentFrame = total - 1;
       playing = false;
+      resumeAfterSeek = false;
       transport.play.innerHTML = "&#9654;";
       transport.play.setAttribute("aria-label", "Play");
       updateUi();
@@ -343,6 +542,14 @@ export function createTimelineMonitor(options: TimelineMonitorOptions): Timeline
     animationFrame = requestAnimationFrame(loop);
   };
 
+  resumePlayback = (): void => {
+    ensureAudioLatency();
+    cancelAnimationFrame(animationFrame);
+    playStartFrame = currentFrame;
+    playStartClock = performance.now();
+    animationFrame = requestAnimationFrame(loop);
+  };
+
   const setPlaying = (value: boolean): void => {
     if (!data) {
       return;
@@ -352,16 +559,24 @@ export function createTimelineMonitor(options: TimelineMonitorOptions): Timeline
         return;
       }
       callbacks.onPlay?.();
+      ensureAudioLatency();
       if (currentFrame >= duration() - 1) {
         currentFrame = 0;
         void renderFrame(0);
       }
       playing = true;
-      playStartFrame = currentFrame;
-      playStartClock = performance.now();
       transport.play.innerHTML = "&#10074;&#10074;";
       transport.play.setAttribute("aria-label", "Pause");
-      updateAudio(true);
+      if (seeking) {
+        // The stage is still catching up. Keep audio held and let the render
+        // completion start the clock from the settled frame.
+        resumeAfterSeek = true;
+        updateAudio(true, false);
+        return;
+      }
+      playStartFrame = currentFrame;
+      playStartClock = performance.now();
+      updateAudio(true, false);
       animationFrame = requestAnimationFrame(loop);
     } else {
       stopPlayback();
@@ -525,11 +740,11 @@ export function createTimelineMonitor(options: TimelineMonitorOptions): Timeline
   });
   transport.mute.addEventListener("change", () => {
     muted = transport.mute.checked;
-    updateAudio(true);
+    updateAudio(false, false);
   });
   transport.volume.addEventListener("input", () => {
     masterVolume = Number(transport.volume.value);
-    updateAudio(true);
+    updateAudio(false, false);
   });
   window.addEventListener("resize", layout);
 
@@ -544,6 +759,14 @@ export function createTimelineMonitor(options: TimelineMonitorOptions): Timeline
       audio.load();
     }
     audioEntries = [];
+    audioPlayFailed.clear();
+    if (audioContext) {
+      const context = audioContext;
+      audioContext = null;
+      void context.close().catch(() => undefined);
+    }
+    audioOutputLatency = 0;
+    audioLatencyCheckedAt = 0;
     activeAudio = new Set();
     if (host) {
       const active = host;
@@ -610,6 +833,9 @@ export function createTimelineMonitor(options: TimelineMonitorOptions): Timeline
       const audio = new Audio(clip.url);
       audio.preload = "auto";
       audio.volume = clip.volume;
+      // A seek before metadata arrives is dropped by the element; retry once
+      // the duration and seekable ranges are known.
+      audio.addEventListener("loadedmetadata", () => updateAudio(true, false), { once: true });
       return { clip, audio };
     });
     transport.mute.disabled = audioEntries.length === 0;
@@ -648,7 +874,7 @@ export function createTimelineMonitor(options: TimelineMonitorOptions): Timeline
       return stripZoom;
     },
     load,
-    seek: renderFrame,
+    seek: seekTo,
     step,
     jump: step,
     togglePlay: () => setPlaying(!playing),
@@ -661,12 +887,33 @@ export function createTimelineMonitor(options: TimelineMonitorOptions): Timeline
     setMuted(value: boolean) {
       muted = value;
       transport.mute.checked = value;
-      updateAudio(true);
+      updateAudio(false, false);
     },
     setVolume(value: number) {
       masterVolume = value;
       transport.volume.value = String(value);
-      updateAudio(true);
+      updateAudio(false, false);
+    },
+    debugAudio() {
+      return {
+        playing,
+        frame: currentFrame,
+        outputLatency: audioOutputLatency,
+        entries: audioEntries.map(({ clip, audio }) => {
+          const frame = clip.startFrame + (audio.currentTime - audioOutputLatency - clip.trimStart) * fps();
+          return {
+            src: clip.src,
+            currentTime: audio.currentTime,
+            paused: audio.paused,
+            seeking: audio.seeking,
+            readyState: audio.readyState,
+            startFrame: clip.startFrame,
+            trimStart: clip.trimStart,
+            ...(clip.trimDuration !== undefined ? { trimDuration: clip.trimDuration } : {}),
+            mappedFrame: Number.isFinite(frame) ? Math.floor(frame) : null,
+          };
+        }),
+      };
     },
     refresh() {
       if (host !== null && data !== null) {

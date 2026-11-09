@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -57,6 +57,44 @@ const audioComposition = `<style>html, body { margin: 0; width: 100%; height: 10
     <audio src="assets/tone.wav" data-fy-start="2" data-fy-volume="0.5"></audio>
 `;
 
+const longComposition = `<style>
+  html, body { margin: 0; width: 100%; height: 100%; background: #123; }
+</style>
+    <fy-composition width="320" height="180" fps="10" duration-in-frames="60">
+      <div id="box" data-frame="-1" style="width: 40px; height: 40px; background: #b8f36b"></div>
+    </fy-composition>
+    <script type="text/fy-controller">
+let box;
+export default {
+  mount({ root }) { box = root.querySelector("#box"); },
+  update({ frame }) { box.dataset.frame = String(frame); },
+};
+    </script>
+`;
+
+const slowComposition = `<style>
+  html, body { margin: 0; width: 100%; height: 100%; background: #321; }
+</style>
+    <fy-composition width="320" height="180" fps="10" duration-in-frames="30">
+      <div id="box" data-frame="-1" style="width: 40px; height: 40px; background: #f3b86b"></div>
+    </fy-composition>
+`;
+
+const resumeComposition = `<style>
+  html, body { margin: 0; width: 100%; height: 100%; background: #132; }
+</style>
+    <fy-composition width="320" height="180" fps="60" duration-in-frames="120">
+      <div id="box" data-frame="-1" style="width: 40px; height: 40px; background: #86b8f3"></div>
+    </fy-composition>
+    <script type="text/fy-controller">
+let box;
+export default {
+  mount({ root }) { box = root.querySelector("#box"); },
+  update({ frame }) { box.dataset.frame = String(frame); },
+};
+    </script>
+`;
+
 beforeAll(async () => {
   root = await mkdtemp(path.join(tmpdir(), "frameyard-timeline-preview-runtime-"));
   await mkdir(path.join(root, "compositions"), { recursive: true });
@@ -107,10 +145,24 @@ beforeAll(async () => {
     "pcm_s16le",
     path.join(root, "assets", "tone.wav"),
   ]);
+  await exec("ffmpeg", [
+    "-y",
+    "-v",
+    "error",
+    "-f",
+    "lavfi",
+    "-i",
+    "sine=frequency=440:duration=6",
+    "-c:a",
+    "pcm_s16le",
+    path.join(root, "assets", "tone-long.wav"),
+  ]);
   await writeFile(path.join(root, "compositions", "intro.html"), composition);
   await writeFile(path.join(root, "compositions", "still.html"), staticComposition);
   await writeFile(path.join(root, "compositions", "overlay.html"), transparentOverlay);
   await writeFile(path.join(root, "compositions", "audio.html"), audioComposition);
+  await writeFile(path.join(root, "compositions", "long.html"), longComposition);
+  await writeFile(path.join(root, "compositions", "slow.html"), slowComposition);
   await writeFile(
     path.join(root, "timelines", "static.json"),
     `${JSON.stringify(
@@ -244,6 +296,75 @@ beforeAll(async () => {
     )}\n`,
   );
   await writeFile(
+    path.join(root, "timelines", "audio-jump.json"),
+    `${JSON.stringify(
+      {
+        version: 1,
+        durationInFrames: 60,
+        tracks: [
+          { id: "v1", kind: "video" },
+          { id: "a1", kind: "audio" },
+        ],
+        clips: [
+          {
+            id: "long",
+            track: "v1",
+            source: { kind: "composition", id: "long" },
+            start: 0,
+            duration: 60,
+          },
+          {
+            id: "score",
+            track: "a1",
+            source: { kind: "audio", src: "assets/tone-long.wav" },
+            start: 0,
+            duration: 60,
+          },
+        ],
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  await writeFile(
+    path.join(root, "timelines", "audio-hold.json"),
+    `${JSON.stringify(
+      {
+        version: 1,
+        durationInFrames: 60,
+        tracks: [
+          { id: "v1", kind: "video" },
+          { id: "a1", kind: "audio" },
+        ],
+        clips: [
+          {
+            id: "fast",
+            track: "v1",
+            source: { kind: "composition", id: "long" },
+            start: 0,
+            duration: 30,
+          },
+          {
+            id: "slow",
+            track: "v1",
+            source: { kind: "composition", id: "slow" },
+            start: 30,
+            duration: 30,
+          },
+          {
+            id: "score",
+            track: "a1",
+            source: { kind: "audio", src: "assets/tone-long.wav" },
+            start: 0,
+            duration: 60,
+          },
+        ],
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  await writeFile(
     path.join(root, "timelines", "blend.json"),
     `${JSON.stringify(
       {
@@ -364,8 +485,8 @@ beforeAll(async () => {
     path.join(root, "fy.config.js"),
     `export default {
       format: { width: 320, height: 180, fps: 10 },
-      compositions: { intro: "./compositions/intro.html", still: "./compositions/still.html", overlay: "./compositions/overlay.html", tone: "./compositions/audio.html" },
-      timelines: { main: "./timelines/main.json", static: "./timelines/static.json", sized: "./timelines/sized.json", video: "./timelines/video.json", audio: "./timelines/audio.json", blend: "./timelines/blend.json", motion: "./timelines/motion.json", dissolve: "./timelines/dissolve.json", scheme: "./timelines/scheme.json" },
+      compositions: { intro: "./compositions/intro.html", still: "./compositions/still.html", overlay: "./compositions/overlay.html", tone: "./compositions/audio.html", long: "./compositions/long.html", slow: "./compositions/slow.html" },
+      timelines: { main: "./timelines/main.json", static: "./timelines/static.json", sized: "./timelines/sized.json", video: "./timelines/video.json", audio: "./timelines/audio.json", "audio-jump": "./timelines/audio-jump.json", "audio-hold": "./timelines/audio-hold.json", blend: "./timelines/blend.json", motion: "./timelines/motion.json", dissolve: "./timelines/dissolve.json", scheme: "./timelines/scheme.json" },
     };\n`,
   );
   server = await startPreviewServer({ projectRoot: root, port: 0 });
@@ -751,6 +872,326 @@ describe("timeline preview runtime", () => {
     }
   }, 60_000);
 
+  it("keeps the play clock and program audio aligned after a seek during playback", async () => {
+    const page = await browser.newPage({ viewport: { width: 1000, height: 700 } });
+    try {
+      await page.addInitScript(() => {
+        const NativeAudio = window.Audio;
+        const audios: HTMLAudioElement[] = [];
+        (window as Window & { __fyAudios?: HTMLAudioElement[] }).__fyAudios = audios;
+        const WrappedAudio = function (this: unknown, ...args: ConstructorParameters<typeof Audio>) {
+          const element = new NativeAudio(...args);
+          audios.push(element);
+          return element;
+        } as unknown as typeof Audio;
+        WrappedAudio.prototype = NativeAudio.prototype;
+        Object.defineProperty(window, "Audio", { value: WrappedAudio, configurable: true, writable: true });
+      });
+      await page.goto(new URL("/__frameyard/timeline/audio-jump", server.url).href, {
+        waitUntil: "domcontentloaded",
+      });
+      await page.waitForFunction(() => document.querySelectorAll(".timeline-layer iframe").length === 1);
+      await waitForFrame(page, 0);
+      await page.waitForFunction(() =>
+        ((window as Window & { __fyAudios?: HTMLAudioElement[] }).__fyAudios ?? []).some((audio) =>
+          audio.src.includes("tone-long.wav"),
+        ),
+      );
+
+      await page.click("#play-button");
+      await page.waitForFunction(() => Number(document.querySelector("#frame")?.textContent ?? 0) >= 5, null, {
+        timeout: 30_000,
+      });
+      const before = await page.evaluate(() => {
+        const audio = ((window as Window & { __fyAudios?: HTMLAudioElement[] }).__fyAudios ?? []).find((candidate) =>
+          candidate.src.includes("tone-long.wav"),
+        );
+        return { currentTime: audio?.currentTime ?? -1, paused: audio?.paused ?? true };
+      });
+      expect(before.paused).toBe(false);
+
+      await page.evaluate(async () => {
+        const api = (window as Window & { __fyTimeline?: { seek(frame: number): Promise<void> } }).__fyTimeline;
+        await api?.seek(40);
+      });
+      // The audio must jump with the playhead inside a short window. Waiting
+      // longer would let the pre-seek clock reach the target naturally.
+      await page.waitForFunction(
+        () => {
+          const frame = Number(document.querySelector("#frame")?.textContent ?? 0);
+          const audio = ((window as Window & { __fyAudios?: HTMLAudioElement[] }).__fyAudios ?? []).find((candidate) =>
+            candidate.src.includes("tone-long.wav"),
+          );
+          return frame >= 40 && (audio?.currentTime ?? 0) >= 3.5;
+        },
+        null,
+        { timeout: 2_000 },
+      );
+
+      const after = await page.evaluate(() => {
+        const audio = ((window as Window & { __fyAudios?: HTMLAudioElement[] }).__fyAudios ?? []).find((candidate) =>
+          candidate.src.includes("tone-long.wav"),
+        );
+        return {
+          frame: Number(document.querySelector("#frame")?.textContent ?? 0),
+          currentTime: audio?.currentTime ?? -1,
+          paused: audio?.paused ?? true,
+        };
+      });
+      expect(after.paused).toBe(false);
+      expect(Math.abs(after.currentTime - after.frame / 10)).toBeLessThan(0.5);
+
+      // The playback loop must keep running from the jump target instead of
+      // snapping back to the clock that was running before the seek.
+      await page.waitForFunction(() => Number(document.querySelector("#frame")?.textContent ?? 0) >= 42, null, {
+        timeout: 2_000,
+      });
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+
+  it("holds program audio paused until a slow seek settles", async () => {
+    const page = await browser.newPage({ viewport: { width: 1000, height: 700 } });
+    try {
+      await page.route("**/compositions/slow.html*", async (route) => {
+        await new Promise((resolve) => setTimeout(resolve, 900));
+        await route.continue();
+      });
+      await page.addInitScript(() => {
+        const NativeAudio = window.Audio;
+        const audios: HTMLAudioElement[] = [];
+        (window as Window & { __fyAudios?: HTMLAudioElement[] }).__fyAudios = audios;
+        const WrappedAudio = function (this: unknown, ...args: ConstructorParameters<typeof Audio>) {
+          const element = new NativeAudio(...args);
+          audios.push(element);
+          return element;
+        } as unknown as typeof Audio;
+        WrappedAudio.prototype = NativeAudio.prototype;
+        Object.defineProperty(window, "Audio", { value: WrappedAudio, configurable: true, writable: true });
+      });
+      await page.goto(new URL("/__frameyard/timeline/audio-hold", server.url).href, {
+        waitUntil: "domcontentloaded",
+      });
+      await page.waitForFunction(() => document.querySelectorAll(".timeline-layer iframe").length === 1);
+      await waitForFrame(page, 0);
+      await page.waitForFunction(() =>
+        ((window as Window & { __fyAudios?: HTMLAudioElement[] }).__fyAudios ?? []).some((audio) =>
+          audio.src.includes("tone-long.wav"),
+        ),
+      );
+
+      await page.click("#play-button");
+      await page.waitForFunction(() => Number(document.querySelector("#frame")?.textContent ?? 0) >= 5, null, {
+        timeout: 30_000,
+      });
+
+      // The slow composition only loads when the seek reaches it. Do not await
+      // the seek: the interesting state is Play pressed while it is in flight.
+      await page.evaluate(() => {
+        const api = (window as Window & { __fyTimeline?: { seek(frame: number): Promise<void> } }).__fyTimeline;
+        void api?.seek(45);
+      });
+      await page.waitForTimeout(300);
+      const held = await page.evaluate(() => {
+        const audio = ((window as Window & { __fyAudios?: HTMLAudioElement[] }).__fyAudios ?? []).find((candidate) =>
+          candidate.src.includes("tone-long.wav"),
+        );
+        return {
+          paused: audio?.paused ?? false,
+          currentTime: audio?.currentTime ?? -1,
+          frame: Number(document.querySelector("#frame")?.textContent ?? 0),
+        };
+      });
+
+      // The playhead is already at the target, but the composition layer is
+      // still loading. The clock must not run ahead and audio must stay paused
+      // instead of jumping ahead of the picture.
+      expect(held.frame).toBe(45);
+      expect(held.paused).toBe(true);
+      expect(held.currentTime).toBeLessThan(1.5);
+
+      // Once the layer settles, audio resumes from the playhead position.
+      await page.waitForFunction(
+        () => {
+          const audio = ((window as Window & { __fyAudios?: HTMLAudioElement[] }).__fyAudios ?? []).find((candidate) =>
+            candidate.src.includes("tone-long.wav"),
+          );
+          return audio !== undefined && !audio.paused;
+        },
+        null,
+        { timeout: 5_000 },
+      );
+      const resumed = await page.evaluate(() => {
+        const audio = ((window as Window & { __fyAudios?: HTMLAudioElement[] }).__fyAudios ?? []).find((candidate) =>
+          candidate.src.includes("tone-long.wav"),
+        );
+        return {
+          currentTime: audio?.currentTime ?? -1,
+          frame: Number(document.querySelector("#frame")?.textContent ?? 0),
+        };
+      });
+      expect(resumed.currentTime).toBeGreaterThan(4);
+      // Playback restarts from the jump target, not from where the clock would
+      // have reached while the layer was loading.
+      expect(resumed.frame).toBeLessThanOrEqual(46);
+      expect(Math.abs(resumed.currentTime - resumed.frame / 10)).toBeLessThan(0.5);
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+
+  it("keeps picture and audio aligned across pause and resume at 60 fps", async () => {
+    const resumeRoot = await mkdtemp(path.join(tmpdir(), "frameyard-timeline-resume-"));
+    let resumeServer: PreviewServer | null = null;
+    try {
+      await mkdir(path.join(resumeRoot, "compositions"), { recursive: true });
+      await mkdir(path.join(resumeRoot, "timelines"), { recursive: true });
+      await mkdir(path.join(resumeRoot, "assets"), { recursive: true });
+      await copyFile(path.join(root, "assets", "tone-long.wav"), path.join(resumeRoot, "assets", "tone-long.wav"));
+      await writeFile(path.join(resumeRoot, "compositions", "resume.html"), resumeComposition);
+      await writeFile(
+        path.join(resumeRoot, "timelines", "resume.json"),
+        `${JSON.stringify(
+          {
+            version: 1,
+            durationInFrames: 120,
+            tracks: [
+              { id: "v1", kind: "video" },
+              { id: "a1", kind: "audio" },
+            ],
+            clips: [
+              {
+                id: "scene",
+                track: "v1",
+                source: { kind: "composition", id: "scene" },
+                start: 0,
+                duration: 120,
+              },
+              {
+                id: "score",
+                track: "a1",
+                source: { kind: "audio", src: "assets/tone-long.wav" },
+                start: 0,
+                duration: 120,
+              },
+            ],
+          },
+          null,
+          2,
+        )}\n`,
+      );
+      await writeFile(
+        path.join(resumeRoot, "fy.config.js"),
+        `export default {
+  format: { width: 320, height: 180, fps: 60 },
+  compositions: { scene: "./compositions/resume.html" },
+  timelines: { resume: "./timelines/resume.json" },
+};\n`,
+      );
+      resumeServer = await startPreviewServer({ projectRoot: resumeRoot, port: 0 });
+      const page = await browser.newPage({ viewport: { width: 1000, height: 700 } });
+      try {
+        await page.addInitScript(() => {
+          const NativeAudio = window.Audio;
+          const audios: HTMLAudioElement[] = [];
+          (window as Window & { __fyAudios?: HTMLAudioElement[] }).__fyAudios = audios;
+          const WrappedAudio = function (this: unknown, ...args: ConstructorParameters<typeof Audio>) {
+            const element = new NativeAudio(...args);
+            audios.push(element);
+            return element;
+          } as unknown as typeof Audio;
+          WrappedAudio.prototype = NativeAudio.prototype;
+          Object.defineProperty(window, "Audio", { value: WrappedAudio, configurable: true, writable: true });
+
+          // Simulate a real audio pipeline that takes a moment to start after
+          // play(), as hardware output does on resume.
+          const nativePlay = HTMLMediaElement.prototype.play;
+          HTMLMediaElement.prototype.play = function (): Promise<void> {
+            return new Promise<void>((resolve, reject) => {
+              setTimeout(() => {
+                nativePlay.call(this).then(resolve, reject);
+              }, 300);
+            });
+          };
+        });
+        await page.goto(new URL("/__frameyard/timeline/resume", resumeServer.url).href, {
+          waitUntil: "domcontentloaded",
+        });
+        await page.waitForFunction(() => document.querySelectorAll(".timeline-layer iframe").length === 1);
+        await waitForFrame(page, 0);
+        await page.waitForFunction(() =>
+          ((window as Window & { __fyAudios?: HTMLAudioElement[] }).__fyAudios ?? []).some((audio) =>
+            audio.src.includes("tone-long.wav"),
+          ),
+        );
+
+        const state = () =>
+          page.evaluate(() => {
+            const audio = ((window as Window & { __fyAudios?: HTMLAudioElement[] }).__fyAudios ?? []).find(
+              (candidate) => candidate.src.includes("tone-long.wav"),
+            );
+            return {
+              frame: Number(document.querySelector("#frame")?.textContent ?? 0),
+              audioTime: audio?.currentTime ?? -1,
+              paused: audio?.paused ?? true,
+            };
+          });
+        const syncDelta = (value: { frame: number; audioTime: number }): number => value.audioTime - value.frame / 60;
+        const readDebug = () =>
+          page.evaluate(() => {
+            const api = (window as unknown as Record<string, unknown>).__fyTimeline as {
+              audioDebug?: () => { frame: number; entries: Array<{ mappedFrame: number | null }> };
+            };
+            return api.audioDebug?.() ?? { frame: -1, entries: [] };
+          });
+        const expectAudibleFrame = async (): Promise<void> => {
+          const debug = await readDebug();
+          expect(debug.entries.length).toBeGreaterThan(0);
+          expect(Math.abs((debug.entries[0]?.mappedFrame ?? -1) - debug.frame)).toBeLessThanOrEqual(2);
+        };
+
+        await page.click("#play-button");
+        await page.waitForFunction(() => Number(document.querySelector("#frame")?.textContent ?? 0) >= 60, null, {
+          timeout: 30_000,
+        });
+        const first = await state();
+        expect(first.paused).toBe(false);
+        expect(syncDelta(first)).toBeGreaterThan(-0.03);
+        expect(syncDelta(first)).toBeLessThan(0.25);
+        await expectAudibleFrame();
+
+        await page.click("#play-button");
+        await page.waitForTimeout(600);
+        const paused = await state();
+        expect(paused.paused).toBe(true);
+
+        await page.click("#play-button");
+        await page.waitForTimeout(150);
+        const held = await state();
+        // The audio start is still pending; the picture must wait instead of
+        // running ahead with the wall clock.
+        expect(held.frame).toBeLessThanOrEqual(paused.frame + 2);
+        expect(held.paused).toBe(true);
+
+        await page.waitForTimeout(600);
+        const resumed = await state();
+        expect(resumed.paused).toBe(false);
+        expect(resumed.frame).toBeGreaterThan(paused.frame + 10);
+        // The audio clock is the master: the picture must not run ahead of it
+        // while the audio pipeline starts, and it must not lag behind it.
+        expect(syncDelta(resumed)).toBeGreaterThan(-0.03);
+        expect(syncDelta(resumed)).toBeLessThan(0.25);
+        await expectAudibleFrame();
+      } finally {
+        await page.close();
+      }
+    } finally {
+      await resumeServer?.close();
+      await rm(resumeRoot, { recursive: true, force: true });
+    }
+  }, 60_000);
+
   it("renders the timeline UI and scrubs the host", async () => {
     const page = await browser.newPage({ viewport: { width: 1000, height: 700 } });
     try {
@@ -1027,7 +1468,7 @@ describe("timeline preview runtime", () => {
       );
       await page.waitForFunction(() => document.querySelector("#monitor-title")?.textContent === "main");
       expect(await page.locator("#timeline").isVisible()).toBe(true);
-      expect(await page.locator('.asset[data-asset-kind="timeline"]').count()).toBe(9);
+      expect(await page.locator('.asset[data-asset-kind="timeline"]').count()).toBe(11);
       expect(await page.locator("#timeline-meta").textContent()).toContain("10 frames");
       expect(await page.locator("#meta").textContent()).toContain("320×180");
       expect(new URL(page.url()).searchParams.get("timeline")).toBe("main");

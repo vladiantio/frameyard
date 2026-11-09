@@ -66,7 +66,9 @@ re-pinned to its single time-zero state.
 - Page: `/__frameyard/?composition=<id>`.
 - Stage: the `#stage-frame` iframe in the source monitor.
 - API: `window.__frameyardPreview` exposes `load(entry, props?)`, `seek(frame)`,
-  `settle()`, and `dispose()`.
+  `settle()`, `dispose()`, and `audioDebug()`. The last returns the composition
+  audio clock, output-latency estimate, and per-clip mapped frames for A/V sync
+  diagnostics.
 - `seek()` is synchronous. Call `await settle()` before reading pixels; `load()`
   resets the host, so apply props through it.
 - A static composition reports `metadata: { width, height, static: true }`.
@@ -87,15 +89,22 @@ re-pinned to its single time-zero state.
 - API: the embedded host exposes `window.__fyTimeline` with `ready`, `format`,
   `durationInFrames`, `load()`, `seek(frame)`, `settle()`, and `dispose()`. The
   non-embedded page also publishes a `window.__fyTimeline` facade over the
-  program monitor.
+  program monitor, plus `audioDebug()` returning the audio clock, estimated
+  output latency, and per-clip mapped frames for A/V sync diagnostics.
 - Order: `await ready`, `await load()`, `await seek(frame)`, `await settle()`.
 - The non-embedded page owns transport, audio, clips, keyframe markers, the
   timeline strip, and the docked inspector; the embedded host only exposes the
-  stage API.
+  stage API. During program playback the active audio element is the master
+  clock, so the picture follows the sound across pause and resume; while an
+  active clip is paused, seeking, or starting, the picture holds at the current
+  frame. A timeline with no playing audio falls back to the wall clock.
 - Clicking a `.clip[data-clip-id]` selects it, loads its source into the source
   monitor at `sourceIn`, and opens the clip inspector. It does not move the
   program playhead or change the URL. Use the inspector's jump actions or a
-  keyframe marker to seek.
+  keyframe marker to seek. A seek during playback stops the program frame
+  clock at the target, holds audio paused until the visible layers settle, and
+  then restarts both from the settled frame instead of overshooting or
+  resuming the pre-seek clock.
 - A static composition source carries `metadata.static: true` and no
   `metadata.durationInFrames`. The host loads the layer once and skips per-frame
   seek; the layer remains visible while the timeline playhead moves.

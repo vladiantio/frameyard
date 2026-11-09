@@ -529,6 +529,105 @@ describe("browser preview runtime", () => {
     await context.close();
   });
 
+  it("keeps composition audio aligned across pause and resume", async () => {
+    const context = await browser.newContext({ viewport: { width: 900, height: 700 } });
+    const page = await context.newPage();
+    const pageErrors: string[] = [];
+    page.on("pageerror", (error) => pageErrors.push(error.message));
+    try {
+      await page.addInitScript(() => {
+        const NativeAudio = window.Audio;
+        const audios: HTMLAudioElement[] = [];
+        (window as Window & { __fyAudioElements?: HTMLAudioElement[] }).__fyAudioElements = audios;
+        const WrappedAudio = function (this: unknown, ...args: ConstructorParameters<typeof Audio>) {
+          const element = new NativeAudio(...args);
+          audios.push(element);
+          return element;
+        } as unknown as typeof Audio;
+        WrappedAudio.prototype = NativeAudio.prototype;
+        Object.defineProperty(window, "Audio", { value: WrappedAudio, configurable: true, writable: true });
+
+        // Simulate a real audio pipeline that takes a moment to start.
+        const nativePlay = HTMLMediaElement.prototype.play;
+        HTMLMediaElement.prototype.play = function (): Promise<void> {
+          return new Promise<void>((resolve, reject) => {
+            setTimeout(() => {
+              nativePlay.call(this).then(resolve, reject);
+            }, 300);
+          });
+        };
+      });
+
+      await page.goto(new URL("/__frameyard/", server.url).href);
+      await page.waitForFunction(() => {
+        const stage = document.querySelector("#stage-frame") as HTMLIFrameElement | null;
+        return stage?.contentDocument?.querySelector("#box")?.getAttribute("data-frame") === "0";
+      });
+      await page.waitForFunction(
+        () =>
+          ((window as Window & { __fyAudioElements?: HTMLAudioElement[] }).__fyAudioElements ?? []).some((audio) =>
+            audio.src.includes("tone.wav"),
+          ),
+        null,
+        { timeout: 30_000 },
+      );
+
+      const readAudio = () =>
+        page.evaluate(() => {
+          const audios = (window as Window & { __fyAudioElements?: HTMLAudioElement[] }).__fyAudioElements ?? [];
+          const audio = audios.find((candidate) => candidate.src.includes("tone.wav"));
+          return {
+            frame: Number(document.querySelector("#frame")?.textContent ?? 0),
+            currentTime: audio?.currentTime ?? -1,
+            paused: audio?.paused ?? true,
+          };
+        });
+
+      await page.locator("#play").click();
+      await page.waitForFunction(() => Number(document.querySelector("#frame")?.textContent ?? 0) >= 3, null, {
+        timeout: 30_000,
+      });
+
+      await page.locator("#play").click();
+      await page.waitForTimeout(200);
+      const paused = await readAudio();
+      expect(paused.paused).toBe(true);
+
+      await page.locator("#play").click();
+      await page.waitForTimeout(150);
+      const held = await readAudio();
+      // The delayed play() has not started yet; the picture must wait instead
+      // of running ahead with the wall clock.
+      expect(held.frame).toBeLessThanOrEqual(paused.frame + 1);
+      expect(held.paused).toBe(true);
+
+      await page.waitForTimeout(600);
+      const resumed = await readAudio();
+      expect(resumed.paused).toBe(false);
+      expect(resumed.frame).toBeGreaterThan(paused.frame + 1);
+
+      const debug = await page.evaluate(() => {
+        const api = (window as unknown as Record<string, unknown>).__frameyardPreview as {
+          audioDebug(): {
+            frame: number;
+            outputLatency: number;
+            entries: Array<{ src: string; mappedFrame: number | null }>;
+          };
+        };
+        return api.audioDebug();
+      });
+      expect(debug.entries.length).toBeGreaterThan(0);
+      const entry = debug.entries.find((candidate) => candidate.src.includes("tone.wav"));
+      expect(entry?.mappedFrame).not.toBeNull();
+      expect(Math.abs((entry?.mappedFrame ?? -1) - debug.frame)).toBeLessThanOrEqual(1);
+      expect(debug.outputLatency).toBeGreaterThanOrEqual(0);
+
+      expect(pageErrors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
   it("seeks embedded video and renders WebGL deterministically", async () => {
     const context = await browser.newContext({ viewport: { width: 800, height: 600 } });
     const page = await context.newPage();

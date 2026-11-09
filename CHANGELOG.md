@@ -10,6 +10,24 @@ contract change may ship in a minor release and is called out explicitly below.
 
 ## [Unreleased]
 
+### Fixed
+
+- Seeking the timeline program monitor during playback now stops the frame
+  clock at the jump target, holds active audio paused while the visible layers
+  settle, and restarts both from the settled frame instead of overshooting or
+  letting sound lead the picture.
+- Program-monitor playback now follows the active audio element as its master
+  clock instead of the wall clock, so pausing and resuming keeps the picture
+  and sound aligned while the audio pipeline starts again. The picture holds
+  while an active clip is paused, seeking, or starting, so repeated
+  pause/resume cycles cannot walk the image ahead of the sound. The picture is
+  also offset by the estimated audio output latency (base + output), so wired,
+  Bluetooth, and HDMI playback aligns with the audible sound.
+  `window.__fyTimeline.audioDebug()` exposes the clock and latency estimate.
+- The composition Source monitor now applies the same audio-clock mastering,
+  start/seek hold, and output-latency compensation to composition audio, and
+  exposes `window.__frameyardPreview.audioDebug()`.
+
 ## [0.12.0] - 2026-11-09
 
 ### Changed

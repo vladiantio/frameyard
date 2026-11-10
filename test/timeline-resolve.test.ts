@@ -792,4 +792,40 @@ describe("timeline resolution", () => {
       }),
     );
   });
+
+  it("carries include diagnostics through timeline resolution", async () => {
+    const project = await createProject({
+      timeline: timeline([
+        {
+          id: "intro",
+          track: "v1",
+          source: { kind: "composition", id: "intro" },
+          start: 0,
+          duration: 2,
+        },
+      ]),
+      compositionHtml: `<fy-composition width="1920" height="1080" fps="30" duration-in-frames="10">
+  <fy-include src="./partials/missing.html"></fy-include>
+</fy-composition>
+`,
+    });
+    const resolved = await resolveMain(project);
+
+    expect(resolved.timeline).toBeNull();
+    expect(resolved.diagnostics).toContainEqual(
+      expect.objectContaining({
+        severity: "error",
+        code: "INCLUDE_NOT_FOUND",
+        details: expect.objectContaining({
+          path: "compositions/main.html",
+          value: "./partials/missing.html",
+          timeline: "main",
+          clip: "intro",
+          track: "v1",
+          composition: "intro",
+          includeChain: ["compositions/main.html", "compositions/partials/missing.html"],
+        }),
+      }),
+    );
+  });
 });

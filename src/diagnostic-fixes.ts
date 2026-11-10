@@ -156,12 +156,29 @@ export function diagnosticFix(code: FrameyardErrorCode, details?: unknown, messa
         message: "Break the include cycle; a partial cannot include itself directly or through another partial.",
         docs: DOCS.includes,
       };
-    case "INCLUDE_INVALID":
+    case "INCLUDE_INVALID": {
+      const attribute = detailString(details, "attribute");
+      const value = detailString(details, "value");
+      if (attribute === "src" && value !== undefined && value.length > 0) {
+        const local = !/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(value) && !value.startsWith("//");
+        if (local) {
+          const withoutQuery = value.split(/[?#]/)[0] ?? value;
+          const to = /\.html$/i.test(withoutQuery) ? withoutQuery : `${withoutQuery.replace(/\.[^./\\]+$/, "")}.html`;
+          return {
+            kind: "path",
+            message: `Use a local .html include path such as "${to}".`,
+            from: value,
+            to,
+            docs: DOCS.includes,
+          };
+        }
+      }
       return {
         kind: "docs",
         message: "Use one top-level <fy-partial> root with direct props, schema, style, and content children.",
         docs: DOCS.includes,
       };
+    }
     case "INCLUDE_DEPTH_EXCEEDED":
       return {
         kind: "docs",

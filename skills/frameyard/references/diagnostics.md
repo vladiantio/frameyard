@@ -35,7 +35,7 @@ Static validation covers:
 }
 ```
 
-`details` may include `path`, `line`, `column`, `endLine`, `endColumn`, `element`, `attribute`, `value`, `suggestion`, `frame`, and `controller`. For `PROPS_SCHEMA_INVALID`, `details.path` is the failing prop path (for example `title` or `palette.foreground`); `line` and `column` still point at the schema block. For `PROPS_SCHEMA_INVALID_SCHEMA`, `details.path` is the composition source path.
+`details` may include `path`, `line`, `column`, `endLine`, `endColumn`, `element`, `attribute`, `value`, `suggestion`, `frame`, `controller`, and `includeChain`. For `PROPS_SCHEMA_INVALID`, `details.path` is the failing prop path (for example `title` or `palette.foreground`); `line` and `column` still point at the schema block. For `PROPS_SCHEMA_INVALID_SCHEMA`, `details.path` is the composition source path. Include diagnostics use the including or partial file as `path`, the `<fy-include>`/controller location when available, and `includeChain` from the entry composition to the failing partial.
 
 ## Fixes
 
@@ -55,7 +55,7 @@ Diagnostics and error envelopes may include an optional `fix` object:
 
 `kind` is `attribute`, `value`, `path`, `command`, or `docs`. `patch`, `command`, and `docs` are optional. Fixes are advisory; Frameyard never applies them automatically.
 
-Baseline fixes are provided for `BINDING_INVALID`, `BINDING_PATH_MISSING`, `ANIMATION_INVALID`, `CONTROLLER_INVALID`, `STATIC_MEDIA_UNSUPPORTED`, `ASSET_NOT_FOUND`, `TIMELINE_CLIP_OVERLAP`, `TIMELINE_TRANSITION_GEOMETRY`, `FONT_LOAD_FAILED`, and `OUTPUT_EXISTS`, plus related binding, timeline, font, media, props-schema, and policy codes. Unknown codes have no fix.
+Baseline fixes are provided for `BINDING_INVALID`, `BINDING_PATH_MISSING`, `ANIMATION_INVALID`, `CONTROLLER_INVALID`, `INCLUDE_NOT_FOUND`, `INCLUDE_INVALID`, `INCLUDE_CYCLE`, `INCLUDE_DEPTH_EXCEEDED`, `STATIC_MEDIA_UNSUPPORTED`, `ASSET_NOT_FOUND`, `TIMELINE_CLIP_OVERLAP`, `TIMELINE_TRANSITION_GEOMETRY`, `FONT_LOAD_FAILED`, and `OUTPUT_EXISTS`, plus related binding, timeline, font, media, props-schema, and policy codes. Unknown codes have no fix.
 
 Use `npx frameyard explain <code>` for the cause and examples, or `npx frameyard explain --list --json` for every stable code and summary. Timeline diagnostics may also include `timeline`, `clip`, `track`, `channel`, `keyframe`, `jsonPath`, `timelineFrame`, `sourceFrame`, `from`, `to`, and `nesting`; keyframe errors use `channel`, the zero-based `keyframe` index, and the clip-local `frame`, and transition errors use `from`/`to`.
 
@@ -65,6 +65,10 @@ Use `npx frameyard explain <code>` for the cause and examples, or `npx frameyard
 | --- | --- | --- |
 | `COMPOSITION_INVALID` | error | Missing/invalid root, metadata, fragment structure, or reserved attributes |
 | `COMPOSITION_DOCUMENT_SHELL` | error | A full document shell (`<!doctype>`, `<html>`, `<head>`, or `<body>`) is present; compositions are fragments |
+| `INCLUDE_NOT_FOUND` | error | An `<fy-include>` target file does not exist |
+| `INCLUDE_CYCLE` | error | The include chain repeats a partial file |
+| `INCLUDE_INVALID` | error | Invalid include element, target shape, placement, path, or partial style at-rule |
+| `INCLUDE_DEPTH_EXCEEDED` | error | The include chain is deeper than 32 files |
 | `IMPORT_MAP_INVALID` | error | Invalid import map placement, JSON, attributes, or reserved `frameyard` specifiers |
 | `COMPOSITION_FORMAT_UNRESOLVED` | error | The composition omits `width`/`height` and the project has no `format`; this is a command error, not a document diagnostic |
 | `PROPS_INVALID` | error | Invalid default props JSON, invalid overrides, or `validateProps` failure |

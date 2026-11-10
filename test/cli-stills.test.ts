@@ -166,6 +166,48 @@ describe.concurrent("CLI stills and composition checks", () => {
     expect(await pngPixel(path.join(root, "include-controller.png"), 20, 15)).toEqual([0, 255, 0]);
   });
 
+  it("fails a missing include through check, still, and render with a stable envelope", async () => {
+    const commands = [
+      ["check", "include-missing", "--project", root, "--json"],
+      ["still", "include-missing", "--frame", "0", "--out", "include-missing.png", "--project", root, "--json"],
+      ["render", "include-missing", "--out", "include-missing.mp4", "--project", root, "--json"],
+    ] as const;
+
+    for (const args of commands) {
+      const result = await run([...args], root);
+      expect(result.code).not.toBe(0);
+      const json = JSON.parse(result.stdout) as {
+        ok: boolean;
+        command: string;
+        error?: { code: string };
+        diagnostics?: Array<{ code: string; details?: Record<string, unknown> }>;
+      };
+      expect(json).toMatchObject({
+        ok: false,
+        command: args[0],
+        error: { code: "INCLUDE_NOT_FOUND" },
+      });
+      expect(json.diagnostics).toContainEqual(
+        expect.objectContaining({
+          code: "INCLUDE_NOT_FOUND",
+          details: expect.objectContaining({
+            path: "compositions/include-missing.html",
+            value: "./partials/missing.html",
+            includeChain: ["compositions/include-missing.html", "compositions/partials/missing.html"],
+          }),
+          fix: expect.objectContaining({
+            kind: "path",
+            from: "./partials/missing.html",
+          }),
+        }),
+      );
+    }
+
+    await expect(stat(path.join(root, "include-missing.png"))).rejects.toThrow();
+    await expect(stat(path.join(root, "include-missing.mp4"))).rejects.toThrow();
+    await expect(stat(path.join(root, "compositions", "partials", "missing.html"))).rejects.toThrow();
+  });
+
   it("checks, stills, and renders a static composition as a PNG", async () => {
     const check = await run(["check", "static", "--project", root, "--json"], root);
     expect(check.code).toBe(0);
@@ -469,6 +511,32 @@ describe.concurrent("CLI stills and composition checks", () => {
     expect(human.stdout).toContain("Corrected:");
     expect(human.stdout).toContain("Docs:");
 
+    const include = await run(["explain", "INCLUDE_NOT_FOUND", "--json"], root);
+    expect(include.code).toBe(0);
+    expect(JSON.parse(include.stdout)).toMatchObject({
+      ok: true,
+      command: "explain",
+      code: "INCLUDE_NOT_FOUND",
+      examples: {
+        failing: expect.stringContaining("missing.html"),
+        corrected: expect.stringContaining("card.html"),
+      },
+      docs: expect.stringContaining("includes.md"),
+    });
+    for (const code of ["INCLUDE_CYCLE", "INCLUDE_INVALID", "INCLUDE_DEPTH_EXCEEDED"]) {
+      const explained = await run(["explain", code, "--json"], root);
+      expect(explained.code).toBe(0);
+      expect(JSON.parse(explained.stdout)).toMatchObject({
+        ok: true,
+        command: "explain",
+        code,
+        examples: {
+          failing: expect.any(String),
+          corrected: expect.any(String),
+        },
+      });
+    }
+
     const list = await run(["explain", "--list", "--json"], root);
     expect(list.code).toBe(0);
     const listing = JSON.parse(list.stdout) as {
@@ -478,6 +546,9 @@ describe.concurrent("CLI stills and composition checks", () => {
     expect(listing.codes).toContainEqual(
       expect.objectContaining({ code: "BINDING_INVALID", summary: expect.any(String) }),
     );
+    for (const code of ["INCLUDE_NOT_FOUND", "INCLUDE_CYCLE", "INCLUDE_INVALID", "INCLUDE_DEPTH_EXCEEDED"]) {
+      expect(listing.codes).toContainEqual(expect.objectContaining({ code, summary: expect.any(String) }));
+    }
 
     const unknown = await run(["explain", "NOT_A_CODE", "--json"], root);
     expect(unknown.code).not.toBe(0);

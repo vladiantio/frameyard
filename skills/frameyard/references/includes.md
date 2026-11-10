@@ -104,14 +104,17 @@ document, not the partial file. Use project-root URLs such as
 ## Diagnostics
 
 - `INCLUDE_NOT_FOUND`: the target file does not exist.
-- `INCLUDE_CYCLE`: the include chain repeats a file.
+- `INCLUDE_CYCLE`: the include chain repeats a file, including a self-include.
 - `INCLUDE_INVALID`: the include or partial shape, attributes, or style
-  at-rules are invalid.
+  at-rules are invalid. URLs, query strings/fragments, root escapes, and
+  non-`.html` targets each have a distinct message.
 - `INCLUDE_DEPTH_EXCEEDED`: the chain is deeper than 32 files.
 
 Diagnostics inside a partial use the partial path, line, and column, and include
 an `includeChain` from the entry composition to the failing partial. Run
-`npx frameyard explain <code>` for the cause and a fix.
+`npx frameyard explain <code>` for the cause, a failing example, a corrected
+example, and a fix. Fixes are advisory; the CLI never creates or edits a
+partial automatically.
 
 ## Verify
 

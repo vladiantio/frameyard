@@ -47,10 +47,24 @@ const EXPLANATIONS: Record<FrameyardErrorCode, ExplanationEntry> = {
   COMPOSITION_NOT_FOUND: entry("The requested composition id is not registered in fy.config.js.", DOCS.reference),
   COMPOSITION_INVALID: entry("The composition fragment is missing or has invalid structure.", DOCS.reference),
   COMPOSITION_DOCUMENT_SHELL: entry("Compositions are fragments; remove the document shell.", DOCS.commonMistakes),
-  INCLUDE_NOT_FOUND: entry("An <fy-include> target file does not exist.", DOCS.includes),
-  INCLUDE_CYCLE: entry("Included partials form a cycle.", DOCS.includes),
-  INCLUDE_INVALID: entry("An include or partial has an invalid shape or attribute.", DOCS.includes),
-  INCLUDE_DEPTH_EXCEEDED: entry("The include chain exceeds the 32-file limit.", DOCS.includes),
+  INCLUDE_NOT_FOUND: entry("An <fy-include> target file does not exist.", DOCS.includes, {
+    failing: '<fy-include src="./partials/missing.html"></fy-include>',
+    corrected: '<fy-include src="./partials/card.html"></fy-include>',
+  }),
+  INCLUDE_CYCLE: entry("Included partials form a cycle.", DOCS.includes, {
+    failing:
+      '<!-- a.html includes b.html, and b.html includes a.html -->\n<fy-include src="./partials/a.html"></fy-include>',
+    corrected:
+      '<!-- replace the back-edge with a leaf partial -->\n<fy-include src="./partials/leaf.html"></fy-include>',
+  }),
+  INCLUDE_INVALID: entry("An include or partial has an invalid shape or attribute.", DOCS.includes, {
+    failing: '<fy-include src="./partials/card.txt"></fy-include>',
+    corrected: '<fy-include src="./partials/card.html"></fy-include>',
+  }),
+  INCLUDE_DEPTH_EXCEEDED: entry("The include chain exceeds the 32-file limit.", DOCS.includes, {
+    failing: '<!-- a chain deeper than 32 include files -->\n<fy-include src="./partials/level-1.html"></fy-include>',
+    corrected: '<!-- flatten the chain below 32 files -->\n<fy-include src="./partials/leaf.html"></fy-include>',
+  }),
   IMPORT_MAP_INVALID: entry("The import map is invalid or uses a reserved specifier.", DOCS.controllers),
   COMPOSITION_FORMAT_UNRESOLVED: entry("Declare width and height or add a project format.", DOCS.reference),
   TIMELINE_NOT_FOUND: entry("The requested timeline id is not registered in fy.config.js.", DOCS.timelines),

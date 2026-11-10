@@ -1019,6 +1019,7 @@ describe("composition includes", () => {
       details: {
         path: "compositions/partials/outer.html",
         line: expect.any(Number),
+        column: expect.any(Number),
         includeChain: [
           "compositions/include-missing.html",
           "compositions/partials/outer.html",
@@ -1085,14 +1086,29 @@ describe("composition includes", () => {
 
   it("rejects document shells, multiple roots, and content outside the partial", async () => {
     const fixtures = {
-      "shell.html": `<!doctype html><html><body><fy-partial><div></div></fy-partial></body></html>`,
-      "two-roots.html": `<fy-partial><div></div></fy-partial><fy-partial></fy-partial>`,
-      "outside.html": `<fy-partial></fy-partial><div>outside</div>`,
-      "nested-composition.html": `<fy-partial><fy-composition></fy-composition></fy-partial>`,
-      "import-map.html": `<fy-partial><script type="importmap">{}</script><div></div></fy-partial>`,
+      "shell.html": {
+        html: `<!doctype html><html><body><fy-partial><div></div></fy-partial></body></html>`,
+        message: "remove the <!doctype html>",
+      },
+      "two-roots.html": {
+        html: `<fy-partial><div></div></fy-partial><fy-partial></fy-partial>`,
+        message: "exactly one <fy-partial> root",
+      },
+      "outside.html": {
+        html: `<fy-partial></fy-partial><div>outside</div>`,
+        message: "only one <fy-partial> root",
+      },
+      "nested-composition.html": {
+        html: `<fy-partial><fy-composition></fy-composition></fy-partial>`,
+        message: "cannot contain <fy-composition>",
+      },
+      "import-map.html": {
+        html: `<fy-partial><script type="importmap">{}</script><div></div></fy-partial>`,
+        message: "Import maps are not supported",
+      },
     };
-    for (const [name, html] of Object.entries(fixtures)) {
-      await writePartial(name, html);
+    for (const [name, fixture] of Object.entries(fixtures)) {
+      await writePartial(name, fixture.html);
       const result = await validate(
         `include-shape-${name.replace(".html", "")}`,
         `<fy-composition width="160" height="90" fps="10" duration-in-frames="2">
@@ -1102,6 +1118,7 @@ describe("composition includes", () => {
       expect(result.diagnostics).toContainEqual(
         expect.objectContaining({
           code: "INCLUDE_INVALID",
+          message: expect.stringContaining(fixture.message),
           details: expect.objectContaining({ path: `compositions/partials/${name}` }),
         }),
       );
@@ -1208,5 +1225,81 @@ describe("composition includes", () => {
         details: expect.objectContaining({ path: "compositions/partials/two-controllers.html" }),
       }),
     );
+  });
+
+  it("distinguishes invalid include target categories", async () => {
+    const cases = [
+      { src: "", message: "requires a src attribute" },
+      { src: "https://example.com/card.html", message: "not a URL" },
+      { src: "./partials/card.html?version=1", message: "query string or fragment" },
+      { src: "../../outside.html", message: "escapes the project root" },
+      { src: "./partials/card.txt", message: "must point to a .html file" },
+    ];
+    const messages: string[] = [];
+    const found: Array<{ message?: string; fix?: unknown }> = [];
+
+    for (const [index, testCase] of cases.entries()) {
+      const result = await validate(
+        `include-invalid-target-${index}`,
+        `<fy-composition width="160" height="90" fps="10" duration-in-frames="2">
+  <fy-include src="${testCase.src}"></fy-include>
+</fy-composition>`,
+      );
+      const diagnostic = result.diagnostics.find(
+        (candidate) => candidate.code === "INCLUDE_INVALID" && candidate.details?.attribute === "src",
+      );
+      expect(diagnostic?.message).toContain(testCase.message);
+      messages.push(diagnostic?.message ?? "");
+      found.push({ message: diagnostic?.message, fix: diagnostic?.fix });
+    }
+
+    expect(new Set(messages).size).toBe(cases.length);
+    expect(found[4]?.fix).toMatchObject({
+      kind: "path",
+      from: "./partials/card.txt",
+      to: "./partials/card.html",
+    });
+  });
+
+  it("reports self-include cycles", async () => {
+    await writePartial("self.html", `<fy-partial><fy-include src="./self.html"></fy-include></fy-partial>`);
+
+    const result = await validate(
+      "include-self",
+      `<fy-composition width="160" height="90" fps="10" duration-in-frames="2">
+  <fy-include src="./partials/self.html"></fy-include>
+</fy-composition>`,
+    );
+
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: "INCLUDE_CYCLE",
+        details: expect.objectContaining({
+          includeChain: [
+            "compositions/include-self.html",
+            "compositions/partials/self.html",
+            "compositions/partials/self.html",
+          ],
+        }),
+      }),
+    );
+  });
+
+  it("stops include chains at the documented depth", async () => {
+    for (let index = 1; index <= 33; index += 1) {
+      const next = index < 33 ? `<fy-include src="./depth-${String(index + 1)}.html"></fy-include>` : "";
+      await writePartial(`depth-${String(index)}.html`, `<fy-partial>${next}</fy-partial>`);
+    }
+
+    const result = await validate(
+      "include-depth",
+      `<fy-composition width="160" height="90" fps="10" duration-in-frames="2">
+  <fy-include src="./partials/depth-1.html"></fy-include>
+</fy-composition>`,
+    );
+
+    const depth = result.diagnostics.find((diagnostic) => diagnostic.code === "INCLUDE_DEPTH_EXCEEDED");
+    expect(depth).toBeDefined();
+    expect(depth?.details?.includeChain?.length).toBeGreaterThan(32);
   });
 });

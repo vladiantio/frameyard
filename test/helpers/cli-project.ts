@@ -143,6 +143,11 @@ const staticIncludeComposition = `<fy-composition width="160" height="90">
     </fy-composition>
 `;
 
+const missingIncludeComposition = `<fy-composition width="160" height="90" fps="10" duration-in-frames="2">
+      <fy-include src="./partials/missing.html"></fy-include>
+    </fy-composition>
+`;
+
 const includePartial = `<fy-partial>
   <script type="application/json" data-fy="props">{ "label": "Idle", "color": "#00ff00" }</script>
   <style>
@@ -320,7 +325,7 @@ export async function createCliProject(options: CliProjectOptions = {}): Promise
   await mkdir(path.join(root, "assets"), { recursive: true });
   await writeFile(
     path.join(root, "fy.config.js"),
-    `export default { compositions: { demo: "./compositions/demo.html", media: "./compositions/media.html", long: "./compositions/long.html", "missing-video": "./compositions/missing-video.html", broken: "./compositions/broken.html", throwing: "./compositions/throwing.html", html: "./compositions/html.html", "html-invalid": "./compositions/html-invalid.html", legacy: "./compositions/legacy.html", static: "./compositions/static.html", preset: "./compositions/preset.html", schema: "./compositions/schema.html", "schema-required": "./compositions/schema-required.html", "schema-malformed": "./compositions/schema-malformed.html", include: "./compositions/include.html", "include-inline": "./compositions/include-inline.html", "include-static": "./compositions/include-static.html", "include-controller": "./compositions/include-controller.html" } };\n`,
+    `export default { compositions: { demo: "./compositions/demo.html", media: "./compositions/media.html", long: "./compositions/long.html", "missing-video": "./compositions/missing-video.html", broken: "./compositions/broken.html", throwing: "./compositions/throwing.html", html: "./compositions/html.html", "html-invalid": "./compositions/html-invalid.html", legacy: "./compositions/legacy.html", static: "./compositions/static.html", preset: "./compositions/preset.html", schema: "./compositions/schema.html", "schema-required": "./compositions/schema-required.html", "schema-malformed": "./compositions/schema-malformed.html", include: "./compositions/include.html", "include-inline": "./compositions/include-inline.html", "include-static": "./compositions/include-static.html", "include-controller": "./compositions/include-controller.html", "include-missing": "./compositions/include-missing.html" } };\n`,
   );
   await writeFile(path.join(root, "compositions", "demo.html"), composition);
   await writeFile(path.join(root, "compositions", "media.html"), mediaComposition);
@@ -335,6 +340,7 @@ export async function createCliProject(options: CliProjectOptions = {}): Promise
   await writeFile(path.join(root, "compositions", "include-inline.html"), inlineIncludeComposition);
   await writeFile(path.join(root, "compositions", "include-static.html"), staticIncludeComposition);
   await writeFile(path.join(root, "compositions", "include-controller.html"), includeControllerComposition);
+  await writeFile(path.join(root, "compositions", "include-missing.html"), missingIncludeComposition);
   await writeFile(path.join(root, "compositions", "partials", "card.html"), includePartial);
   await writeFile(path.join(root, "compositions", "partials", "external-card.html"), externalControllerPartial);
   await writeFile(path.join(root, "compositions", "partials", "external-card.js"), externalControllerJs);

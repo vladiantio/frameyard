@@ -17,7 +17,8 @@ contract change may ship in a minor release and is called out explicitly below.
   optional scoped controller in `check`, `still`, preview, and render.
   Includes support nested partials, per-instance props and schema defaults,
   one controller instance per include with pre-order mount/update and reverse
-  dispose, missing/cycle diagnostics, and an include chain in diagnostics.
+  dispose, missing/cycle/invalid/depth diagnostics with distinct invalid-target
+  messages, and an include chain plus timeline context in diagnostics.
 
 ## [0.12.1] - 2026-11-09
 

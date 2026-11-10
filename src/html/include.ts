@@ -282,23 +282,46 @@ export async function expandCompositionIncludes(
     return html;
   };
 
-  const resolveIncludePath = (raw: string, parentPath: string): { absolute: string; relative: string } | null => {
+  const resolveIncludePath = (
+    raw: string,
+    parentPath: string,
+  ): { ok: true; absolute: string; relative: string } | { ok: false; message: string; suggestion?: string } => {
     if (raw.length === 0) {
-      return null;
+      return { ok: false, message: "<fy-include> requires a src attribute." };
     }
-    if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(raw) || raw.startsWith("//") || raw.includes("?") || raw.includes("#")) {
-      return null;
+    if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(raw) || raw.startsWith("//")) {
+      return {
+        ok: false,
+        message: `Include src must be a local file path, not a URL: "${raw}".`,
+        suggestion: "Use a project path such as ./partials/card.html.",
+      };
+    }
+    if (raw.includes("?") || raw.includes("#")) {
+      return {
+        ok: false,
+        message: `Include src cannot contain a query string or fragment: "${raw}".`,
+        suggestion: "Remove the query or fragment from src.",
+      };
     }
     const normalized = raw.replaceAll("\\", "/");
     const base = normalized.startsWith("/") ? projectRoot : path.dirname(path.resolve(projectRoot, parentPath));
     const absolute = path.resolve(base, normalized.startsWith("/") ? `.${normalized}` : normalized);
     if (absolute !== projectRoot && !absolute.startsWith(projectRoot + path.sep)) {
-      return null;
+      return {
+        ok: false,
+        message: `Include path escapes the project root: "${raw}".`,
+        suggestion: "Keep the include inside the project root.",
+      };
     }
     if (path.extname(absolute).toLowerCase() !== ".html") {
-      return null;
+      return {
+        ok: false,
+        message: `Include src must point to a .html file: "${raw}".`,
+        suggestion: "Use a partial with a .html extension.",
+      };
     }
     return {
+      ok: true,
       absolute,
       relative: path.relative(projectRoot, absolute).split(path.sep).join("/"),
     };
@@ -364,20 +387,15 @@ export async function expandCompositionIncludes(
     }
 
     const resolved = resolveIncludePath(rawSrc.trim(), parentPath);
-    if (resolved === null) {
+    if (!resolved.ok) {
       diagnostics.push(
-        createDiagnostic(
-          "error",
-          "INCLUDE_INVALID",
-          `Include path must be a local .html file inside the project root: "${rawSrc}".`,
-          {
-            ...attributeDetails(adapter, parentPath, element, "src", {
-              value: rawSrc,
-              includeChain: [...chain],
-              suggestion: "Use a path such as ./partials/card.html or /partials/card.html.",
-            }),
-          },
-        ),
+        createDiagnostic("error", "INCLUDE_INVALID", resolved.message, {
+          ...attributeDetails(adapter, parentPath, element, "src", {
+            value: rawSrc,
+            includeChain: [...chain],
+            ...(resolved.suggestion !== undefined ? { suggestion: resolved.suggestion } : {}),
+          }),
+        }),
       );
       return null;
     }

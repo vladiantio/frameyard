@@ -231,6 +231,84 @@ describe("preview server", () => {
     expect(await response.text()).toContain("mount()");
   });
 
+  it("serves include diagnostics on composition and timeline preview routes", async () => {
+    const badRoot = await mkdtemp(path.join(tmpdir(), "frameyard-project-include-"));
+    await mkdir(path.join(badRoot, "compositions"), { recursive: true });
+    await mkdir(path.join(badRoot, "timelines"), { recursive: true });
+    await writeFile(
+      path.join(badRoot, "fy.config.js"),
+      `export default {
+        format: { width: 320, height: 180, fps: 10 },
+        compositions: { bad: "./compositions/bad.html" },
+        timelines: { "bad-timeline": "./timelines/bad-timeline.json" },
+      };\n`,
+    );
+    await writeFile(
+      path.join(badRoot, "compositions", "bad.html"),
+      `<fy-composition width="320" height="180" fps="10" duration-in-frames="5">
+  <fy-include src="./partials/missing.html"></fy-include>
+</fy-composition>
+`,
+    );
+    await writeFile(
+      path.join(badRoot, "timelines", "bad-timeline.json"),
+      JSON.stringify(
+        {
+          version: 1,
+          tracks: [{ id: "v1", kind: "video" }],
+          clips: [
+            {
+              id: "intro",
+              track: "v1",
+              source: { kind: "composition", id: "bad" },
+              start: 0,
+              duration: 5,
+            },
+          ],
+        },
+        null,
+        2,
+      ),
+    );
+
+    const badServer = await startPreviewServer({ projectRoot: badRoot, port: 0 });
+    try {
+      const compositionResponse = await fetch(new URL("/compositions/bad.html", badServer.url));
+      expect(compositionResponse.status).toBe(500);
+      const html = await compositionResponse.text();
+      expect(html).toContain("INCLUDE_NOT_FOUND");
+      expect(html).toContain("compositions/partials/missing.html");
+
+      const timelineResponse = await fetch(new URL("/__frameyard/timeline/bad-timeline.json", badServer.url));
+      expect(timelineResponse.status).toBe(500);
+      const timelineJson = (await timelineResponse.json()) as {
+        ok: boolean;
+        command: string;
+        error?: { code: string };
+        diagnostics?: Array<{ code: string; details?: Record<string, unknown> }>;
+      };
+      expect(timelineJson).toMatchObject({
+        ok: false,
+        command: "timeline-preview",
+        error: { code: "INCLUDE_NOT_FOUND" },
+      });
+      expect(timelineJson.diagnostics).toContainEqual(
+        expect.objectContaining({
+          code: "INCLUDE_NOT_FOUND",
+          details: expect.objectContaining({
+            timeline: "bad-timeline",
+            clip: "intro",
+            track: "v1",
+            includeChain: ["compositions/bad.html", "compositions/partials/missing.html"],
+          }),
+        }),
+      );
+    } finally {
+      await badServer.close();
+      await rm(badRoot, { recursive: true, force: true });
+    }
+  });
+
   it("serves derived subtitle exports with subtitle media types", async () => {
     const srt = await fetch(new URL("/assets/captions.srt", server.url));
     const vtt = await fetch(new URL("/assets/captions.vtt", server.url));

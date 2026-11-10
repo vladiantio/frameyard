@@ -13,7 +13,7 @@ import { errorMessage } from "../errors.js";
 import { parsePropsSchema } from "../props-schema.js";
 import type { DocumentAdapter } from "./adapter.js";
 import { attributeDetails, createDiagnostic, elementDetails, lineColumn, locationDetails } from "./diagnostics.js";
-import { isLocalRelative } from "./paths.js";
+import { isLocalRelative, normalizeLocalPath } from "./paths.js";
 import { findElements, getAttribute, type ElementMatch } from "./walk.js";
 
 export interface CompositionDescriptor {
@@ -387,6 +387,120 @@ function readPropsSchema<Node>(
   }
 }
 
+export interface ReadControllerDeclarationOptions {
+  /** Use the framework-resolved path injected on an expanded partial. */
+  allowFrameworkPath?: boolean;
+  /** Resolves an external controller src. Required when no framework path is present. */
+  resolvePath?: (raw: string) => string;
+}
+
+export function readControllerDeclaration<Node>(
+  adapter: DocumentAdapter<Node>,
+  path: string,
+  block: Node,
+  options: ReadControllerDeclarationOptions = {},
+): { controller: ControllerDeclaration | null; diagnostics: CompositionDiagnostic[] } {
+  const diagnostics: CompositionDiagnostic[] = [];
+  const src = getAttribute(adapter, block, "src");
+  const source = adapter.text(block);
+  const hasSource = source.trim().length > 0;
+
+  if (src !== undefined && hasSource) {
+    diagnostics.push(
+      createDiagnostic(
+        "error",
+        "CONTROLLER_INVALID",
+        "A controller must be either inline or external, not both.",
+        attributeDetails(adapter, path, block, "src"),
+      ),
+    );
+    return { controller: null, diagnostics };
+  }
+
+  if (src === undefined && !hasSource) {
+    diagnostics.push(
+      createDiagnostic(
+        "error",
+        "CONTROLLER_INVALID",
+        "A controller must contain inline source or reference an external module with src.",
+        elementDetails(adapter, path, block),
+      ),
+    );
+    return { controller: null, diagnostics };
+  }
+
+  if (src !== undefined) {
+    const location = adapter.location(block, "src") ?? adapter.location(block);
+    const pathDetails: CompositionDiagnosticDetails = {
+      path,
+      element: adapter.tagName(block),
+      attribute: "src",
+      ...locationDetails(location),
+      value: src,
+    };
+
+    const frameworkPath =
+      options.allowFrameworkPath === true ? getAttribute(adapter, block, "data-fy-controller-path") : undefined;
+    if (frameworkPath !== undefined) {
+      return {
+        controller: {
+          kind: "external",
+          rawSrc: src,
+          src: normalizeLocalPath(frameworkPath),
+          ...lineColumn(location),
+        },
+        diagnostics,
+      };
+    }
+
+    if (!isLocalRelative(src)) {
+      diagnostics.push(
+        createDiagnostic(
+          "error",
+          "CONTROLLER_INVALID",
+          `Controller path must be a local project file, not "${src}".`,
+          pathDetails,
+        ),
+      );
+      return { controller: { kind: "external", rawSrc: src, ...lineColumn(location) }, diagnostics };
+    }
+
+    if (options.resolvePath === undefined) {
+      diagnostics.push(
+        createDiagnostic("error", "CONTROLLER_INVALID", `Could not resolve controller path "${src}".`, pathDetails),
+      );
+      return { controller: { kind: "external", rawSrc: src, ...lineColumn(location) }, diagnostics };
+    }
+
+    let resolved: string;
+    try {
+      resolved = options.resolvePath(src);
+    } catch (error) {
+      diagnostics.push(
+        createDiagnostic(
+          "error",
+          "CONTROLLER_INVALID",
+          `Could not resolve controller path "${src}": ${errorMessage(error)}`,
+          pathDetails,
+        ),
+      );
+      return { controller: { kind: "external", rawSrc: src, ...lineColumn(location) }, diagnostics };
+    }
+
+    return {
+      controller: { kind: "external", rawSrc: src, src: resolved, ...lineColumn(location) },
+      diagnostics,
+    };
+  }
+
+  const textNode = adapter.children(block).find((child) => !adapter.isElement(child));
+  const location = textNode ? adapter.location(textNode) : adapter.location(block);
+  return {
+    controller: { kind: "inline", source, ...lineColumn(location) },
+    diagnostics,
+  };
+}
+
 function readController<Node>(
   adapter: DocumentAdapter<Node>,
   path: string,
@@ -436,83 +550,9 @@ function readController<Node>(
     );
   }
 
-  const src = getAttribute(adapter, block.node, "src");
-  const source = adapter.text(block.node);
-  const hasSource = source.trim().length > 0;
-
-  if (src !== undefined && hasSource) {
-    diagnostics.push(
-      createDiagnostic(
-        "error",
-        "CONTROLLER_INVALID",
-        "A controller must be either inline or external, not both.",
-        attributeDetails(adapter, path, block.node, "src"),
-      ),
-    );
-    return { controller: null, diagnostics };
-  }
-
-  if (src === undefined && !hasSource) {
-    diagnostics.push(
-      createDiagnostic(
-        "error",
-        "CONTROLLER_INVALID",
-        "A controller must contain inline source or reference an external module with src.",
-        elementDetails(adapter, path, block.node),
-      ),
-    );
-    return { controller: null, diagnostics };
-  }
-
-  if (src !== undefined) {
-    const location = adapter.location(block.node, "src") ?? adapter.location(block.node);
-    const pathDetails: CompositionDiagnosticDetails = {
-      path,
-      element: adapter.tagName(block.node),
-      attribute: "src",
-      ...locationDetails(location),
-      value: src,
-    };
-
-    if (!isLocalRelative(src)) {
-      diagnostics.push(
-        createDiagnostic(
-          "error",
-          "CONTROLLER_INVALID",
-          `Controller path must be a local project file, not "${src}".`,
-          pathDetails,
-        ),
-      );
-      return { controller: { kind: "external", rawSrc: src, ...lineColumn(location) }, diagnostics };
-    }
-
-    let resolved: string;
-    try {
-      resolved = resolvePath(src);
-    } catch (error) {
-      diagnostics.push(
-        createDiagnostic(
-          "error",
-          "CONTROLLER_INVALID",
-          `Could not resolve controller path "${src}": ${errorMessage(error)}`,
-          pathDetails,
-        ),
-      );
-      return { controller: { kind: "external", rawSrc: src, ...lineColumn(location) }, diagnostics };
-    }
-
-    return {
-      controller: { kind: "external", rawSrc: src, src: resolved, ...lineColumn(location) },
-      diagnostics,
-    };
-  }
-
-  const textNode = adapter.children(block.node).find((child) => !adapter.isElement(child));
-  const location = textNode ? adapter.location(textNode) : adapter.location(block.node);
-  return {
-    controller: { kind: "inline", source, ...lineColumn(location) },
-    diagnostics,
-  };
+  const declaration = readControllerDeclaration(adapter, path, block.node, { resolvePath });
+  diagnostics.push(...declaration.diagnostics);
+  return { controller: declaration.controller, diagnostics };
 }
 
 /**

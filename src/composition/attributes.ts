@@ -28,6 +28,7 @@ export const RESERVED_DATA_FY_ATTRIBUTES = [
   "data-fy-include-src",
   "data-fy-props",
   "data-fy-source-line",
+  "data-fy-controller-path",
 ] as const;
 
 const ANIMATION_SET = new Set<string>(ANIMATION_ATTRIBUTES);

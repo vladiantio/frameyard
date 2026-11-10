@@ -22,6 +22,7 @@ const cardPartial = `<fy-partial>
   <script type="application/json" data-fy="props">{ "label": "Idle" }</script>
   <style>.card { color: red; }</style>
   <div class="card" data-fy-text="label"></div>
+  <script type="text/fy-controller">export default { mount() {} };</script>
 </fy-partial>
 `;
 
@@ -220,6 +221,14 @@ describe("preview server", () => {
     expect(html).toContain('@scope ([data-fy-include="include-1"]) to ([data-fy-include])');
     expect(html).toContain("fy-partial { display: contents; }");
     expect(html).not.toContain("<fy-include");
+  });
+
+  it("serves inline partial controllers through the partial URL", async () => {
+    const response = await fetch(new URL("/compositions/partials/card.html?__fy-controller=include-1", server.url));
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("text/javascript");
+    expect(await response.text()).toContain("mount()");
   });
 
   it("serves derived subtitle exports with subtitle media types", async () => {

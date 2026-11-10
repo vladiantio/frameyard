@@ -133,6 +133,16 @@ const badgePartial = `<fy-partial>
     body { background: rgb(255, 0, 0); }
   </style>
   <span class="badge" data-fy-text="label"></span>
+  <script type="text/fy-controller">
+export default {
+  mount({ root, props }) {
+    root.dataset.mountedLabel = props.label;
+  },
+  update({ frame, root }) {
+    root.dataset.controllerFrame = String(frame);
+  },
+};
+  </script>
 </fy-partial>
 `;
 
@@ -990,11 +1000,19 @@ describe("browser preview runtime", () => {
         colors: badges.map((badge) => getComputedStyle(badge).color),
         body: getComputedStyle(doc.body).backgroundColor,
         parent: doc.querySelector("#parent")?.textContent,
+        partials: Array.from(doc.querySelectorAll("fy-partial")).map((partial) => ({
+          mounted: (partial as HTMLElement).dataset.mountedLabel,
+          frame: (partial as HTMLElement).dataset.controllerFrame,
+        })),
       };
     });
     expect(state.colors).toEqual(["rgb(1, 2, 3)", "rgb(1, 2, 3)"]);
     expect(state.body).not.toBe("rgb(255, 0, 0)");
     expect(state.parent).toBe("Parent");
+    expect(state.partials).toEqual([
+      { mounted: "Live", frame: "0" },
+      { mounted: "Replay", frame: "0" },
+    ]);
 
     await frame.locator(".badge").first().click();
     await page.waitForFunction(() => !(document.querySelector("#inspector") as HTMLElement | null)?.hidden);

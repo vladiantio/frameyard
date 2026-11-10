@@ -1,9 +1,10 @@
-export { readCompositionDescriptor } from "./descriptor.js";
+export { readCompositionDescriptor, readControllerDeclaration } from "./descriptor.js";
 export type {
   CompositionDescriptor,
   CompositionDescriptorResult,
   CompositionRootScope,
   ReadCompositionDescriptorOptions,
+  ReadControllerDeclarationOptions,
 } from "./descriptor.js";
 export { parseIncludeProps, readPartialDescriptor, resolvePartialProps } from "./partial.js";
 export type {

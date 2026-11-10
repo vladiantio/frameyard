@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { defaultTreeAdapter, serialize } from "parse5";
 import { type CompositionDiagnostic, type CompositionDiagnosticDetails } from "../contracts.js";
@@ -208,6 +208,59 @@ function detectPartialShell(document: HtmlDocument, pathName: string, includeCha
  * Expands every `<fy-include>` in an entry fragment into a `<fy-partial>` root.
  * The resolver is Node-only; the browser host receives the expanded document.
  */
+/** Reads an inline controller from a partial file for the preview server route. */
+export async function readInlinePartialController(options: {
+  projectRoot: string;
+  entry: string;
+}): Promise<string | null> {
+  const projectRoot = path.resolve(options.projectRoot);
+  const entry = normalizeRelative(options.entry);
+  const absolute = path.resolve(projectRoot, entry);
+  if (absolute !== projectRoot && !absolute.startsWith(projectRoot + path.sep)) {
+    return null;
+  }
+  if (path.extname(absolute).toLowerCase() !== ".html") {
+    return null;
+  }
+
+  let html: string;
+  try {
+    html = await readFile(absolute, "utf8");
+  } catch {
+    return null;
+  }
+
+  let fragment: HtmlRoot;
+  try {
+    fragment = parseHtmlFragment(html);
+  } catch {
+    return null;
+  }
+
+  const roots = findElements(fragment, (element) => element.tagName === "fy-partial");
+  if (roots.length !== 1) {
+    return null;
+  }
+  const root = roots[0] as HtmlElement;
+  if (!fragment.childNodes.includes(root)) {
+    return null;
+  }
+
+  const read = readPartialDescriptor(createParse5Adapter(root), {
+    path: entry,
+    root,
+    resolvePath: (raw) => {
+      const resolved = path.resolve(path.dirname(absolute), raw);
+      if (resolved !== projectRoot && !resolved.startsWith(projectRoot + path.sep)) {
+        throw new Error(`Controller path escapes the project root: "${raw}".`);
+      }
+      return path.relative(projectRoot, resolved).split(path.sep).join("/");
+    },
+  });
+  const controller = read.descriptor.controller;
+  return controller?.kind === "inline" && controller.source !== undefined ? controller.source : null;
+}
+
 export async function expandCompositionIncludes(
   options: ExpandCompositionIncludesOptions,
 ): Promise<ExpandedComposition> {
@@ -479,6 +532,13 @@ export async function expandCompositionIncludes(
     const descriptor = readPartialDescriptor(rootAdapter, {
       path: resolved.relative,
       root,
+      resolvePath: (raw) => {
+        const absolute = path.resolve(path.dirname(path.resolve(projectRoot, resolved.relative)), raw);
+        if (absolute !== projectRoot && !absolute.startsWith(projectRoot + path.sep)) {
+          throw new Error(`Controller path escapes the project root: "${raw}".`);
+        }
+        return path.relative(projectRoot, absolute).split(path.sep).join("/");
+      },
     });
     for (const diagnostic of descriptor.diagnostics) {
       diagnostic.details = {
@@ -486,6 +546,43 @@ export async function expandCompositionIncludes(
         includeChain: targetChain,
       };
       diagnostics.push(diagnostic);
+    }
+
+    const partialController = descriptor.descriptor.controller;
+    if (partialController?.kind === "external" && partialController.src !== undefined) {
+      const controllerScript = rootAdapter
+        .children(root)
+        .find(
+          (child) =>
+            isElement(child) &&
+            rootAdapter.tagName(child) === "script" &&
+            getAttribute(rootAdapter, child, "type")?.toLowerCase() === "text/fy-controller",
+        );
+      if (controllerScript !== undefined && isElement(controllerScript)) {
+        setAttribute(controllerScript, "data-fy-controller-path", partialController.src);
+      }
+
+      try {
+        const controllerStat = await stat(path.resolve(projectRoot, partialController.src));
+        if (!controllerStat.isFile()) {
+          throw new Error("not a file");
+        }
+      } catch {
+        diagnostics.push(
+          createDiagnostic(
+            "error",
+            "CONTROLLER_INVALID",
+            `Included controller file does not exist: "${partialController.src}".`,
+            {
+              path: resolved.relative,
+              includeChain: targetChain,
+              ...(partialController.line !== undefined ? { line: partialController.line } : {}),
+              ...(partialController.column !== undefined ? { column: partialController.column } : {}),
+              ...(partialController.rawSrc !== undefined ? { value: partialController.rawSrc } : {}),
+            },
+          ),
+        );
+      }
     }
 
     const rawProps = getAttribute(adapter, element, "props");

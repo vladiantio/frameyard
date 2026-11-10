@@ -153,6 +153,17 @@ describe.concurrent("CLI stills and composition checks", () => {
       kind: "image",
     });
     expect(await pngPixel(path.join(root, "include-static.png"), 20, 15)).toEqual([255, 0, 0]);
+
+    const controllerCheck = await run(["check", "include-controller", "--project", root, "--json"], root);
+    expect(controllerCheck.code).toBe(0);
+    expect(JSON.parse(controllerCheck.stdout)).toMatchObject({ ok: true, command: "check", diagnostics: [] });
+
+    const controllerStill = await run(
+      ["still", "include-controller", "--frame", "1", "--out", "include-controller.png", "--project", root, "--json"],
+      root,
+    );
+    expect(controllerStill.code).toBe(0);
+    expect(await pngPixel(path.join(root, "include-controller.png"), 20, 15)).toEqual([0, 255, 0]);
   });
 
   it("checks, stills, and renders a static composition as a PNG", async () => {

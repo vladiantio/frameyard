@@ -238,7 +238,7 @@ Include it from a composition root:
 </fy-composition>
 ```
 
-`src` resolves relative to the including file, or from the project root when it starts with `/`. Include props merge over the partial's schema and default props; included bindings see only those scoped props. Included styles are wrapped in `@scope (...) to (...)`, so they cannot restyle the parent or a nested include. Includes are static: no conditionals, loops, remote files, or partial controllers yet. Partials that reference assets should use project-root URLs such as `/assets/logo.png`. See the [includes reference](./skills/frameyard/references/includes.md) and [ADR 0030](./docs/adr/0030-reuse-composition-fragments-with-scoped-includes.md).
+`src` resolves relative to the including file, or from the project root when it starts with `/`. Include props merge over the partial's schema and default props; included bindings see only those scoped props. Included styles are wrapped in `@scope (...) to (...)`, so they cannot restyle the parent or a nested include. Includes are static: no conditionals, loops, or remote files. A partial may declare one inline or external controller; each include instance gets its own module instance, mounts pre-order, updates with the same frame, and disposes in reverse. Partials that reference assets should use project-root URLs such as `/assets/logo.png`. See the [includes reference](./skills/frameyard/references/includes.md) and [ADR 0030](./docs/adr/0030-reuse-composition-fragments-with-scoped-includes.md).
 
 ### Props schema
 

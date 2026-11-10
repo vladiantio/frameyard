@@ -59,7 +59,7 @@ The authoring source of an HTML composition: body content with one top-level `<f
 _Avoid_: HTML document, page
 
 **Composition partial**:
-A reusable HTML fragment with one `<fy-partial>` root, optional scoped props and schema, and inline styles. A partial is included by a composition with `<fy-include>` and is not a `fy.config.js` entry. Controller support is pending.
+A reusable HTML fragment with one `<fy-partial>` root, optional scoped props and schema, inline styles, and at most one controller. A partial is included by a composition with `<fy-include>` and is not a `fy.config.js` entry.
 _Avoid_: Component, template, snippet
 
 **Composition include**:
@@ -67,7 +67,7 @@ A static `<fy-include>` reference that expands a composition partial into the pa
 _Avoid_: Import, template call
 
 **Include scope**:
-The `<fy-partial>` element and its subtree: its own immutable props, binding boundary, and scoped CSS.
+The `<fy-partial>` element and its subtree: its own immutable props, binding boundary, scoped CSS, and optional controller instance.
 _Avoid_: Shadow root, component instance
 
 **Scoped props**:
@@ -79,15 +79,15 @@ A composition that does not paint a background, so a timeline clip can reveal th
 _Avoid_: Alpha composition, overlay
 
 **Composition controller**:
-An optional JavaScript controller, either inline in the composition fragment or in an external module, that performs per-frame computation an HTML composition's declarative HTML and CSS cannot express.
+An optional JavaScript controller, either inline in the composition fragment or in an external module, that performs per-frame computation an HTML composition's declarative HTML and CSS cannot express. A composition has one root controller; each include instance may run its own scoped controller.
 _Avoid_: Composition module, plugin
 
 **Inline controller**:
-A composition controller whose source is embedded in the composition fragment.
+A controller whose source is embedded in the composition or partial fragment.
 _Avoid_: Embedded script
 
 **External controller**:
-A composition controller whose source is a separate JavaScript module referenced by the composition fragment.
+A controller whose source is a separate JavaScript module referenced by the composition or partial fragment.
 _Avoid_: Controller file
 
 **Declarative binding**:

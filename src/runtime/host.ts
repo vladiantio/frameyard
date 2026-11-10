@@ -14,6 +14,7 @@ import {
   isPlainObject,
   mergeProps,
   type CompositionDiagnostic,
+  type CompositionDiagnosticDetails,
   type CompositionFormat,
   type CompositionMetadata,
   type ControllerDeclaration,
@@ -58,6 +59,16 @@ interface ControllerModule {
   validateProps?(props: Readonly<Props>): void | string[];
 }
 
+interface PartialControllerInstance {
+  declaration: ControllerDeclaration;
+  module: ControllerModule;
+  root: HTMLElement;
+  props: Readonly<Props>;
+  path: string;
+  includeChain: string[];
+  mounted: boolean;
+}
+
 interface HostRuntimeOptions {
   root: HTMLElement;
   path: string;
@@ -97,6 +108,7 @@ class HostRuntime implements FrameyardHost {
   private readonly diagnosticsList: CompositionDiagnostic[] = [];
   private readonly diagnosticKeys = new Set<string>();
   private readonly partialScopes = new Map<HTMLElement, Readonly<Props>>();
+  private readonly partialControllers: PartialControllerInstance[] = [];
   props: Readonly<Props>;
   private currentFrame = 0;
   private loaded = false;
@@ -291,7 +303,7 @@ class HostRuntime implements FrameyardHost {
         path: this.path,
         onDiagnostic: (diagnostic) => this.addDiagnostic(diagnostic),
       });
-      this.applyPartialScopes();
+      await this.applyPartialScopes();
 
       const animation = readAnimationDeclarations(createDomAdapter(this.root), {
         path: this.path,
@@ -318,6 +330,8 @@ class HostRuntime implements FrameyardHost {
       }
       this.assertActive();
       this.mounted = true;
+      await this.mountPartialControllers();
+      this.assertActive();
 
       if (this.metadata.static === true) {
         const postMountAnimation = readAnimationDeclarations(createDomAdapter(this.root), {
@@ -344,6 +358,17 @@ class HostRuntime implements FrameyardHost {
             severity: "warning",
             code: "STATIC_UPDATE_IGNORED",
             message: "Static compositions do not run update(); move initialization into mount().",
+          });
+        }
+        for (const controller of this.partialControllers) {
+          if (!controller.module.update) {
+            continue;
+          }
+          this.addDiagnostic({
+            severity: "warning",
+            code: "STATIC_UPDATE_IGNORED",
+            message: `Static compositions do not run update() for "${controller.path}"; move initialization into mount().`,
+            details: { path: controller.path, includeChain: controller.includeChain },
           });
         }
 
@@ -435,6 +460,7 @@ class HostRuntime implements FrameyardHost {
     } catch (error) {
       this.loaded = false;
       this.hideRoot();
+      await this.disposeCurrent();
       this.addError(error, null);
       throw error;
     }
@@ -446,16 +472,63 @@ class HostRuntime implements FrameyardHost {
     }
   }
 
-  private applyPartialScopes(): void {
+  private includeChainForPartial(partial: HTMLElement, partialPath: string): string[] {
+    const chain: string[] = [];
+    let current = partial.parentElement;
+    while (current !== null) {
+      if (current.tagName.toLowerCase() === "fy-partial") {
+        const src = current.getAttribute("data-fy-include-src");
+        if (src !== null) {
+          chain.unshift(src);
+        }
+      }
+      current = current.parentElement;
+    }
+    return [this.path, ...chain, partialPath];
+  }
+
+  private partialControllerUrl(declaration: ControllerDeclaration, partial: HTMLElement, partialPath: string): string {
+    const instance = partial.getAttribute("data-fy-include") ?? partialPath;
+    if (declaration.kind === "external") {
+      if (declaration.src === undefined || declaration.src.length === 0) {
+        throw new FrameyardError(
+          "CONTROLLER_INVALID",
+          `External controller for "${partialPath}" is missing a resolved path.`,
+          { details: { path: partialPath } },
+        );
+      }
+      const url = new URL(declaration.src.startsWith("/") ? declaration.src : `/${declaration.src}`, document.baseURI);
+      url.searchParams.set("__fy-instance", instance);
+      return url.href;
+    }
+    const url = new URL(`/${partialPath}`, document.baseURI);
+    url.searchParams.set("__fy-controller", instance);
+    return url.href;
+  }
+
+  private partialControllerSink(path: string, includeChain: string[]): DiagnosticSink {
+    return (message) => {
+      this.addDiagnostic({
+        severity: "warning",
+        code: "DETERMINISM_WARNING",
+        message,
+        details: { path, includeChain },
+      });
+    };
+  }
+
+  private async applyPartialScopes(): Promise<void> {
     const partials = Array.from(this.root.querySelectorAll<HTMLElement>("fy-partial[data-fy-include]"));
     for (const partial of partials) {
       if (!partial.isConnected) {
         continue;
       }
       const partialPath = partial.getAttribute("data-fy-include-src") ?? this.path;
+      const includeChain = this.includeChainForPartial(partial, partialPath);
       const read = readPartialDescriptor(createDomAdapter(partial), {
         path: partialPath,
         root: partial,
+        allowFrameworkPath: true,
       });
       if (!read.valid) {
         const first = read.diagnostics.find((diagnostic) => diagnostic.severity === "error");
@@ -476,7 +549,7 @@ class HostRuntime implements FrameyardHost {
           "PROPS_INVALID",
           `Invalid include props: ${parsed.error ?? "props must be a JSON object."}`,
           {
-            details: { path: partialPath },
+            details: { path: partialPath, includeChain },
           },
         );
       }
@@ -487,6 +560,7 @@ class HostRuntime implements FrameyardHost {
         throw new FrameyardError("PROPS_SCHEMA_INVALID", `Invalid props: ${first.message}`, {
           details: {
             path: partialPath,
+            includeChain,
             value: first.path,
             ...(first.suggestion !== undefined ? { suggestion: first.suggestion } : {}),
           },
@@ -496,10 +570,27 @@ class HostRuntime implements FrameyardHost {
             message: issue.message,
             details: {
               path: partialPath,
+              includeChain,
               value: issue.path,
               ...(issue.suggestion !== undefined ? { suggestion: issue.suggestion } : {}),
             },
           })),
+        });
+      }
+
+      const declaration = read.descriptor.controller;
+      if (declaration !== null) {
+        const url = this.partialControllerUrl(declaration, partial, partialPath);
+        const module = await loadControllerModule(url, { path: partialPath, includeChain });
+        validateControllerProps(module.validateProps, resolved.props, { path: partialPath, includeChain });
+        this.partialControllers.push({
+          declaration,
+          module,
+          root: partial,
+          props: resolved.props,
+          path: partialPath,
+          includeChain,
+          mounted: false,
         });
       }
 
@@ -514,17 +605,58 @@ class HostRuntime implements FrameyardHost {
     }
   }
 
-  private async disposeCurrent(): Promise<void> {
-    if (this.mounted && this.controllerModule?.dispose) {
+  private async mountPartialControllers(): Promise<void> {
+    for (const controller of this.partialControllers) {
+      if (controller.module.mount) {
+        await withDiagnosticsAsync(
+          "Include mount()",
+          this.partialControllerSink(controller.path, controller.includeChain),
+          () => controller.module.mount?.({ root: controller.root, props: controller.props }),
+        );
+      }
+      controller.mounted = true;
+    }
+  }
+
+  private async disposeMountedControllers(): Promise<void> {
+    for (const controller of [...this.partialControllers].reverse()) {
+      if (!controller.mounted) {
+        continue;
+      }
+      controller.mounted = false;
+      if (!controller.module.dispose) {
+        continue;
+      }
       try {
-        await withDiagnosticsAsync("Composition dispose()", this.diagnosticSink, () =>
-          this.controllerModule?.dispose?.(),
+        await withDiagnosticsAsync(
+          "Include dispose()",
+          this.partialControllerSink(controller.path, controller.includeChain),
+          () => controller.module.dispose?.(),
         );
       } catch (error) {
         this.addError(error, null);
       }
     }
+
+    if (!this.mounted) {
+      return;
+    }
     this.mounted = false;
+    if (!this.controllerModule?.dispose) {
+      return;
+    }
+    try {
+      await withDiagnosticsAsync("Composition dispose()", this.diagnosticSink, () =>
+        this.controllerModule?.dispose?.(),
+      );
+    } catch (error) {
+      this.addError(error, null);
+    }
+  }
+
+  private async disposeCurrent(): Promise<void> {
+    await this.disposeMountedControllers();
+    this.partialControllers.length = 0;
     this.partialScopes.clear();
     releaseMedia(this.root);
     this.loaded = false;
@@ -568,6 +700,24 @@ class HostRuntime implements FrameyardHost {
         throw new FrameyardError(
           "COMPOSITION_UPDATE_ASYNC",
           `Composition update() must be synchronous, but it returned a promise at frame ${frame}.`,
+        );
+      }
+    }
+    for (const controller of this.partialControllers) {
+      if (!controller.mounted || !controller.module.update) {
+        continue;
+      }
+      const result = withDiagnosticsSync(
+        "Include update()",
+        frame,
+        this.partialControllerSink(controller.path, controller.includeChain),
+        () => controller.module.update?.({ frame, props: controller.props, root: controller.root }),
+      ) as unknown;
+      if (isThenable(result)) {
+        throw new FrameyardError(
+          "COMPOSITION_UPDATE_ASYNC",
+          `Include update() in "${controller.path}" must be synchronous, but it returned a promise at frame ${frame}.`,
+          { details: { path: controller.path, includeChain: controller.includeChain } },
         );
       }
     }
@@ -712,25 +862,40 @@ function resolveHostProps(
     }
   }
 
+  validateControllerProps(validateProps, merged);
+  return merged;
+}
+
+function validateControllerProps(
+  validateProps: ControllerModule["validateProps"],
+  props: Readonly<Props>,
+  details?: CompositionDiagnosticDetails,
+): void {
   if (!validateProps) {
-    return merged;
+    return;
   }
 
   let errors: void | string[];
   try {
-    errors = validateProps(merged);
+    errors = validateProps(props);
   } catch (error) {
-    throw new FrameyardError("PROPS_INVALID", `Props validation failed: ${errorMessage(error)}`, { cause: error });
+    throw new FrameyardError("PROPS_INVALID", `Props validation failed: ${errorMessage(error)}`, {
+      cause: error,
+      details,
+    });
   }
   if (errors !== undefined) {
     if (!Array.isArray(errors) || errors.some((item) => typeof item !== "string")) {
-      throw new FrameyardError("PROPS_INVALID", "validateProps() must return void or an array of strings.");
+      throw new FrameyardError("PROPS_INVALID", "validateProps() must return void or an array of strings.", {
+        details,
+      });
     }
     if (errors.length > 0) {
-      throw new FrameyardError("PROPS_INVALID", `Invalid props: ${errors.join("; ")}`);
+      throw new FrameyardError("PROPS_INVALID", `Invalid props: ${errors.join("; ")}`, {
+        details,
+      });
     }
   }
-  return merged;
 }
 
 async function waitForDom(): Promise<void> {
@@ -742,6 +907,48 @@ async function waitForDom(): Promise<void> {
   });
 }
 
+async function loadControllerModule(url: string, details?: CompositionDiagnosticDetails): Promise<ControllerModule> {
+  let module: { default?: unknown };
+  try {
+    module = (await import(url)) as { default?: unknown };
+  } catch (error) {
+    throw new FrameyardError("CONTROLLER_INVALID", `Could not load controller ${url}: ${errorMessage(error)}`, {
+      cause: error,
+      details,
+    });
+  }
+
+  if (!isPlainObject(module.default)) {
+    throw new FrameyardError("CONTROLLER_INVALID", `Controller ${url} must default-export an object.`, {
+      details,
+    });
+  }
+
+  const controller = module.default as ControllerModule;
+  for (const key of ["mount", "update", "dispose", "validateProps"] as const) {
+    if (controller[key] !== undefined && typeof controller[key] !== "function") {
+      throw new FrameyardError("CONTROLLER_INVALID", `Controller ${key} must be a function when provided.`, {
+        details,
+      });
+    }
+  }
+  if (!controller.mount && !controller.update && !controller.validateProps) {
+    throw new FrameyardError(
+      "CONTROLLER_INVALID",
+      "Controller must export at least one of mount(), update(), or validateProps().",
+      { details },
+    );
+  }
+  if (controller.update && isAsyncFunction(controller.update)) {
+    throw new FrameyardError(
+      "CONTROLLER_INVALID",
+      "Controller update() must be synchronous; finish asynchronous work in mount().",
+      { details },
+    );
+  }
+  return controller;
+}
+
 async function importController(declaration: ControllerDeclaration | null): Promise<ControllerModule | null> {
   if (!declaration) {
     return null;
@@ -751,39 +958,7 @@ async function importController(declaration: ControllerDeclaration | null): Prom
     declaration.kind === "external"
       ? new URL(declaration.rawSrc ?? declaration.src ?? "", document.baseURI).href
       : new URL("?__fy-controller", document.baseURI).href;
-
-  let module: { default?: unknown };
-  try {
-    module = (await import(url)) as { default?: unknown };
-  } catch (error) {
-    throw new FrameyardError("CONTROLLER_INVALID", `Could not load controller ${url}: ${errorMessage(error)}`, {
-      cause: error,
-    });
-  }
-
-  if (!isPlainObject(module.default)) {
-    throw new FrameyardError("CONTROLLER_INVALID", `Controller ${url} must default-export an object.`);
-  }
-
-  const controller = module.default as ControllerModule;
-  for (const key of ["mount", "update", "dispose", "validateProps"] as const) {
-    if (controller[key] !== undefined && typeof controller[key] !== "function") {
-      throw new FrameyardError("CONTROLLER_INVALID", `Controller ${key} must be a function when provided.`);
-    }
-  }
-  if (!controller.mount && !controller.update && !controller.validateProps) {
-    throw new FrameyardError(
-      "CONTROLLER_INVALID",
-      "Controller must export at least one of mount(), update(), or validateProps().",
-    );
-  }
-  if (controller.update && isAsyncFunction(controller.update)) {
-    throw new FrameyardError(
-      "CONTROLLER_INVALID",
-      "Controller update() must be synchronous; finish asynchronous work in mount().",
-    );
-  }
-  return controller;
+  return loadControllerModule(url);
 }
 
 function isThenable(value: unknown): value is PromiseLike<unknown> {

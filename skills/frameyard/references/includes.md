@@ -1,8 +1,8 @@
 # Composition includes
 
 Use an include when several compositions share the same markup, styles, props,
-and bindings. Use a composition when the reusable unit needs its own format,
-frame clock, controller, or a timeline clip.
+bindings, and optional scoped controller. Use a composition when the reusable
+unit needs its own format, frame clock, or a separate timeline clip.
 
 ## Files
 
@@ -24,8 +24,8 @@ root. It is not listed in `fy.config.js`.
 ```
 
 A partial may contain one props block, one props-schema block, direct `<style>`
-elements, and content. It cannot contain a document shell, another
-`<fy-partial>`, an import map, a stylesheet link, or a controller yet.
+elements, at most one controller, and content. It cannot contain a document
+shell, another `<fy-partial>`, an import map, or a stylesheet link.
 
 ## Include
 
@@ -63,6 +63,28 @@ value for visual theming.
 
 Timeline composition-clip props and timeline variables do not flow into include
 props. Use a composition when the timeline must parameterize the data.
+
+## Controllers
+
+A partial may declare one controller, inline or external:
+
+```html
+<script type="text/fy-controller" src="./badge.controller.js"></script>
+```
+
+- An external `src` resolves relative to the partial file.
+- Each include instance loads its own module instance. Module-scope state does
+  not leak between two uses of the same partial.
+- `validateProps` runs against the scoped props before any mount.
+- `mount` and `update` run root-first, then includes in document order.
+  `dispose` runs in reverse. Every controller receives `{ root, props }`, where
+  `root` is its `<fy-partial>`.
+- A static composition mounts included controllers but does not call
+  `update()` or set frame state.
+- Import maps inside a partial are not supported; use the root composition's
+  import map or relative imports.
+- `Math.random()`, `Date.now()`, and timers produce `DETERMINISM_WARNING`
+  attributed to the partial path.
 
 ## Styles
 

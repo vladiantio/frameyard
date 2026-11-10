@@ -756,6 +756,14 @@ class HtmlCompositionValidator {
   private validateBindings(element: HtmlElement, repeatDepth: number, props: Readonly<Props>): void {
     this.scopeProps.set(element, props);
     if (element.tagName === "fy-partial") {
+      if (getAttribute(element, "data-fy-include") === undefined) {
+        this.error(
+          "INCLUDE_INVALID",
+          "Use <fy-include> with a partial file instead of a literal <fy-partial> in a composition.",
+          this.elementDetails(element),
+        );
+        return;
+      }
       this.validatePartialScope(element, repeatDepth);
       return;
     }
@@ -893,7 +901,19 @@ class HtmlCompositionValidator {
   private validatePartialScope(element: HtmlElement, repeatDepth: number): void {
     const partialPath = this.originPath(element);
     const adapter = createParse5Adapter(element);
-    const partial = readPartialDescriptor(adapter, { path: partialPath, root: element });
+    const partialDir = path.dirname(path.resolve(this.projectRoot, partialPath));
+    const partial = readPartialDescriptor(adapter, {
+      path: partialPath,
+      root: element,
+      allowFrameworkPath: true,
+      resolvePath: (raw) => {
+        const absolute = path.resolve(partialDir, raw);
+        if (absolute !== this.projectRoot && !absolute.startsWith(this.projectRoot + path.sep)) {
+          throw new Error(`Controller path escapes the project root: "${raw}".`);
+        }
+        return path.relative(this.projectRoot, absolute).split(path.sep).join("/");
+      },
+    });
     const chain = [...(this.includeChainFor(element) ?? [this.entry]), partialPath];
     for (const diagnostic of partial.diagnostics) {
       diagnostic.details = { ...diagnostic.details, includeChain: chain };

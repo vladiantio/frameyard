@@ -53,6 +53,86 @@ const partialHtml = `<script type="application/json" data-fy="props">{ "title": 
 </fy-composition>
 `;
 
+const invalidPartialPropsHtml = `<fy-composition width="200" height="100" fps="10" duration-in-frames="4">
+  <fy-include src="./partials/required.html"></fy-include>
+</fy-composition>
+`;
+
+const requiredPartial = `<fy-partial>
+  <div id="required"></div>
+  <script type="text/fy-controller">
+export default {
+  validateProps(props) {
+    return typeof props.label === "string" ? [] : ["label is required"];
+  },
+  mount({ root }) {
+    root.dataset.mounted = "yes";
+  },
+};
+  </script>
+</fy-partial>
+`;
+
+const lifecycleHtml = `<fy-composition width="200" height="100" fps="10" duration-in-frames="4">
+  <fy-include src="./partials/lifecycle-badge.html" props='{"label":"Live"}'></fy-include>
+  <fy-include src="./partials/lifecycle-badge.html" props='{"label":"Replay"}'></fy-include>
+</fy-composition>
+<script type="text/fy-controller">
+export default {
+  mount() {
+    (window.__fyLifecycle ??= []).push("mount:root");
+  },
+  update({ frame }) {
+    (window.__fyLifecycle ??= []).push("update:root@" + frame);
+  },
+  dispose() {
+    (window.__fyLifecycle ??= []).push("dispose:root");
+  },
+};
+</script>
+`;
+
+const lifecycleBadge = `<fy-partial>
+  <script type="application/json" data-fy="props">{ "label": "Idle" }</script>
+  <div data-fy-text="label"></div>
+  <script type="text/fy-controller">
+let label;
+export default {
+  mount({ props }) {
+    label = props.label;
+    (window.__fyLifecycle ??= []).push("mount:" + label);
+  },
+  update({ frame, props }) {
+    (window.__fyLifecycle ??= []).push("update:" + props.label + "@" + frame);
+  },
+  dispose() {
+    (window.__fyLifecycle ??= []).push("dispose:" + label);
+  },
+};
+  </script>
+</fy-partial>
+`;
+
+const staticPartialHtml = `<fy-composition width="200" height="100">
+  <fy-include src="./partials/static-badge.html"></fy-include>
+</fy-composition>
+`;
+
+const staticBadgePartial = `<fy-partial>
+  <div id="static-badge"></div>
+  <script type="text/fy-controller">
+export default {
+  mount({ root }) {
+    root.dataset.mounted = "yes";
+  },
+  update({ root }) {
+    root.dataset.updated = "yes";
+  },
+};
+  </script>
+</fy-partial>
+`;
+
 const badgePartial = `<fy-partial>
   <script type="application/json" data-fy="props">{ "label": "Idle" }</script>
   <style>
@@ -61,6 +141,35 @@ const badgePartial = `<fy-partial>
   </style>
   <span class="badge" data-fy-text="label" data-fy-attr-data-label="label"></span>
   <span id="missing" data-fy-text="parentOnly"></span>
+  <script type="text/fy-controller">
+import { normalizeLabel } from "./badge-lib.js";
+
+let currentRoot;
+let mounts = 0;
+let disposals = 0;
+
+export default {
+  validateProps(props) {
+    return typeof props.label === "string" ? [] : ["label must be a string"];
+  },
+  mount({ root, props }) {
+    currentRoot = root;
+    mounts += 1;
+    Math.random();
+    root.dataset.mounts = String(mounts);
+    root.dataset.disposals = String(disposals);
+    root.dataset.mountedLabel = normalizeLabel(props.label);
+  },
+  update({ frame, props, root }) {
+    root.dataset.frame = String(frame);
+    root.dataset.updatedLabel = normalizeLabel(props.label);
+  },
+  dispose() {
+    disposals += 1;
+    (window.__fyDisposeOrder ??= []).push(currentRoot?.dataset.mountedLabel ?? "unknown");
+  },
+};
+  </script>
 </fy-partial>
 `;
 
@@ -229,6 +338,9 @@ beforeAll(async () => {
       "static-media": "./compositions/static-media.html",
       "static-animation": "./compositions/static-animation.html",
       partial: "./compositions/partial.html",
+      "partial-invalid-props": "./compositions/partial-invalid-props.html",
+      "partial-static": "./compositions/partial-static.html",
+      "partial-lifecycle": "./compositions/partial-lifecycle.html",
     } };\n`,
   );
   await writeFile(path.join(root, "compositions", "hello.html"), helloHtml);
@@ -245,8 +357,18 @@ beforeAll(async () => {
   await writeFile(path.join(root, "compositions", "static-media.html"), staticMediaHtml);
   await writeFile(path.join(root, "compositions", "static-animation.html"), staticAnimationHtml);
   await writeFile(path.join(root, "compositions", "partial.html"), partialHtml);
+  await writeFile(path.join(root, "compositions", "partial-invalid-props.html"), invalidPartialPropsHtml);
+  await writeFile(path.join(root, "compositions", "partial-static.html"), staticPartialHtml);
+  await writeFile(path.join(root, "compositions", "partial-lifecycle.html"), lifecycleHtml);
   await mkdir(path.join(root, "compositions", "partials"), { recursive: true });
   await writeFile(path.join(root, "compositions", "partials", "badge.html"), badgePartial);
+  await writeFile(
+    path.join(root, "compositions", "partials", "badge-lib.js"),
+    "export function normalizeLabel(value) { return String(value); }\n",
+  );
+  await writeFile(path.join(root, "compositions", "partials", "required.html"), requiredPartial);
+  await writeFile(path.join(root, "compositions", "partials", "static-badge.html"), staticBadgePartial);
+  await writeFile(path.join(root, "compositions", "partials", "lifecycle-badge.html"), lifecycleBadge);
   await writeFile(path.join(root, "compositions", "demo-lib.js"), demoLibJs);
   await writeFile(
     path.join(root, "broken.html"),
@@ -465,6 +587,11 @@ describe("browser composition host", () => {
           src: partial.getAttribute("data-fy-include-src"),
           label: partial.style.getPropertyValue("--fy-prop-label"),
           display: getComputedStyle(partial).display,
+          mounts: partial.dataset.mounts,
+          disposals: partial.dataset.disposals,
+          mountedLabel: partial.dataset.mountedLabel,
+          frame: partial.dataset.frame,
+          updatedLabel: partial.dataset.updatedLabel,
         })),
         parent: document.querySelector("#parent")?.textContent,
         missing: Array.from(document.querySelectorAll("#missing")).map((element) => element.textContent),
@@ -477,12 +604,44 @@ describe("browser composition host", () => {
       { text: "Replay", label: "Replay", color: "rgb(1, 2, 3)", line: "7" },
     ]);
     expect(state.partials).toEqual([
-      { src: "compositions/partials/badge.html", label: "Live", display: "contents" },
-      { src: "compositions/partials/badge.html", label: "Replay", display: "contents" },
+      {
+        src: "compositions/partials/badge.html",
+        label: "Live",
+        display: "contents",
+        mounts: "1",
+        disposals: "0",
+        mountedLabel: "Live",
+        frame: "0",
+        updatedLabel: "Live",
+      },
+      {
+        src: "compositions/partials/badge.html",
+        label: "Replay",
+        display: "contents",
+        mounts: "1",
+        disposals: "0",
+        mountedLabel: "Replay",
+        frame: "0",
+        updatedLabel: "Replay",
+      },
     ]);
     expect(state.parent).toBe("Parent");
     expect(state.missing).toEqual(["", ""]);
     expect(state.body).not.toBe("rgb(255, 0, 0)");
+
+    await host(page, (api) => {
+      (api.seek as (frame: number) => void)(2);
+    });
+    const atTwo = await page.evaluate(() =>
+      Array.from(document.querySelectorAll("fy-partial")).map((partial) => ({
+        frame: (partial as HTMLElement).dataset.frame,
+        updatedLabel: (partial as HTMLElement).dataset.updatedLabel,
+      })),
+    );
+    expect(atTwo).toEqual([
+      { frame: "2", updatedLabel: "Live" },
+      { frame: "2", updatedLabel: "Replay" },
+    ]);
 
     const diagnostics = await host(page, (api) => api.diagnostics);
     expect(diagnostics).toContainEqual(
@@ -495,7 +654,156 @@ describe("browser composition host", () => {
         }),
       }),
     );
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: "DETERMINISM_WARNING",
+        message: expect.stringContaining("Math.random()"),
+        details: expect.objectContaining({
+          path: "compositions/partials/badge.html",
+          includeChain: ["compositions/partial.html", "compositions/partials/badge.html"],
+        }),
+      }),
+    );
+
+    await host(page, async (api) => {
+      await (api.load as (options: { props: unknown }) => Promise<void>)({
+        props: { title: "Second", parentOnly: "leak" },
+      });
+    });
+    const afterReload = await page.evaluate(() =>
+      Array.from(document.querySelectorAll("fy-partial")).map((partial) => ({
+        mounts: (partial as HTMLElement).dataset.mounts,
+        disposals: (partial as HTMLElement).dataset.disposals,
+        mountedLabel: (partial as HTMLElement).dataset.mountedLabel,
+      })),
+    );
+    expect(afterReload).toEqual([
+      { mounts: "2", disposals: "1", mountedLabel: "Live" },
+      { mounts: "2", disposals: "1", mountedLabel: "Replay" },
+    ]);
+
+    await page.evaluate(() => {
+      (window as Window & { __fyDisposeOrder?: string[] }).__fyDisposeOrder = [];
+    });
+    await host(page, async (api) => {
+      await (api.dispose as () => Promise<void>)();
+    });
+    const disposeOrder = await page.evaluate(
+      () => (window as Window & { __fyDisposeOrder?: string[] }).__fyDisposeOrder ?? [],
+    );
+    expect(disposeOrder).toEqual(["Replay", "Live"]);
     expect(pageErrors).toEqual([]);
+    await page.close();
+  });
+
+  it("rejects invalid include controller props before mounting", async () => {
+    const page = await openHost("partial-invalid-props.html");
+
+    const result = await page.evaluate(async () => {
+      const api = (window as unknown as Record<string, unknown>).__fy as {
+        ready: Promise<void>;
+        load(): Promise<void>;
+        diagnostics: Array<{ code: string; details?: Record<string, unknown> }>;
+      };
+      await api.ready;
+      let message = "";
+      try {
+        await api.load();
+      } catch (error) {
+        message = (error as Error).message;
+      }
+      const partial = document.querySelector("fy-partial") as HTMLElement | null;
+      return {
+        message,
+        mounted: partial?.dataset.mounted,
+        diagnostics: api.diagnostics,
+      };
+    });
+
+    expect(result.message).toContain("[PROPS_INVALID]");
+    expect(result.mounted).toBeUndefined();
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: "PROPS_INVALID",
+        details: expect.objectContaining({
+          path: "compositions/partials/required.html",
+          includeChain: ["compositions/partial-invalid-props.html", "compositions/partials/required.html"],
+        }),
+      }),
+    );
+    await page.close();
+  });
+
+  it("mounts included controllers in a static composition without update", async () => {
+    const page = await openHost("partial-static.html");
+    await host(page, async (api) => {
+      await (api.load as () => Promise<void>)();
+    });
+
+    const state = await page.evaluate(() => {
+      const partial = document.querySelector("fy-partial") as HTMLElement | null;
+      const api = (window as unknown as Record<string, unknown>).__fy as {
+        diagnostics: Array<{ code: string; details?: Record<string, unknown> }>;
+      };
+      return {
+        mounted: partial?.dataset.mounted,
+        updated: partial?.dataset.updated,
+        diagnostics: api.diagnostics,
+      };
+    });
+
+    expect(state.mounted).toBe("yes");
+    expect(state.updated).toBeUndefined();
+    expect(state.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: "STATIC_UPDATE_IGNORED",
+        details: expect.objectContaining({
+          path: "compositions/partials/static-badge.html",
+          includeChain: ["compositions/partial-static.html", "compositions/partials/static-badge.html"],
+        }),
+      }),
+    );
+    await page.close();
+  });
+
+  it("runs root and include controllers in pre-order and disposes in reverse", async () => {
+    const page = await openHost("partial-lifecycle.html");
+    await host(page, async (api) => {
+      await (api.load as () => Promise<void>)();
+    });
+    const afterLoad = await page.evaluate(() => (window as Window & { __fyLifecycle?: string[] }).__fyLifecycle ?? []);
+    expect(afterLoad).toEqual([
+      "mount:root",
+      "mount:Live",
+      "mount:Replay",
+      "update:root@0",
+      "update:Live@0",
+      "update:Replay@0",
+    ]);
+
+    await page.evaluate(() => {
+      (window as Window & { __fyLifecycle?: string[] }).__fyLifecycle = [];
+    });
+    await host(page, (api) => {
+      (api.seek as (frame: number) => void)(3);
+    });
+    expect(await page.evaluate(() => (window as Window & { __fyLifecycle?: string[] }).__fyLifecycle ?? [])).toEqual([
+      "update:root@3",
+      "update:Live@3",
+      "update:Replay@3",
+    ]);
+
+    await page.evaluate(() => {
+      (window as Window & { __fyLifecycle?: string[] }).__fyLifecycle = [];
+    });
+    await host(page, async (api) => {
+      await (api.dispose as () => Promise<void>)();
+    });
+    expect(await page.evaluate(() => (window as Window & { __fyLifecycle?: string[] }).__fyLifecycle ?? [])).toEqual([
+      "dispose:Replay",
+      "dispose:Live",
+      "dispose:root",
+    ]);
     await page.close();
   });
 

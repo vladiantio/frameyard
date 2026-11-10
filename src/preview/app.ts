@@ -531,6 +531,7 @@ export async function bootPreview(): Promise<void> {
       const read = readPartialDescriptor(createDomAdapter(partial), {
         path: partial.getAttribute("data-fy-include-src") ?? "partial",
         root: partial,
+        allowFrameworkPath: true,
       });
       const parsed = parseIncludeProps(partial.getAttribute("data-fy-props") ?? undefined);
       return resolvePartialProps(read.descriptor, parsed.value).props;

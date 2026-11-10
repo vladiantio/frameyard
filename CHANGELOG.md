@@ -13,10 +13,11 @@ contract change may ship in a minor release and is called out explicitly below.
 ### Added
 
 - Static composition includes: `<fy-include>` expands a reusable
-  `<fy-partial>` with scoped props, scoped bindings, and `@scope` CSS in
-  `check`, `still`, preview, and render. Includes support nested partials,
-  per-instance props and schema defaults, missing/cycle diagnostics, and an
-  include chain in diagnostics. Included controllers are not supported yet.
+  `<fy-partial>` with scoped props, scoped bindings, `@scope` CSS, and an
+  optional scoped controller in `check`, `still`, preview, and render.
+  Includes support nested partials, per-instance props and schema defaults,
+  one controller instance per include with pre-order mount/update and reverse
+  dispose, missing/cycle diagnostics, and an include chain in diagnostics.
 
 ## [0.12.1] - 2026-11-09
 

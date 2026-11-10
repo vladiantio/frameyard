@@ -1067,12 +1067,29 @@ describe("composition includes", () => {
     );
   });
 
+  it("rejects a literal <fy-partial> in a composition", async () => {
+    const result = await validate(
+      "include-literal",
+      `<fy-composition width="160" height="90" fps="10" duration-in-frames="2">
+  <fy-partial><div>Literal</div></fy-partial>
+</fy-composition>`,
+    );
+
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: "INCLUDE_INVALID",
+        message: expect.stringContaining("Use <fy-include>"),
+      }),
+    );
+  });
+
   it("rejects document shells, multiple roots, and content outside the partial", async () => {
     const fixtures = {
       "shell.html": `<!doctype html><html><body><fy-partial><div></div></fy-partial></body></html>`,
       "two-roots.html": `<fy-partial><div></div></fy-partial><fy-partial></fy-partial>`,
       "outside.html": `<fy-partial></fy-partial><div>outside</div>`,
       "nested-composition.html": `<fy-partial><fy-composition></fy-composition></fy-partial>`,
+      "import-map.html": `<fy-partial><script type="importmap">{}</script><div></div></fy-partial>`,
     };
     for (const [name, html] of Object.entries(fixtures)) {
       await writePartial(name, html);
@@ -1091,7 +1108,7 @@ describe("composition includes", () => {
     }
   });
 
-  it("rejects global style at-rules and controllers in a partial", async () => {
+  it("rejects global style at-rules and invalid controller declarations", async () => {
     await writePartial(
       "global-style.html",
       `<fy-partial>
@@ -1100,11 +1117,37 @@ describe("composition includes", () => {
 </fy-partial>`,
     );
     await writePartial(
-      "controller.html",
+      "inline-controller.html",
       `<fy-partial>
   <script type="text/fy-controller">export default { mount() {} };</script>
   <div></div>
 </fy-partial>`,
+    );
+    await writePartial(
+      "external-controller.html",
+      `<fy-partial>
+  <script type="text/fy-controller" src="./badge.controller.js"></script>
+  <div></div>
+</fy-partial>`,
+    );
+    await writePartial(
+      "missing-controller.html",
+      `<fy-partial>
+  <script type="text/fy-controller" src="./missing.controller.js"></script>
+  <div></div>
+</fy-partial>`,
+    );
+    await writePartial(
+      "two-controllers.html",
+      `<fy-partial>
+  <script type="text/fy-controller">export default { mount() {} };</script>
+  <script type="text/fy-controller">export default { mount() {} };</script>
+  <div></div>
+</fy-partial>`,
+    );
+    await writeFile(
+      path.join(root, "compositions", "partials", "badge.controller.js"),
+      "export default { mount() {} };\n",
     );
 
     const style = await validate(
@@ -1121,17 +1164,48 @@ describe("composition includes", () => {
       }),
     );
 
-    const controller = await validate(
-      "include-controller",
+    const inline = await validate(
+      "include-inline-controller",
       `<fy-composition width="160" height="90" fps="10" duration-in-frames="2">
-  <fy-include src="./partials/controller.html"></fy-include>
+  <fy-include src="./partials/inline-controller.html"></fy-include>
 </fy-composition>`,
     );
-    expect(controller.diagnostics).toContainEqual(
+    expect(inline.diagnostics.filter((diagnostic) => diagnostic.severity === "error")).toEqual([]);
+
+    const external = await validate(
+      "include-external-controller",
+      `<fy-composition width="160" height="90" fps="10" duration-in-frames="2">
+  <fy-include src="./partials/external-controller.html"></fy-include>
+</fy-composition>`,
+    );
+    expect(external.diagnostics.filter((diagnostic) => diagnostic.severity === "error")).toEqual([]);
+    expect(external.expandedFragment).toContain('data-fy-controller-path="compositions/partials/badge.controller.js"');
+
+    const missing = await validate(
+      "include-missing-controller",
+      `<fy-composition width="160" height="90" fps="10" duration-in-frames="2">
+  <fy-include src="./partials/missing-controller.html"></fy-include>
+</fy-composition>`,
+    );
+    expect(missing.diagnostics).toContainEqual(
       expect.objectContaining({
         code: "CONTROLLER_INVALID",
-        message: expect.stringContaining("not supported yet"),
-        details: expect.objectContaining({ path: "compositions/partials/controller.html" }),
+        message: expect.stringContaining("does not exist"),
+        details: expect.objectContaining({ path: "compositions/partials/missing-controller.html" }),
+      }),
+    );
+
+    const two = await validate(
+      "include-two-controllers",
+      `<fy-composition width="160" height="90" fps="10" duration-in-frames="2">
+  <fy-include src="./partials/two-controllers.html"></fy-include>
+</fy-composition>`,
+    );
+    expect(two.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: "CONTROLLER_INVALID",
+        message: expect.stringContaining("at most one controller"),
+        details: expect.objectContaining({ path: "compositions/partials/two-controllers.html" }),
       }),
     );
   });

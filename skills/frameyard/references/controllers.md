@@ -36,7 +36,26 @@ export default {
 };
 ```
 
-Exactly one controller is allowed, and it must be a top-level sibling of `<fy-composition>` in the fragment. Inline source is served through a virtual module URL, so relative imports and `import.meta.url` work like an external module. A literal `</script>` inside inline source must be escaped.
+A composition has exactly one root controller, and it must be a top-level sibling of `<fy-composition>` in the fragment. An included partial may have one controller as a direct child of `<fy-partial>`; each include instance loads a separate module. Inline source is served through a virtual module URL, so relative imports and `import.meta.url` work like an external module. A literal `</script>` inside inline source must be escaped.
+
+## Included partials
+
+```html
+<!-- compositions/partials/badge.html -->
+<fy-partial>
+  <script type="application/json" data-fy="props">{ "label": "Idle" }</script>
+  <span data-fy-text="label"></span>
+  <script type="text/fy-controller" src="./badge.controller.js"></script>
+</fy-partial>
+```
+
+- An external controller `src` resolves relative to the partial file.
+- Two uses of the same partial receive independent module instances; module-scope state does not leak between them.
+- `validateProps` runs against the include's scoped props before any mount.
+- Root controllers mount first, then includes in document order, parent before child. `update` uses the same order; `dispose` runs in reverse.
+- A static composition mounts included controllers but does not call `update()` or set frame state.
+- Import maps inside a partial are not supported; use relative imports or the root composition's import map.
+- Diagnostics from included controllers carry the partial path and include chain.
 
 ## Lifecycle
 
@@ -47,7 +66,7 @@ Exactly one controller is allowed, and it must be a top-level sibling of `<fy-co
 - `validateProps(props)` is optional and synchronous. Return an array of human-readable errors, or `void`.
 - A validation-only controller may export just `validateProps`.
 
-Keep mutable state in module scope, never on `this`. The controller module is imported once per page; `load` remounts it without re-importing, so `dispose` must reset module state.
+Keep mutable state in module scope, never on `this`. Each controller module (the root or one include instance) is imported once per page; `load` remounts it without re-importing, so `dispose` must reset module state.
 
 ## Props validation
 

@@ -154,6 +154,39 @@ const includePartial = `<fy-partial>
 </fy-partial>
 `;
 
+const includeControllerComposition = `<fy-composition width="160" height="90" fps="10" duration-in-frames="2">
+      <div style="position: absolute; inset: 0; background: #101820"></div>
+      <fy-include src="./partials/external-card.html" props='{"color":"#00ff00"}'></fy-include>
+    </fy-composition>
+`;
+
+const externalControllerPartial = `<fy-partial>
+  <script type="application/json" data-fy="props">{ "color": "#ff0000" }</script>
+  <div class="controller-card" style="position: absolute; left: 10px; top: 10px; width: 40px; height: 20px"></div>
+  <script type="text/fy-controller" src="./external-card.js"></script>
+</fy-partial>
+`;
+
+const externalControllerJs = `import { applyColor } from "./external-card-lib.js";
+
+let card;
+export default {
+  mount({ root, props }) {
+    card = root.querySelector(".controller-card");
+    applyColor(card, props.color);
+  },
+  update({ frame, props, root }) {
+    root.dataset.frame = String(frame);
+    applyColor(card, props.color);
+  },
+};
+`;
+
+const externalControllerLibJs = `export function applyColor(card, color) {
+  card.style.background = color;
+}
+`;
+
 function toneWav(seconds = 0.6): Buffer {
   const sampleRate = 8_000;
   const samples = Math.floor(sampleRate * seconds);
@@ -287,7 +320,7 @@ export async function createCliProject(options: CliProjectOptions = {}): Promise
   await mkdir(path.join(root, "assets"), { recursive: true });
   await writeFile(
     path.join(root, "fy.config.js"),
-    `export default { compositions: { demo: "./compositions/demo.html", media: "./compositions/media.html", long: "./compositions/long.html", "missing-video": "./compositions/missing-video.html", broken: "./compositions/broken.html", throwing: "./compositions/throwing.html", html: "./compositions/html.html", "html-invalid": "./compositions/html-invalid.html", legacy: "./compositions/legacy.html", static: "./compositions/static.html", preset: "./compositions/preset.html", schema: "./compositions/schema.html", "schema-required": "./compositions/schema-required.html", "schema-malformed": "./compositions/schema-malformed.html", include: "./compositions/include.html", "include-inline": "./compositions/include-inline.html", "include-static": "./compositions/include-static.html" } };\n`,
+    `export default { compositions: { demo: "./compositions/demo.html", media: "./compositions/media.html", long: "./compositions/long.html", "missing-video": "./compositions/missing-video.html", broken: "./compositions/broken.html", throwing: "./compositions/throwing.html", html: "./compositions/html.html", "html-invalid": "./compositions/html-invalid.html", legacy: "./compositions/legacy.html", static: "./compositions/static.html", preset: "./compositions/preset.html", schema: "./compositions/schema.html", "schema-required": "./compositions/schema-required.html", "schema-malformed": "./compositions/schema-malformed.html", include: "./compositions/include.html", "include-inline": "./compositions/include-inline.html", "include-static": "./compositions/include-static.html", "include-controller": "./compositions/include-controller.html" } };\n`,
   );
   await writeFile(path.join(root, "compositions", "demo.html"), composition);
   await writeFile(path.join(root, "compositions", "media.html"), mediaComposition);
@@ -301,7 +334,11 @@ export async function createCliProject(options: CliProjectOptions = {}): Promise
   await writeFile(path.join(root, "compositions", "include.html"), includeComposition);
   await writeFile(path.join(root, "compositions", "include-inline.html"), inlineIncludeComposition);
   await writeFile(path.join(root, "compositions", "include-static.html"), staticIncludeComposition);
+  await writeFile(path.join(root, "compositions", "include-controller.html"), includeControllerComposition);
   await writeFile(path.join(root, "compositions", "partials", "card.html"), includePartial);
+  await writeFile(path.join(root, "compositions", "partials", "external-card.html"), externalControllerPartial);
+  await writeFile(path.join(root, "compositions", "partials", "external-card.js"), externalControllerJs);
+  await writeFile(path.join(root, "compositions", "partials", "external-card-lib.js"), externalControllerLibJs);
   await writeFile(
     path.join(root, "compositions", "preset.html"),
     `<fy-composition width="160" height="90" fps="10" duration-in-frames="12">

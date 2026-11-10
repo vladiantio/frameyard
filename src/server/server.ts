@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { COMPOSITION_FORMAT_UNRESOLVED_MESSAGE } from "../composition/index.js";
 import type { CompositionDiagnostic, ControllerDeclaration } from "../contracts.js";
 import { FrameyardError } from "../errors.js";
+import { readInlinePartialController } from "../html/include.js";
 import { validateHtmlComposition } from "../html/validate.js";
 import { loadProject, type Project, type ProjectComposition } from "../project.js";
 import { renderFontCss } from "../fonts/css.js";
@@ -453,6 +454,19 @@ export async function startPreviewServer(options: PreviewServerOptions): Promise
           }),
           request.method === "HEAD",
         );
+        return;
+      }
+
+      if (url.searchParams.has("__fy-controller")) {
+        const source = await readInlinePartialController({
+          projectRoot: project.root,
+          entry: pathname.slice(1),
+        });
+        if (source !== null) {
+          sendJavaScript(response, 200, source, request.method === "HEAD");
+        } else {
+          sendJson(response, 404, { error: "Partial has no inline controller." });
+        }
         return;
       }
 

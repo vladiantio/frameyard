@@ -3,6 +3,7 @@ import {
   isPlainObject,
   mergeProps,
   type CompositionDiagnostic,
+  type ControllerDeclaration,
   type Props,
   type PropsSchema,
 } from "../contracts.js";
@@ -15,11 +16,13 @@ import {
 } from "../props-schema.js";
 import type { DocumentAdapter } from "./adapter.js";
 import { createDiagnostic, elementDetails } from "./diagnostics.js";
+import { readControllerDeclaration } from "./descriptor.js";
 import { getAttribute } from "./walk.js";
 
 export interface PartialDescriptor {
   defaultProps: Readonly<Props>;
   propsSchema: PropsSchema | null;
+  controller: ControllerDeclaration | null;
 }
 
 export interface PartialDescriptorResult<Node> {
@@ -34,6 +37,13 @@ export interface ReadPartialDescriptorOptions<Node> {
   path: string;
   /** The `<fy-partial>` root. The adapter may be rooted at this node. */
   root: Node;
+  /**
+   * Resolves an external controller `src` relative to the partial. Required
+   * when the controller has no framework-resolved path yet.
+   */
+  resolvePath?: (raw: string) => string;
+  /** Honor the framework-resolved controller path on an expanded partial. */
+  allowFrameworkPath?: boolean;
 }
 
 export interface ParsedIncludeProps {
@@ -258,15 +268,39 @@ export function readPartialDescriptor<Node>(
     );
   }
 
-  for (const match of collected.filter((candidate) => isControllerBlock(adapter, candidate.node))) {
+  const controllerBlocks = collected.filter((match) => isControllerBlock(adapter, match.node));
+  for (const match of controllerBlocks) {
+    if (match.parent !== root || match.inTemplate) {
+      diagnostics.push(
+        createDiagnostic(
+          "error",
+          "CONTROLLER_INVALID",
+          "The controller block must be a direct child of <fy-partial>.",
+          elementDetails(adapter, path, match.node),
+        ),
+      );
+    }
+  }
+  const directControllers = controllerBlocks.filter((match) => match.parent === root && !match.inTemplate);
+  for (const extra of directControllers.slice(1)) {
     diagnostics.push(
       createDiagnostic(
         "error",
         "CONTROLLER_INVALID",
-        "Controllers in included partials are not supported yet; remove the controller or inline the partial.",
-        elementDetails(adapter, path, match.node),
+        "A partial may declare at most one controller.",
+        elementDetails(adapter, path, extra.node),
       ),
     );
+  }
+  const controller =
+    directControllers[0] === undefined
+      ? null
+      : readControllerDeclaration(adapter, path, directControllers[0].node, {
+          allowFrameworkPath: options.allowFrameworkPath === true,
+          ...(options.resolvePath !== undefined ? { resolvePath: options.resolvePath } : {}),
+        });
+  if (controller !== null) {
+    diagnostics.push(...controller.diagnostics);
   }
 
   for (const match of collected.filter((candidate) => isStyleSheetLink(adapter, candidate.node))) {
@@ -306,7 +340,7 @@ export function readPartialDescriptor<Node>(
 
   return {
     root,
-    descriptor: { defaultProps, propsSchema },
+    descriptor: { defaultProps, propsSchema, controller: controller?.controller ?? null },
     valid: !diagnostics.some((diagnostic) => diagnostic.severity === "error"),
     diagnostics,
   };

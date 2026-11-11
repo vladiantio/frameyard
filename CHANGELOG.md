@@ -10,6 +10,8 @@ contract change may ship in a minor release and is called out explicitly below.
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-11-10
+
 ### Added
 
 - Static composition includes: `<fy-include>` expands a reusable
@@ -19,6 +21,8 @@ contract change may ship in a minor release and is called out explicitly below.
   one controller instance per include with pre-order mount/update and reverse
   dispose, missing/cycle/invalid/depth diagnostics with distinct invalid-target
   messages, and an include chain plus timeline context in diagnostics.
+
+[0.13.0]: https://github.com/vladiantio/frameyard/compare/v0.12.1...v0.13.0
 
 ## [0.12.1] - 2026-11-09
 

@@ -10,6 +10,16 @@ contract change may ship in a minor release and is called out explicitly below.
 
 ## [Unreleased]
 
+### Added
+
+- Timeline composition clips now capture included fragments through the same
+  expanded document as direct composition rendering. The resolve phase freezes
+  each expanded include graph for the invocation server, capture sessions and
+  the static-composition cache key on the expanded document identity, and a
+  static composition with includes is captured once per props and scale.
+  Nested timelines inherit the same behavior, and include diagnostics keep
+  their timeline, track, clip, and nesting attribution.
+
 ## [0.13.0] - 2026-11-10
 
 ### Added

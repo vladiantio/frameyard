@@ -20,6 +20,8 @@ export interface ResolvedCompositionSource {
   kind: "composition";
   id: string;
   entry: string;
+  /** Stable identity of the expanded document, including every include. */
+  documentKey: string;
   metadata: ResolvedCompositionMetadata;
   controller: ControllerDeclaration | null;
   /** Absent for a static composition; the clip must declare its own duration. */
@@ -83,6 +85,19 @@ export interface ResolvedTimeline {
 export interface ResolveTimelineResult {
   timeline: ResolvedTimeline | null;
   diagnostics: CompositionDiagnostic[];
+}
+
+export interface ResolveProjectTimelineResult extends ResolveTimelineResult {
+  /**
+   * Validation results used during resolution, keyed by composition entry and
+   * props. Capture paths reuse them instead of reading the include graph again.
+   */
+  validations: ReadonlyMap<string, StaticValidationResult>;
+  /**
+   * One validated document per composition entry. A production server serves
+   * these expanded fragments so every session sees the same include graph.
+   */
+  compositionDocuments: ReadonlyMap<string, StaticValidationResult>;
 }
 
 interface ResolveContext {
@@ -377,9 +392,12 @@ async function resolveCompositionSource(options: {
   sourceId: string;
   diagnostics: CompositionDiagnostic[];
   cache: Map<string, StaticValidationResult>;
+  validations: Map<string, StaticValidationResult>;
+  compositionDocuments: Map<string, StaticValidationResult>;
   nesting: string[];
 }): Promise<ResolvedCompositionSource | null> {
-  const { project, timelineId, clip, sourceId, diagnostics, cache, nesting } = options;
+  const { project, timelineId, clip, sourceId, diagnostics, cache, validations, compositionDocuments, nesting } =
+    options;
   const composition = project.compositions.get(sourceId);
   const details: CompositionDiagnosticDetails = {
     timeline: timelineId,
@@ -410,6 +428,12 @@ async function resolveCompositionSource(options: {
       ...(project.format ? { format: project.format } : {}),
     });
     cache.set(cacheKey, validation);
+  }
+  if (!validations.has(cacheKey)) {
+    validations.set(cacheKey, validation);
+  }
+  if (validation.expandedFragment !== undefined && !compositionDocuments.has(composition.entry)) {
+    compositionDocuments.set(composition.entry, validation);
   }
 
   for (const diagnostic of validation.diagnostics) {
@@ -457,6 +481,7 @@ async function resolveCompositionSource(options: {
     kind: "composition",
     id: sourceId,
     entry: composition.entry,
+    documentKey: validation.documentKey ?? composition.entry,
     metadata,
     controller: validation.info.controller,
     ...(metadata.static === true ? {} : { durationInFrames: metadata.durationInFrames }),
@@ -475,8 +500,21 @@ async function resolveTimelineSource(options: {
   signal?: AbortSignal;
   probeCache: Map<string, MediaProbeEntry>;
   compositionCache: Map<string, StaticValidationResult>;
+  validations: Map<string, StaticValidationResult>;
+  compositionDocuments: Map<string, StaticValidationResult>;
 }): Promise<ResolvedNestedTimelineSource | null> {
-  const { project, clip, sourceId, diagnostics, context, signal, probeCache, compositionCache } = options;
+  const {
+    project,
+    clip,
+    sourceId,
+    diagnostics,
+    context,
+    signal,
+    probeCache,
+    compositionCache,
+    validations,
+    compositionDocuments,
+  } = options;
   const nested = project.timelines.get(sourceId);
   const details: CompositionDiagnosticDetails = {
     timeline: context.timelineId,
@@ -516,6 +554,8 @@ async function resolveTimelineSource(options: {
     ...(signal ? { signal } : {}),
     probeCache,
     compositionCache,
+    validations,
+    compositionDocuments,
   });
   for (const diagnostic of nestedResult.diagnostics) {
     diagnostics.push(diagnostic);
@@ -547,8 +587,20 @@ async function resolveClipSource(options: {
   signal?: AbortSignal;
   probeCache: Map<string, MediaProbeEntry>;
   compositionCache: Map<string, StaticValidationResult>;
+  validations: Map<string, StaticValidationResult>;
+  compositionDocuments: Map<string, StaticValidationResult>;
 }): Promise<ResolvedTimelineSource | null> {
-  const { project, clip, diagnostics, context, signal, probeCache, compositionCache } = options;
+  const {
+    project,
+    clip,
+    diagnostics,
+    context,
+    signal,
+    probeCache,
+    compositionCache,
+    validations,
+    compositionDocuments,
+  } = options;
   const source = clip.source;
 
   if (source.kind === "composition") {
@@ -559,6 +611,8 @@ async function resolveClipSource(options: {
       sourceId: source.id,
       diagnostics,
       cache: compositionCache,
+      validations,
+      compositionDocuments,
       nesting: context.nesting,
     });
   }
@@ -572,6 +626,8 @@ async function resolveClipSource(options: {
       ...(signal ? { signal } : {}),
       probeCache,
       compositionCache,
+      validations,
+      compositionDocuments,
     });
   }
   return resolveMediaSource({
@@ -727,9 +783,21 @@ async function resolveTimelineInternal(options: {
   signal?: AbortSignal;
   probeCache: Map<string, MediaProbeEntry>;
   compositionCache: Map<string, StaticValidationResult>;
+  validations: Map<string, StaticValidationResult>;
+  compositionDocuments: Map<string, StaticValidationResult>;
   propsOverrides?: Record<string, unknown>;
 }): Promise<ResolveTimelineResult> {
-  const { project, timeline, context, signal, probeCache, compositionCache, propsOverrides } = options;
+  const {
+    project,
+    timeline,
+    context,
+    signal,
+    probeCache,
+    compositionCache,
+    validations,
+    compositionDocuments,
+    propsOverrides,
+  } = options;
   const diagnostics: CompositionDiagnostic[] = [];
   const document = await readTimelineDocument(timeline, diagnostics, context);
   if (!document) {
@@ -773,6 +841,8 @@ async function resolveTimelineInternal(options: {
       ...(signal ? { signal } : {}),
       probeCache,
       compositionCache,
+      validations,
+      compositionDocuments,
     });
     diagnostics.push(...clipDiagnostics);
     if (!source) {
@@ -986,8 +1056,10 @@ export async function resolveProjectTimeline(options: {
   signal?: AbortSignal;
   /** Render-time props overrides keyed by top-level composition clip ID. */
   propsOverrides?: Record<string, unknown>;
-}): Promise<ResolveTimelineResult> {
-  return resolveTimelineInternal({
+}): Promise<ResolveProjectTimelineResult> {
+  const validations = new Map<string, StaticValidationResult>();
+  const compositionDocuments = new Map<string, StaticValidationResult>();
+  const result = await resolveTimelineInternal({
     project: options.project,
     timeline: options.timeline,
     context: { timelineId: options.timeline.id, stack: [options.timeline.id], nesting: [] },
@@ -995,5 +1067,8 @@ export async function resolveProjectTimeline(options: {
     ...(options.propsOverrides ? { propsOverrides: options.propsOverrides } : {}),
     probeCache: new Map(),
     compositionCache: new Map(),
+    validations,
+    compositionDocuments,
   });
+  return { ...result, validations, compositionDocuments };
 }

@@ -7,7 +7,7 @@ import { COMPOSITION_FORMAT_UNRESOLVED_MESSAGE } from "../composition/index.js";
 import type { CompositionDiagnostic, ControllerDeclaration } from "../contracts.js";
 import { FrameyardError } from "../errors.js";
 import { readInlinePartialController } from "../html/include.js";
-import { validateHtmlComposition } from "../html/validate.js";
+import { validateHtmlComposition, type StaticValidationResult } from "../html/validate.js";
 import { loadProject, type Project, type ProjectComposition } from "../project.js";
 import { renderFontCss } from "../fonts/css.js";
 import { readFontManifest } from "../fonts/manifest.js";
@@ -30,6 +30,12 @@ export interface PreviewServerOptions {
   host?: string;
   /** Overrides the directory containing built framework browser modules. */
   frameworkDir?: string;
+  /**
+   * Validated composition documents for this invocation, keyed by entry. Render,
+   * check, and still pass the resolve-time results so every session reads the
+   * same expanded include graph and no partial is read again.
+   */
+  compositionDocuments?: ReadonlyMap<string, StaticValidationResult>;
 }
 
 const MIME_TYPES: Record<string, string> = {
@@ -253,18 +259,23 @@ function publicController(
   return controller.kind === "inline" ? { kind: "inline" } : { kind: "external", src: controller.src ?? "" };
 }
 
-async function buildProjectJson(project: Project): Promise<{
+async function buildProjectJson(
+  project: Project,
+  documents?: ReadonlyMap<string, StaticValidationResult>,
+): Promise<{
   format: unknown;
   compositions: unknown[];
   timelines: unknown[];
 }> {
   const compositions: unknown[] = [];
   for (const composition of project.compositions.values()) {
-    const result = await validateHtmlComposition({
-      projectRoot: project.root,
-      entry: composition.entry,
-      ...(project.format ? { format: project.format } : {}),
-    });
+    const result =
+      documents?.get(composition.entry) ??
+      (await validateHtmlComposition({
+        projectRoot: project.root,
+        entry: composition.entry,
+        ...(project.format ? { format: project.format } : {}),
+      }));
     compositions.push({
       id: composition.id,
       entry: composition.entry,
@@ -290,6 +301,7 @@ export async function startPreviewServer(options: PreviewServerOptions): Promise
   const project = await loadProject(options.projectRoot);
   const frameworkDir = options.frameworkDir ?? path.join(fileURLToPath(new URL("../../", import.meta.url)), "dist");
   const host = options.host ?? "127.0.0.1";
+  const compositionDocuments = options.compositionDocuments;
 
   const server = createServer((request, response) => {
     void (async () => {
@@ -340,7 +352,7 @@ export async function startPreviewServer(options: PreviewServerOptions): Promise
       }
 
       if (pathname === "/__frameyard/project.json") {
-        sendJson(response, 200, await buildProjectJson(project));
+        sendJson(response, 200, await buildProjectJson(project, compositionDocuments));
         return;
       }
 
@@ -402,11 +414,13 @@ export async function startPreviewServer(options: PreviewServerOptions): Promise
 
       const composition = findCompositionForPath(project, pathname);
       if (composition) {
-        const result = await validateHtmlComposition({
-          projectRoot: project.root,
-          entry: composition.entry,
-          ...(project.format ? { format: project.format } : {}),
-        });
+        const result =
+          compositionDocuments?.get(composition.entry) ??
+          (await validateHtmlComposition({
+            projectRoot: project.root,
+            entry: composition.entry,
+            ...(project.format ? { format: project.format } : {}),
+          }));
         if (url.searchParams.has("__fy-controller")) {
           const controller = result.info?.controller;
           if (controller?.kind === "inline" && controller.source !== undefined) {

@@ -11,7 +11,7 @@ import {
   type StaticCompositionMetadata,
 } from "../contracts.js";
 import { FrameyardError, isFrameyardError } from "../errors.js";
-import { validateHtmlComposition } from "../html/validate.js";
+import { validateHtmlComposition, type StaticValidationResult } from "../html/validate.js";
 import type { Project, ProjectComposition } from "../project.js";
 import { startPreviewServer } from "../server/server.js";
 import { audioClipsForFrameRange, inspectTimelineAudio, type AudioInspection, type InspectAudioClip } from "./audio.js";
@@ -297,6 +297,7 @@ interface PreparedComposition {
   composition: ProjectComposition;
   staticInfo: CompositionSourceInfo;
   staticDiagnostics: CompositionDiagnostic[];
+  documents: ReadonlyMap<string, StaticValidationResult>;
 }
 
 async function prepareComposition(options: SessionOptions): Promise<PreparedComposition> {
@@ -329,7 +330,12 @@ async function prepareComposition(options: SessionOptions): Promise<PreparedComp
       },
     );
   }
-  return { composition, staticInfo: validation.info, staticDiagnostics };
+  return {
+    composition,
+    staticInfo: validation.info,
+    staticDiagnostics,
+    documents: new Map([[composition.entry, validation]]),
+  };
 }
 
 async function withPreparedSessions<T>(
@@ -338,8 +344,12 @@ async function withPreparedSessions<T>(
   resolveSessionCount: (first: CompositionSession) => number,
   callback: (sessions: CompositionSession[]) => Promise<T>,
 ): Promise<T> {
-  const { composition, staticInfo, staticDiagnostics } = prepared;
-  const server = await startPreviewServer({ projectRoot: options.project.root, port: 0 });
+  const { composition, staticInfo, staticDiagnostics, documents } = prepared;
+  const server = await startPreviewServer({
+    projectRoot: options.project.root,
+    port: 0,
+    compositionDocuments: documents,
+  });
   const sessions: CompositionSession[] = [];
 
   try {

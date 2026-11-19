@@ -9,6 +9,7 @@ function compositionSource(id: string, durationInFrames: number) {
     kind: "composition" as const,
     id,
     entry: `compositions/${id}.html`,
+    documentKey: `document-${id}`,
     metadata: { width: 1920, height: 1080, fps: 30, durationInFrames },
     controller: null,
     durationInFrames,

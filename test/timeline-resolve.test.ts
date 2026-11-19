@@ -828,4 +828,63 @@ describe("timeline resolution", () => {
       }),
     );
   });
+
+  it("carries include diagnostics through nested timeline clips", async () => {
+    const project = await createProject({
+      timeline: timeline([
+        {
+          id: "outer-nested",
+          track: "v1",
+          source: { kind: "timeline", id: "lower" },
+          start: 0,
+        },
+      ]),
+      timelines: {
+        main: timeline([
+          {
+            id: "outer-nested",
+            track: "v1",
+            source: { kind: "timeline", id: "lower" },
+            start: 0,
+          },
+        ]),
+        lower: timeline([
+          {
+            id: "inner-include",
+            track: "v1",
+            source: { kind: "composition", id: "intro" },
+            start: 0,
+            duration: 2,
+          },
+        ]),
+      },
+      timelineConfig: {
+        main: "./timelines/main.json",
+        lower: "./timelines/lower.json",
+      },
+      compositionHtml: `<fy-composition width="1920" height="1080" fps="30" duration-in-frames="10">
+  <fy-include src="./partials/missing.html"></fy-include>
+</fy-composition>
+`,
+    });
+    const resolved = await resolveMain(project);
+
+    expect(resolved.timeline).toBeNull();
+    expect(resolved.diagnostics).toContainEqual(
+      expect.objectContaining({
+        severity: "error",
+        code: "INCLUDE_NOT_FOUND",
+        details: expect.objectContaining({
+          path: "compositions/main.html",
+          value: "./partials/missing.html",
+          timeline: "lower",
+          clip: "inner-include",
+          track: "v1",
+          composition: "intro",
+          nesting: ["outer-nested"],
+          includeChain: ["compositions/main.html", "compositions/partials/missing.html"],
+        }),
+      }),
+    );
+  });
 });

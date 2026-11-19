@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { loadProject, resolveProjectRoot } from "../src/project.ts";
+import { resolveProjectTimeline } from "../src/timeline/resolve.ts";
 import { startPreviewServer, type PreviewServer } from "../src/server/server.ts";
 
 let root: string;
@@ -221,6 +222,84 @@ describe("preview server", () => {
     expect(html).toContain('@scope ([data-fy-include="include-1"]) to ([data-fy-include])');
     expect(html).toContain("fy-partial { display: contents; }");
     expect(html).not.toContain("<fy-include");
+  });
+
+  it("serves a frozen expanded document for a production invocation", async () => {
+    const frozenRoot = await mkdtemp(path.join(tmpdir(), "frameyard-project-frozen-"));
+    const partialPath = path.join(frozenRoot, "compositions", "partials", "badge.html");
+    await mkdir(path.dirname(partialPath), { recursive: true });
+    await mkdir(path.join(frozenRoot, "timelines"), { recursive: true });
+    await writeFile(
+      path.join(frozenRoot, "fy.config.js"),
+      `export default {
+        format: { width: 320, height: 180, fps: 10 },
+        compositions: { include: "./compositions/include.html" },
+        timelines: { main: "./timelines/main.json" },
+      };\n`,
+    );
+    await writeFile(
+      path.join(frozenRoot, "compositions", "include.html"),
+      `<fy-composition width="320" height="180" fps="10" duration-in-frames="2">
+  <fy-include src="./partials/badge.html"></fy-include>
+</fy-composition>
+`,
+    );
+    await writeFile(partialPath, `<fy-partial><span class="badge">Original</span></fy-partial>`);
+    await writeFile(
+      path.join(frozenRoot, "timelines", "main.json"),
+      `${JSON.stringify(
+        {
+          version: 1,
+          tracks: [{ id: "v1", kind: "video" }],
+          clips: [
+            {
+              id: "intro",
+              track: "v1",
+              source: { kind: "composition", id: "include" },
+              start: 0,
+              duration: 2,
+            },
+          ],
+        },
+        null,
+        2,
+      )}\n`,
+    );
+
+    const project = await loadProject(frozenRoot);
+    const timeline = project.timelines.get("main");
+    if (!timeline) {
+      throw new Error("Missing main timeline.");
+    }
+    const resolved = await resolveProjectTimeline({ project, timeline });
+    expect(resolved.timeline).not.toBeNull();
+
+    const frozenServer = await startPreviewServer({
+      projectRoot: frozenRoot,
+      port: 0,
+      compositionDocuments: resolved.compositionDocuments,
+    });
+    try {
+      const before = await (await fetch(new URL("/compositions/include.html", frozenServer.url))).text();
+      expect(before).toContain("Original");
+
+      await writeFile(partialPath, `<fy-partial><span class="badge">Changed</span></fy-partial>`);
+
+      const after = await (await fetch(new URL("/compositions/include.html", frozenServer.url))).text();
+      expect(after).toContain("Original");
+      expect(after).not.toContain("Changed");
+    } finally {
+      await frozenServer.close();
+    }
+
+    const liveServer = await startPreviewServer({ projectRoot: frozenRoot, port: 0 });
+    try {
+      const live = await (await fetch(new URL("/compositions/include.html", liveServer.url))).text();
+      expect(live).toContain("Changed");
+    } finally {
+      await liveServer.close();
+      await rm(frozenRoot, { recursive: true, force: true });
+    }
   });
 
   it("serves inline partial controllers through the partial URL", async () => {

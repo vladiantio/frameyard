@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import {
@@ -88,6 +89,11 @@ export interface StaticValidationResult {
   diagnostics: CompositionDiagnostic[];
   /** Expanded fragment with all includes resolved, ready for the document shell. */
   expandedFragment?: string;
+  /**
+   * Stable identity of the expanded document. It covers the include graph and
+   * content, so capture caches never share state across different expansions.
+   */
+  documentKey?: string;
 }
 
 interface DocumentShellResult {
@@ -1386,7 +1392,11 @@ export async function validateHtmlComposition(
     expanded.diagnostics,
   );
   const result = await validator.run();
-  return { ...result, expandedFragment: expanded.expandedFragment };
+  return {
+    ...result,
+    expandedFragment: expanded.expandedFragment,
+    documentKey: createHash("sha256").update(expanded.expandedFragment).digest("hex"),
+  };
 }
 
 function detectDocumentShell(document: HtmlDocument, entry: string): DocumentShellResult {

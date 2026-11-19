@@ -64,6 +64,12 @@ value for visual theming.
 Timeline composition-clip props and timeline variables do not flow into include
 props. Use a composition when the timeline must parameterize the data.
 
+Timeline composition clips capture the same expanded document as direct
+composition rendering. A render freezes the expanded include graph for the
+invocation, and a static composition with includes is captured once per props
+and scale, then reused as an image layer across segments and workers. Nested
+timelines inherit the same behavior.
+
 ## Controllers
 
 A partial may declare one controller, inline or external:

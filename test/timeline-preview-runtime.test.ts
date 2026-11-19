@@ -80,6 +80,21 @@ const slowComposition = `<style>
     </fy-composition>
 `;
 
+const includedComposition = `<style>html, body { margin: 0; width: 100%; height: 100%; background: #101820; }</style>
+    <fy-composition width="320" height="180" fps="10" duration-in-frames="10">
+      <fy-include src="./partials/plane.html" props='{"color":"#22aa66","label":"Included"}'></fy-include>
+    </fy-composition>
+`;
+
+const planePartial = `<fy-partial>
+  <script type="application/json" data-fy="props">{ "color": "#ffffff", "label": "Idle" }</script>
+  <style>
+    .plane { position: absolute; inset: 0; background: var(--fy-prop-color); display: flex; align-items: center; justify-content: center; color: #fff; font: 20px sans-serif; }
+  </style>
+  <div class="plane" data-fy-text="label"></div>
+</fy-partial>
+`;
+
 const resumeComposition = `<style>
   html, body { margin: 0; width: 100%; height: 100%; background: #132; }
 </style>
@@ -163,6 +178,29 @@ beforeAll(async () => {
   await writeFile(path.join(root, "compositions", "audio.html"), audioComposition);
   await writeFile(path.join(root, "compositions", "long.html"), longComposition);
   await writeFile(path.join(root, "compositions", "slow.html"), slowComposition);
+  await mkdir(path.join(root, "compositions", "partials"), { recursive: true });
+  await writeFile(path.join(root, "compositions", "included.html"), includedComposition);
+  await writeFile(path.join(root, "compositions", "partials", "plane.html"), planePartial);
+  await writeFile(
+    path.join(root, "timelines", "include.json"),
+    `${JSON.stringify(
+      {
+        version: 1,
+        tracks: [{ id: "v1", kind: "video" }],
+        clips: [
+          {
+            id: "included",
+            track: "v1",
+            source: { kind: "composition", id: "included" },
+            start: 0,
+            duration: 10,
+          },
+        ],
+      },
+      null,
+      2,
+    )}\n`,
+  );
   await writeFile(
     path.join(root, "timelines", "static.json"),
     `${JSON.stringify(
@@ -485,8 +523,8 @@ beforeAll(async () => {
     path.join(root, "fy.config.js"),
     `export default {
       format: { width: 320, height: 180, fps: 10 },
-      compositions: { intro: "./compositions/intro.html", still: "./compositions/still.html", overlay: "./compositions/overlay.html", tone: "./compositions/audio.html", long: "./compositions/long.html", slow: "./compositions/slow.html" },
-      timelines: { main: "./timelines/main.json", static: "./timelines/static.json", sized: "./timelines/sized.json", video: "./timelines/video.json", audio: "./timelines/audio.json", "audio-jump": "./timelines/audio-jump.json", "audio-hold": "./timelines/audio-hold.json", blend: "./timelines/blend.json", motion: "./timelines/motion.json", dissolve: "./timelines/dissolve.json", scheme: "./timelines/scheme.json" },
+      compositions: { intro: "./compositions/intro.html", still: "./compositions/still.html", overlay: "./compositions/overlay.html", tone: "./compositions/audio.html", long: "./compositions/long.html", slow: "./compositions/slow.html", included: "./compositions/included.html" },
+      timelines: { main: "./timelines/main.json", static: "./timelines/static.json", sized: "./timelines/sized.json", video: "./timelines/video.json", audio: "./timelines/audio.json", "audio-jump": "./timelines/audio-jump.json", "audio-hold": "./timelines/audio-hold.json", blend: "./timelines/blend.json", motion: "./timelines/motion.json", dissolve: "./timelines/dissolve.json", scheme: "./timelines/scheme.json", include: "./timelines/include.json" },
     };\n`,
   );
   server = await startPreviewServer({ projectRoot: root, port: 0 });
@@ -588,6 +626,48 @@ describe("timeline preview runtime", () => {
         frame: 0,
         text: "Still",
       });
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+
+  it("previews an included composition clip with production pixels", async () => {
+    const page = await browser.newPage({ viewport: { width: 640, height: 360 } });
+    try {
+      await openEmbeddedTimeline(page, new URL("/__frameyard/timeline/include?__fy-embed=1", server.url).href);
+      await loadTimeline(page);
+      await seekTimeline(page, 5);
+      await page.waitForFunction(() => {
+        const iframe = document.querySelector<HTMLIFrameElement>('[data-clip="included"] iframe');
+        return iframe?.contentDocument?.querySelector(".plane")?.textContent === "Included";
+      });
+
+      const stage = page.locator("#stage");
+      const box = await stage.boundingBox();
+      if (box === null) {
+        throw new Error("Missing timeline stage.");
+      }
+      const image = path.join(root, "out", "include-preview.png");
+      await writeFile(image, await page.screenshot({ clip: box }));
+      const [previewRed, previewGreen, previewBlue] = await mediaPixel(
+        image,
+        Math.floor(box.width / 2),
+        Math.floor(box.height / 2),
+      );
+
+      const stillPath = path.join(root, "out", "include-still.png");
+      await captureTimelineStills({
+        project: await loadProject(root),
+        timelineId: "include",
+        frames: [5],
+        outPaths: [stillPath],
+      });
+      const [stillRed, stillGreen, stillBlue] = await mediaPixel(stillPath, 160, 90);
+
+      expect(Math.abs(previewRed - stillRed)).toBeLessThanOrEqual(12);
+      expect(Math.abs(previewGreen - stillGreen)).toBeLessThanOrEqual(12);
+      expect(Math.abs(previewBlue - stillBlue)).toBeLessThanOrEqual(12);
+      expect(previewGreen).toBeGreaterThan(previewRed + 40);
     } finally {
       await page.close();
     }
@@ -1468,7 +1548,7 @@ describe("timeline preview runtime", () => {
       );
       await page.waitForFunction(() => document.querySelector("#monitor-title")?.textContent === "main");
       expect(await page.locator("#timeline").isVisible()).toBe(true);
-      expect(await page.locator('.asset[data-asset-kind="timeline"]').count()).toBe(11);
+      expect(await page.locator('.asset[data-asset-kind="timeline"]').count()).toBe(12);
       expect(await page.locator("#timeline-meta").textContent()).toContain("10 frames");
       expect(await page.locator("#meta").textContent()).toContain("320×180");
       expect(new URL(page.url()).searchParams.get("timeline")).toBe("main");

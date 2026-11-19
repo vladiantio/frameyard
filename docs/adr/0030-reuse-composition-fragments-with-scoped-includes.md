@@ -1,8 +1,7 @@
 # Reuse composition fragments with scoped includes
 
-**Status:** Accepted. Static includes, scoped props, bindings, CSS, and scoped
-controllers are implemented in #17-#18; timeline capture is tracked in #20.
-Amends
+**Status:** Accepted. Static includes, scoped props, bindings, CSS, scoped
+controllers, and timeline capture are implemented in #17-#20. Amends
 the one-controller rule in [ADR-0007](./0007-make-html-documents-the-composition-unit.md)
 and [ADR-0016](./0016-author-compositions-as-html-fragments.md) for included
 partials. Extends [ADR-0002](./0002-make-frame-and-props-the-only-animation-state.md)
@@ -372,6 +371,5 @@ structure, not a new visual model.
 - Includes do not make composition entries dynamic. Timeline composition-clip
   props and timeline variables still target the root composition, not include
   props.
-- No runtime behavior changes until #17-#20 implement this contract. Each
-  slice adds its own public-behavior tests; the ADR alone adds documentation
-  checks.
+- The contract is implemented in #17-#20. Each slice added its own
+  public-behavior tests; the ADR alone added documentation checks.

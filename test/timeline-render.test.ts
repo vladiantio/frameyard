@@ -6,6 +6,7 @@ import { promisify } from "node:util";
 import { afterAll, describe, expect, it } from "vitest";
 import { loadProject } from "../src/project.ts";
 import { compositeTimelineFrame } from "../src/renderer/ffmpeg.ts";
+import { captureStills } from "../src/renderer/index.ts";
 import {
   captureTimelineStill,
   captureTimelineStills,
@@ -3135,4 +3136,426 @@ describe.concurrent("timeline transitions", () => {
     expect(middleDb - startDb).toBeGreaterThan(2);
     expect(middleDb - startDb).toBeLessThan(3.6);
   }, 180_000);
+});
+
+describe.concurrent("composition includes in timelines", () => {
+  async function includeProject(options: {
+    compositions: Record<string, string>;
+    partials: Record<string, string>;
+    timelines: Record<string, unknown>;
+  }): Promise<string> {
+    const root = await customRoot();
+    await writeFile(
+      path.join(root, "fy.config.js"),
+      `export default {
+        format: { width: 320, height: 180, fps: 10 },
+        compositions: ${JSON.stringify(
+          Object.fromEntries(Object.keys(options.compositions).map((id) => [id, `./compositions/${id}.html`])),
+        )},
+        timelines: ${JSON.stringify(
+          Object.fromEntries(Object.keys(options.timelines).map((id) => [id, `./timelines/${id}.json`])),
+        )},
+      };\n`,
+    );
+    for (const [id, source] of Object.entries(options.compositions)) {
+      await writeFile(path.join(root, "compositions", `${id}.html`), source);
+    }
+    await mkdir(path.join(root, "compositions", "partials"), { recursive: true });
+    for (const [name, source] of Object.entries(options.partials)) {
+      await writeFile(path.join(root, "compositions", "partials", name), source);
+    }
+    for (const [id, timeline] of Object.entries(options.timelines)) {
+      await writeFile(path.join(root, "timelines", `${id}.json`), `${JSON.stringify(timeline, null, 2)}\n`);
+    }
+    return root;
+  }
+
+  const markerPartial = `<fy-partial>
+  <script type="application/json" data-fy="props">{ "color": "#ffffff" }</script>
+  <style>
+    .marker { position: absolute; top: 50%; left: 0; width: 30px; height: 30px; margin-top: -15px; border-radius: 50%; background: var(--fy-prop-color); }
+  </style>
+  <div class="marker"></div>
+</fy-partial>
+`;
+
+  const includedComposition = `<style>html, body { margin: 0; width: 100%; height: 100%; background: #101820; }</style>
+<fy-composition width="320" height="180" fps="10" duration-in-frames="10">
+  <fy-include src="./partials/marker.html" props='{"color":"#b8f36b"}'></fy-include>
+</fy-composition>
+<script type="text/fy-controller">
+export default {
+  update({ frame, root }) {
+    root.querySelector(".marker").style.left = \`\${frame * 20}px\`;
+  },
+};
+</script>
+`;
+
+  it("renders included composition clips at the same frames as the composition", async () => {
+    const root = await includeProject({
+      compositions: { included: includedComposition },
+      partials: { "marker.html": markerPartial },
+      timelines: {
+        main: {
+          version: 1,
+          background: "#101820",
+          tracks: [{ id: "v1", kind: "video" }],
+          clips: [
+            {
+              id: "included",
+              track: "v1",
+              source: { kind: "composition", id: "included" },
+              start: 0,
+              duration: 10,
+            },
+          ],
+        },
+      },
+    });
+    const project = await loadProject(root);
+    const outPath = path.join(root, "out", "main.mp4");
+
+    const checked = await checkTimeline({ project, timelineId: "main" });
+    expect(checked.framesChecked).toBe(10);
+    expect(checked.diagnostics.filter((diagnostic) => diagnostic.severity === "error")).toEqual([]);
+
+    const stillPaths = [0, 4, 9].map((frame) => path.join(root, "out", `direct-${frame}.png`));
+    const stills = await captureStills({
+      project,
+      compositionId: "included",
+      frames: [0, 4, 9],
+      outPaths: stillPaths,
+    });
+    expect(stills.frames).toHaveLength(3);
+
+    const result = await renderTimelineForTest({
+      project,
+      timelineId: "main",
+      outPath,
+      workers: 2,
+      maxSegmentFrames: 3,
+    });
+    expect(result).toMatchObject({ framesRendered: 10, segments: 4 });
+
+    for (const [index, frame] of [0, 4, 9].entries()) {
+      const framePath = path.join(root, "out", `rendered-${frame}.png`);
+      await exec("ffmpeg", [
+        "-v",
+        "error",
+        "-y",
+        "-i",
+        outPath,
+        "-vf",
+        `select=eq(n\\,${frame})`,
+        "-frames:v",
+        "1",
+        framePath,
+      ]);
+      const markerX = frame * 20 + 15;
+      const [renderedRed, renderedGreen] = await mediaPixel(framePath, markerX, 90);
+      const [directRed, directGreen] = await mediaPixel(stillPaths[index] as string, markerX, 90);
+      expect(Math.abs(renderedGreen - directGreen)).toBeLessThanOrEqual(12);
+      expect(Math.abs(renderedRed - directRed)).toBeLessThanOrEqual(12);
+      expect(renderedGreen).toBeGreaterThan(renderedRed + 40);
+
+      const [renderedBackdropRed] = await mediaPixel(framePath, 280, 20);
+      const [directBackdropRed] = await mediaPixel(stillPaths[index] as string, 280, 20);
+      expect(Math.abs(renderedBackdropRed - directBackdropRed)).toBeLessThanOrEqual(8);
+    }
+
+    const timelineStill = path.join(root, "out", "timeline-still.png");
+    await captureTimelineStill({ project, timelineId: "main", frame: 4, outPath: timelineStill });
+    const [directRed, directGreen] = await mediaPixel(stillPaths[1] as string, 95, 90);
+    const [timelineRed, timelineGreen] = await mediaPixel(timelineStill, 95, 90);
+    expect(Math.abs(directGreen - timelineGreen)).toBeLessThanOrEqual(4);
+    expect(Math.abs(directRed - timelineRed)).toBeLessThanOrEqual(4);
+    expect(directGreen).toBeGreaterThan(directRed + 40);
+  }, 180_000);
+
+  it("captures a static include once across segments and workers", async () => {
+    const randomPartial = `<fy-partial>
+  <style>
+    .plane { position: absolute; inset: 0; }
+  </style>
+  <div class="plane"></div>
+  <script type="text/fy-controller">
+export default {
+  mount({ root }) {
+    const channel = () => Math.floor(Math.random() * 256);
+    root.querySelector(".plane").style.background = \`rgb(\${channel()}, \${channel()}, \${channel()})\`;
+  },
+};
+  </script>
+</fy-partial>
+`;
+    const root = await includeProject({
+      compositions: {
+        still: `<fy-composition width="320" height="180">
+  <fy-include src="./partials/random.html"></fy-include>
+</fy-composition>
+`,
+      },
+      partials: { "random.html": randomPartial },
+      timelines: {
+        main: {
+          version: 1,
+          tracks: [{ id: "v1", kind: "video" }],
+          clips: [
+            {
+              id: "still",
+              track: "v1",
+              source: { kind: "composition", id: "still" },
+              start: 0,
+              duration: 10,
+            },
+          ],
+        },
+      },
+    });
+    const project = await loadProject(root);
+    const outPath = path.join(root, "out", "static.mp4");
+
+    const result = await renderTimelineForTest({
+      project,
+      timelineId: "main",
+      outPath,
+      workers: 2,
+      maxSegmentFrames: 3,
+    });
+    expect(result).toMatchObject({ framesRendered: 10, segments: 4 });
+    expect((await probe(outPath)).streams.find((stream) => stream.codec_type === "video")).toMatchObject({
+      width: 320,
+      height: 180,
+      nb_read_frames: "10",
+    });
+
+    const pixels: Array<[number, number, number]> = [];
+    for (const frame of [0, 4, 9]) {
+      const framePath = path.join(root, "out", `static-${frame}.png`);
+      await exec("ffmpeg", [
+        "-v",
+        "error",
+        "-y",
+        "-i",
+        outPath,
+        "-vf",
+        `select=eq(n\\,${frame})`,
+        "-frames:v",
+        "1",
+        framePath,
+      ]);
+      pixels.push(await mediaPixel(framePath, 160, 90));
+    }
+
+    expect(pixels[1]).toEqual(pixels[0]);
+    expect(pixels[2]).toEqual(pixels[0]);
+  }, 180_000);
+
+  it("renders a nested timeline with included composition clips", async () => {
+    const root = await includeProject({
+      compositions: {
+        base: `<style>html, body { margin: 0; width: 100%; height: 100%; background: #e23b3b; }</style>
+<fy-composition width="320" height="180" fps="10" duration-in-frames="10"></fy-composition>
+`,
+        included: `<style>html, body { margin: 0; width: 100%; height: 100%; background: transparent; }</style>
+<fy-composition width="320" height="180" fps="10" duration-in-frames="10">
+  <fy-include src="./partials/marker.html" props='{"color":"#b8f36b"}'></fy-include>
+</fy-composition>
+<script type="text/fy-controller">
+export default {
+  update({ frame, root }) {
+    root.querySelector(".marker").style.left = \`\${frame * 20}px\`;
+  },
+};
+</script>
+`,
+      },
+      partials: { "marker.html": markerPartial },
+      timelines: {
+        lower: {
+          version: 1,
+          tracks: [{ id: "v1", kind: "video" }],
+          clips: [
+            {
+              id: "included",
+              track: "v1",
+              source: { kind: "composition", id: "included" },
+              start: 0,
+              duration: 10,
+            },
+          ],
+        },
+        main: {
+          version: 1,
+          tracks: [
+            { id: "v1", kind: "video" },
+            { id: "v2", kind: "video" },
+          ],
+          clips: [
+            {
+              id: "base",
+              track: "v1",
+              source: { kind: "composition", id: "base" },
+              start: 0,
+              duration: 10,
+            },
+            {
+              id: "nested",
+              track: "v2",
+              source: { kind: "timeline", id: "lower" },
+              start: 0,
+              duration: 10,
+            },
+          ],
+        },
+      },
+    });
+    const project = await loadProject(root);
+    const outPath = path.join(root, "out", "nested.mp4");
+
+    const checked = await checkTimeline({ project, timelineId: "main" });
+    expect(checked.framesChecked).toBe(10);
+    expect(checked.diagnostics.filter((diagnostic) => diagnostic.severity === "error")).toEqual([]);
+
+    const result = await renderTimelineForTest({
+      project,
+      timelineId: "main",
+      outPath,
+      workers: 2,
+      maxSegmentFrames: 3,
+    });
+    expect(result.framesRendered).toBe(10);
+
+    const framePath = path.join(root, "out", "nested-9.png");
+    await exec("ffmpeg", ["-v", "error", "-y", "-i", outPath, "-vf", "select=eq(n\\,9)", "-frames:v", "1", framePath]);
+    const [markerRed, markerGreen] = await mediaPixel(framePath, 195, 90);
+    expect(markerGreen).toBeGreaterThan(markerRed + 40);
+    const [baseRed, baseGreen] = await mediaPixel(framePath, 20, 90);
+    expect(baseRed).toBeGreaterThan(baseGreen + 40);
+  }, 180_000);
+
+  it("produces identical frames with parallel workers", async () => {
+    const root = await includeProject({
+      compositions: { included: includedComposition },
+      partials: { "marker.html": markerPartial },
+      timelines: {
+        main: {
+          version: 1,
+          background: "#101820",
+          tracks: [{ id: "v1", kind: "video" }],
+          clips: [
+            {
+              id: "included",
+              track: "v1",
+              source: { kind: "composition", id: "included" },
+              start: 0,
+              duration: 10,
+            },
+          ],
+        },
+      },
+    });
+    const project = await loadProject(root);
+
+    const sequential = path.join(root, "out", "sequential.mp4");
+    const parallel = path.join(root, "out", "parallel.mp4");
+    await renderTimelineForTest({
+      project,
+      timelineId: "main",
+      outPath: sequential,
+      workers: 1,
+      maxSegmentFrames: 10,
+    });
+    await renderTimelineForTest({
+      project,
+      timelineId: "main",
+      outPath: parallel,
+      workers: 4,
+      maxSegmentFrames: 2,
+    });
+
+    for (const frame of [0, 3, 7, 9]) {
+      const [leftPath, rightPath] = await Promise.all(
+        ["left", "right"].map(async (name) => {
+          const framePath = path.join(root, "out", `${name}-${frame}.png`);
+          await exec("ffmpeg", [
+            "-v",
+            "error",
+            "-y",
+            "-i",
+            name === "left" ? sequential : parallel,
+            "-vf",
+            `select=eq(n\\,${frame})`,
+            "-frames:v",
+            "1",
+            framePath,
+          ]);
+          return framePath;
+        }),
+      );
+      const [left, right] = await Promise.all([
+        decodeRgbFrame(leftPath as string),
+        decodeRgbFrame(rightPath as string),
+      ]);
+      expect(left.length).toBe(right.length);
+      let maxDelta = 0;
+      let totalDelta = 0;
+      for (let index = 0; index < left.length; index += 1) {
+        const delta = Math.abs(left[index]! - right[index]!);
+        maxDelta = Math.max(maxDelta, delta);
+        totalDelta += delta;
+      }
+      expect(totalDelta / left.length).toBeLessThanOrEqual(1);
+      expect(maxDelta).toBeLessThanOrEqual(48);
+    }
+  }, 240_000);
+
+  it("fails a missing include before capture and publishes no output", async () => {
+    const root = await includeProject({
+      compositions: {
+        included: `<fy-composition width="320" height="180" fps="10" duration-in-frames="10">
+  <fy-include src="./partials/missing.html"></fy-include>
+</fy-composition>
+`,
+      },
+      partials: {},
+      timelines: {
+        main: {
+          version: 1,
+          tracks: [{ id: "v1", kind: "video" }],
+          clips: [
+            {
+              id: "included",
+              track: "v1",
+              source: { kind: "composition", id: "included" },
+              start: 0,
+              duration: 10,
+            },
+          ],
+        },
+      },
+    });
+    const project = await loadProject(root);
+    const outPath = path.join(root, "out", "missing.mp4");
+
+    await expect(checkTimeline({ project, timelineId: "main" })).rejects.toMatchObject({
+      code: "INCLUDE_NOT_FOUND",
+      diagnostics: expect.arrayContaining([
+        expect.objectContaining({
+          code: "INCLUDE_NOT_FOUND",
+          details: expect.objectContaining({
+            timeline: "main",
+            clip: "included",
+            track: "v1",
+            composition: "included",
+          }),
+        }),
+      ]),
+    });
+    await expect(renderTimelineForTest({ project, timelineId: "main", outPath })).rejects.toMatchObject({
+      code: "INCLUDE_NOT_FOUND",
+    });
+    await expect(stat(outPath)).rejects.toThrow();
+  }, 60_000);
 });

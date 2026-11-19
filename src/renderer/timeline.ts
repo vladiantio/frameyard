@@ -554,21 +554,23 @@ async function captureStaticCompositionLayer(options: {
   serverUrl: string;
   scratchRoot: string;
   infoCache: Map<string, StaticValidationResult>;
+  validations?: ReadonlyMap<string, StaticValidationResult>;
   staticCache: Map<string, Promise<StaticCapture>>;
   scale: number;
   signal?: AbortSignal;
 }): Promise<StaticCapture> {
-  const { project, timeline, clip, source, serverUrl, scratchRoot, infoCache, staticCache, scale } = options;
+  const { project, timeline, clip, source, serverUrl, scratchRoot, infoCache, validations, staticCache, scale } =
+    options;
   const propsKey = JSON.stringify(clip.props ?? null);
   const infoKey = `${source.entry}\u0000${propsKey}`;
-  const cacheKey = `${infoKey}\u0000${scale}`;
+  const cacheKey = `${source.entry}\u0000${source.documentKey}\u0000${propsKey}\u0000${scale}`;
   const cached = staticCache.get(cacheKey);
   if (cached) {
     return cached;
   }
 
   const pending = (async (): Promise<StaticCapture> => {
-    let validation = infoCache.get(infoKey);
+    let validation = validations?.get(infoKey) ?? infoCache.get(infoKey);
     if (!validation) {
       validation = await validateHtmlComposition({
         projectRoot: project.root,
@@ -628,6 +630,7 @@ interface CompositionFrameCaptureOptions {
   layerIndex: number;
   serverUrl: string;
   infoCache: Map<string, StaticValidationResult>;
+  validations?: ReadonlyMap<string, StaticValidationResult>;
   sessionPool?: CompositionSessionPool;
   /** Capture-time scale applied to the composition format. */
   scale: number;
@@ -645,10 +648,10 @@ async function captureCompositionFrames(
   options: CompositionFrameCaptureOptions,
   writeFrame: (png: Buffer) => Promise<void>,
 ): Promise<CompositionDiagnostic[]> {
-  const { project, timeline, clip, source, segment, layerIndex, serverUrl, infoCache, scale } = options;
+  const { project, timeline, clip, source, segment, layerIndex, serverUrl, infoCache, validations, scale } = options;
   const propsKey = JSON.stringify(clip.props ?? null);
   const cacheKey = `${source.entry}\u0000${propsKey}`;
-  let validation = infoCache.get(cacheKey);
+  let validation = validations?.get(cacheKey) ?? infoCache.get(cacheKey);
   if (!validation) {
     validation = await validateHtmlComposition({
       projectRoot: project.root,
@@ -676,7 +679,7 @@ async function captureCompositionFrames(
     layer: layerIndex,
     segment: segment.index,
   });
-  const sessionKey = JSON.stringify([source.entry, clip.props ?? null, true, scale]);
+  const sessionKey = JSON.stringify([source.entry, source.documentKey, clip.props ?? null, true, scale]);
   const openOptions = {
     serverUrl,
     entry: source.entry,
@@ -1012,6 +1015,7 @@ async function captureTwoLayerDirectComposition(
             layerIndex,
             serverUrl: options.serverUrl,
             infoCache: options.infoCache,
+            ...(options.validations !== undefined ? { validations: options.validations } : {}),
             scale: options.scale,
             ...(options.sessionPool !== undefined ? { sessionPool: options.sessionPool } : {}),
             ...(options.signal ? { signal: options.signal } : {}),
@@ -1052,6 +1056,7 @@ async function renderNestedTimelineRange(options: {
   serverUrl: string;
   scratchRoot: string;
   infoCache: Map<string, StaticValidationResult>;
+  validations?: ReadonlyMap<string, StaticValidationResult>;
   staticCache: Map<string, Promise<StaticCapture>>;
   captureLimiter?: Semaphore;
   sessionPool?: CompositionSessionPool;
@@ -1078,6 +1083,7 @@ async function renderNestedTimelineRange(options: {
         serverUrl: options.serverUrl,
         scratchRoot: options.scratchRoot,
         infoCache: options.infoCache,
+        ...(options.validations !== undefined ? { validations: options.validations } : {}),
         staticCache: options.staticCache,
         ...(options.captureLimiter !== undefined ? { captureLimiter: options.captureLimiter } : {}),
         ...(options.sessionPool !== undefined ? { sessionPool: options.sessionPool } : {}),
@@ -1119,6 +1125,7 @@ async function processTimelineSegment(options: {
   serverUrl: string;
   scratchRoot: string;
   infoCache: Map<string, StaticValidationResult>;
+  validations?: ReadonlyMap<string, StaticValidationResult>;
   staticCache: Map<string, Promise<StaticCapture>>;
   captureLimiter?: Semaphore;
   sessionPool?: CompositionSessionPool;
@@ -1180,6 +1187,7 @@ async function processTimelineSegment(options: {
         layerIndex: 0,
         serverUrl,
         infoCache,
+        ...(options.validations !== undefined ? { validations: options.validations } : {}),
         outputPath: segmentPath,
         background,
         codec,
@@ -1210,6 +1218,7 @@ async function processTimelineSegment(options: {
       segment,
       serverUrl,
       infoCache,
+      ...(options.validations !== undefined ? { validations: options.validations } : {}),
       outputPath: segmentPath,
       background,
       codec,
@@ -1281,6 +1290,7 @@ async function processTimelineSegment(options: {
             serverUrl,
             scratchRoot,
             infoCache,
+            ...(options.validations !== undefined ? { validations: options.validations } : {}),
             staticCache: options.staticCache,
             scale,
             ...(options.signal ? { signal: options.signal } : {}),
@@ -1310,6 +1320,7 @@ async function processTimelineSegment(options: {
           serverUrl,
           segmentDir,
           infoCache,
+          ...(options.validations !== undefined ? { validations: options.validations } : {}),
           scale,
           ...(options.sessionPool !== undefined ? { sessionPool: options.sessionPool } : {}),
           ...(options.signal ? { signal: options.signal } : {}),
@@ -1350,6 +1361,7 @@ async function processTimelineSegment(options: {
         serverUrl,
         scratchRoot,
         infoCache,
+        ...(options.validations !== undefined ? { validations: options.validations } : {}),
         staticCache: options.staticCache,
         ...(options.captureLimiter !== undefined ? { captureLimiter: options.captureLimiter } : {}),
         ...(options.sessionPool !== undefined ? { sessionPool: options.sessionPool } : {}),
@@ -1414,6 +1426,7 @@ async function processTimelineSegment(options: {
 interface TimelineCheckContext {
   project: Project;
   serverUrl: string;
+  validations?: ReadonlyMap<string, StaticValidationResult>;
   signal?: AbortSignal;
   onProgress?: (event: TimelineProgressEvent) => void;
   totalFrames: number;
@@ -1501,14 +1514,17 @@ async function checkResolvedTimelineRange(options: {
       if (source.kind !== "composition") {
         continue;
       }
-      const key = `${source.entry}\u0000${JSON.stringify(layer.clip.props ?? null)}`;
+      const validationKey = `${source.entry}\u0000${JSON.stringify(layer.clip.props ?? null)}`;
+      const key = `${source.entry}\u0000${source.documentKey}\u0000${JSON.stringify(layer.clip.props ?? null)}`;
       if (!targets.has(key)) {
-        const validation = await validateHtmlComposition({
-          projectRoot: context.project.root,
-          entry: source.entry,
-          ...(layer.clip.props !== undefined ? { props: layer.clip.props } : {}),
-          ...(context.project.format ? { format: context.project.format } : {}),
-        });
+        const validation =
+          context.validations?.get(validationKey) ??
+          (await validateHtmlComposition({
+            projectRoot: context.project.root,
+            entry: source.entry,
+            ...(layer.clip.props !== undefined ? { props: layer.clip.props } : {}),
+            ...(context.project.format ? { format: context.project.format } : {}),
+          }));
         if (!validation.info) {
           throw new FrameyardError(
             "TIMELINE_CLIP_INVALID",
@@ -1548,7 +1564,7 @@ async function checkResolvedTimelineRange(options: {
           if (source.metadata.static === true) {
             continue;
           }
-          const key = `${source.entry}\u0000${JSON.stringify(layer.clip.props ?? null)}`;
+          const key = `${source.entry}\u0000${source.documentKey}\u0000${JSON.stringify(layer.clip.props ?? null)}`;
           const session = sessions.get(key);
           if (!session) {
             throw new FrameyardError("INTERNAL", `Missing composition session for clip "${layer.clip.id}".`);
@@ -1644,7 +1660,11 @@ export async function checkTimeline(options: {
   }
   const timeline = resolved.timeline;
   const diagnostics: CompositionDiagnostic[] = [...resolved.diagnostics];
-  const server = await startPreviewServer({ projectRoot: options.project.root, port: 0 });
+  const server = await startPreviewServer({
+    projectRoot: options.project.root,
+    port: 0,
+    compositionDocuments: resolved.compositionDocuments,
+  });
 
   try {
     diagnostics.push(
@@ -1655,6 +1675,7 @@ export async function checkTimeline(options: {
         context: {
           project: options.project,
           serverUrl: server.url,
+          validations: resolved.validations,
           ...(options.signal ? { signal: options.signal } : {}),
           ...(options.onProgress ? { onProgress: options.onProgress } : {}),
           totalFrames: timeline.durationInFrames,
@@ -1727,6 +1748,7 @@ interface FrameRenderContext {
   project: Project;
   serverUrl: string;
   scratchRoot: string;
+  validations?: ReadonlyMap<string, StaticValidationResult>;
   depth: number;
   signal?: AbortSignal;
 }
@@ -1751,12 +1773,15 @@ async function renderResolvedTimelineFrame(options: {
     const source = clip.source;
 
     if (source.kind === "composition") {
-      const validation = await validateHtmlComposition({
-        projectRoot: context.project.root,
-        entry: source.entry,
-        ...(clip.props !== undefined ? { props: clip.props } : {}),
-        ...(context.project.format ? { format: context.project.format } : {}),
-      });
+      const validationKey = `${source.entry}\u0000${JSON.stringify(clip.props ?? null)}`;
+      const validation =
+        context.validations?.get(validationKey) ??
+        (await validateHtmlComposition({
+          projectRoot: context.project.root,
+          entry: source.entry,
+          ...(clip.props !== undefined ? { props: clip.props } : {}),
+          ...(context.project.format ? { format: context.project.format } : {}),
+        }));
       if (!validation.info) {
         throw new FrameyardError(
           "TIMELINE_CLIP_INVALID",
@@ -1899,7 +1924,11 @@ export async function captureTimelineStills(options: TimelineStillsOptions): Pro
   let server: Awaited<ReturnType<typeof startPreviewServer>> | undefined;
 
   try {
-    server = await startPreviewServer({ projectRoot: options.project.root, port: 0 });
+    server = await startPreviewServer({
+      projectRoot: options.project.root,
+      port: 0,
+      compositionDocuments: resolved.compositionDocuments,
+    });
 
     const diagnostics: CompositionDiagnostic[] = [];
     for (const [index, frame] of options.frames.entries()) {
@@ -1915,6 +1944,7 @@ export async function captureTimelineStills(options: TimelineStillsOptions): Pro
               project: options.project,
               serverUrl: server.url,
               scratchRoot,
+              validations: resolved.validations,
               depth: 0,
               ...(options.signal ? { signal: options.signal } : {}),
             },
@@ -2060,7 +2090,11 @@ export async function renderTimeline(options: TimelineRenderOptions): Promise<Ti
   await mkdir(scratchBase, { recursive: true });
   const scratchRoot = await mkdtemp(path.join(scratchBase, "frameyard-timeline-"));
   const serverTiming = startTiming("timeline.server", { project: options.project.root });
-  const server = await startPreviewServer({ projectRoot: options.project.root, port: 0 });
+  const server = await startPreviewServer({
+    projectRoot: options.project.root,
+    port: 0,
+    compositionDocuments: resolved.compositionDocuments,
+  });
   serverTiming.finish({ url: server.url });
   const infoCache = new Map<string, StaticValidationResult>();
   const staticCache = new Map<string, Promise<StaticCapture>>();
@@ -2158,6 +2192,7 @@ export async function renderTimeline(options: TimelineRenderOptions): Promise<Ti
           serverUrl: server.url,
           scratchRoot,
           infoCache,
+          validations: resolved.validations,
           staticCache,
           captureLimiter,
           sessionPool,

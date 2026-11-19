@@ -1302,4 +1302,23 @@ describe("composition includes", () => {
     expect(depth).toBeDefined();
     expect(depth?.details?.includeChain?.length).toBeGreaterThan(32);
   });
+
+  it("keys expanded documents by include graph and content", async () => {
+    await writePartial("keyed.html", `<fy-partial><span>Keyed</span></fy-partial>`);
+    const html = (props: string) => `<fy-composition width="160" height="90" fps="10" duration-in-frames="2">
+  <fy-include src="./partials/keyed.html" props='${props}'></fy-include>
+</fy-composition>`;
+
+    const first = await validate("include-key", html('{"label":"A"}'));
+    const second = await validate("include-key", html('{"label":"A"}'));
+    const differentProps = await validate("include-key", html('{"label":"B"}'));
+
+    expect(first.documentKey).toMatch(/^[a-f0-9]{64}$/);
+    expect(second.documentKey).toBe(first.documentKey);
+    expect(differentProps.documentKey).not.toBe(first.documentKey);
+
+    await writePartial("keyed.html", `<fy-partial><span>Changed</span></fy-partial>`);
+    const changedContent = await validate("include-key", html('{"label":"A"}'));
+    expect(changedContent.documentKey).not.toBe(first.documentKey);
+  });
 });

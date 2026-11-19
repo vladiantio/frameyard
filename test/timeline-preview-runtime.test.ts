@@ -95,6 +95,58 @@ const planePartial = `<fy-partial>
 </fy-partial>
 `;
 
+const variablesCardComposition = `<script type="application/json" data-fy="props">
+  { "title": "Default", "color": "#101820" }
+</script>
+<script type="application/json" data-fy="props-schema">
+  { "type": "object", "properties": { "title": { "type": "string" }, "color": { "type": "string" } }, "required": ["title", "color"] }
+</script>
+<style>html, body { margin: 0; width: 100%; height: 100%; background: #101820; color: #fff; } .bg { position: absolute; inset: 0; background: var(--fy-prop-color); } h1 { position: relative; }</style>
+    <fy-composition width="320" height="180" fps="10" duration-in-frames="10">
+      <div class="bg"></div>
+      <h1 data-fy-text="title"></h1>
+    </fy-composition>
+`;
+
+const variablesLowerTimeline = {
+  version: 1,
+  variables: { title: "Lower", color: "#111111" },
+  tracks: [{ id: "v1", kind: "video" }],
+  clips: [
+    {
+      id: "card",
+      track: "v1",
+      source: { kind: "composition", id: "variables-card" },
+      start: 0,
+      duration: 5,
+      props: { title: { $var: "title" }, color: { $var: "color" } },
+    },
+  ],
+};
+
+const variablesMainTimeline = {
+  version: 1,
+  tracks: [{ id: "v1", kind: "video" }],
+  clips: [
+    {
+      id: "one",
+      track: "v1",
+      source: { kind: "timeline", id: "variables-lower" },
+      start: 0,
+      duration: 5,
+      variables: { title: "One", color: "#e02020" },
+    },
+    {
+      id: "two",
+      track: "v1",
+      source: { kind: "timeline", id: "variables-lower" },
+      start: 5,
+      duration: 5,
+      variables: { title: "Two", color: "#20a020" },
+    },
+  ],
+};
+
 const resumeComposition = `<style>
   html, body { margin: 0; width: 100%; height: 100%; background: #132; }
 </style>
@@ -181,6 +233,15 @@ beforeAll(async () => {
   await mkdir(path.join(root, "compositions", "partials"), { recursive: true });
   await writeFile(path.join(root, "compositions", "included.html"), includedComposition);
   await writeFile(path.join(root, "compositions", "partials", "plane.html"), planePartial);
+  await writeFile(path.join(root, "compositions", "variables-card.html"), variablesCardComposition);
+  await writeFile(
+    path.join(root, "timelines", "variables-lower.json"),
+    `${JSON.stringify(variablesLowerTimeline, null, 2)}\n`,
+  );
+  await writeFile(
+    path.join(root, "timelines", "variables.json"),
+    `${JSON.stringify(variablesMainTimeline, null, 2)}\n`,
+  );
   await writeFile(
     path.join(root, "timelines", "include.json"),
     `${JSON.stringify(
@@ -523,8 +584,8 @@ beforeAll(async () => {
     path.join(root, "fy.config.js"),
     `export default {
       format: { width: 320, height: 180, fps: 10 },
-      compositions: { intro: "./compositions/intro.html", still: "./compositions/still.html", overlay: "./compositions/overlay.html", tone: "./compositions/audio.html", long: "./compositions/long.html", slow: "./compositions/slow.html", included: "./compositions/included.html" },
-      timelines: { main: "./timelines/main.json", static: "./timelines/static.json", sized: "./timelines/sized.json", video: "./timelines/video.json", audio: "./timelines/audio.json", "audio-jump": "./timelines/audio-jump.json", "audio-hold": "./timelines/audio-hold.json", blend: "./timelines/blend.json", motion: "./timelines/motion.json", dissolve: "./timelines/dissolve.json", scheme: "./timelines/scheme.json", include: "./timelines/include.json" },
+      compositions: { intro: "./compositions/intro.html", still: "./compositions/still.html", overlay: "./compositions/overlay.html", tone: "./compositions/audio.html", long: "./compositions/long.html", slow: "./compositions/slow.html", included: "./compositions/included.html", "variables-card": "./compositions/variables-card.html" },
+      timelines: { main: "./timelines/main.json", static: "./timelines/static.json", sized: "./timelines/sized.json", video: "./timelines/video.json", audio: "./timelines/audio.json", "audio-jump": "./timelines/audio-jump.json", "audio-hold": "./timelines/audio-hold.json", blend: "./timelines/blend.json", motion: "./timelines/motion.json", dissolve: "./timelines/dissolve.json", scheme: "./timelines/scheme.json", include: "./timelines/include.json", variables: "./timelines/variables.json", "variables-lower": "./timelines/variables-lower.json" },
     };\n`,
   );
   server = await startPreviewServer({ projectRoot: root, port: 0 });
@@ -668,6 +729,58 @@ describe("timeline preview runtime", () => {
       expect(Math.abs(previewGreen - stillGreen)).toBeLessThanOrEqual(12);
       expect(Math.abs(previewBlue - stillBlue)).toBeLessThanOrEqual(12);
       expect(previewGreen).toBeGreaterThan(previewRed + 40);
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+
+  it("previews nested timeline variable overrides like production", async () => {
+    const page = await browser.newPage({ viewport: { width: 640, height: 360 } });
+    try {
+      await openEmbeddedTimeline(page, new URL("/__frameyard/timeline/variables?__fy-embed=1", server.url).href);
+      await loadTimeline(page);
+      await seekTimeline(page, 0);
+      await page.waitForFunction(() => {
+        const outer = document.querySelector<HTMLIFrameElement>('[data-clip="one"] iframe');
+        const inner = outer?.contentDocument?.querySelector<HTMLIFrameElement>('[data-clip="card"] iframe');
+        return inner?.contentDocument?.querySelector("h1")?.textContent === "One";
+      });
+
+      const stage = page.locator("#stage");
+      const box = await stage.boundingBox();
+      if (box === null) {
+        throw new Error("Missing timeline stage.");
+      }
+      const imageOne = path.join(root, "out", "variables-preview-one.png");
+      await writeFile(imageOne, await page.screenshot({ clip: box }));
+      const [oneRed, oneGreen] = await mediaPixel(imageOne, Math.floor(box.width * 0.25), Math.floor(box.height * 0.8));
+      expect(oneRed).toBeGreaterThan(oneGreen + 40);
+
+      await seekTimeline(page, 7);
+      await page.waitForFunction(() => {
+        const outer = document.querySelector<HTMLIFrameElement>('[data-clip="two"] iframe');
+        const inner = outer?.contentDocument?.querySelector<HTMLIFrameElement>('[data-clip="card"] iframe');
+        return inner?.contentDocument?.querySelector("h1")?.textContent === "Two";
+      });
+      const imageTwo = path.join(root, "out", "variables-preview-two.png");
+      await writeFile(imageTwo, await page.screenshot({ clip: box }));
+      const [twoRed, twoGreen] = await mediaPixel(imageTwo, Math.floor(box.width * 0.25), Math.floor(box.height * 0.8));
+      expect(twoGreen).toBeGreaterThan(twoRed + 40);
+
+      const stillOne = path.join(root, "out", "variables-still-one.png");
+      const stillTwo = path.join(root, "out", "variables-still-two.png");
+      await captureTimelineStills({
+        project: await loadProject(root),
+        timelineId: "variables",
+        frames: [0, 7],
+        outPaths: [stillOne, stillTwo],
+      });
+      const [stillOneRed, stillOneGreen] = await mediaPixel(stillOne, 80, 144);
+      const [stillTwoRed, stillTwoGreen] = await mediaPixel(stillTwo, 80, 144);
+      expect(Math.abs(oneRed - stillOneRed)).toBeLessThanOrEqual(12);
+      expect(Math.abs(oneGreen - stillOneGreen)).toBeLessThanOrEqual(12);
+      expect(Math.abs(twoRed - stillTwoRed)).toBeLessThanOrEqual(12);
+      expect(Math.abs(twoGreen - stillTwoGreen)).toBeLessThanOrEqual(12);
     } finally {
       await page.close();
     }
@@ -1548,7 +1661,7 @@ describe("timeline preview runtime", () => {
       );
       await page.waitForFunction(() => document.querySelector("#monitor-title")?.textContent === "main");
       expect(await page.locator("#timeline").isVisible()).toBe(true);
-      expect(await page.locator('.asset[data-asset-kind="timeline"]').count()).toBe(12);
+      expect(await page.locator('.asset[data-asset-kind="timeline"]').count()).toBe(14);
       expect(await page.locator("#timeline-meta").textContent()).toContain("10 frames");
       expect(await page.locator("#meta").textContent()).toContain("320×180");
       expect(new URL(page.url()).searchParams.get("timeline")).toBe("main");

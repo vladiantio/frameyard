@@ -12,6 +12,14 @@ contract change may ship in a minor release and is called out explicitly below.
 
 ### Added
 
+- Timeline documents may declare a `variables` JSON object, and a nested
+  timeline clip may override it for that instance. Composition clip props
+  reference a variable with a whole-value `{ "$var": "name" }` object; there is
+  no string interpolation or expression language. Lookup is nearest-scope-first,
+  explicit clip props win, top-level `--props` merges last, and missing or
+  malformed variables fail before Chromium with `TIMELINE_VARIABLE_NOT_FOUND`
+  or `TIMELINE_VARIABLE_INVALID`. Preview passes the flattened instance scope to
+  nested timeline pages. See ADR 0031.
 - Timeline composition clips now capture included fragments through the same
   expanded document as direct composition rendering. The resolve phase freezes
   each expanded include graph for the invocation server, capture sessions and

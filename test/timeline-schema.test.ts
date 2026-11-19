@@ -622,4 +622,132 @@ describe("timeline schema", () => {
       docs: expect.stringContaining("timelines.md"),
     });
   });
+
+  it("parses timeline and nested clip variables", () => {
+    const value = {
+      version: 1,
+      variables: { title: "Hello", palette: { foreground: "#fff" } },
+      tracks: [
+        { id: "v1", kind: "video" },
+        { id: "v2", kind: "video" },
+      ],
+      clips: [
+        {
+          id: "nested",
+          track: "v1",
+          source: { kind: "timeline", id: "lower" },
+          start: 0,
+          variables: { title: "Override", count: 2 },
+        },
+        {
+          id: "intro",
+          track: "v2",
+          source: { kind: "composition", id: "intro" },
+          start: 0,
+          props: {
+            title: { $var: "title" },
+            palette: { $var: "palette" },
+            footer: "Fixed",
+          },
+        },
+      ],
+    };
+
+    const parsed = parseTimelineDocument(value);
+
+    expect(parsed.diagnostics).toEqual([]);
+    expect(parsed.timeline?.variables).toEqual({ title: "Hello", palette: { foreground: "#fff" } });
+    expect(parsed.timeline?.clips[0]?.variables).toEqual({ title: "Override", count: 2 });
+    expect(parsed.timeline?.clips[1]?.props).toEqual({
+      title: { $var: "title" },
+      palette: { $var: "palette" },
+      footer: "Fixed",
+    });
+  });
+
+  it("rejects malformed variables and variable references", () => {
+    const base = () => ({
+      version: 1,
+      tracks: [{ id: "v1", kind: "video" }],
+      clips: [
+        {
+          id: "nested",
+          track: "v1",
+          source: { kind: "timeline", id: "lower" },
+          start: 0,
+        },
+      ],
+    });
+
+    const invalidName = base() as Record<string, unknown>;
+    invalidName.variables = { "1bad": "x" };
+    expect(parseTimelineDocument(invalidName).diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: "TIMELINE_VARIABLE_INVALID",
+        details: expect.objectContaining({ variable: "1bad", jsonPath: "$.variables.1bad" }),
+      }),
+    );
+
+    const notObject = base() as Record<string, unknown>;
+    notObject.variables = ["nope"];
+    expect(parseTimelineDocument(notObject).diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: "TIMELINE_VARIABLE_INVALID",
+        message: expect.stringContaining("plain JSON object"),
+      }),
+    );
+
+    const notSerializable = base() as Record<string, unknown>;
+    notSerializable.variables = { bad: Number.POSITIVE_INFINITY };
+    expect(parseTimelineDocument(notSerializable).diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: "TIMELINE_VARIABLE_INVALID",
+        details: expect.objectContaining({ variable: "bad" }),
+      }),
+    );
+
+    const wrongClip = base() as Record<string, unknown>;
+    (wrongClip.clips as Record<string, unknown>[])[0] = {
+      id: "intro",
+      track: "v1",
+      source: { kind: "composition", id: "intro" },
+      start: 0,
+      variables: { title: "x" },
+    };
+    expect(parseTimelineDocument(wrongClip).diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: "TIMELINE_VARIABLE_INVALID",
+        message: expect.stringContaining("nested timeline"),
+        details: expect.objectContaining({ jsonPath: "$.clips[0].variables" }),
+      }),
+    );
+
+    const badReference = base() as Record<string, unknown>;
+    (badReference.clips as Record<string, unknown>[])[0] = {
+      id: "intro",
+      track: "v1",
+      source: { kind: "composition", id: "intro" },
+      start: 0,
+      props: { title: { $var: "title", fallback: "x" } },
+    };
+    expect(parseTimelineDocument(badReference).diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: "TIMELINE_VARIABLE_INVALID",
+        message: expect.stringContaining('only the "$var" key'),
+        details: expect.objectContaining({ jsonPath: "$.clips[0].props.title" }),
+      }),
+    );
+
+    const nonStringReference = base() as Record<string, unknown>;
+    (nonStringReference.clips as Record<string, unknown>[])[0] = {
+      id: "intro",
+      track: "v1",
+      source: { kind: "composition", id: "intro" },
+      start: 0,
+      props: { title: { $var: 3 } },
+    };
+    expect(parseTimelineDocument(nonStringReference).diagnostics).toContainEqual(
+      expect.objectContaining({ code: "TIMELINE_VARIABLE_INVALID", message: expect.stringContaining("non-empty") }),
+    );
+  });
 });

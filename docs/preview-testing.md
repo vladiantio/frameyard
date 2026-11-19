@@ -82,6 +82,9 @@ re-pinned to its single time-zero state.
 ## Timeline preview
 
 - Page: `/__frameyard/timeline/<id>`; add `?__fy-embed=1` for the embedded host.
+- Nested timeline instances receive their flattened visible timeline variables in
+  the internal `?__fy-vars=<json>` parameter. The embedded page forwards it to
+  the `.json` data route; it is not an authoring surface.
 - URL: the route id is the timeline; `?frame=<n>` is the primary program frame.
   On the composition route, `?composition=<id>` and `?timeline=<id>` are the
   primary state. Major selections use `pushState`; frame updates use throttled

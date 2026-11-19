@@ -4,17 +4,25 @@ import type {
   CompositionDiagnostic,
   CompositionDiagnosticDetails,
   ControllerDeclaration,
+  JsonValue,
   ResolvedAudioClip,
   ResolvedCompositionMetadata,
   ResolvedTranscriptClip,
 } from "../contracts.js";
-import { mergeProps, type Props } from "../contracts.js";
+import { isPlainObject, mergeProps, type Props } from "../contracts.js";
 import { diagnosticFix } from "../diagnostic-fixes.js";
 import { FrameyardError } from "../errors.js";
 import { validateHtmlComposition, type StaticValidationResult } from "../html/validate.js";
 import type { Project, ProjectFormat, ProjectTimeline } from "../project.js";
 import { probeMedia, type ProbeResult } from "../renderer/ffmpeg.js";
 import { parseTimelineDocument, type TimelineClip, type TimelineDocument, type TimelineTrack } from "./schema.js";
+import {
+  clipPropsJsonPath,
+  expandVariableReferences,
+  normalizeVariableOverrides,
+  variableOrigin,
+  type TimelineVariables,
+} from "./variables.js";
 
 export interface ResolvedCompositionSource {
   kind: "composition";
@@ -37,6 +45,8 @@ export interface ResolvedNestedTimelineSource {
   entry: string;
   durationInFrames: number;
   timeline: ResolvedTimeline;
+  /** Flattened visible variables for this instance, used by the preview. */
+  variables?: TimelineVariables;
 }
 
 export interface ResolvedMediaSource {
@@ -85,6 +95,8 @@ export interface ResolvedTimeline {
 export interface ResolveTimelineResult {
   timeline: ResolvedTimeline | null;
   diagnostics: CompositionDiagnostic[];
+  /** Visible variables for a resolved timeline instance. */
+  variables?: TimelineVariables;
 }
 
 export interface ResolveProjectTimelineResult extends ResolveTimelineResult {
@@ -107,6 +119,8 @@ interface ResolveContext {
   stack: string[];
   /** Clip IDs from outermost to current timeline. */
   nesting: string[];
+  /** Variables visible from the parent scope, before this timeline's own values. */
+  variables: ReadonlyMap<string, JsonValue>;
 }
 
 const CONTENT_TYPE_BY_EXTENSION: Record<string, "video" | "image" | "audio"> = {
@@ -394,10 +408,25 @@ async function resolveCompositionSource(options: {
   cache: Map<string, StaticValidationResult>;
   validations: Map<string, StaticValidationResult>;
   compositionDocuments: Map<string, StaticValidationResult>;
+  variables: ReadonlyMap<string, JsonValue>;
+  clipPath: string;
+  propsOverride?: unknown;
   nesting: string[];
-}): Promise<ResolvedCompositionSource | null> {
-  const { project, timelineId, clip, sourceId, diagnostics, cache, validations, compositionDocuments, nesting } =
-    options;
+}): Promise<{ source: ResolvedCompositionSource; props?: Props } | null> {
+  const {
+    project,
+    timelineId,
+    clip,
+    sourceId,
+    diagnostics,
+    cache,
+    validations,
+    compositionDocuments,
+    variables,
+    clipPath,
+    propsOverride,
+    nesting,
+  } = options;
   const composition = project.compositions.get(sourceId);
   const details: CompositionDiagnosticDetails = {
     timeline: timelineId,
@@ -417,14 +446,75 @@ async function resolveCompositionSource(options: {
     return null;
   }
 
-  const propsKey = JSON.stringify(clip.props ?? null);
+  let props: unknown = clip.props;
+  const origins = new Map<string, string>();
+  if (clip.props !== undefined) {
+    const expansion = expandVariableReferences(clip.props as JsonValue, variables);
+    if (expansion.issues.length > 0) {
+      for (const issue of expansion.issues) {
+        addError(
+          diagnostics,
+          issue.kind === "missing" ? "TIMELINE_VARIABLE_NOT_FOUND" : "TIMELINE_VARIABLE_INVALID",
+          issue.message,
+          {
+            ...details,
+            ...(issue.variable !== undefined ? { variable: issue.variable } : {}),
+            jsonPath: clipPropsJsonPath(clipPath, issue.path),
+          },
+        );
+      }
+      return null;
+    }
+    props = expansion.value;
+    for (const [path, name] of expansion.origins) {
+      origins.set(path, name);
+    }
+  }
+
+  if (propsOverride !== undefined) {
+    try {
+      props = mergeProps(props as Props | undefined, propsOverride);
+    } catch (error) {
+      addError(
+        diagnostics,
+        "PROPS_INVALID",
+        `Props override for clip "${clip.id}" is invalid: ${error instanceof Error ? error.message : String(error)}`,
+        { ...details, jsonPath: `${clipPath}.props` },
+      );
+      return null;
+    }
+    if (isPlainObject(propsOverride)) {
+      for (const key of Object.keys(propsOverride)) {
+        for (const path of origins.keys()) {
+          if (path === key || path.startsWith(`${key}.`) || path.startsWith(`${key}[`)) {
+            origins.delete(path);
+          }
+        }
+      }
+    }
+  } else if (props !== undefined) {
+    try {
+      props = mergeProps(props as Props);
+    } catch (error) {
+      addError(
+        diagnostics,
+        "PROPS_INVALID",
+        `Resolved props for clip "${clip.id}" are invalid: ${error instanceof Error ? error.message : String(error)}`,
+        { ...details, jsonPath: `${clipPath}.props` },
+      );
+      return null;
+    }
+  }
+  const resolvedProps = props as Props | undefined;
+
+  const propsKey = JSON.stringify(resolvedProps ?? null);
   const cacheKey = `${composition.entry}\u0000${propsKey}`;
   let validation = cache.get(cacheKey);
   if (!validation) {
     validation = await validateHtmlComposition({
       projectRoot: project.root,
       entry: composition.entry,
-      ...(clip.props !== undefined ? { props: clip.props } : {}),
+      ...(resolvedProps !== undefined ? { props: resolvedProps } : {}),
       ...(project.format ? { format: project.format } : {}),
     });
     cache.set(cacheKey, validation);
@@ -437,15 +527,30 @@ async function resolveCompositionSource(options: {
   }
 
   for (const diagnostic of validation.diagnostics) {
-    diagnostics.push(
-      withContext(diagnostic, {
-        timeline: timelineId,
-        clip: clip.id,
-        track: clip.track,
-        composition: sourceId,
-        nesting,
-      }),
-    );
+    const contextual = withContext(diagnostic, {
+      timeline: timelineId,
+      clip: clip.id,
+      track: clip.track,
+      composition: sourceId,
+      nesting,
+    });
+    if (diagnostic.code === "PROPS_SCHEMA_INVALID" || diagnostic.code === "PROPS_INVALID") {
+      const relative =
+        diagnostic.code === "PROPS_SCHEMA_INVALID" && typeof diagnostic.details?.value !== "string"
+          ? diagnostic.details?.path
+          : undefined;
+      contextual.details = {
+        ...contextual.details,
+        jsonPath: clipPropsJsonPath(clipPath, relative ?? ""),
+      };
+      if (relative !== undefined) {
+        const variable = variableOrigin(origins, relative);
+        if (variable !== undefined) {
+          contextual.details.variable = variable;
+        }
+      }
+    }
+    diagnostics.push(contextual);
   }
 
   if (!validation.info) {
@@ -453,7 +558,7 @@ async function resolveCompositionSource(options: {
       diagnostics,
       "TIMELINE_CLIP_INVALID",
       `Composition "${sourceId}" could not be loaded for clip "${clip.id}".`,
-      details,
+      { ...details, jsonPath: `${clipPath}.props` },
     );
     return null;
   }
@@ -478,16 +583,19 @@ async function resolveCompositionSource(options: {
   }
 
   return {
-    kind: "composition",
-    id: sourceId,
-    entry: composition.entry,
-    documentKey: validation.documentKey ?? composition.entry,
-    metadata,
-    controller: validation.info.controller,
-    ...(metadata.static === true ? {} : { durationInFrames: metadata.durationInFrames }),
-    audioClips: validation.info.audioClips,
-    embeddedAudioClips: validation.info.embeddedAudioClips,
-    transcriptClips: validation.info.transcriptClips,
+    source: {
+      kind: "composition",
+      id: sourceId,
+      entry: composition.entry,
+      documentKey: validation.documentKey ?? composition.entry,
+      metadata,
+      controller: validation.info.controller,
+      ...(metadata.static === true ? {} : { durationInFrames: metadata.durationInFrames }),
+      audioClips: validation.info.audioClips,
+      embeddedAudioClips: validation.info.embeddedAudioClips,
+      transcriptClips: validation.info.transcriptClips,
+    },
+    ...(resolvedProps !== undefined ? { props: resolvedProps } : {}),
   };
 }
 
@@ -550,7 +658,9 @@ async function resolveTimelineSource(options: {
       timelineId: sourceId,
       stack: [...context.stack, sourceId],
       nesting: [...context.nesting, clip.id],
+      variables: context.variables,
     },
+    ...(clip.variables !== undefined ? { instanceVariables: clip.variables } : {}),
     ...(signal ? { signal } : {}),
     probeCache,
     compositionCache,
@@ -576,6 +686,7 @@ async function resolveTimelineSource(options: {
     entry: nested.entry,
     durationInFrames: nestedResult.timeline.durationInFrames,
     timeline: nestedResult.timeline,
+    ...(nestedResult.variables !== undefined ? { variables: nestedResult.variables } : {}),
   };
 }
 
@@ -584,17 +695,21 @@ async function resolveClipSource(options: {
   clip: TimelineClip;
   diagnostics: CompositionDiagnostic[];
   context: ResolveContext;
+  clipPath: string;
+  propsOverride?: unknown;
   signal?: AbortSignal;
   probeCache: Map<string, MediaProbeEntry>;
   compositionCache: Map<string, StaticValidationResult>;
   validations: Map<string, StaticValidationResult>;
   compositionDocuments: Map<string, StaticValidationResult>;
-}): Promise<ResolvedTimelineSource | null> {
+}): Promise<{ source: ResolvedTimelineSource; props?: Props } | null> {
   const {
     project,
     clip,
     diagnostics,
     context,
+    clipPath,
+    propsOverride,
     signal,
     probeCache,
     compositionCache,
@@ -613,11 +728,14 @@ async function resolveClipSource(options: {
       cache: compositionCache,
       validations,
       compositionDocuments,
+      variables: context.variables,
+      clipPath,
+      ...(propsOverride !== undefined ? { propsOverride } : {}),
       nesting: context.nesting,
     });
   }
   if (source.kind === "timeline") {
-    return resolveTimelineSource({
+    const nested = await resolveTimelineSource({
       project,
       clip,
       sourceId: source.id,
@@ -629,8 +747,9 @@ async function resolveClipSource(options: {
       validations,
       compositionDocuments,
     });
+    return nested === null ? null : { source: nested };
   }
-  return resolveMediaSource({
+  const media = await resolveMediaSource({
     project,
     timelineId: context.timelineId,
     clip,
@@ -638,6 +757,7 @@ async function resolveClipSource(options: {
     probeCache,
     ...(signal ? { signal } : {}),
   });
+  return media === null ? null : { source: media };
 }
 
 async function readTimelineDocument(
@@ -785,6 +905,7 @@ async function resolveTimelineInternal(options: {
   compositionCache: Map<string, StaticValidationResult>;
   validations: Map<string, StaticValidationResult>;
   compositionDocuments: Map<string, StaticValidationResult>;
+  instanceVariables?: TimelineVariables;
   propsOverrides?: Record<string, unknown>;
 }): Promise<ResolveTimelineResult> {
   const {
@@ -796,6 +917,7 @@ async function resolveTimelineInternal(options: {
     compositionCache,
     validations,
     compositionDocuments,
+    instanceVariables,
     propsOverrides,
   } = options;
   const diagnostics: CompositionDiagnostic[] = [];
@@ -813,31 +935,32 @@ async function resolveTimelineInternal(options: {
     return { timeline: null, diagnostics: dedupeDiagnostics(diagnostics) };
   }
 
+  const variables = new Map<string, JsonValue>(context.variables);
+  for (const [name, value] of Object.entries(document.variables ?? {})) {
+    variables.set(name, value);
+  }
+  for (const [name, value] of Object.entries(instanceVariables ?? {})) {
+    variables.set(name, value);
+  }
+  const scopedContext: ResolveContext = { ...context, variables };
+
   const clips: ResolvedTimelineClip[] = [];
   const usedOverrides = new Set<string>();
   for (const [clipIndex, rawClip] of document.clips.entries()) {
-    let clip = rawClip;
+    const clipPath = `$.clips[${clipIndex}]`;
+    let propsOverride: unknown;
     if (propsOverrides && rawClip.source.kind === "composition" && propsOverrides[rawClip.id] !== undefined) {
-      try {
-        const merged = mergeProps(rawClip.props, propsOverrides[rawClip.id]) as Props;
-        clip = { ...rawClip, props: merged };
-        usedOverrides.add(rawClip.id);
-      } catch (error) {
-        addError(
-          diagnostics,
-          "PROPS_INVALID",
-          `Props override for clip "${rawClip.id}" is invalid: ${error instanceof Error ? error.message : String(error)}`,
-          { timeline: timeline.id, clip: rawClip.id, track: rawClip.track, nesting: context.nesting },
-        );
-        continue;
-      }
+      propsOverride = propsOverrides[rawClip.id];
+      usedOverrides.add(rawClip.id);
     }
     const clipDiagnostics: CompositionDiagnostic[] = [];
-    const source = await resolveClipSource({
+    const resolved = await resolveClipSource({
       project,
-      clip,
+      clip: rawClip,
       diagnostics: clipDiagnostics,
-      context,
+      context: scopedContext,
+      clipPath,
+      ...(propsOverride !== undefined ? { propsOverride } : {}),
       ...(signal ? { signal } : {}),
       probeCache,
       compositionCache,
@@ -845,10 +968,12 @@ async function resolveTimelineInternal(options: {
       compositionDocuments,
     });
     diagnostics.push(...clipDiagnostics);
-    if (!source) {
+    if (!resolved) {
       continue;
     }
 
+    const source = resolved.source;
+    const clip = resolved.props !== undefined ? { ...rawClip, props: resolved.props } : rawClip;
     const duration = resolveClipDuration(clip, source, diagnostics, context.timelineId, context.nesting);
     if (duration === null) {
       continue;
@@ -1046,6 +1171,7 @@ async function resolveTimelineInternal(options: {
       transitions,
     },
     diagnostics: uniqueDiagnostics,
+    variables: Object.fromEntries(variables),
   };
 }
 
@@ -1056,13 +1182,20 @@ export async function resolveProjectTimeline(options: {
   signal?: AbortSignal;
   /** Render-time props overrides keyed by top-level composition clip ID. */
   propsOverrides?: Record<string, unknown>;
+  /** Internal per-instance variable overrides for a nested preview page. */
+  variablesOverride?: Record<string, unknown>;
 }): Promise<ResolveProjectTimelineResult> {
+  const instanceVariables =
+    options.variablesOverride !== undefined
+      ? normalizeVariableOverrides(options.variablesOverride, "timeline variables")
+      : undefined;
   const validations = new Map<string, StaticValidationResult>();
   const compositionDocuments = new Map<string, StaticValidationResult>();
   const result = await resolveTimelineInternal({
     project: options.project,
     timeline: options.timeline,
-    context: { timelineId: options.timeline.id, stack: [options.timeline.id], nesting: [] },
+    context: { timelineId: options.timeline.id, stack: [options.timeline.id], nesting: [], variables: new Map() },
+    ...(instanceVariables !== undefined ? { instanceVariables } : {}),
     ...(options.signal ? { signal: options.signal } : {}),
     ...(options.propsOverrides ? { propsOverrides: options.propsOverrides } : {}),
     probeCache: new Map(),

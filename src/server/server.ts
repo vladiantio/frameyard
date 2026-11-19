@@ -374,7 +374,22 @@ export async function startPreviewServer(options: PreviewServerOptions): Promise
       const timelineDataMatch = /^\/__frameyard\/timeline\/(.+)\.json$/.exec(pathname);
       if (timelineDataMatch) {
         try {
-          sendJson(response, 200, await buildTimelinePreviewData(project, timelineDataMatch[1] as string));
+          let variablesOverride: Record<string, unknown> | undefined;
+          const rawVariables = url.searchParams.get("__fy-vars");
+          if (rawVariables !== null) {
+            let parsed: unknown;
+            try {
+              parsed = JSON.parse(rawVariables);
+            } catch {
+              throw new FrameyardError("TIMELINE_VARIABLE_INVALID", "Timeline variable overrides must be valid JSON.");
+            }
+            variablesOverride = parsed as Record<string, unknown>;
+          }
+          sendJson(
+            response,
+            200,
+            await buildTimelinePreviewData(project, timelineDataMatch[1] as string, undefined, variablesOverride),
+          );
         } catch (error) {
           if (error instanceof FrameyardError) {
             sendJson(response, 500, {

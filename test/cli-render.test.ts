@@ -28,6 +28,77 @@ afterAll(async () => {
 });
 
 describe.concurrent("CLI renders and workflow", () => {
+  it("reports a missing timeline variable before Chromium", async () => {
+    const variableRoot = await mkdtemp(path.join(tmpdir(), "frameyard-variable-cli-"));
+    await mkdir(path.join(variableRoot, "compositions"), { recursive: true });
+    await mkdir(path.join(variableRoot, "timelines"), { recursive: true });
+    await writeFile(
+      path.join(variableRoot, "compositions", "card.html"),
+      `<script type="application/json" data-fy="props">{ "title": "Default" }</script>
+<fy-composition width="320" height="180" fps="10" duration-in-frames="2"></fy-composition>
+`,
+    );
+    await writeFile(
+      path.join(variableRoot, "timelines", "main.json"),
+      JSON.stringify(
+        {
+          version: 1,
+          tracks: [{ id: "v1", kind: "video" }],
+          clips: [
+            {
+              id: "card",
+              track: "v1",
+              source: { kind: "composition", id: "card" },
+              start: 0,
+              duration: 2,
+              props: { title: { $var: "missing" } },
+            },
+          ],
+        },
+        null,
+        2,
+      ),
+    );
+    await writeFile(
+      path.join(variableRoot, "fy.config.js"),
+      `export default {
+        format: { width: 320, height: 180, fps: 10 },
+        compositions: { card: "./compositions/card.html" },
+        timelines: { main: "./timelines/main.json" },
+      };\n`,
+    );
+
+    try {
+      const result = await run(["check", "main", "--project", variableRoot, "--json"], variableRoot);
+      expect(result.code).not.toBe(0);
+      const json = JSON.parse(result.stdout) as {
+        ok: boolean;
+        command: string;
+        error?: { code: string };
+        diagnostics?: Array<{ code: string; details?: Record<string, unknown> }>;
+      };
+      expect(json).toMatchObject({
+        ok: false,
+        command: "check",
+        error: { code: "TIMELINE_VARIABLE_NOT_FOUND" },
+      });
+      expect(json.diagnostics).toContainEqual(
+        expect.objectContaining({
+          code: "TIMELINE_VARIABLE_NOT_FOUND",
+          details: expect.objectContaining({
+            timeline: "main",
+            clip: "card",
+            track: "v1",
+            variable: "missing",
+            jsonPath: "$.clips[0].props.title",
+          }),
+        }),
+      );
+    } finally {
+      await rm(variableRoot, { recursive: true, force: true });
+    }
+  });
+
   it("renders citty help, version, and colored human output", async () => {
     const help = await run(["--help"], root);
     expect(help.code).toBe(0);

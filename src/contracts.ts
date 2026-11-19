@@ -174,6 +174,8 @@ export interface CompositionDiagnosticDetails {
   nesting?: string[];
   /** Project-relative included paths from the entry to the failing partial. */
   includeChain?: string[];
+  /** Timeline variable named by a reference or variable diagnostic. */
+  variable?: string;
   controller?: {
     kind: "inline" | "external";
     line?: number;

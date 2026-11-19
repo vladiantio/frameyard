@@ -95,7 +95,7 @@ An HTML attribute that maps a prop into text, an attribute, a class, or element 
 _Avoid_: Template expression, interpolation
 
 **Props**:
-The immutable, JSON-serializable inputs supplied to a composition for one load; a timeline clip can fix the props for its instance of the composition.
+The immutable, JSON-serializable inputs supplied to a composition for one load; a timeline clip can fix the props for its instance of the composition, optionally by referencing a timeline variable.
 _Avoid_: Options, settings, mutable state
 
 **Props schema**:
@@ -153,6 +153,14 @@ _Avoid_: Asset clip, raw clip
 **Nested timeline clip**:
 A clip whose source is another timeline.
 _Avoid_: Nested sequence, compound clip
+
+**Timeline variable**:
+A named JSON value declared by a timeline document or overridden by a nested timeline clip instance, visible to composition clips in that timeline and its descendants. Variables resolve nearest-scope-first before Chromium and frame production.
+_Avoid_: Global, environment variable, input prop
+
+**Variable reference**:
+The reserved `{ "$var": "name" }` object in a composition clip's `props`; it is replaced whole by the nearest visible timeline variable value. It is not string interpolation or a template expression.
+_Avoid_: Binding expression, interpolation
 
 **Source in-point**:
 The first source frame a clip uses.

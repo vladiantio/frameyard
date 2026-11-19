@@ -51,6 +51,8 @@ Do not claim success after a nonzero exit. Fix the cause, rerun `check`, and onl
 | `TIMELINE_TRANSITION_DUPLICATE` | Repeated pair or a clip used twice on one side | Declare each pair once; a clip may chain `from → to → from`. |
 | `TIMELINE_TRANSITION_KIND` | Unsupported or missing `kind` | Use `"kind": "dissolve"` on a video track or `"kind": "crossfade"` on an audio track. |
 | `TIMELINE_TRANSITION_INVALID` | Unknown transition field, invalid id, or unsupported easing | Fix the entry; easing uses the keyframe timing-function vocabulary. |
+| `TIMELINE_VARIABLE_NOT_FOUND` | A composition clip references a timeline variable not in scope | Declare it in the timeline or a parent instance, or correct the `$var` name. |
+| `TIMELINE_VARIABLE_INVALID` | Malformed `variables` object, name/value, or `$var` reference | Use a plain JSON object and exactly `{ "$var": "name" }`; variable names start with a letter or `_`. |
 | `MEDIA_INVALID` | Invalid media source or attributes | Use local, seekable files and valid `data-fy-*` values. |
 | `MEDIA_SEEK_FAILED` | Embedded video did not reach the requested time | Re-encode with a regular keyframe interval or replace the source. |
 | `TRANSCRIPT_INVALID` | Invalid/missing transcript declaration or JSON | Regenerate with `npx frameyard transcribe`; do not hand-edit timestamps. |

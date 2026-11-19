@@ -887,4 +887,254 @@ describe("timeline resolution", () => {
       }),
     );
   });
+
+  const variableCompositionHtml = `<script type="application/json" data-fy="props">
+  { "title": "Default", "color": "#101820", "footer": "Fixed" }
+</script>
+<script type="application/json" data-fy="props-schema">
+  { "type": "object", "properties": { "title": { "type": "string" }, "color": { "type": "string" }, "footer": { "type": "string" } }, "required": ["title", "color"] }
+</script>
+<fy-composition width="1920" height="1080" fps="30" duration-in-frames="10"></fy-composition>
+`;
+
+  function variableLowerTimeline(variables: unknown = { title: "Lower", color: "#111111" }) {
+    return {
+      version: 1,
+      variables,
+      tracks: [{ id: "v1", kind: "video" }],
+      clips: [
+        {
+          id: "card",
+          track: "v1",
+          source: { kind: "composition", id: "intro" },
+          start: 0,
+          duration: 2,
+          props: {
+            title: { $var: "title" },
+            color: { $var: "color" },
+            footer: { $var: "footer" },
+          },
+        },
+      ],
+    };
+  }
+
+  it("resolves nested instance variables nearest-first without leaking to siblings", async () => {
+    const lower = variableLowerTimeline();
+    const project = await createProject({
+      compositionHtml: variableCompositionHtml,
+      timeline: timeline([
+        {
+          id: "one",
+          track: "v1",
+          source: { kind: "timeline", id: "lower" },
+          start: 0,
+          duration: 2,
+          variables: { title: "One", color: "#ff0000" },
+        },
+        {
+          id: "two",
+          track: "v2",
+          source: { kind: "timeline", id: "lower" },
+          start: 0,
+          duration: 2,
+          variables: { title: "Two", color: "#00ff00" },
+        },
+      ]),
+      timelines: {
+        main: timeline(
+          [
+            {
+              id: "one",
+              track: "v1",
+              source: { kind: "timeline", id: "lower" },
+              start: 0,
+              duration: 2,
+              variables: { title: "One", color: "#ff0000" },
+            },
+            {
+              id: "two",
+              track: "v2",
+              source: { kind: "timeline", id: "lower" },
+              start: 0,
+              duration: 2,
+              variables: { title: "Two", color: "#00ff00" },
+            },
+          ],
+          [
+            { id: "v1", kind: "video" },
+            { id: "v2", kind: "video" },
+          ],
+          { variables: { footer: "Parent footer" } },
+        ),
+        lower,
+      },
+      timelineConfig: { main: "./timelines/main.json", lower: "./timelines/lower.json" },
+    });
+    const resolved = await resolveMain(project);
+
+    expect(resolved.diagnostics.filter((diagnostic) => diagnostic.severity === "error")).toEqual([]);
+    const first = resolved.timeline?.clips[0]?.source;
+    const second = resolved.timeline?.clips[1]?.source;
+    if (first?.kind !== "timeline" || second?.kind !== "timeline") {
+      throw new Error("Expected two nested timeline sources.");
+    }
+    expect(first.timeline.clips[0]?.props).toEqual({
+      title: "One",
+      color: "#ff0000",
+      footer: "Parent footer",
+    });
+    expect(second.timeline.clips[0]?.props).toEqual({
+      title: "Two",
+      color: "#00ff00",
+      footer: "Parent footer",
+    });
+    expect(first.variables).toEqual({ footer: "Parent footer", title: "One", color: "#ff0000" });
+    expect(second.variables).toEqual({ footer: "Parent footer", title: "Two", color: "#00ff00" });
+  });
+
+  it("applies variables, explicit clip props, and CLI overrides in order", async () => {
+    const project = await createProject({
+      compositionHtml: variableCompositionHtml,
+      timeline: timeline(
+        [
+          {
+            id: "card",
+            track: "v1",
+            source: { kind: "composition", id: "intro" },
+            start: 0,
+            duration: 2,
+            props: {
+              title: { $var: "title" },
+              color: "#0000ff",
+              footer: { $var: "footer" },
+              literal: "${title} is not interpolated",
+            },
+          },
+        ],
+        undefined,
+        {
+          variables: { title: "From variable", color: "#ff0000", footer: "Variable footer" },
+        },
+      ),
+    });
+    const resolved = await resolveMain(project, { card: { footer: "From CLI" } });
+
+    expect(resolved.diagnostics.filter((diagnostic) => diagnostic.severity === "error")).toEqual([]);
+    expect(resolved.timeline?.clips[0]?.props).toEqual({
+      title: "From variable",
+      color: "#0000ff",
+      footer: "From CLI",
+      literal: "${title} is not interpolated",
+    });
+  });
+
+  it("reports a missing variable with its timeline path and nesting", async () => {
+    const lower = variableLowerTimeline({ title: "Lower" });
+    const project = await createProject({
+      compositionHtml: variableCompositionHtml,
+      timeline: timeline([
+        {
+          id: "outer",
+          track: "v1",
+          source: { kind: "timeline", id: "lower" },
+          start: 0,
+          duration: 2,
+          variables: { title: "Outer" },
+        },
+      ]),
+      timelines: {
+        main: timeline([
+          {
+            id: "outer",
+            track: "v1",
+            source: { kind: "timeline", id: "lower" },
+            start: 0,
+            duration: 2,
+            variables: { title: "Outer" },
+          },
+        ]),
+        lower,
+      },
+      timelineConfig: { main: "./timelines/main.json", lower: "./timelines/lower.json" },
+    });
+    const resolved = await resolveMain(project);
+
+    expect(resolved.timeline).toBeNull();
+    expect(resolved.diagnostics).toContainEqual(
+      expect.objectContaining({
+        severity: "error",
+        code: "TIMELINE_VARIABLE_NOT_FOUND",
+        details: expect.objectContaining({
+          timeline: "lower",
+          clip: "card",
+          track: "v1",
+          nesting: ["outer"],
+          variable: "color",
+          jsonPath: "$.clips[0].props.color",
+        }),
+      }),
+    );
+  });
+
+  it("reports invalid resolved props with the clip path and variable origin", async () => {
+    const project = await createProject({
+      compositionHtml: variableCompositionHtml,
+      timeline: timeline(
+        [
+          {
+            id: "card",
+            track: "v1",
+            source: { kind: "composition", id: "intro" },
+            start: 0,
+            duration: 2,
+            props: { title: { $var: "title" } },
+          },
+        ],
+        undefined,
+        { variables: { title: 42 } },
+      ),
+    });
+    const resolved = await resolveMain(project);
+
+    expect(resolved.timeline).toBeNull();
+    expect(resolved.diagnostics).toContainEqual(
+      expect.objectContaining({
+        severity: "error",
+        code: "PROPS_SCHEMA_INVALID",
+        details: expect.objectContaining({
+          timeline: "main",
+          clip: "card",
+          track: "v1",
+          path: "title",
+          jsonPath: "$.clips[0].props.title",
+          variable: "title",
+        }),
+      }),
+    );
+  });
+
+  it("accepts a whole-props variable reference", async () => {
+    const project = await createProject({
+      compositionHtml: variableCompositionHtml,
+      timeline: timeline(
+        [
+          {
+            id: "card",
+            track: "v1",
+            source: { kind: "composition", id: "intro" },
+            start: 0,
+            duration: 2,
+            props: { $var: "scene" },
+          },
+        ],
+        undefined,
+        { variables: { scene: { title: "Whole", color: "#abcdef" } } },
+      ),
+    });
+    const resolved = await resolveMain(project);
+
+    expect(resolved.diagnostics.filter((diagnostic) => diagnostic.severity === "error")).toEqual([]);
+    expect(resolved.timeline?.clips[0]?.props).toEqual({ title: "Whole", color: "#abcdef" });
+  });
 });

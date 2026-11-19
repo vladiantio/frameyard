@@ -26,7 +26,13 @@ function byId<T extends HTMLElement>(id: string): T {
 }
 
 async function fetchTimelineData(timelineId: string): Promise<TimelinePreviewData> {
-  const response = await fetch(`/__frameyard/timeline/${encodeURIComponent(timelineId)}.json`, {
+  const search = new URLSearchParams();
+  const variables = new URL(window.location.href).searchParams.get("__fy-vars");
+  if (variables !== null) {
+    search.set("__fy-vars", variables);
+  }
+  const suffix = search.size > 0 ? `?${search.toString()}` : "";
+  const response = await fetch(`/__frameyard/timeline/${encodeURIComponent(timelineId)}.json${suffix}`, {
     cache: "no-store",
   });
   if (!response.ok) {

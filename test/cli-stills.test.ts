@@ -523,7 +523,13 @@ describe.concurrent("CLI stills and composition checks", () => {
       },
       docs: expect.stringContaining("includes.md"),
     });
-    for (const code of ["INCLUDE_CYCLE", "INCLUDE_INVALID", "INCLUDE_DEPTH_EXCEEDED"]) {
+    for (const code of [
+      "INCLUDE_CYCLE",
+      "INCLUDE_INVALID",
+      "INCLUDE_DEPTH_EXCEEDED",
+      "TIMELINE_VARIABLE_NOT_FOUND",
+      "TIMELINE_VARIABLE_INVALID",
+    ]) {
       const explained = await run(["explain", code, "--json"], root);
       expect(explained.code).toBe(0);
       expect(JSON.parse(explained.stdout)).toMatchObject({
@@ -546,7 +552,14 @@ describe.concurrent("CLI stills and composition checks", () => {
     expect(listing.codes).toContainEqual(
       expect.objectContaining({ code: "BINDING_INVALID", summary: expect.any(String) }),
     );
-    for (const code of ["INCLUDE_NOT_FOUND", "INCLUDE_CYCLE", "INCLUDE_INVALID", "INCLUDE_DEPTH_EXCEEDED"]) {
+    for (const code of [
+      "INCLUDE_NOT_FOUND",
+      "INCLUDE_CYCLE",
+      "INCLUDE_INVALID",
+      "INCLUDE_DEPTH_EXCEEDED",
+      "TIMELINE_VARIABLE_NOT_FOUND",
+      "TIMELINE_VARIABLE_INVALID",
+    ]) {
       expect(listing.codes).toContainEqual(expect.objectContaining({ code, summary: expect.any(String) }));
     }
 

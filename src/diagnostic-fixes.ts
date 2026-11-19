@@ -257,6 +257,24 @@ export function diagnosticFix(code: FrameyardErrorCode, details?: unknown, messa
         message: "Adjust clip starts and durations so from.start < to.start < from.end < to.end.",
         docs: DOCS.timelines,
       };
+    case "TIMELINE_VARIABLE_NOT_FOUND": {
+      const variable = detailString(details, "variable");
+      return {
+        kind: "value",
+        message:
+          variable !== undefined
+            ? `Declare timeline variable "${variable}" in this timeline or a parent instance, or correct the reference.`
+            : "Declare the timeline variable or correct the reference.",
+        docs: DOCS.timelines,
+      };
+    }
+    case "TIMELINE_VARIABLE_INVALID":
+      return {
+        kind: "value",
+        message:
+          'Declare variables as a plain JSON object and use exactly { "$var": "name" } for a whole-value reference.',
+        docs: DOCS.timelines,
+      };
     case "FONT_LOAD_FAILED":
       return {
         kind: "command",

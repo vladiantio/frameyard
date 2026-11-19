@@ -55,7 +55,7 @@ Diagnostics and error envelopes may include an optional `fix` object:
 
 `kind` is `attribute`, `value`, `path`, `command`, or `docs`. `patch`, `command`, and `docs` are optional. Fixes are advisory; Frameyard never applies them automatically.
 
-Baseline fixes are provided for `BINDING_INVALID`, `BINDING_PATH_MISSING`, `ANIMATION_INVALID`, `CONTROLLER_INVALID`, `INCLUDE_NOT_FOUND`, `INCLUDE_INVALID`, `INCLUDE_CYCLE`, `INCLUDE_DEPTH_EXCEEDED`, `STATIC_MEDIA_UNSUPPORTED`, `ASSET_NOT_FOUND`, `TIMELINE_CLIP_OVERLAP`, `TIMELINE_TRANSITION_GEOMETRY`, `FONT_LOAD_FAILED`, and `OUTPUT_EXISTS`, plus related binding, timeline, font, media, props-schema, and policy codes. Unknown codes have no fix.
+Baseline fixes are provided for `BINDING_INVALID`, `BINDING_PATH_MISSING`, `ANIMATION_INVALID`, `CONTROLLER_INVALID`, `INCLUDE_NOT_FOUND`, `INCLUDE_INVALID`, `INCLUDE_CYCLE`, `INCLUDE_DEPTH_EXCEEDED`, `STATIC_MEDIA_UNSUPPORTED`, `ASSET_NOT_FOUND`, `TIMELINE_CLIP_OVERLAP`, `TIMELINE_TRANSITION_GEOMETRY`, `TIMELINE_VARIABLE_NOT_FOUND`, `TIMELINE_VARIABLE_INVALID`, `FONT_LOAD_FAILED`, and `OUTPUT_EXISTS`, plus related binding, timeline, font, media, props-schema, and policy codes. Unknown codes have no fix.
 
 Use `npx frameyard explain <code>` for the cause and examples, or `npx frameyard explain --list --json` for every stable code and summary. Timeline diagnostics may also include `timeline`, `clip`, `track`, `channel`, `keyframe`, `jsonPath`, `timelineFrame`, `sourceFrame`, `from`, `to`, and `nesting`; keyframe errors use `channel`, the zero-based `keyframe` index, and the clip-local `frame`, and transition errors use `from`/`to`.
 
@@ -94,6 +94,8 @@ Use `npx frameyard explain <code>` for the cause and examples, or `npx frameyard
 | `ELEMENT_NOT_SUPPORTED` | error | `iframe`, `object`, `embed`, `base`, refresh/CSP meta, `source`, `track`, or declarative shadow DOM |
 | `ELEMENT_UNKNOWN` | warning | Unknown `fy-*` element |
 | `CONTENT_OUTSIDE_ROOT` | warning | Visual content outside `<fy-composition>` |
+| `TIMELINE_VARIABLE_NOT_FOUND` | error | A composition clip references a timeline variable that is not in scope |
+| `TIMELINE_VARIABLE_INVALID` | error | Malformed `variables` object, variable name/value, or `$var` reference object |
 | `TIMELINE_TRANSITION_INVALID` | error | Unknown transition field, invalid clip id, or unsupported easing |
 | `TIMELINE_TRANSITION_UNKNOWN_CLIP` | error | Transition names a missing or self clip |
 | `TIMELINE_TRANSITION_WRONG_TRACK` | error | Transition clips are on different tracks |

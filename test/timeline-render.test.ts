@@ -3558,4 +3558,113 @@ export default {
     });
     await expect(stat(outPath)).rejects.toThrow();
   }, 60_000);
+
+  it("renders sibling nested instances with different variables", async () => {
+    const cardComposition = `<script type="application/json" data-fy="props">
+  { "title": "Default", "color": "#101820" }
+</script>
+<script type="application/json" data-fy="props-schema">
+  { "type": "object", "properties": { "title": { "type": "string" }, "color": { "type": "string" } }, "required": ["title", "color"] }
+</script>
+<style>html, body { margin: 0; width: 100%; height: 100%; background: #101820; color: #fff; } .bg { position: absolute; inset: 0; background: var(--fy-prop-color); } h1 { position: relative; }</style>
+<fy-composition width="320" height="180" fps="10" duration-in-frames="10">
+  <div class="bg"></div>
+  <h1 data-fy-text="title"></h1>
+</fy-composition>
+`;
+    const root = await includeProject({
+      compositions: { card: cardComposition },
+      partials: {},
+      timelines: {
+        lower: {
+          version: 1,
+          variables: { title: "Lower", color: "#111111" },
+          tracks: [{ id: "v1", kind: "video" }],
+          clips: [
+            {
+              id: "card",
+              track: "v1",
+              source: { kind: "composition", id: "card" },
+              start: 0,
+              duration: 5,
+              props: { title: { $var: "title" }, color: { $var: "color" } },
+            },
+          ],
+        },
+        main: {
+          version: 1,
+          tracks: [{ id: "v1", kind: "video" }],
+          clips: [
+            {
+              id: "one",
+              track: "v1",
+              source: { kind: "timeline", id: "lower" },
+              start: 0,
+              duration: 5,
+              variables: { title: "One", color: "#e02020" },
+            },
+            {
+              id: "two",
+              track: "v1",
+              source: { kind: "timeline", id: "lower" },
+              start: 5,
+              duration: 5,
+              variables: { title: "Two", color: "#20a020" },
+            },
+          ],
+        },
+      },
+    });
+    const project = await loadProject(root);
+    const outPath = path.join(root, "out", "variables.mp4");
+
+    const checked = await checkTimeline({ project, timelineId: "main" });
+    expect(checked.framesChecked).toBe(10);
+    expect(checked.diagnostics.filter((diagnostic) => diagnostic.severity === "error")).toEqual([]);
+
+    const result = await renderTimelineForTest({
+      project,
+      timelineId: "main",
+      outPath,
+      workers: 2,
+      maxSegmentFrames: 3,
+    });
+    expect(result.framesRendered).toBe(10);
+
+    const stillOne = path.join(root, "out", "variables-one.png");
+    const stillTwo = path.join(root, "out", "variables-two.png");
+    await captureTimelineStills({
+      project,
+      timelineId: "main",
+      frames: [0, 7],
+      outPaths: [stillOne, stillTwo],
+    });
+    const [oneRed, oneGreen] = await mediaPixel(stillOne, 160, 90);
+    expect(oneRed).toBeGreaterThan(oneGreen + 40);
+    const [twoRed, twoGreen] = await mediaPixel(stillTwo, 160, 90);
+    expect(twoGreen).toBeGreaterThan(twoRed + 40);
+
+    for (const [frame, file] of [
+      [0, stillOne],
+      [7, stillTwo],
+    ] as const) {
+      const framePath = path.join(root, "out", `variables-${frame}.png`);
+      await exec("ffmpeg", [
+        "-v",
+        "error",
+        "-y",
+        "-i",
+        outPath,
+        "-vf",
+        `select=eq(n\\,${frame})`,
+        "-frames:v",
+        "1",
+        framePath,
+      ]);
+      const rendered = await mediaPixel(framePath, 160, 90);
+      const still = await mediaPixel(file, 160, 90);
+      expect(Math.abs(rendered[0] - still[0])).toBeLessThanOrEqual(12);
+      expect(Math.abs(rendered[1] - still[1])).toBeLessThanOrEqual(12);
+    }
+  }, 180_000);
 });

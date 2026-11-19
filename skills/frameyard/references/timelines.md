@@ -27,6 +27,10 @@ export default {
 {
   "version": 1,
   "name": "Main edit",
+  "variables": {
+    "title": "Hello",
+    "palette": { "foreground": "#b8f36b", "background": "#101820" }
+  },
   "tracks": [
     { "id": "v1", "kind": "video" },
     { "id": "v2", "kind": "video" },
@@ -40,7 +44,10 @@ export default {
       "start": 0,
       "duration": 150,
       "sourceIn": 0,
-      "props": { "title": "Hello" },
+      "props": {
+        "title": { "$var": "title" },
+        "palette": { "$var": "palette" }
+      },
       "blend": "screen",
       "transform": { "fit": "contain", "x": 0, "y": 0, "scale": 1, "rotation": 0 },
       "keyframes": {
@@ -75,6 +82,7 @@ export default {
 - `tracks` and `clips` are required. Track order is bottom-to-top for video and irrelevant for audio.
 - `background` is an optional color; the final video composites over black.
 - `durationInFrames` is optional. The duration is derived from the latest clip end unless declared; a declared duration may extend but not cut clips.
+- `variables` is an optional object of named JSON values visible to composition clips in this timeline and its descendants. A nested timeline clip may declare `variables` to override names for that instance.
 - Unknown fields are errors. Blend modes are static per clip; there are no animated blend modes, other effects, or track solo/visibility. Clip transitions are the one same-track overlap (see [Transitions](#transitions)).
 
 ## Sources
@@ -82,12 +90,52 @@ export default {
 | `source.kind` | Fields | Notes |
 | --- | --- | --- |
 | `composition` | `id` | Project composition ID. The clip may set `props`. A static composition behaves as an image source. |
-| `timeline` | `id` | Nested timeline ID. Rendered as a group. |
+| `timeline` | `id` | Nested timeline ID. Rendered as a group. The clip may set `variables` for this instance. |
 | `video` | `src` | Local MP4/WebM, project-relative. |
 | `image` | `src` | Local PNG/JPEG/WebP. `duration` is required. |
 | `audio` | `src` | Local WAV/MP3/M4A/AAC or a video file used only for audio. |
 
 Media paths resolve from the project root. No remote URLs.
+
+## Variables
+
+A timeline may declare named JSON values and composition clips may reference them:
+
+```json
+{
+  "version": 1,
+  "variables": {
+    "title": "Launch",
+    "palette": { "foreground": "#b8f36b", "background": "#101820" }
+  },
+  "tracks": [{ "id": "v1", "kind": "video" }],
+  "clips": [
+    {
+      "id": "intro",
+      "track": "v1",
+      "source": { "kind": "composition", "id": "intro" },
+      "start": 0,
+      "props": {
+        "title": { "$var": "title" },
+        "palette": { "$var": "palette" },
+        "footer": "Fixed copy"
+      }
+    }
+  ]
+}
+```
+
+- A composition clip references a variable with an object containing exactly one key: `{ "$var": "name" }`. It may appear at any depth inside `props` and stands for the variable's whole JSON value.
+- There is no string interpolation, path lookup, expression, conditional, or loop. `"${title}"` stays literal text.
+- Variable definitions are literal JSON values. A `$var` object inside a variable definition is data, not another reference.
+- Variable names start with a letter or `_` and contain letters, digits, `_`, `.`, or `-`.
+- A nested timeline clip may override variables for that instance:
+  `"variables": { "title": "First" }`.
+- Lookup is nearest-scope-first: the nested instance override, then that timeline's own `variables`, then the parent instance override, then the parent timeline's `variables`, up to the root. Two instances of the same nested timeline resolve independently.
+- Merge order for a composition clip: schema defaults, document defaults, the clip's `props` with references replaced, remaining explicit clip props, then CLI `--props` overrides for top-level composition clips. A literal clip prop is never replaced by a same-named variable.
+- `--props` is still keyed by top-level composition clip ID and does not reach compositions inside a nested timeline. Use nested instance `variables` for those. Override values are literal props; a `$var` object there is not expanded.
+- A missing name is `TIMELINE_VARIABLE_NOT_FOUND` with the timeline, clip, track, nesting chain, variable, and JSON path. A malformed `variables` object or `$var` reference is `TIMELINE_VARIABLE_INVALID`. Invalid resolved props remain `PROPS_SCHEMA_INVALID` and point at the clip prop path and the variable that supplied it.
+- Variables do not flow into include props; include props remain literal.
 
 ## Time and trims
 
@@ -205,7 +253,7 @@ Mute composition audio with `audio.muted: true` when the sound comes from audio-
 
 ## Nested timelines
 
-A nested timeline clip behaves as one layer: its internal tracks are composited first, then the parent clip's opacity, transform, and blend mode apply to the whole group. A blend mode inside the nested timeline sees only that timeline's own backdrop; it never sees the parent's layers. A declared nested background is part of the group, so a transparent nested timeline has no backdrop to blend against beyond its own layers. Nested audio is included. Cycles are rejected statically. Timeline clips do not override props of compositions inside a nested timeline.
+A nested timeline clip behaves as one layer: its internal tracks are composited first, then the parent clip's opacity, transform, and blend mode apply to the whole group. A blend mode inside the nested timeline sees only that timeline's own backdrop; it never sees the parent's layers. A declared nested background is part of the group, so a transparent nested timeline has no backdrop to blend against beyond its own layers. Nested audio is included. Cycles are rejected statically. A nested clip's `variables` override the nested timeline's own values for that instance; see [Variables](#variables).
 
 ## Commands
 
@@ -216,7 +264,7 @@ npx frameyard still main --frame 0,118-126 --out out/stills --json
 npx frameyard render main --props props/main.json --workers 8 --scratch /path/to/scratch --json
 ```
 
-- `--props` on a timeline is a JSON object keyed by top-level composition clip ID; values merge over the clip's `props`.
+- `--props` on a timeline is a JSON object keyed by top-level composition clip ID; values merge over the resolved clip `props`, after variable references are replaced.
 - `--workers` is 1–16. The default is 8. With `--encoder nvenc` it is capped at 8 concurrent encode sessions and a larger value reports an `ENCODER_WARNING`.
 - `--scratch` selects the FFV1 intermediate directory. Use a disk with enough space; intermediates are cleaned after the render.
 - `--container <mp4|mov|mkv|webm>` selects the delivery container (default `mp4`); `--codec <h264|hevc|vp9>` selects the codec, and `--encoder <auto|software|nvenc|qsv>` selects how it is encoded. MP4 and MOV hold H.264/HEVC with AAC; MKV holds all three; WebM holds VP9 with Opus and defaults to VP9. `auto` is the default and probes NVENC, then Quick Sync, then software; `software` forces `libx264`, `libx265`, or `libvpx-vp9`. FFV1 intermediates stay lossless and software-encoded, HEVC keeps the `hvc1` tag in MP4/MOV, and the output extension must match the container.

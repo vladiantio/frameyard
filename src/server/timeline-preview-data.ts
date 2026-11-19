@@ -26,6 +26,12 @@ function previewSource(source: ResolvedTimelineSource): TimelinePreviewSource {
     };
   }
   if (source.kind === "timeline") {
+    const variables =
+      source.variables !== undefined && Object.keys(source.variables).length > 0 ? source.variables : undefined;
+    const search = new URLSearchParams({ "__fy-embed": "1" });
+    if (variables !== undefined) {
+      search.set("__fy-vars", JSON.stringify(variables));
+    }
     return {
       kind: "timeline",
       id: source.id,
@@ -35,7 +41,8 @@ function previewSource(source: ResolvedTimelineSource): TimelinePreviewSource {
         durationInFrames: source.timeline.durationInFrames,
         ...(source.timeline.background !== undefined ? { background: source.timeline.background } : {}),
       },
-      url: `/__frameyard/timeline/${encodeURIComponent(source.id)}?__fy-embed=1`,
+      ...(variables !== undefined ? { variables } : {}),
+      url: `/__frameyard/timeline/${encodeURIComponent(source.id)}?${search.toString()}`,
     };
   }
   return {
@@ -53,6 +60,7 @@ export async function buildTimelinePreviewData(
   project: Project,
   timelineId: string,
   signal?: AbortSignal,
+  variablesOverride?: Record<string, unknown>,
 ): Promise<TimelinePreviewData> {
   const projectTimeline = project.timelines.get(timelineId);
   if (!projectTimeline) {
@@ -63,6 +71,7 @@ export async function buildTimelinePreviewData(
     project,
     timeline: projectTimeline,
     ...(signal ? { signal } : {}),
+    ...(variablesOverride !== undefined ? { variablesOverride } : {}),
   });
   if (!resolved.timeline) {
     const first = resolved.diagnostics.find((diagnostic) => diagnostic.severity === "error");

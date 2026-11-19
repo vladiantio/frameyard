@@ -108,7 +108,9 @@ produces `FONT_LOAD_FAILED`. See [fonts](fonts.md).
 `start`, `sourceIn`, and `duration` are timeline frames. Image clips and static
 composition clips require an explicit `duration`; a static composition clip
 needs `sourceIn: 0` and contributes no audio. Source kinds are `composition`,
-`timeline`, `video`, `image`, and `audio`.
+`timeline`, `video`, `image`, and `audio`. Timeline `variables` and nested-clip
+`variables` overrides feed whole-value `{ "$var": "name" }` references in
+composition clip `props`; no string interpolation.
 
 ## Bindings
 

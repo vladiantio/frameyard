@@ -3,11 +3,18 @@ import {
   isPlainObject,
   type CompositionDiagnostic,
   type CompositionDiagnosticDetails,
+  type JsonValue,
   type Props,
 } from "../contracts.js";
 import { diagnosticFix } from "../diagnostic-fixes.js";
 import type { FrameyardErrorCode } from "../errors.js";
 import { EASING_GRAMMAR, parseEasing } from "./easing.js";
+import {
+  isVariableReferenceObject,
+  TIMELINE_VARIABLE_NAME,
+  variableReferenceError,
+  type TimelineVariables,
+} from "./variables.js";
 
 export type TimelineTrackKind = "video" | "audio";
 export type TimelineSourceKind = "composition" | "timeline" | "video" | "image" | "audio";
@@ -111,6 +118,8 @@ export interface TimelineClip {
   duration?: number;
   sourceIn: number;
   props?: Props;
+  /** Per-instance variable overrides for a nested timeline source. */
+  variables?: TimelineVariables;
   transform?: TimelineTransform;
   /** Per-channel presentation animation, evaluated in clip-local frames. */
   keyframes?: TimelineKeyframes;
@@ -142,6 +151,8 @@ export interface TimelineDocument {
   name?: string;
   durationInFrames?: number;
   background?: string;
+  /** Values visible to composition clips in this timeline and its descendants. */
+  variables?: TimelineVariables;
   tracks: TimelineTrack[];
   clips: TimelineClip[];
   transitions?: TimelineTransition[];
@@ -183,6 +194,68 @@ function unknownKeys(value: Record<string, unknown>, allowed: readonly string[])
 
 function jsonPath(base: string, key: string | number): string {
   return typeof key === "number" ? `${base}[${key}]` : `${base}.${key}`;
+}
+
+type AddDiagnostic = (
+  code: FrameyardErrorCode,
+  message: string,
+  path: string,
+  details?: Partial<CompositionDiagnosticDetails>,
+) => void;
+
+function parseVariables(value: unknown, path: string, add: AddDiagnostic): TimelineVariables | undefined {
+  if (!isPlainObject(value)) {
+    add("TIMELINE_VARIABLE_INVALID", "Timeline variables must be a plain JSON object.", path);
+    return undefined;
+  }
+  const variables: Record<string, JsonValue> = {};
+  for (const [name, variable] of Object.entries(value)) {
+    const variablePath = jsonPath(path, name);
+    if (!TIMELINE_VARIABLE_NAME.test(name)) {
+      add(
+        "TIMELINE_VARIABLE_INVALID",
+        `Invalid variable name "${name}". Use letters, digits, "_", ".", or "-" and start with a letter or "_".`,
+        variablePath,
+        { variable: name },
+      );
+      continue;
+    }
+    try {
+      assertJsonSerializable(variable, `variables.${name}`);
+      variables[name] = variable as JsonValue;
+    } catch (error) {
+      add(
+        "TIMELINE_VARIABLE_INVALID",
+        `Variable "${name}" is not JSON-serializable: ${error instanceof Error ? error.message : String(error)}`,
+        variablePath,
+        { variable: name },
+      );
+    }
+  }
+  return variables;
+}
+
+function validateVariableReferences(value: JsonValue, path: string, add: AddDiagnostic): void {
+  if (Array.isArray(value)) {
+    for (const [index, child] of value.entries()) {
+      validateVariableReferences(child, jsonPath(path, index), add);
+    }
+    return;
+  }
+  if (!isPlainObject(value)) {
+    return;
+  }
+  if (isVariableReferenceObject(value)) {
+    const error = variableReferenceError(value);
+    if (error !== null) {
+      add("TIMELINE_VARIABLE_INVALID", error, path);
+      return;
+    }
+    return;
+  }
+  for (const [key, child] of Object.entries(value)) {
+    validateVariableReferences(child as JsonValue, jsonPath(path, key), add);
+  }
 }
 
 interface DiagnosticContext {
@@ -669,6 +742,7 @@ export function parseTimelineDocument(value: unknown, context: DiagnosticContext
     "name",
     "durationInFrames",
     "background",
+    "variables",
     "tracks",
     "clips",
     "transitions",
@@ -691,6 +765,8 @@ export function parseTimelineDocument(value: unknown, context: DiagnosticContext
       add("TIMELINE_DURATION_INVALID", "Timeline durationInFrames must be a positive integer.", "$.durationInFrames");
     }
   }
+  const documentVariables =
+    value.variables === undefined ? undefined : parseVariables(value.variables, "$.variables", add);
 
   if (!Array.isArray(value.tracks) || value.tracks.length === 0) {
     add("TIMELINE_INVALID", "Timeline tracks must be a non-empty array.", "$.tracks");
@@ -782,6 +858,7 @@ export function parseTimelineDocument(value: unknown, context: DiagnosticContext
       "duration",
       "sourceIn",
       "props",
+      "variables",
       "transform",
       "keyframes",
       "blend",
@@ -812,6 +889,25 @@ export function parseTimelineDocument(value: unknown, context: DiagnosticContext
     });
     if (!source) {
       continue;
+    }
+
+    let variables: TimelineVariables | undefined;
+    if (rawClip.variables !== undefined) {
+      if (source.kind !== "timeline") {
+        add(
+          "TIMELINE_VARIABLE_INVALID",
+          "variables is only valid on clips whose source is a nested timeline.",
+          jsonPath(path, "variables"),
+          clipDetails,
+        );
+      } else {
+        variables = parseVariables(
+          rawClip.variables,
+          jsonPath(path, "variables"),
+          (code, message, errorPath, errorDetails) =>
+            add(code, message, errorPath, { ...clipDetails, ...errorDetails }),
+        );
+      }
     }
 
     if (!isInteger(rawClip.start) || rawClip.start < 0) {
@@ -859,6 +955,12 @@ export function parseTimelineDocument(value: unknown, context: DiagnosticContext
       } else {
         try {
           assertJsonSerializable(rawClip.props, "props");
+          validateVariableReferences(
+            rawClip.props as Props,
+            jsonPath(path, "props"),
+            (code, message, errorPath, errorDetails) =>
+              add(code, message, errorPath, { ...clipDetails, ...errorDetails }),
+          );
           props = rawClip.props as Props;
         } catch (error) {
           add(
@@ -979,6 +1081,7 @@ export function parseTimelineDocument(value: unknown, context: DiagnosticContext
       ...(duration !== undefined ? { duration } : {}),
       sourceIn,
       ...(props !== undefined ? { props } : {}),
+      ...(variables !== undefined ? { variables } : {}),
       ...(transform !== undefined ? { transform } : {}),
       ...(keyframes !== undefined ? { keyframes } : {}),
       ...(blend !== undefined ? { blend } : {}),
@@ -1056,6 +1159,7 @@ export function parseTimelineDocument(value: unknown, context: DiagnosticContext
       ...(typeof value.name === "string" ? { name: value.name } : {}),
       ...(typeof value.durationInFrames === "number" ? { durationInFrames: value.durationInFrames } : {}),
       ...(typeof value.background === "string" ? { background: value.background } : {}),
+      ...(documentVariables !== undefined ? { variables: documentVariables } : {}),
       tracks,
       clips,
       transitions,

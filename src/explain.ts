@@ -93,6 +93,18 @@ const EXPLANATIONS: Record<FrameyardErrorCode, ExplanationEntry> = {
   TIMELINE_CYCLE: entry("Nested timelines form a cycle.", DOCS.timelines),
   TIMELINE_FPS_MISMATCH: entry("A composition clip fps differs from the timeline fps.", DOCS.timelines),
   TIMELINE_MEDIA_INVALID: entry("A timeline media source is invalid or missing.", DOCS.timelines),
+  TIMELINE_VARIABLE_NOT_FOUND: entry(
+    "A composition clip props reference names a timeline variable that is not in scope.",
+    DOCS.timelines,
+    {
+      failing: '"props": { "title": { "$var": "headline" } }',
+      corrected: '"props": { "title": { "$var": "title" } }',
+    },
+  ),
+  TIMELINE_VARIABLE_INVALID: entry("A timeline variables object or variable reference is malformed.", DOCS.timelines, {
+    failing: '"props": { "title": { "$var": "title", "fallback": "Hello" } }',
+    corrected: '"props": { "title": { "$var": "title" } }',
+  }),
   TIMELINE_WARNING: entry("A non-fatal timeline issue was detected.", DOCS.timelines),
   COMPOSITION_UPDATE_ASYNC: entry("update() must be synchronous and seek-safe.", DOCS.controllers),
   COMPOSITION_ERROR: entry("The composition failed during loading or frame production.", DOCS.failureRecovery),

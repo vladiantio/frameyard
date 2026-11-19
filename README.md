@@ -331,6 +331,7 @@ A timeline is a JSON document that places composition and media clips on video a
 - Video, composition, and nested-timeline clips contribute audio automatically unless muted; timeline audio clips live on audio tracks and support `gain` and `muted`.
 - Two clips on one track may overlap when a timeline-level `transitions` entry pairs them with `dissolve` or `crossfade`; undeclared overlap is an error.
 - Nested timelines are groups: the parent transform, opacity, and blend mode apply to the whole nested result, and nested audio is included.
+- A timeline may declare `variables`; a nested timeline clip overrides them for that instance, and a composition clip references one with `{ "$var": "name" }` as a whole JSON value. There is no string interpolation or expression language.
 
 The [timeline reference](./skills/frameyard/references/timelines.md) documents every field, constraint, easing, transition geometry, and diagnostic. See the bundled examples for [keyframes](./examples/keyframes), [transitions](./examples/transitions), and [nested timelines](./examples/nested).
 
@@ -432,7 +433,7 @@ A composition renders directly:
 
 A timeline renders through segments:
 
-1. Static timeline validation resolves references, media, nested timelines, durations, props, audio, overlaps, and transition geometry.
+1. Static timeline validation resolves references, media, nested timelines, durations, variables, props, audio, overlaps, and transition geometry.
 2. The timeline is split at active-layer changes and a maximum segment duration.
 3. In parallel workers, Chromium captures active composition and nested-timeline clips to alpha-preserving FFV1 intermediates. A static composition is captured once per props variant as a transparent PNG and reused as an image layer across segments.
 4. FFmpeg applies fit, presentation keyframes, transition alpha, opacity, video/image decoding, and audio mixing, and encodes each segment as H.264, HEVC, or VP9.
@@ -549,7 +550,7 @@ The optional host-neutral agent skill lives in [`skills/frameyard/`](./skills/fr
 Deferred from this implementation slice:
 
 - Animated blend modes, filters, masks, and audio fades; GPU compositing and codecs beyond H.264, HEVC, and VP9
-- Full visual timeline editing, drag-and-drop, trim handles, and undo/redo; timeline-level variables and prop overrides inside nested timelines
+- Full visual timeline editing, drag-and-drop, trim handles, and undo/redo
 - Per-timeline formats and frame-rate conversion/retiming; persistent clip caches
 - Built-in subtitle rendering, automatic caption burn-in, and declarative karaoke elements
 - Nested `data-fy-repeat` scopes, a general template language, and declarative JSON Schema validation

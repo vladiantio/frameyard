@@ -1,4 +1,4 @@
-import type { AudioVolumeEnvelope, CompositionDiagnostic } from "../contracts.js";
+import type { AudioVolumeEnvelope, CompositionDiagnostic, JsonValue } from "../contracts.js";
 import type {
   TimelineSceneClip,
   TimelineSceneCompositionSource,
@@ -14,6 +14,8 @@ export interface TimelinePreviewCompositionSource extends TimelineSceneCompositi
 
 export interface TimelinePreviewNestedSource extends TimelineSceneNestedSource {
   url: string;
+  /** Flattened visible variables for this nested instance. */
+  variables?: Readonly<Record<string, JsonValue>>;
 }
 
 export interface TimelinePreviewMediaSource extends TimelineSceneMediaSource {

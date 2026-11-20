@@ -10,6 +10,8 @@ contract change may ship in a minor release and is called out explicitly below.
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-11-20
+
 ### Added
 
 - Timeline documents may declare a `variables` JSON object, and a nested
@@ -27,6 +29,8 @@ contract change may ship in a minor release and is called out explicitly below.
   static composition with includes is captured once per props and scale.
   Nested timelines inherit the same behavior, and include diagnostics keep
   their timeline, track, clip, and nesting attribution.
+
+[0.14.0]: https://github.com/vladiantio/frameyard/compare/v0.13.0...v0.14.0
 
 ## [0.13.0] - 2026-11-10
 

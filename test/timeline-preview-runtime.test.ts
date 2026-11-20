@@ -710,10 +710,13 @@ describe("timeline preview runtime", () => {
       }
       const image = path.join(root, "out", "include-preview.png");
       await writeFile(image, await page.screenshot({ clip: box }));
+      // Sample away from the centered label: preview and still render the text
+      // through different raster paths, and a glyph edge makes the pixel
+      // comparison depend on font fallback instead of the included fragment.
       const [previewRed, previewGreen, previewBlue] = await mediaPixel(
         image,
-        Math.floor(box.width / 2),
-        Math.floor(box.height / 2),
+        Math.floor(box.width * 0.25),
+        Math.floor(box.height * 0.8),
       );
 
       const stillPath = path.join(root, "out", "include-still.png");
@@ -723,7 +726,7 @@ describe("timeline preview runtime", () => {
         frames: [5],
         outPaths: [stillPath],
       });
-      const [stillRed, stillGreen, stillBlue] = await mediaPixel(stillPath, 160, 90);
+      const [stillRed, stillGreen, stillBlue] = await mediaPixel(stillPath, 80, 144);
 
       expect(Math.abs(previewRed - stillRed)).toBeLessThanOrEqual(12);
       expect(Math.abs(previewGreen - stillGreen)).toBeLessThanOrEqual(12);

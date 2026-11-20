@@ -231,6 +231,7 @@ that the composition still depends on a remote font URL.
 - Full authoring rules: [deterministic authoring](deterministic-authoring.md)
 - Fonts: [fonts](fonts.md)
 - Timelines and keyframes: [timelines](timelines.md)
+- Timeline editing contract: [editor](editor.md)
 - Error codes: [diagnostics](diagnostics.md)
 - Result shapes: [JSON results](json-results.md)
 - Recovery loops: [failure recovery](failure-recovery.md)

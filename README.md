@@ -41,7 +41,7 @@ npx frameyard dev
 
 `init` derives the project name from the positional directory's basename. Run it without a directory to be prompted for a project name (default `my-video`); `init` then creates that directory. Non-interactive shells and `--json` runs use `my-video` without prompting.
 
-`dev` prints a local preview URL. The preview uses one editor-style shell on composition and timeline routes: a filterable assets list, one tabbed Source/Program monitor with its own transport, a read-only timeline strip, and a props/inspector column. Composition and timeline tiles are metadata-first; real media keeps lightweight thumbnails. System/Light/Dark themes follow the OS by default and persist an override. The active monitor supports Fit, 100%, staged zoom, hand or Space-drag panning, and fullscreen. Each monitor has its own transport with scrubbing, playback, frame-by-frame stepping, one-second jumps, audio controls, and diagnostics. Click a composition element or timeline clip to open the read-only inspector: bindings and resolved values, frame state, clip timing and presentation fields, matching diagnostics, jump-to-start/end, a copyable `still` command, and a source link. Escape closes it.
+`dev` prints a local preview URL. The preview uses one editor-style shell on composition and timeline routes: a filterable assets list, one tabbed Source/Program monitor with its own transport, a timeline strip that is read-only by default, and a props/inspector column. Composition and timeline tiles are metadata-first; real media keeps lightweight thumbnails. System/Light/Dark themes follow the OS by default and persist an override. The active monitor supports Fit, 100%, staged zoom, hand or Space-drag panning, and fullscreen. Each monitor has its own transport with scrubbing, playback, frame-by-frame stepping, one-second jumps, audio controls, and diagnostics. Click a composition element or timeline clip to open the read-only inspector: bindings and resolved values, frame state, clip timing and presentation fields, matching diagnostics, jump-to-start/end, a copyable `still` command, and a source link. Escape closes it.
 
 The scaffold includes an `AGENTS.md` guide for coding agents working in the project, covering the HTML authoring rules and the `check`, `still`, and `render` workflow. It also includes a `package.json` with `dev`, `check`, `render`, and `still` scripts pinned to the scaffolding CLI version, so `pnpm dev` or `npm run dev` works without a global install, and a `.gitignore` that ignores `out/`.
 
@@ -550,7 +550,7 @@ The optional host-neutral agent skill lives in [`skills/frameyard/`](./skills/fr
 Deferred from this implementation slice:
 
 - Animated blend modes, filters, masks, and audio fades; GPU compositing and codecs beyond H.264, HEVC, and VP9
-- Full visual timeline editing, drag-and-drop, trim handles, and undo/redo
+- Full NLE-style editing (ripple, slip, roll, magnetic timelines, effects) beyond the Phase 2 editor contract, multi-timeline tabs, and collaboration
 - Per-timeline formats and frame-rate conversion/retiming; persistent clip caches
 - Built-in subtitle rendering, automatic caption burn-in, and declarative karaoke elements
 - Nested `data-fy-repeat` scopes, a general template language, and declarative JSON Schema validation

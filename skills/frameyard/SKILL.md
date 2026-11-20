@@ -13,7 +13,7 @@ Use the public project format and CLI. Do not add an agent-only runtime, a hoste
 1. Find `fy.config.js` from the working directory upward, or run `npx frameyard init <directory>`.
 2. Run `npx frameyard context --json`; read `format`, `compositions`, `timelines`, `fonts`, the target, its props, and its controller before editing.
 3. Confirm that speech or transcription is requested or explicitly approved before producing assets.
-4. If context is small, read [quick reference](references/quick-reference.md) first. Router: static/card → quick reference; shared markup → [includes](references/includes.md); timelines → [timelines](references/timelines.md); fonts → [fonts](references/fonts.md); captions → [subtitles and karaoke](references/subtitles-karaoke.md); failures → [diagnostics](references/diagnostics.md) and [failure recovery](references/failure-recovery.md); Canvas/WebGL → [controllers](references/controllers.md).
+4. If context is small, read [quick reference](references/quick-reference.md) first. Router: static/card → quick reference; shared markup → [includes](references/includes.md); timelines → [timelines](references/timelines.md); editing → [editor](references/editor.md); fonts → [fonts](references/fonts.md); captions → [subtitles and karaoke](references/subtitles-karaoke.md); failures → [diagnostics](references/diagnostics.md) and [failure recovery](references/failure-recovery.md); Canvas/WebGL → [controllers](references/controllers.md).
 
 ## Workflow
 
@@ -89,6 +89,7 @@ node scripts/frameyard.mjs check <id> --json
 - [Includes](references/includes.md)
 - [Fonts](references/fonts.md)
 - [Timelines](references/timelines.md)
+- [Timeline editor](references/editor.md)
 - [Deterministic HTML authoring](references/deterministic-authoring.md)
 - [Bindings](references/bindings.md)
 - [Controllers](references/controllers.md)

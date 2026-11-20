@@ -367,8 +367,8 @@ The Node-side segmented renderer that captures composition clips, composites and
 _Avoid_: Timeline host, browser renderer
 
 **Preview**:
-An interactive, frame-accurate inspection of a timeline or composition using the same behavior as a render, with a filterable assets list, one tabbed source/program monitor, a docked props and inspector column, a read-only timeline strip, System/Light/Dark theming, monitor zoom and fullscreen, and URL-addressable primary selection and frame.
-_Avoid_: Visual editor
+An interactive, frame-accurate inspection of a timeline or composition using the same behavior as a render, with a filterable assets list, one tabbed source/program monitor, a docked props and inspector column, a timeline strip that is read-only unless edit mode is active, System/Light/Dark theming, monitor zoom and fullscreen, and URL-addressable primary selection and frame.
+_Avoid_: Read-only preview, visual editor
 
 **Playhead**:
 The current timeline frame in preview.
@@ -425,6 +425,32 @@ _Avoid_: Frame export, image sequence
 **Reproducibility**:
 The guarantee that, for the same timeline or composition revision, props, assets, and frame under a pinned runtime/browser environment, the visual state is identical. It does not imply identical encoded bytes, even on the same machine; encoded output depends on the encoder and its runtime.
 _Avoid_: Bit-for-bit encoding equality
+
+### Editing
+
+**Edit mode**:
+An explicit development-preview mode that mutates a timeline or canonical transcript through validated editor commands. It is off by default, unavailable to embedded hosts and non-loopback servers, and never changes production render behavior.
+_Avoid_: Read-only preview, autosave
+
+**Authored document**:
+The plain JSON value an editor loads and saves, preserving omitted optional fields and array order. It is distinct from the normalized parse result used for validation and preview.
+_Avoid_: Normalized timeline, editor document
+
+**Editor command**:
+A serializable instruction such as moving, trimming, splitting, keyframing, or captioning that returns a new authored document or diagnostics. Commands are immutable, browser-safe, and applied without file I/O.
+_Avoid_: Mutation, patch, action log
+
+**Working copy**:
+The in-memory authored document held by an edit session for preview before it is saved. It is served only to that session and is never visible to `check`, `still`, or `render`.
+_Avoid_: Draft file, autosave, normalized timeline
+
+**Edit session**:
+The loopback development-server state that owns one active document, one working copy, an edit token, and an in-memory validation cache. It is closed explicitly, on server shutdown, or after idleness, and never persists unsaved data.
+_Avoid_: User account, collaboration session
+
+**Editor save**:
+The explicit, atomic publication of one authored timeline or transcript after schema and resolver validation, guarded by an expected file hash. A failed or conflicting save writes nothing.
+_Avoid_: Autosave, export
 
 ### Resource policy
 

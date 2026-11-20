@@ -255,6 +255,10 @@ Mute composition audio with `audio.muted: true` when the sound comes from audio-
 
 A nested timeline clip behaves as one layer: its internal tracks are composited first, then the parent clip's opacity, transform, and blend mode apply to the whole group. A blend mode inside the nested timeline sees only that timeline's own backdrop; it never sees the parent's layers. A declared nested background is part of the group, so a transparent nested timeline has no backdrop to blend against beyond its own layers. Nested audio is included. Cycles are rejected statically. A nested clip's `variables` override the nested timeline's own values for that instance; see [Variables](#variables).
 
+## Editing
+
+The preview is read-only by default. Phase 2 adds an explicit edit mode that writes the same timeline JSON and canonical transcript JSON through validated commands, snapshot undo, and an atomic save protocol; see [editor](editor.md) and ADR 0032. The CLI still reads only saved files, so run `check`, `still`, and `render` after saving.
+
 ## Commands
 
 ```sh
@@ -271,7 +275,7 @@ npx frameyard render main --props props/main.json --workers 8 --scratch /path/to
 - `--concurrency` is composition-only.
 - `render` defaults to `out/<timeline-id>.mp4`.
 - `check` evaluates every timeline frame and every animated composition frame; a static composition layer is inspected once and not seeked per frame. It also evaluates every keyframe channel at every timeline frame. `still` captures one or more requested frames through the same clip capture and composite path; a multi-frame still resolves the timeline, starts one server, and reuses one scratch directory. The `--frame` spec and 32-frame cap are the same as for compositions.
-- `npx frameyard dev` lists compositions, timelines, and timeline media in a filterable assets list. One tabbed Source/Program monitor handles the selected composition, clip source, asset, or timeline; the timeline strip supports read-only seek and zoom, and the props/inspector column docks selection details. Selecting a clip loads its source in the source monitor without moving the playhead. System/Light/Dark themes and monitor zoom/fullscreen are available in the shell.
+- `npx frameyard dev` lists compositions, timelines, and timeline media in a filterable assets list. One tabbed Source/Program monitor handles the selected composition, clip source, asset, or timeline; the timeline strip supports read-only seek and zoom, and the props/inspector column docks selection details. Selecting a clip loads its source in the source monitor without moving the playhead. System/Light/Dark themes and monitor zoom/fullscreen are available in the shell. Phase 2 adds an explicit, loopback-only edit mode on the timeline route; see [editor](editor.md).
 
 ## Determinism and performance
 

@@ -61,6 +61,31 @@ re-pinned to its single time-zero state.
   horizontally above that. Click or drag `#ruler-scale` to seek; `#playhead-grab`
   drags the playhead; the view follows the playhead during playback.
 
+## Edit mode
+
+The preview is read-only by default. The timeline route accepts
+`?__fy-edit=1` only when the loopback `dev` server reports that editing is
+enabled; `?__fy-embed=1` and composition focus are always read-only. The full
+contract is [ADR 0032](../docs/adr/0032-edit-timelines-as-validated-json-documents.md).
+
+- Entering edit mode opens a server session with an `HttpOnly`, `SameSite=Strict`
+  cookie and an opaque edit token. Writes also require a matching `Origin` and
+  the per-tab client ID. One editor tab owns the session.
+- The client keeps an authored JSON document and applies editor commands
+  without file I/O. It sends the working copy to the server after each committed
+  change; the server validates it with the browser-safe schema and stores it only
+  in memory.
+- `GET /__frameyard/timeline/<id>.json` resolves the session working copy for
+  the session that owns it. Transcript requests from the session's composition
+  iframes are served from the transcript working copy. Requests without the
+  edit cookie, including the CLI and embedded hosts, read saved files.
+- Save validates the full document with the Node resolver (no Chromium), checks
+  the expected file hash, writes a temporary file in the same directory, and
+  renames it atomically. A stale hash is `EDIT_CONFLICT`; invalid content is
+  `EDIT_INVALID`; both write nothing.
+- A dirty document blocks navigation. Closing edit mode discards the working
+  copy. Read-only preview tests must not require an edit session.
+
 ## Composition preview
 
 - Page: `/__frameyard/?composition=<id>`.
